@@ -2,7 +2,6 @@
 //! 具体命令的实现放在 `commands.rs`，不要让这个文件变成第二个业务层。
 
 mod commands;
-mod win_frame;
 
 use std::time::Duration;
 
@@ -63,19 +62,6 @@ pub fn run() {
         // 每次启动记一条，既方便对照版本，也顺便验证日志链路是通的
         log::info!("应用启动 v{}", app.package_info().version);
 
-        // tao 0.37.1 对顶层窗口无条件施加 WS_CAPTION（tao issue #1106），
-        // 无装饰窗口只靠 WM_NCCALCSIZE 返回 0 视觉隐藏；而 show/maximize
-        // 等任何 flag 变化都会经 apply_diff 用 to_window_styles() 重刷
-        // 样式，把 WS_CAPTION 加回来——表现为自定义标题栏上方冒出
-        // 原生标题栏。这里在 Rust 侧直接剥掉标题栏样式位，
-        // 保留 WS_THICKFRAME 供无边框缩放手柄和 DWM 阴影使用。
-        #[cfg(windows)]
-        {
-            if let Some(window) = app.get_webview_window("main") {
-                win_frame::strip_native_caption(&window);
-            }
-        }
-
         // 窗口默认隐藏以等待首帧渲染，这里做兜底：
         // 万一前端异常没能主动 show()，3 秒后强制显示，避免"点了图标没反应"
         let handle = app.handle().clone();
@@ -84,34 +70,14 @@ pub fn run() {
             let handle2 = handle.clone();
             // 窗口操作统一回到主线程执行，避免跨线程改窗口状态
             let _ = handle.run_on_main_thread(move || {
-                if let Some(window) = handle2.get_webview_window("main") {
-                    if !window.is_visible().unwrap_or(true) {
-                        let _ = window.show();
-                    }
-                    // show() 会经 apply_diff 把标题栏样式加回来；
-                    // 若窗口没能获得焦点（Focused 事件不触发），
-                    // 这里在显示后再补剥一次
-                    #[cfg(windows)]
-                    win_frame::strip_native_caption(&window);
+                if let Some(window) = handle2.get_webview_window("main")
+                    && !window.is_visible().unwrap_or(true)
+                {
+                    let _ = window.show();
                 }
             });
         });
         Ok(())
-    });
-
-    // apply_diff 只在窗口 flag 变化时重刷样式，而这些时刻都会伴随
-    // 下面的事件；在这里兜底剥掉被重新加上的标题栏。
-    // 仅 Windows 需要，非 Windows 平台整个 hook 不挂，避免未使用变量警告
-    #[cfg(windows)]
-    let builder = builder.on_window_event(|window, event| {
-        if matches!(
-            event,
-            tauri::WindowEvent::Focused(true)
-                | tauri::WindowEvent::Resized(_)
-                | tauri::WindowEvent::Moved(_)
-        ) {
-            win_frame::strip_native_caption(window);
-        }
     });
 
     builder
