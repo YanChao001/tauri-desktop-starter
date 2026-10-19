@@ -39,13 +39,13 @@
 
 ## CSP
 
-当前配置是 `"csp": null`，**仅适用于开发阶段**。发布前必须收紧：
+生产 CSP 已内建在 `tauri.conf.json` 中，**模板默认就是收紧状态**，不需要发布前再补：
 
 ```json
 {
   "app": {
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
       "devCsp": null
     }
   }
@@ -56,8 +56,8 @@
 
 - `style-src 'unsafe-inline'` 是必需的：Radix 的浮层组件通过 `style` 属性做定位。
 - `connect-src` 里保留 `ipc:` 与 `http://ipc.localhost`，否则 `invoke` 会被拦。
-- 需要访问外部 API 时，在 `connect-src` 里精确列出域名，不要写 `*`。
 - `devCsp: null` 让开发模式不受限制（HMR 需要），生产环境仍走 `csp`。
+- 需要访问外部 API 时，在 `connect-src` 里精确列出域名，不要写 `*`。
 
 改完 CSP 后必须完整跑一遍应用：白屏、图标不显示、字体加载失败，通常都是 CSP 拦的。
 
@@ -105,6 +105,7 @@ cargo tree -d        # 检查重复依赖
 ```
 
 - 锁文件（`pnpm-lock.yaml`、`Cargo.lock`）必须提交，保证构建可复现。
+- CI 每周一自动跑一遍两个生态的漏洞审计（`.github/workflows/audit.yml`），本节命令用于本地复查与修复验证。
 - 新增依赖按 [开发指南](./development.md#新增依赖的评审标准) 的三条标准评估。
 - 出现高危漏洞时优先升级；无法升级要记录原因与缓解措施。
 

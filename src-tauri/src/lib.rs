@@ -23,11 +23,11 @@ pub fn run() {
                 ])
                 .level(log::LevelFilter::Info)
                 .build(),
-        )
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_opener::init());
+        );
 
-    // 单实例：重复启动时聚焦已有窗口，而不是再开一个（仅桌面端）
+    // 单实例：重复启动时聚焦已有窗口，而不是再开一个（仅桌面端）。
+    // 官方要求它尽早注册——只排在日志之后，先于其余插件，
+    // 避免插件初始化期间第二个实例已经起来
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         if let Some(window) = app.get_webview_window("main") {
@@ -36,6 +36,10 @@ pub fn run() {
             let _ = window.set_focus();
         }
     }));
+
+    let builder = builder
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_opener::init());
 
     builder
         .setup(|app| {

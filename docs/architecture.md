@@ -123,6 +123,36 @@ Rust 侧返回 `Result<String, String>`，`Err` 会原样 reject 到前端。
 模板刻意让 `greet` 对空名称返回错误，而不是在页面里兜底——
 **校验放在边界，错误由调用方展示**。照着这个写，错误链路天然是通的。
 
+命令变多、同一类错误需要不同的用户提示或重试策略时，把 `String` 升级为结构化错误，
+前端按类型分支，而不是解析错误字符串：
+
+```rust
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", content = "message")]
+pub enum CommandError {
+    Validation { message: String },
+    NotFound { message: String },
+    Io { message: String },
+}
+
+#[tauri::command]
+pub fn read_config() -> Result<String, CommandError> {
+    // ...
+}
+```
+
+```ts
+type CommandError = { kind: "Validation" | "NotFound" | "Io"; message: string };
+
+const message = await invoke<string, unknown[]>("read_config").catch(
+  (error: CommandError) => {
+    // 按 error.kind 决定提示文案与是否重试
+  },
+);
+```
+
+演进时机：只有一种错误时保持 `String`，错误分叉前不加层。
+
 注意：`invoke<T>` 的泛型**不做运行时校验**，它只是一个断言。跨进程边界的数据要当成不可信输入，必要时用 zod 校验。
 
 ### 事件（emit / listen）
@@ -178,7 +208,7 @@ let dir = app.path().app_data_dir()?; // 需要 tauri::Manager
 ## 安全边界
 
 1. **能力白名单**：`src-tauri/capabilities/default.json`。加插件后前端报 "not allowed"，就是这里没加权限。
-2. **CSP**：当前是 `null`（开发方便）。正式发布前必须配置，见 [安全规范](./security.md#csp)。
+2. **CSP**：生产 CSP 已内建（`devCsp` 为 null 便于开发调试），收紧规则见 [安全规范](./security.md#csp)。
 3. **不做动态代码执行**：不 `eval`，不加载远端 JS。
 4. **外链隔离**：所有 http 链接由系统浏览器打开，不在 WebView 里导航。
 

@@ -38,7 +38,7 @@
 
 ## 快速开始
 
-前置：Node 22（≥22.12）、pnpm 12+、Rust 1.88+（`rustup` 安装 stable-msvc）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
+前置：Node 22（≥22.12）、pnpm 12+（`packageManager` 字段已锁定，corepack 会自动对齐）、Rust 1.99.1（`rustup` 自动安装，见 `rust-toolchain.toml`）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
 
 ```bash
 pnpm install
@@ -111,13 +111,14 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 
 1. **启动不闪白屏** —— 窗口在 `tauri.conf.json` 里是 `visible: false`，前端首帧渲染后调用 `show()` 才出现（`useRevealWindow`）。Rust 侧另有 3 秒兜底线程，防止前端抛异常导致窗口永远不出现。
 2. **外链不劫持** —— 页面里所有 `http(s)` 链接被 `useExternalLinks` 拦截，交给系统浏览器打开。否则用户点个文档链接，应用就"变成"了浏览器且回不去。
-3. **单实例** —— `tauri-plugin-single-instance` 已注册且必须最先注册；重复启动时聚焦已有窗口，而不是开第二个。
+3. **单实例** —— `tauri-plugin-single-instance` 已注册（紧跟日志插件、先于其余插件），重复启动时聚焦已有窗口，而不是开第二个。
 4. **窗口位置记忆** —— `tauri-plugin-window-state` 自动保存/恢复窗口尺寸与位置。
 5. **HashRouter 而非 BrowserRouter** —— 生产环境前端跑在自定义协议下，BrowserRouter 刷新或深链会 404。
 6. **体积优化** —— `Cargo.toml` 的 release 档已开 `lto`、`codegen-units=1`、`opt-level="s"`、`strip`、`panic="abort"`。
 7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
 8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
 9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`）。release 构建没有控制台，用户报问题时这是唯一能拿到的线索。
+10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道（`devCsp` 留空给 HMR）。即使页面被注入恶意内容，也加载不了外部脚本、外传不了数据，发布前不需要额外补配置。
 
 ## 拿它开新项目
 
@@ -126,12 +127,13 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 1. `package.json` → `name`
 2. `src-tauri/Cargo.toml` → `package.name`、`[lib] name`（下划线命名）、`description`、`authors`
 3. `src-tauri/src/main.rs` → 把 `tauri_desktop_starter_lib::run()` 换成新的 lib 名
-4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`
-5. `index.html` → `<title>`
+4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`
+5. `index.html` → `<title>` 与 favicon（引用的是 `public/tauri.svg`）
 6. `src/layouts/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
 7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`
 8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
 9. `SECURITY.md` → 把 `security@example.com` 换成真实的安全邮箱
+10. 全局收尾：`grep -ri starter` 过一遍，清理 docs 里残留的产物名与日志路径（`tauri-desktop-starter.exe`、`com.starter.desktop`）
 
 > `identifier` 要唯一（形如 `com.公司.产品`），升级安装和 WebView 数据目录都依赖它。一旦发布就不要再改。
 
