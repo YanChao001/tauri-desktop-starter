@@ -1,0 +1,24 @@
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <!--
+    SignPath 的 GitHub connector 会把 actions/upload-artifact 上传的内容当作 ZIP，
+    因此根元素必须是 zip-file；安装包在 ZIP 根目录下。
+
+    版本号由签名请求的 parameters 传入（release.yml 里取 tag 去掉 v 前缀），
+    并与安装包的 ProductVersion / FileVersion 做强制比对，防止签错版本。
+
+    NSIS 安装包只签外层 PE；安装后的应用二进制不在此配置范围内。
+  -->
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+
+  <zip-file>
+    <pe-file
+      path="*-setup.exe"
+      product-name="Tauri Desktop Starter"
+      product-version="${version}"
+      file-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

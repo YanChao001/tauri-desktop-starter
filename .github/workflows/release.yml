@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  # SignPath action 需要读本次 run 的 artifact
+  actions: read
 
 # 同一个 tag 只允许一个发布任务在跑，避免重复上传 asset
 concurrency:
@@ -190,3 +192,87 @@ jobs:
             }
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
+
+  # 可选：SignPath Foundation（开源免费签名）。未配置仓库变量时整个 job 跳过，
+  # 不影响现有发布流程。申请与配置步骤见 docs/build-release.md 的「路线 A」。
+  # 与上面的 PFX 链路二选一：同时配置会对同一文件二次签名。
+  # Variables: SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
+  #            SIGNPATH_SIGNING_POLICY_SLUG / SIGNPATH_ARTIFACT_CONFIGURATION_SLUG
+  # Secret:    SIGNPATH_API_TOKEN
+  sign-windows:
+    name: 签名 Windows 安装包（未配置 SignPath 时跳过）
+    needs: build
+    if: vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 计算 tag 与版本号
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref }}"
+          if ($ref -like "refs/tags/*") {
+            $tag = $ref -replace "^refs/tags/", ""
+          } else {
+            $tag = "v" + (node -p "require('./package.json').version")
+          }
+          "TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VERSION=$($tag.TrimStart('v'))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: 从 draft Release 下载未签名安装包
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force unsigned | Out-Null
+          gh release download $env:TAG --pattern "*-setup.exe" --dir unsigned
+          if (-not (Get-ChildItem unsigned -Filter *.exe)) { throw "没有下载到安装包" }
+
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: unsigned-nsis
+          path: unsigned/*.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: 提交 SignPath 签名请求
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          # 每次签名都要在 SignPath 门户人工批准，留够时间
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+          parameters: |
+            version: "${{ env.VERSION }}"
+
+      - name: 校验签名
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem signed -Filter *.exe -Recurse -ErrorAction Stop
+          if (-not $files) { throw "SignPath 没有返回签名产物" }
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            if ($sig.Status -ne "Valid") {
+              throw "签名无效：$($file.Name) -> $($sig.Status)"
+            }
+            if ($sig.SignerCertificate.Subject -notlike "*SignPath*") {
+              throw "签名者不是 SignPath：$($sig.SignerCertificate.Subject)"
+            }
+            Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
+          }
+
+      - name: 用签名产物覆盖 draft Release 资产
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $files = Get-ChildItem signed -Filter *.exe -Recurse | ForEach-Object { $_.FullName }
+          gh release upload $env:TAG @files --clobber
