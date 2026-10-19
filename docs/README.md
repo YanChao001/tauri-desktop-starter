@@ -39,14 +39,15 @@ docs/
     └── 0002-git-merge-strategy.md
 ```
 
-根目录还有四份：
+根目录还有这些：
 
-| 文件                                  | 作用               |
-| ------------------------------------- | ------------------ |
-| [README.md](../README.md)             | 项目介绍与快速开始 |
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | 参与开发的最短路径 |
-| [SECURITY.md](../SECURITY.md)         | 安全问题上报渠道   |
-| [CHANGELOG.md](../CHANGELOG.md)       | 版本变更记录       |
+| 文件                                  | 作用                     |
+| ------------------------------------- | ------------------------ |
+| [README.md](../README.md)             | 项目介绍与快速开始       |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | 参与开发的最短路径       |
+| [SECURITY.md](../SECURITY.md)         | 安全问题上报渠道（占位） |
+| [CHANGELOG.md](../CHANGELOG.md)       | 版本变更记录             |
+| [LICENSE](../LICENSE)                 | MIT 许可                 |
 
 ## 维护规则
 

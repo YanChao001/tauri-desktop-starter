@@ -116,6 +116,8 @@ pnpm format       # Prettier 格式化
 5. `index.html` → `<title>`
 6. `src/components/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
 7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`
+8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
+9. `SECURITY.md` → 把 `security@example.com` 换成真实的安全邮箱
 
 > `identifier` 要唯一（形如 `com.公司.产品`），升级安装和 WebView 数据目录都依赖它。一旦发布就不要再改。
 
@@ -179,4 +181,4 @@ pnpm tauri add dialog
 - 项目本身不依赖 bun，bun 只在生成脚手架时用过。
 - 字体用的是 Geist Variable（随包内置），只覆盖拉丁字符，中文走系统字体。
 - 需要改主题色，改 `src/index.css` 里的 CSS 变量即可，组件不用动。
-- 许可：目前未指定开源协议。对外发布前请补 `LICENSE` 文件；内部使用请按公司规定处理。
+- 许可：MIT，全文见 [LICENSE](./LICENSE)。复制成新项目后，记得把版权方换成自己的名字或公司。
