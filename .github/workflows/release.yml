@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# 同一个 tag 只允许一个发布任务在跑，避免重复上传 asset
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
@@ -68,11 +73,96 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      # 只在 secret 非空时写入环境变量：Tauri 用 env::var_os 判断是否签名，
+      # 空字符串同样会被当成“已配置”，导致 macOS 签名流程拿到空证书直接失败。
+      - name: 注入签名凭据
+        shell: bash
+        env:
+          IN_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          IN_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IN_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          IN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          IN_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          IN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IN_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          IN_UPDATER_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IN_APPLE_CERTIFICATE:-}" ]; then
+            {
+              echo "APPLE_CERTIFICATE<<__ENV__"
+              echo "$IN_APPLE_CERTIFICATE"
+              echo "__ENV__"
+              echo "APPLE_CERTIFICATE_PASSWORD<<__ENV__"
+              echo "$IN_APPLE_CERTIFICATE_PASSWORD"
+              echo "__ENV__"
+              echo "APPLE_SIGNING_IDENTITY<<__ENV__"
+              echo "$IN_APPLE_SIGNING_IDENTITY"
+              echo "__ENV__"
+              echo "APPLE_ID<<__ENV__"
+              echo "$IN_APPLE_ID"
+              echo "__ENV__"
+              echo "APPLE_PASSWORD<<__ENV__"
+              echo "$IN_APPLE_PASSWORD"
+              echo "__ENV__"
+              echo "APPLE_TEAM_ID<<__ENV__"
+              echo "$IN_APPLE_TEAM_ID"
+              echo "__ENV__"
+            } >> "$GITHUB_ENV"
+            echo "已注入 Apple 签名凭据"
+          else
+            echo "未配置 APPLE_CERTIFICATE，macOS 产物不签名、不公证"
+          fi
+          if [ -n "${IN_UPDATER_KEY:-}" ]; then
+            {
+              echo "TAURI_SIGNING_PRIVATE_KEY<<__ENV__"
+              echo "$IN_UPDATER_KEY"
+              echo "__ENV__"
+              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD<<__ENV__"
+              echo "$IN_UPDATER_KEY_PASSWORD"
+              echo "__ENV__"
+            } >> "$GITHUB_ENV"
+            echo "已注入自动更新签名密钥"
+          fi
+
+      - name: 导入 Windows 代码签名证书
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Host "未配置 WINDOWS_CERTIFICATE，Windows 产物不签名"
+            exit 0
+          }
+          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) {
+            throw "已配置 WINDOWS_CERTIFICATE 但缺少 WINDOWS_CERTIFICATE_PASSWORD"
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $secure = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          Remove-Item $pfxPath -Force
+          "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "已导入证书：$($cert.Subject)"
+
+      - name: 生成 Windows 签名配置
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{\n  "bundle": {\n    "windows": {\n      "certificateThumbprint": "%s",\n      "digestAlgorithm": "sha256",\n      "timestampUrl": "http://timestamp.digicert.com"\n    }\n  }\n}\n' \
+            "$WINDOWS_CERT_THUMBPRINT" > "$RUNNER_TEMP/tauri-signing.json"
+          # RUNNER_TEMP 不含空格，不加引号，避免 action 解析参数时把引号算进路径
+          echo "SIGNING_ARGS=--config $RUNNER_TEMP/tauri-signing.json" >> "$GITHUB_ENV"
+
       # 未配置签名时产物可用，但用户会看到"未知发布者"（Windows）或无法通过公证（macOS）。
-      # 正式发布前按 docs/build-release.md 配好下面这些 secrets：
-      #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD（自动更新签名）
+      # 需要的 secrets 见 docs/build-release.md 的「代码签名」一节：
+      #   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD（Windows PFX，base64）
       #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY /
       #   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID（macOS 公证）
+      #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD（自动更新签名）
       # 证书不能进仓库，只能放 secrets。
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -83,4 +173,17 @@ jobs:
           releaseBody: "构建产物见下方 Assets。变更内容请查看本 tag 与上一版本之间的提交记录。"
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }}
+
+      - name: 校验 Windows 签名
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" -ErrorAction Stop
+          foreach ($file in $installers) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            if ($sig.Status -ne "Valid") {
+              throw "签名无效：$($file.Name) -> $($sig.Status) $($sig.StatusMessage)"
+            }
+            Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
+          }

@@ -58,6 +58,7 @@ pnpm app:portable --skip-build # 复用已有 release 产物
 - 目标机器需要 WebView2 运行时（Win11 自带；老 Win10 缺失时按说明安装）。
 - 窗口位置、日志仍写入当前用户的 AppData，不随 exe 移动；要做"绿色版"需自行改路径。
 - 未签名的 exe 会触发 SmartScreen，对外分发仍要按上文配置代码签名。
+- `--no-bundle` 不经过打包器，**不会**自动签名；需要签名的便携版请对 exe 单独执行 `signtool`。
 - Linux 的 AppImage 本身就是便携格式；macOS 用 `.app` 拖拽安装，无需另做便携包。
 
 ### 安装器外观
@@ -95,8 +96,28 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 | OV/EV 代码签名证书（U 盾或云签名） | 每年数千元       | 对外分发              |
 | Azure Trusted Signing              | 按月，需企业资质 | 已在 Azure 生态的团队 |
 
-配置在 `tauri.conf.json` 的 `bundle.windows.certificateThumbprint` + `digestAlgorithm` + `timestampUrl`，
-证书通过环境变量或 CI secret 注入，**绝不进仓库**。
+签名参数不写进 `tauri.conf.json`，而是构建时用 `--config` 合并——指纹与本机环境绑定，提交进仓库只会制造冲突：
+
+```bash
+pnpm tauri build --config '{"bundle":{"windows":{"certificateThumbprint":"<THUMBPRINT>","digestAlgorithm":"sha256","timestampUrl":"http://timestamp.digicert.com"}}}'
+```
+
+查本机证书指纹：
+
+```powershell
+Get-ChildItem Cert:\CurrentUser\My | Select-Object Subject, Thumbprint
+```
+
+CI 由 `release.yml` 自动完成：PFX 转 base64 存入 `WINDOWS_CERTIFICATE`、密码存入
+`WINDOWS_CERTIFICATE_PASSWORD`；runner 导入证书后生成同样的 `--config`，构建完再用
+`Get-AuthenticodeSignature` 校验签名有效。证书与私钥**绝不进仓库**。
+
+> 签名发生在**打包阶段**：`tauri build --no-bundle`（便携版）不会触发签名。
+> 需要签名的便携 exe 请单独执行 `signtool sign /sha1 <指纹> /fd sha256 <exe>`，
+> 或改用安装包分发。
+
+> `certificateThumbprint` 方式要求证书能以 PFX 导入 runner。硬件令牌、云 HSM 或
+> Azure Trusted Signing 需要改用 `bundle.windows.signCommand` 调用对应的签名工具。
 
 ### macOS
 
@@ -204,7 +225,15 @@ if (update?.available) {
 
 产物以 **draft Release** 上传，人工确认后再发布。
 
-**签名密钥一律走 GitHub Secrets。** 需要哪几个 secrets，写在 workflow 顶部的注释里；
+**签名密钥一律走 GitHub Secrets。** 当前流水线识别这些（未配置时自动跳过，产物仍可用）：
+
+| Secret                                                                        | 用途                                     |
+| ----------------------------------------------------------------------------- | ---------------------------------------- |
+| `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD`                        | Windows 代码签名（PFX 的 base64 与密码） |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名                               |
+| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                               |
+| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）      |
+
 证书和私钥永远不进仓库——进了就当作已泄露，必须吊销重签。
 
 Linux 构建需要先装系统依赖：

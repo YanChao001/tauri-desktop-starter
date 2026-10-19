@@ -199,6 +199,19 @@ docs: 补充发布流程中的签名说明
 
 风格问题交给 Prettier 和 ESLint，reviewer 不要在这上面花时间。
 
+## 首次推送
+
+本地仓库还没有远端。创建 GitHub 仓库后：
+
+```bash
+git remote add origin git@github.com:<org>/<repo>.git
+git push -u origin main
+git push -u origin develop
+git push origin --tags
+```
+
+推完到仓库设置里把默认分支改成 `develop`，再按下表配置保护。
+
 ## 仓库设置（一次性）
 
 规范能不能落地，取决于服务端有没有开保护。新建仓库后由管理员完成：
@@ -213,6 +226,8 @@ docs: 补充发布流程中的签名说明
 | 合并后       | 自动删除源分支                               |
 
 GitHub 路径：Settings → Branches → Add branch protection rule。
+
+分支保护、默认分支、允许的合并方式都是**服务端设置**，本地仓库无法携带；换机器或重建仓库时要重新配一遍。
 
 ## 冲突处理
 
