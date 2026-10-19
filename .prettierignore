@@ -1,0 +1,9 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+pnpm-lock.yaml
+src-tauri/Cargo.lock
+
+# shadcn 生成的原子组件保持上游原样，避免和官方 diff 打架
+src/components/ui
