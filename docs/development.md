@@ -167,9 +167,10 @@ Rust 侧额外注意：编译时间也是成本，一个依赖可能让 CI 多�
 
 ## IDE 配置
 
-项目自带 `.vscode/extensions.json`，会推荐 Rust 与 Tauri 相关插件。建议再装：
+项目自带 `.vscode/extensions.json`，打开 VS Code 会提示安装：
 
 - **rust-analyzer**：Rust 补全与跳转，必装
+- **Tauri**：`tauri.conf.json` 的 schema 校验与命令入口
 - **ESLint**：实时标出问题
 - **Prettier**：保存时自动格式化
 - **EditorConfig for VS Code**：统一换行与缩进

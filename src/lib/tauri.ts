@@ -61,6 +61,29 @@ export function useRevealWindow(): void {
 
 /** 示例：调用 Rust 侧的 greet 命令。 */
 export async function invokeGreet(name: string): Promise<string> {
+  if (!isTauri) {
+    throw new Error("浏览器预览模式下无法调用，请用 pnpm app:dev 启动");
+  }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("greet", { name });
+}
+
+export type AppInfo = {
+  /** 应用版本，来源是 tauri.conf.json */
+  version: string;
+  /** Tauri 运行时版本 */
+  tauriVersion: string;
+};
+
+/** 读取应用与运行时版本，浏览器预览下不可用。 */
+export async function getAppInfo(): Promise<AppInfo> {
+  if (!isTauri) {
+    throw new Error("浏览器预览模式下无法读取运行时信息");
+  }
+  const app = await import("@tauri-apps/api/app");
+  const [version, tauriVersion] = await Promise.all([
+    app.getVersion(),
+    app.getTauriVersion(),
+  ]);
+  return { version, tauriVersion };
 }

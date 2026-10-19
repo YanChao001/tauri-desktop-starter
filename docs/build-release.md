@@ -16,7 +16,7 @@
 pnpm version:set 1.2.0
 ```
 
-脚本会校验语义化版本格式，并同时写入上述三个文件。`Cargo.lock` 会在下次构建时自动更新。
+脚本会校验语义化版本格式，并同时写入上述三个文件；`Cargo.lock` 里的自身条目也会一并更新。
 
 > 版本号是**用户可见的契约**：自动更新靠它判断新旧，降级安装会被拒绝。已经发布过的版本号不要复用。
 
@@ -69,7 +69,7 @@ export APPLE_ID="<Apple ID>"
 export APPLE_PASSWORD="<App 专用密码>"
 export APPLE_TEAM_ID="<Team ID>"
 
-pnpm tauri build
+pnpm app:build
 ```
 
 Tauri 会自动完成签名 + 公证 + stable 打包。

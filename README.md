@@ -90,7 +90,9 @@ pnpm format       # Prettier 格式化
 ├── .github/                 # CI、PR 与 Issue 模板
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
-└── SECURITY.md
+├── SECURITY.md              # 安全邮箱为占位，新项目需替换
+├── LICENSE                  # MIT，版权方需按项目替换
+└── .env.example             # 环境变量示例，复制为 .env.local 使用
 ```
 
 ## 已经处理好的几件事

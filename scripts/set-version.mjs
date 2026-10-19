@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 同步三处版本号：package.json、tauri.conf.json、Cargo.toml（以及 Cargo.lock 中的自身条目）。
+ * 同步各处版本号：package.json、tauri.conf.json、Cargo.toml（以及 Cargo.lock 中的自身条目）。
  *
  * 用法：pnpm version:set 1.2.0
  */

@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { isTauri, openExternal } from "@/lib/tauri";
+import { getAppInfo, isTauri, openExternal } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 const THEMES = [
@@ -25,7 +25,7 @@ const LINKS = [
   { label: "Tailwind CSS", url: "https://tailwindcss.com/" },
 ];
 
-export default function SettingsPage() {
+export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [version, setVersion] = useState("—");
   const [tauriVersion, setTauriVersion] = useState("—");
@@ -34,13 +34,9 @@ export default function SettingsPage() {
     if (!isTauri) return;
     void (async () => {
       try {
-        const app = await import("@tauri-apps/api/app");
-        const [appVersion, runtimeVersion] = await Promise.all([
-          app.getVersion(),
-          app.getTauriVersion(),
-        ]);
-        setVersion(appVersion);
-        setTauriVersion(runtimeVersion);
+        const info = await getAppInfo();
+        setVersion(info.version);
+        setTauriVersion(info.tauriVersion);
       } catch (error) {
         console.error("读取版本信息失败", error);
       }
@@ -135,15 +131,13 @@ export default function SettingsPage() {
   );
 }
 
-function Row({
-  label,
-  value,
-  badge = false,
-}: {
+type RowProps = {
   label: string;
   value: string;
   badge?: boolean;
-}) {
+};
+
+function Row({ label, value, badge = false }: RowProps) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-muted-foreground">{label}</span>

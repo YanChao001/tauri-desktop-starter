@@ -19,9 +19,14 @@ fn greet(name: &str) -> String {
     format!("你好，{name}！这条消息来自 Rust。")
 }`;
 
-const TS_SNIPPET = `import { invoke } from "@tauri-apps/api/core";
+const TS_SNIPPET = `// lib/tauri.ts —— 所有 IPC 收敛在这里
+export async function invokeGreet(name: string) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("greet", { name });
+}
 
-const message = await invoke<string>("greet", { name: "超哥" });`;
+// 页面里只调用封装好的函数
+const message = await invokeGreet("超哥");`;
 
 export default function Bridge() {
   const [name, setName] = useState("超哥");
@@ -30,7 +35,7 @@ export default function Bridge() {
 
   async function handleInvoke() {
     if (!isTauri) {
-      toast.error("浏览器预览模式下无法调用，请用 pnpm tauri dev 启动");
+      toast.error("浏览器预览模式下无法调用，请用 pnpm app:dev 启动");
       return;
     }
     setPending(true);

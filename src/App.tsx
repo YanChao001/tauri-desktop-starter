@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useExternalLinks, useRevealWindow } from "@/lib/tauri";
 import Bridge from "@/pages/bridge";
 import Overview from "@/pages/overview";
-import SettingsPage from "@/pages/settings";
+import Settings from "@/pages/settings";
 
 export default function App() {
   useExternalLinks();
@@ -26,7 +26,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<Overview />} />
               <Route path="bridge" element={<Bridge />} />
-              <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>
         </HashRouter>

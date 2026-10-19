@@ -46,8 +46,8 @@ const FEATURES = [
 
 const COMMANDS = [
   { command: "pnpm install", hint: "安装依赖" },
-  { command: "pnpm tauri dev", hint: "开发模式（热更新）" },
-  { command: "pnpm tauri build", hint: "出安装包" },
+  { command: "pnpm app:dev", hint: "开发模式（热更新）" },
+  { command: "pnpm app:build", hint: "出安装包" },
 ];
 
 async function copyText(text: string) {
