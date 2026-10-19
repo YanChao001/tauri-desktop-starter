@@ -8,96 +8,94 @@
  *
  * 用法：
  *   pnpm app:portable              # 构建并收集
- *   pnpm app:portable --skip-build # 复用已有 release 产物，只做收集
+ *   pnpm app:portable --skip-build # 复用本脚本先前构建的同一 host 产物
  */
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+  assertSeparateOutput,
+  buildEnvironment,
+  portablePaths,
+} from "./portable-lib.mjs";
+import { checkVersions } from "./version.mjs";
+import { removeProjectPath } from "./fs-utils.mjs";
 
-const ROOT = resolve(import.meta.dirname, "..");
-const OUT_DIR = join(ROOT, "dist-portable");
-const SKIP_BUILD = process.argv.includes("--skip-build");
+function main() {
+  const ROOT = resolve(import.meta.dirname, "..");
+  const OUT_DIR = join(ROOT, "dist-portable");
+  const SKIP_BUILD = process.argv.includes("--skip-build");
 
-if (process.platform !== "win32") {
-  console.error("便携包脚本只处理 Windows。");
-  console.error(
-    "Linux 请直接出 AppImage（本身就是便携格式），macOS 用 .app 拖拽安装。",
-  );
-  process.exit(1);
-}
-
-function readPackageName() {
-  const toml = readFileSync(join(ROOT, "src-tauri/Cargo.toml"), "utf8");
-  const start = toml.indexOf("[package]");
-  if (start === -1) throw new Error("Cargo.toml 里没有找到 [package]");
-  const rest = toml.slice(start + "[package]".length);
-  const nextSection = rest.search(/^\[/m);
-  const section = nextSection === -1 ? rest : rest.slice(0, nextSection);
-  const match = section.match(/^name\s*=\s*"([^"]+)"/m);
-  if (!match) throw new Error("Cargo.toml 的 [package] 里没有找到 name");
-  return match[1];
-}
-
-const conf = JSON.parse(
-  readFileSync(join(ROOT, "src-tauri/tauri.conf.json"), "utf8"),
-);
-const productName = conf.productName;
-const identifier = conf.identifier;
-const version = conf.version;
-const binaryName = conf.mainBinaryName ?? readPackageName();
-
-const builtExe = join(
-  ROOT,
-  "src-tauri",
-  "target",
-  "release",
-  `${binaryName}.exe`,
-);
-const portableExe = join(OUT_DIR, `${productName}.exe`);
-
-/**
- * 从 GUI、IDE 任务或 CI 里启动时，PATH 往往没有 rustup 的 ~/.cargo/bin，
- * Tauri CLI 会报 "cargo metadata: program not found"。这里兜底补上。
- */
-function buildEnv() {
-  const env = { ...process.env };
-  const cargoBin = join(homedir(), ".cargo", "bin");
-  if (existsSync(join(cargoBin, "cargo.exe"))) {
-    env.PATH = `${cargoBin};${env.PATH ?? ""}`;
+  if (process.argv.slice(2).some((arg) => arg !== "--skip-build")) {
+    console.error("用法: pnpm app:portable [--skip-build]");
+    process.exit(1);
   }
-  return env;
-}
 
-if (!SKIP_BUILD) {
-  // --no-bundle：跳过 msi/nsis 打包，只保留编译产物。
-  // 顺带的好处是不依赖 WiX / NSIS 工具链，离线也能出包。
-  execSync("pnpm tauri build --no-bundle", {
+  if (process.platform !== "win32") {
+    console.error("便携包脚本只处理 Windows。");
+    console.error(
+      "Linux 请直接出 AppImage（本身就是便携格式），macOS 用 .app 拖拽安装。",
+    );
+    process.exit(1);
+  }
+
+  const conf = JSON.parse(
+    readFileSync(join(ROOT, "src-tauri/tauri.conf.json"), "utf8"),
+  );
+  const identifier = conf.identifier;
+  const version = checkVersions(ROOT);
+  const env = buildEnvironment();
+  const target = execFileSync("rustc", ["-vV"], {
     cwd: ROOT,
-    stdio: "inherit",
-    env: buildEnv(),
-  });
-}
+    env,
+    encoding: "utf8",
+  })
+    .match(/^host: (.+)$/m)?.[1]
+    ?.trim();
+  const metadata = JSON.parse(
+    execFileSync(
+      "cargo",
+      ["metadata", "--no-deps", "--locked", "--format-version", "1"],
+      { cwd: join(ROOT, "src-tauri"), env, encoding: "utf8" },
+    ),
+  );
+  const { productName, builtExe, portableExe } = portablePaths(
+    ROOT,
+    conf,
+    metadata,
+    target,
+  );
 
-if (!existsSync(builtExe)) {
-  console.error(`找不到编译产物：${builtExe}`);
-  console.error("先跑一次 pnpm app:portable（不要加 --skip-build）。");
-  process.exit(1);
-}
+  if (!SKIP_BUILD) {
+    // --no-bundle：跳过 msi/nsis 打包，只保留编译产物。
+    // 顺带的好处是不依赖 WiX / NSIS 工具链，离线也能出包。
+    // 显式指定本机 target，覆盖 Cargo 的隐式交叉编译设置，保证收集路径一致。
+    execSync(`pnpm tauri build --no-bundle --target ${target}`, {
+      cwd: ROOT,
+      stdio: "inherit",
+      env,
+    });
+  }
 
-rmSync(OUT_DIR, { recursive: true, force: true });
-mkdirSync(OUT_DIR, { recursive: true });
-copyFileSync(builtExe, portableExe);
+  if (!existsSync(builtExe)) {
+    console.error(`找不到编译产物：${builtExe}`);
+    console.error("先跑一次 pnpm app:portable（不要加 --skip-build）。");
+    process.exit(1);
+  }
 
-const readme = `${productName} 便携版 v${version}
+  assertSeparateOutput(builtExe, OUT_DIR);
+  removeProjectPath(ROOT, "dist-portable");
+  mkdirSync(OUT_DIR, { recursive: true });
+  copyFileSync(builtExe, portableExe);
+
+  const readme = `${productName} 便携版 v${version}
 ${"=".repeat(40)}
 
 这是免安装版本：满足运行要求后，双击 exe 即可运行，不需要管理员权限。
@@ -120,9 +118,22 @@ ${"=".repeat(40)}
   对外分发请按 docs/build-release.md 配置代码签名。
 `;
 
-writeFileSync(join(OUT_DIR, "使用说明.txt"), readme, "utf8");
+  writeFileSync(join(OUT_DIR, "使用说明.txt"), readme, "utf8");
 
-const sizeMb = (statSync(portableExe).size / 1024 / 1024).toFixed(1);
-console.log(`\n便携版已生成：dist-portable/${productName}.exe（${sizeMb} MB）`);
-console.log("目录内容：exe + 使用说明.txt，可直接压缩分发。");
-console.log("注意：目标机器需要 WebView2 运行时；数据仍写入 AppData。");
+  const sizeMb = (statSync(portableExe).size / 1024 / 1024).toFixed(1);
+  console.log(
+    `\n便携版已生成：dist-portable/${productName}.exe（${sizeMb} MB）`,
+  );
+  console.log("目录内容：exe + 使用说明.txt，可直接压缩分发。");
+  console.log("注意：目标机器需要 WebView2 运行时；数据仍写入 AppData。");
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`便携包生成失败：${error.message}`);
+  if (["EPERM", "EBUSY", "EACCES"].includes(error.code)) {
+    console.error("请关闭正在运行的便携版，并检查输出目录的写入权限后重试。");
+  }
+  process.exitCode = 1;
+}

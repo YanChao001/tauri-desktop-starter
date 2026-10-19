@@ -1,5 +1,5 @@
 import { ThemeProvider } from "next-themes";
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useExternalLinks } from "@/hooks/use-external-links";
@@ -9,13 +9,17 @@ import { I18nProvider } from "@/providers/i18n";
 import { SettingsProvider } from "@/providers/settings";
 import { APP_ROUTES } from "@/routes";
 
-export default function App() {
+function AppEffects() {
   useExternalLinks();
   useRevealWindow();
+  return null;
+}
 
+export default function App() {
   return (
     <SettingsProvider>
       <I18nProvider>
+        <AppEffects />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -35,6 +39,7 @@ export default function App() {
                       element={<Page />}
                     />
                   ))}
+                  <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
               </Routes>
             </HashRouter>

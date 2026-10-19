@@ -1,7 +1,7 @@
 # Tauri Desktop Starter
 
 一个可以直接拿去开新项目的桌面应用基座：Tauri 2 + React 19 + TypeScript + Tailwind 4 + shadcn/ui。
-界面是完整的，桌面端该踩的坑已经处理掉，剩下的位置留给你写业务。
+提供可运行的演示界面、系统能力封装、测试和发布流程。业务能力、自动更新与生产签名需要按产品需求接入。
 
 ## 技术栈
 
@@ -39,18 +39,19 @@
 
 ## 快速开始
 
-前置：Node 22.22.2（见 `.nvmrc`；其他支持版本见 `package.json > engines`）、pnpm 12+（`packageManager` 字段已锁定）、Rust 1.99.1（`rustup` 自动安装，见 `rust-toolchain.toml`）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
+前置版本以 [`.nvmrc`](./.nvmrc)、[`package.json`](./package.json) 的 `packageManager` / `engines` 和 [`rust-toolchain.toml`](./rust-toolchain.toml) 为准。Windows 还需 MSVC Build Tools 与 WebView2；macOS / Linux 的系统依赖见 [开发指南](./docs/development.md#环境要求)。
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm app:dev      # 开发模式，热更新
-pnpm app:build    # 产出安装包（msi / nsis）
+pnpm app:build    # 按当前平台产出安装包；Windows 为 msi / nsis
 pnpm app:portable # 产出免安装便携版（Windows 单文件 exe）
-pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构建
+pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致性、前端构建
 ```
 
 `pnpm dev` 只起前端（浏览器里能看界面，但 `invoke` 不可用）。
-`pnpm test` 跑单元测试，`pnpm clean` 删除 `dist`、`dist-portable` 与整个 `src-tauri/target`（通常 1 GB 以上）。
+`pnpm test` 跑单元测试，`pnpm clean` 删除 `dist`、`dist-portable`、`coverage` 与默认 `src-tauri/target`。自定义 Cargo 目标目录不在清理范围内。
+`pnpm verify` 不编译 Rust；修改原生端后还需运行 [Rust 检查](./docs/testing.md#rust-测试)。
 
 ## 界面能力
 
@@ -116,45 +117,48 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 │   └── adr/                 # 架构决策记录
 ├── scripts/
 │   ├── clean.mjs            # 清理 dist 与 Rust 编译缓存
-│   └── set-version.mjs      # 同步四处版本号
+│   ├── portable.mjs         # Windows 便携版构建与收集
+│   ├── set-version.mjs      # 同步四处版本号
+│   ├── check-version.mjs    # 版本一致性与发布标签校验
+│   └── version.mjs          # 共用版本解析与校验
 ├── vitest.config.ts         # 测试配置，alias 复用 vite.config.ts
-├── rust-toolchain.toml      # 固定 stable，自动装 rustfmt / clippy
+├── rust-toolchain.toml      # 固定具体 Rust 版本，自动装 rustfmt / clippy
 ├── .github/                 # CI、发布流水线、依赖更新、PR 与 Issue 模板
 ├── CONTRIBUTING.md
-├── SECURITY.md              # 安全邮箱为占位，新项目需替换
+├── SECURITY.md              # 安全报告政策，派生项目需配置真实渠道
 ├── LICENSE                  # MIT，版权方需按项目替换
 └── .env.example             # 环境变量示例，复制为 .env.local 使用
 ```
 
 ## 已经处理好的几件事
 
-这些不是"顺手加的"，每一个都对应一个真实会踩的坑：
+以下行为已在源码中实现；涉及系统 WebView 的交互仍需在目标平台验证：
 
 1. **启动不闪白屏** —— 窗口在 `tauri.conf.json` 里是 `visible: false`，前端首帧渲染后调用 `show()` 才出现（`useRevealWindow`）。Rust 侧另有 3 秒兜底线程，防止前端抛异常导致窗口永远不出现。
 2. **外链不劫持** —— 页面里所有 `http(s)` 链接被 `useExternalLinks` 拦截，交给系统浏览器打开。否则用户点个文档链接，应用就"变成"了浏览器且回不去。
-3. **单实例** —— `tauri-plugin-single-instance` 已注册（紧跟日志插件、先于其余插件），重复启动时聚焦已有窗口，而不是开第二个。
+3. **单实例** —— 桌面端首先注册 `tauri-plugin-single-instance`，重复启动时还原并聚焦已有窗口。
 4. **窗口位置记忆** —— `tauri-plugin-window-state` 自动保存/恢复窗口尺寸与位置。
 5. **HashRouter 而非 BrowserRouter** —— 生产环境前端跑在自定义协议下，BrowserRouter 刷新或深链会 404。
 6. **体积优化** —— `Cargo.toml` 的 release 档已开 `lto`、`codegen-units=1`、`opt-level="s"`、`strip`、`panic="abort"`。
-7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
+7. **能力白名单** —— `capabilities/default.json` 分配核心与插件权限，外链限定为 `http(s)`。自定义命令的权限与入参校验见 [安全规范](./docs/security.md#能力最小化)。
 8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
-9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`）。release 构建没有控制台，用户报问题时这是唯一能拿到的线索。
-10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道。开发模式下前端由 Vite dev server 提供（外部 URL），Tauri 不向它注入 CSP，所以 HMR 不受影响；`devCsp` 为 `null` 时，开发构建会回退到生产 `csp`（Tauri 源码 `AppManager::csp()` 的行为），**不等于「开发模式没有 CSP」**。CSP 限制资源加载与网络连接；命令仍需独立校验入参。
+9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`），保留轮换归档；位置见 [排障手册](./docs/troubleshooting.md#先看日志)。
+10. **生产 CSP** —— 仅开放界面所需资源与 IPC 通道；增加远端 API 时需同步调整域名范围，见 [CSP 说明](./docs/security.md#csp)。
 
 ## 拿它开新项目
 
-按顺序改这几处，改完 `rm -rf node_modules dist src-tauri/target && pnpm install`：
+按顺序修改以下身份信息，再运行 `pnpm install`、`pnpm build`、`cargo check --manifest-path src-tauri/Cargo.toml`，更新对应锁文件并审查差异，最后执行 `pnpm verify`。仅在旧构建缓存导致问题时执行 `pnpm clean`：
 
 1. `package.json` → `name`
 2. `src-tauri/Cargo.toml` → `package.name`、`[lib] name`（下划线命名）、`description`、`authors`
 3. `src-tauri/src/main.rs` → 把 `tauri_desktop_starter_lib::run()` 换成新的 lib 名
-4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`、`bundle.copyright`（安装器页脚）
+4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`、`bundle.copyright`（安装器页脚）；窗口标题也要同步到 `tauri.macos.conf.json`
 5. `index.html` → `<title>` 与 favicon（引用的是 `public/tauri.svg`）
-6. `src/layouts/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
+6. `src/providers/i18n.tsx` → 品牌与双语文案；检查 `title-bar.tsx`、`app-shell.tsx` 中的外壳展示
 7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`；安装器外观图在 `src-tauri/installer/`，按现有尺寸替换（页眉 150×57、侧栏 164×314、WiX banner 493×58 / dialog 493×312），欢迎页/完成页文案在同目录 `installer.nsi` 的 `CUSTOM BRANDING` 段
 8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
-9. `SECURITY.md` → 把 `security@example.com` 换成真实的安全邮箱
-10. 全局收尾：`grep -ri starter` 过一遍，清理 docs 里残留的产物名与日志路径（`tauri-desktop-starter.exe`、`com.starter.desktop`）
+9. `SECURITY.md` → 配置实际可用的私密报告渠道；`docs/code-signing-policy.md` → 替换维护者并完成真实签名配置
+10. 全局收尾：`rg -n -i starter --glob '!pnpm-lock.yaml' --glob '!src-tauri/Cargo.lock'`，检查存储键、文案、产物名、日志路径以及 `.signpath/artifact-configuration.xml` 的产品名；不要把原项目的远端地址与标签推入新仓库
 
 > `identifier` 要唯一（形如 `com.公司.产品`），升级安装和 WebView 数据目录都依赖它。一旦发布就不要再改。
 
@@ -171,17 +175,22 @@ pnpm dlx shadcn@latest add dialog table form select
 `src/styles/shadcn.css`，逐字复制自 `shadcn@4.22.0`；升级风格时整体覆盖该文件即可。
 如果 CLI 在 `index.css` 里自动加回 `@import "shadcn/tailwind.css"`，删掉那一行。
 
-**加一个 Rust 命令**（三步，少一步就会报 "command not found"）
+**加一个 Rust 命令**：实现命令、在 handler 注册、在前端边界封装三步缺一不可。以下示例读取应用自己的配置文件，页面需要处理文件不存在等错误：
 
 ```rust
 // 1. src-tauri/src/commands.rs
 use tauri::Manager;
 
 #[tauri::command]
-pub fn read_config(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn read_config(app: tauri::AppHandle) -> Result<String, String> {
     // 数据目录随系统变化，不要用相对路径或 exe 所在目录
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    std::fs::read_to_string(dir.join("config.json")).map_err(|e| e.to_string())
+    let dir = app.path().app_data_dir().map_err(|_| "无法定位应用数据目录".to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::read_to_string(dir.join("config.json"))
+            .map_err(|_| "无法读取配置文件".to_owned())
+    })
+    .await
+    .map_err(|_| "读取配置任务失败".to_owned())?
 }
 ```
 
@@ -193,6 +202,7 @@ pub fn read_config(app: tauri::AppHandle) -> Result<String, String> {
 ```ts
 // 3. src/lib/tauri.ts —— 前端只通过这里调用
 export async function readConfig(): Promise<string> {
+  if (!isTauri()) throw new Error("请用 pnpm app:dev 启动");
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("read_config");
 }
@@ -209,7 +219,7 @@ export async function readConfig(): Promise<string> {
 pnpm tauri add dialog
 ```
 
-会自动改 `Cargo.toml`、`lib.rs`、`capabilities/default.json` 和 `package.json`。
+CLI 会修改插件依赖与初始化配置；运行后审查差异，按实际使用范围调整 `capabilities/default.json`，并将前端调用封装在 `src/lib/tauri.ts`。
 
 **自动更新**：`pnpm tauri add updater`，然后配置签名公钥与 `bundle.createUpdaterArtifacts`，配合 GitHub Releases 使用。
 
@@ -221,28 +231,18 @@ pnpm tauri add dialog
 - macOS：`dmg/*.dmg`、`macos/*.app`
 - Linux：`deb/*.deb`、`appimage/*.AppImage`
 
-本机（Windows x64，release 档）实测：
+以上路径对应默认 Cargo 目标目录；CI 显式指定编译目标时还会包含目标三元组。体积与构建耗时取决于依赖、工具链、平台和签名配置，以实际产物为准。
 
-| 产物                                   | 体积    |
-| -------------------------------------- | ------- |
-| 可执行文件 `tauri-desktop-starter.exe` | 3.5 MB  |
-| MSI 安装包                             | 2.38 MB |
-| NSIS 安装包                            | 1.41 MB |
-
-> 安装包体积包含自定义安装器位图（NSIS 页眉/侧栏、WiX banner/dialog）；不需要品牌化时可以删掉对应配置，MSI 会小约 0.45 MB。
-
-**便携版（免安装）**：`pnpm app:portable` 执行 `tauri build --no-bundle`，把单文件 exe 与一份使用说明收集到 `dist-portable/`（已在 .gitignore 中）。
+**便携版（免安装）**：`pnpm app:portable` 按本机 Rust host target 执行 `tauri build --no-bundle --target <host>`，从 Cargo 实际目标目录的 `<host>/release/` 收集 exe 与使用说明到 `dist-portable/`。`--skip-build` 只复用同一 host 目录下已有产物，不能代替版本与来源检查。
 
 **安装器外观**：NSIS 安装器已做基础品牌化——中文界面（`SimpChinese` / `English`）、页眉与侧栏位图、安装器图标，页脚取自 `bundle.copyright`。位图在 `src-tauri/installer/`，替换后重新打包即可；MSI 使用同目录下的 WiX banner / dialog 位图。
 
 Tauri 的 Windows 打包目标只有 msi / nsis，没有官方 portable 目标；但前端资源在编译期已嵌进二进制，`--no-bundle` 产出的 exe 本身就是便携程序。两点限制：目标机器需要 WebView2 运行时（Win11 自带）；窗口位置与日志仍写 AppData，不随 exe 移动。
 
-首次 `pnpm app:build` 需要编译全部 Rust 依赖，约 7 分钟；之后改前端不动 Rust，几十秒即可。
-`src-tauri/target` 会占 1.5 GB 左右（编译缓存，已在 .gitignore 中）。
+首次 `pnpm app:build` 需要编译全部 Rust 依赖，明显慢于增量构建。`src-tauri/target` 是编译缓存，已被 Git 忽略，需要释放磁盘时使用 `pnpm clean`。
 
 ## 说明
 
-- 项目本身不依赖 bun，bun 只在生成脚手架时用过。
 - 字体用的是 Geist Variable（随包内置），只覆盖拉丁字符，中文走系统字体。
 - 需要改主题色，改 `src/index.css` 里的 CSS 变量即可，组件不用动。
 - 许可：MIT，全文见 [LICENSE](./LICENSE)。复制成新项目后，记得把版权方换成自己的名字或公司。

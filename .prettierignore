@@ -7,7 +7,7 @@ src-tauri/gen
 pnpm-lock.yaml
 src-tauri/Cargo.lock
 
-# shadcn 生成的原子组件保持上游原样，避免和官方 diff 打架
+# shadcn 原子组件沿用上游格式，局部行为修复不触发批量格式化
 src/components/ui
 
 # 内置的 shadcn 基础样式，逐字复制自上游，同样不参与格式化

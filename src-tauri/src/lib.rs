@@ -11,8 +11,20 @@ use tauri_plugin_window_state::StateFlags;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        // 日志最先注册：后面任何插件或启动逻辑出错，都要能被记下来
+    let builder = tauri::Builder::default();
+
+    // 单实例必须最先注册，让重复启动在初始化日志等共享资源前退出。
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    let builder = builder
+        // 其余插件初始化前启用日志，保留启动失败的排障信息
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -31,21 +43,7 @@ pub fn run() {
                 // 默认是 UTC，与用户反馈问题时的本地时间差 8 小时，排查容易对不上
                 .timezone_strategy(TimezoneStrategy::UseLocal)
                 .build(),
-        );
-
-    // 单实例：重复启动时聚焦已有窗口，而不是再开一个（仅桌面端）。
-    // 官方要求它尽早注册——只排在日志之后，先于其余插件，
-    // 避免插件初始化期间第二个实例已经起来
-    #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-    }));
-
-    let builder = builder
+        )
         // 装饰由平台配置决定；显示时机由前端首帧和下方兜底决定。
         // 插件默认会恢复旧的 decorations，并在窗口 ready 时直接 show()
         // （没有存档时也会），因此这两项不能参与状态恢复。

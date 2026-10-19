@@ -5,17 +5,18 @@
 ## 最短路径
 
 ```bash
-# 1. 环境：Node（以 .nvmrc 为准，当前 22.22.2）/ pnpm 12+ / Rust（以 rust-toolchain.toml 为准，当前 1.99.1）/ VS C++ 工具链
+# 1. 环境版本以 .nvmrc、package.json 和 rust-toolchain.toml 为准
 #    详细要求见 docs/development.md
 
 # 2. 拉起项目
 git clone <repo-url>
 cd tauri-desktop-starter
-pnpm install
+pnpm install --frozen-lockfile
 pnpm app:dev
 
 # 3. 开分支（从 develop 切，不要从 main）
-git switch develop && git pull --ff-only
+git switch develop
+git pull --ff-only
 git switch -c feature/42-command-palette
 
 # 4. 写代码，提交前跑前端检查；Rust 检查见 docs/testing.md

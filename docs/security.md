@@ -20,18 +20,7 @@
 
 自定义 Rust 命令另有规则：本项目没有启用应用命令 ACL，`generate_handler!` 注册的 `greet` 默认可由本地应用前端调用。需要按窗口限制自定义命令时，先通过 `tauri_build::AppManifest::commands` 定义应用 ACL，再声明权限并分配到 capability。入参校验始终放在命令内部。
 
-```json
-{
-  "permissions": [
-    "core:default",
-    "core:window:allow-show",
-    "core:window:allow-set-focus",
-    "opener:allow-open-url",
-    "opener:allow-default-urls",
-    "window-state:default"
-  ]
-}
-```
+完整权限列表以 [`default.json`](../src-tauri/capabilities/default.json) 为准：主窗口只获得所需窗口操作、应用信息和 `http(s)` 外链能力。窗口状态由 Rust 插件自动管理，无需把插件的前端保存 / 恢复 API 一并授权。自定义命令规则参考 [Tauri 应用命令权限](https://v2.tauri.app/security/capabilities/)。
 
 规则：
 
@@ -42,25 +31,14 @@
 
 ## CSP
 
-生产 CSP 已内建在 `tauri.conf.json` 中，**模板默认就是收紧状态**，不需要发布前再补：
-
-```json
-{
-  "app": {
-    "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
-      "devCsp": null
-    }
-  }
-}
-```
+生产规则在 [`tauri.conf.json > app.security`](../src-tauri/tauri.conf.json)，限制脚本、字体、图片与网络来源；新增资源来源时在同一提交调整并验证。
 
 说明：
 
 - `style-src 'unsafe-inline'` 是必需的：Radix 的浮层组件通过 `style` 属性做定位。
 - `connect-src` 里保留 `ipc:` 与 `http://ipc.localhost`，否则 `invoke` 会被拦。
 - `devCsp: null` 的准确含义：开发构建里 **回退到上面的生产 `csp`**（Tauri 源码 `AppManager::csp()`），不是「开发模式没有 CSP」。开发者实际感觉不到限制，是因为 `pnpm app:dev` 的页面由 Vite dev server（外部 URL）提供，Tauri 只对 `tauri://` 协议下的 HTML 注入 CSP。
-- 因此一旦把 `build.devUrl` 置空、改成在 Tauri 里直接加载 `dist`，生产 CSP 会在开发模式生效：此时 `connect-src` 需要补 `ws://localhost:1421`（HMR），或显式配置 `devCsp`。
+- 改成加载本地 `dist` 时应重新验证 CSP；构建产物本身不使用 Vite HMR。若另行接入开发资源，按实际地址配置 `devCsp`，不要预先放开固定 WebSocket 端口。
 - 需要访问外部 API 时，在 `connect-src` 里精确列出域名，不要写 `*`。
 
 改完 CSP 后必须完整跑一遍应用：白屏、图标不显示、字体加载失败，通常都是 CSP 拦的。
@@ -69,24 +47,9 @@
 
 前端传来的任何东西都不可信，即使是你自己写的界面。
 
-```rust
-#[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
-    let root = std::env::temp_dir()
-        .canonicalize()
-        .map_err(|e| format!("允许目录无效: {e}"))?;
-    let target = std::path::Path::new(&path)
-        .canonicalize()
-        .map_err(|e| format!("路径无效: {e}"))?;
+现有 [`greet`](../src-tauri/src/commands.rs) 示范了 Rust 边界校验。新增文件命令时优先接收应用内资源标识或限定的相对路径，将允许目录固定到应用数据目录；不要直接暴露整个临时目录或任意绝对路径。
 
-    // 限制在允许的目录内，防止 ../../ 穿越
-    if !target.starts_with(&root) {
-        return Err("无权访问该路径".into());
-    }
-
-    std::fs::read_to_string(&target).map_err(|e| e.to_string())
-}
-```
+访问已有文件时规范化根目录与目标，再按路径组件检查目标位于根目录中；同时考虑符号链接、检查与打开之间的竞态、文件大小和阻塞 I/O。简单字符串前缀检查不能建立文件访问边界。
 
 必查项：路径穿越（`..`）、空值、超长字符串、非法字符、数值范围。
 
@@ -118,13 +81,15 @@ cargo tree -d        # 检查重复依赖
 - 新增依赖按 [开发指南](./development.md#新增依赖的评审标准) 的三条标准评估。
 - 出现高危漏洞时优先升级；无法升级要记录原因与缓解措施。
 
-### 当前间接依赖告警（2026-10-19）
+### 已记录的间接依赖告警
 
-使用当日 RustSec 数据库扫描锁文件中的 458 个 crate，未报告阻断性漏洞，仍有以下 5 项信息告警。`cargo audit` 退出码为 0 不表示没有告警：
+最近核验（2026-10-19）：官方 npm 审计未报告已知漏洞；使用刚刷新的官方 RustSec 数据库（`999ec89`）检查当前 Cargo 锁文件，`cargo-audit 0.22.2` 退出码为 0，仍报告下表 5 项信息告警。退出码为 0 不代表这些告警已消除。
+
+以下是既有审计记录中需要跟踪的上游链路，不能代替对当前锁文件的重新扫描。`cargo audit` 的信息告警可能不影响退出码，审查时同时查看输出与对应 advisory：
 
 | 依赖                                                            | 告警                                                                                                                                                                                                                   | 来源与处理约束                                                                                                                         |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `glib 0.18.5`                                                   | [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)，`VariantStrIter` 内存安全问题                                                                                                              | Linux 的 `tauri → gtk 0.18 → glib 0.18` 链路；修复版本为 ≥ 0.20，不能在当前 GTK 版本约束内直接升级                                     |
+| `glib 0.18`                                                     | [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)，`VariantStrIter` 内存安全问题                                                                                                              | Linux 的 Tauri / GTK 间接依赖；需跟踪上游兼容升级，不能用当前应用未直接调用该 API 证明安全                                             |
 | `proc-macro-error 1.0.4`                                        | [RUSTSEC-2024-0370](https://rustsec.org/advisories/RUSTSEC-2024-0370.html)，停止维护                                                                                                                                   | 来自 `gtk3-macros` / `glib-macros`，属于构建期依赖，需随 GTK 上游迁移                                                                  |
 | `zvariant 5.15.1`、`zvariant_derive 5.15.1`、`zbus_names 4.3.5` | [RUSTSEC-2026-0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)、[0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html)、[0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html)，停止独立维护 | 来自 `tauri-plugin-opener 2.7.2` 与 `tauri-plugin-single-instance 2.5.4 → zbus 5`；这些库已合入 zbus 6，需由两个插件上游完成主版本迁移 |
 
@@ -145,7 +110,7 @@ cargo tree -d        # 检查重复依赖
 | 令牌、密码 | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文     |
 | 临时文件   | `appCacheDir`                         | 退出时清理   |
 
-界面里要提供「清除本地数据」入口，并说明清除范围——用户有权知道数据在哪。
+当前模板只提供外观偏好重置，不会删除窗口存档、日志或 WebView 数据。接入业务数据后需设计清除入口并说明范围，避免把「重置外观」描述成删除全部用户数据。
 
 ## 日志
 

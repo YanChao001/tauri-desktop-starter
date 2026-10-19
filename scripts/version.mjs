@@ -23,7 +23,27 @@ export function validateVersion(version, config) {
   if (includes("nsis") && core.some((part) => part > 65535n)) {
     throw new Error("NSIS 版本号各段不能大于 65535");
   }
-  if (includes("msi") && !bundle?.windows?.wix?.version) {
+  if (includes("msi")) {
+    const wixVersion = bundle?.windows?.wix?.version;
+    if (wixVersion !== undefined && wixVersion !== null) {
+      const wixParts =
+        typeof wixVersion === "string" &&
+        wixVersion.match(/^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$/);
+      if (
+        !wixParts ||
+        wixParts
+          .slice(1)
+          .some(
+            (part, index) =>
+              part !== undefined && BigInt(part) > (index < 2 ? 255n : 65535n),
+          )
+      ) {
+        throw new Error(
+          "bundle.windows.wix.version 必须是有效的 MSI 版本：major.minor.patch[.build]（255.255.65535[.65535]）",
+        );
+      }
+      return;
+    }
     if (core[0] > 255n || core[1] > 255n || core[2] > 65535n) {
       throw new Error(
         "MSI 版本号必须满足 major <= 255、minor <= 255、patch <= 65535",
@@ -73,31 +93,24 @@ export function readVersionFiles(root) {
       section: packageSection[0],
     },
   ];
-  let lock;
-  try {
-    lock = read(lockPath);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+  const lock = read(lockPath);
+  const sections = lock.matchAll(
+    /^\[\[package\]\][^\S\r\n]*\r?\n([\s\S]*?)(?=^\[\[|(?![\s\S]))/gm,
+  );
+  const ownPackages = [...sections].filter(
+    (section) =>
+      tomlValue(section[1], "name", lockPath) === packageName &&
+      !/^\s*source\s*=/m.test(section[1]),
+  );
+  if (ownPackages.length !== 1) {
+    throw new Error(`Cargo.lock 中必须恰好有一个本地包 ${packageName}`);
   }
-  if (lock !== undefined) {
-    const sections = lock.matchAll(
-      /^\[\[package\]\][^\S\r\n]*\r?\n([\s\S]*?)(?=^\[\[|(?![\s\S]))/gm,
-    );
-    const ownPackages = [...sections].filter(
-      (section) =>
-        tomlValue(section[1], "name", lockPath) === packageName &&
-        !/^\s*source\s*=/m.test(section[1]),
-    );
-    if (ownPackages.length !== 1) {
-      throw new Error(`Cargo.lock 中必须恰好有一个本地包 ${packageName}`);
-    }
-    files.push({
-      path: lockPath,
-      version: tomlValue(ownPackages[0][1], "version", lockPath),
-      content: lock,
-      section: ownPackages[0][0],
-    });
-  }
+  files.push({
+    path: lockPath,
+    version: tomlValue(ownPackages[0][1], "version", lockPath),
+    content: lock,
+    section: ownPackages[0][0],
+  });
   return { config, files };
 }
 

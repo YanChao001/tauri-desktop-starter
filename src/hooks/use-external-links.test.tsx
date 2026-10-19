@@ -1,11 +1,15 @@
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 
 import { openExternal } from "@/lib/tauri";
 import { useExternalLinks } from "./use-external-links";
 
 vi.mock("@/lib/tauri", () => ({
   openExternal: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/providers/i18n", () => ({
+  useI18n: () => ({ t: (key: string) => key }),
 }));
 
 vi.mock("sonner", () => ({
@@ -27,6 +31,7 @@ describe("useExternalLinks", () => {
   afterEach(() => {
     // vitest 未开 globals，Testing Library 不会自动 cleanup，必须显式卸载
     cleanup();
+    vi.restoreAllMocks();
     document.body.innerHTML = "";
   });
 
@@ -95,11 +100,24 @@ describe("useExternalLinks", () => {
     const { unmount } = renderHook(() => useExternalLinks());
     unmount();
     document.body.innerHTML = '<a href="https://example.com">文档</a>';
+    getAnchor().addEventListener("click", (event) => event.preventDefault());
 
     getAnchor().dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
 
     expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it("打开失败时使用当前语言的错误提示", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(openExternal).mockRejectedValueOnce(new Error("denied"));
+    renderHook(() => useExternalLinks());
+    document.body.innerHTML = '<a href="https://example.com">文档</a>';
+    getAnchor().dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    await Promise.resolve();
+    expect(toast.error).toHaveBeenCalledWith("common.openFailed");
   });
 });

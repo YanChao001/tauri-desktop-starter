@@ -80,11 +80,13 @@ export function TitleBar() {
     if (!native) return;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
+    let request = 0;
 
     async function syncMaximized() {
+      const current = ++request;
       try {
         const value = await isWindowMaximized();
-        if (!cancelled) setMaximized(value);
+        if (!cancelled && current === request) setMaximized(value);
       } catch (error) {
         console.warn("读取窗口状态失败", error);
       }

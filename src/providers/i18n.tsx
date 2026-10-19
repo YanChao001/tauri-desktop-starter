@@ -57,8 +57,8 @@ const DICT = {
     "无法打开链接，请手动复制地址到浏览器",
     "Unable to open the link. Copy the address into your browser.",
   ],
-  "common.reset": ["恢复默认设置", "Reset to defaults"],
-  "common.resetDone": ["已恢复默认设置", "Settings reset"],
+  "common.reset": ["重置外观", "Reset appearance"],
+  "common.resetDone": ["已恢复默认外观", "Appearance reset"],
   "common.sampleData": ["示例数据", "Sample data"],
   "common.cancel": ["取消", "Cancel"],
   "common.close": ["关闭", "Close"],
@@ -346,8 +346,8 @@ const DICT = {
     "Opens in your default browser",
   ],
   "settings.resetHint": [
-    "只清空本应用的界面偏好，不影响业务数据",
-    "Only clears UI preferences, not business data",
+    "恢复默认主题和界面样式，保留当前语言，不影响业务数据",
+    "Restores the theme and interface preferences, keeping your language and business data",
   ],
 
   // ---- 桥接页 ----

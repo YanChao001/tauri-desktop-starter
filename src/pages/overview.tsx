@@ -139,12 +139,12 @@ function Sparkline({ data }: { data: readonly number[] }) {
   );
 }
 
-async function copyCommand(command: string, message: string) {
+async function copyCommand(command: string, message: string, failure: string) {
   try {
     await copyText(command);
     toast.success(message);
   } catch {
-    toast.error("复制失败");
+    toast.error(failure);
   }
 }
 
@@ -257,7 +257,11 @@ export default function Overview() {
                   <span className="text-muted-foreground">{t(item.key)}</span>
                   <span className="font-mono">{item.value}%</span>
                 </div>
-                <Progress value={item.value} className="h-1.5" />
+                <Progress
+                  value={item.value}
+                  className="h-1.5"
+                  aria-label={t(item.key)}
+                />
               </div>
             ))}
             <div className="flex items-center gap-1.5 pt-1 text-[11px] text-muted-foreground">
@@ -292,7 +296,11 @@ export default function Overview() {
                 size="icon-xs"
                 aria-label={`${t("common.copy")} ${item.command}`}
                 onClick={() =>
-                  void copyCommand(item.command, t("common.copied"))
+                  void copyCommand(
+                    item.command,
+                    t("common.copied"),
+                    t("common.copyFailed"),
+                  )
                 }
               >
                 <CopyIcon />

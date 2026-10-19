@@ -7,6 +7,9 @@ on:
     - cron: "0 2 * * 1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pnpm-audit:
     name: npm 依赖审计
@@ -18,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
 
       # 只读锁文件，不需要安装依赖。发现漏洞时退出码非零
       - name: pnpm audit
@@ -29,6 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: 安装 Rust 工具链
+        run: rustup toolchain install
 
       # 直接使用 cargo-audit 的退出码，发现漏洞时让 job 失败。
       # audit-check action 默认查仓库根目录，且报告 issue/check 需要额外写权限。

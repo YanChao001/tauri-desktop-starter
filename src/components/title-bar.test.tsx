@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -74,5 +74,20 @@ describe("TitleBar 窗口订阅", () => {
     const handler = vi.mocked(onWindowResized).mock.calls.at(-1)?.[0];
     await act(async () => handler?.());
     expect(warn).toHaveBeenCalledWith("读取窗口状态失败", expect.any(Error));
+  });
+
+  it("较慢的旧查询不会覆盖最近一次 resize 的窗口状态", async () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    const pending: Array<(value: boolean) => void> = [];
+    vi.mocked(isWindowMaximized).mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    renderTitleBar();
+    const handler = vi.mocked(onWindowResized).mock.calls.at(-1)?.[0];
+    act(() => handler?.());
+    await act(async () => pending.at(-1)?.(true));
+    expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
+    await act(async () => pending.forEach((resolve) => resolve(false)));
+    expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
   });
 });

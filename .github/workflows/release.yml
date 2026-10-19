@@ -18,8 +18,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: 校验发布代码
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+
   build:
     name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
+    needs: validate
     strategy:
       # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
       fail-fast: false
@@ -49,14 +65,15 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          # 与 rust-toolchain.toml 一致；交叉编译 target 必须安装在实际使用的工具链上。
-          toolchain: "1.99.1"
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: 安装 Rust 工具链
+        run: rustup toolchain install
+
+      - name: 安装 macOS 编译目标
+        if: matrix.platform == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -112,9 +129,9 @@ jobs:
             echo "已注入自动更新签名密钥"
           fi
 
-      # 仅适用于 2023-06-01 前签发、仍可导出 PFX 的老证书。
-      # 新证书私钥必须在硬件（USB Token / 云 HSM）中，不能导出 PFX，
-      # 请改用 bundle.windows.signCommand（Azure Artifact Signing 等），见 docs/build-release.md。
+      # PFX 链路只用于仍有效、允许导出的证书（例如内部信任签名）。
+      # 公共代码签名按服务商硬件 / 托管方案配置 bundle.windows.signCommand，
+      # 接入方式见 docs/build-release.md。
       - name: 导入 Windows 代码签名证书
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -177,8 +194,18 @@ jobs:
         if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem "src-tauri/target/release/*.exe", "src-tauri/target/release/bundle/nsis/*.exe", "src-tauri/target/release/bundle/msi/*.msi" -ErrorAction Stop)
+          $release = "src-tauri/target/release"
+          $files = @(Get-ChildItem $release -Filter *.exe -File -ErrorAction Stop)
           if ($files.Count -eq 0) { throw "没有找到待验证的 Windows 产物" }
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $targets = @($config.bundle.targets ?? "all")
+          foreach ($target in @("nsis", "msi")) {
+            if ($config.bundle.active -eq $false -or ($targets -notcontains "all" -and $targets -notcontains $target)) { continue }
+            $extension = if ($target -eq "nsis") { "*.exe" } else { "*.msi" }
+            $bundles = @(Get-ChildItem "$release/bundle/$target" -Filter $extension -File -ErrorAction Stop)
+            if ($bundles.Count -eq 0) { throw "没有找到 $target 安装包" }
+            $files += $bundles
+          }
           foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file.FullName
             if ($sig.Status -ne "Valid") {
@@ -215,7 +242,7 @@ jobs:
       - name: 计算 tag 与版本号
         shell: pwsh
         run: |
-          $ref = "${{ github.ref }}"
+          $ref = $env:GITHUB_REF
           if ($ref -like "refs/tags/*") {
             $tag = $ref -replace "^refs/tags/", ""
           } else {

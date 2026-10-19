@@ -110,10 +110,20 @@ function Section({
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">{label}</Label>
+      <Label htmlFor={id} className="text-xs">
+        {label}
+      </Label>
       {children}
     </div>
   );
@@ -122,6 +132,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 export default function Components() {
   const { t } = useI18n();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [volume, setVolume] = useState([64]);
 
   return (
     <div className="space-y-8">
@@ -163,15 +174,22 @@ export default function Components() {
       <Section title={t("components.inputs")} hint={t("components.inputsHint")}>
         <Card size="sm">
           <CardContent className="grid gap-4 pt-4 sm:grid-cols-2">
-            <Field label={t("components.name")}>
-              <Input placeholder={t("components.namePlaceholder")} />
+            <Field id="member-name" label={t("components.name")}>
+              <Input
+                id="member-name"
+                placeholder={t("components.namePlaceholder")}
+              />
             </Field>
-            <Field label={t("components.email")}>
-              <Input type="email" placeholder="you@example.com" />
+            <Field id="member-email" label={t("components.email")}>
+              <Input
+                id="member-email"
+                type="email"
+                placeholder="you@example.com"
+              />
             </Field>
-            <Field label={t("components.role")}>
+            <Field id="member-role" label={t("components.role")}>
               <Select defaultValue="editor">
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="member-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -188,8 +206,14 @@ export default function Components() {
               </Select>
             </Field>
             <div className="space-y-1.5">
-              <Label className="text-xs">{t("components.plan")}</Label>
-              <RadioGroup defaultValue="pro" className="flex gap-4 pt-1">
+              <Label id="plan-label" className="text-xs">
+                {t("components.plan")}
+              </Label>
+              <RadioGroup
+                defaultValue="pro"
+                className="flex gap-4 pt-1"
+                aria-labelledby="plan-label"
+              >
                 {[
                   { value: "basic", label: t("components.planBasic") },
                   { value: "pro", label: t("components.planPro") },
@@ -227,12 +251,20 @@ export default function Components() {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">{t("components.volume")}</Label>
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  64
-                </span>
+                <Label id="volume-label" className="text-xs">
+                  {t("components.volume")}
+                </Label>
+                <output className="font-mono text-[11px] text-muted-foreground">
+                  {volume[0]}
+                </output>
               </div>
-              <Slider defaultValue={[64]} max={100} step={1} />
+              <Slider
+                value={volume}
+                onValueChange={setVolume}
+                max={100}
+                step={1}
+                aria-labelledby="volume-label"
+              />
             </div>
             <div className="flex items-center gap-2 text-xs">
               <Checkbox id="notify" defaultChecked />
@@ -391,7 +423,7 @@ export default function Components() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Progress value={64} />
+              <Progress value={64} aria-label={t("components.progress")} />
               <div className="space-y-2">
                 <p className="text-[11px] text-muted-foreground">
                   {t("components.skeletonHint")}

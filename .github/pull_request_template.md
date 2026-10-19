@@ -10,7 +10,7 @@
 
 - [ ] 本地 `pnpm app:dev` 手动走通了改动路径
 - [ ] `pnpm verify` 通过（格式 / lint / 类型 / 测试 / 构建）
-- [ ] 涉及 Rust：`cargo fmt --check`、`cargo clippy`、`cargo test` 通过
+- [ ] 涉及 Rust：在 `src-tauri/` 下运行 `cargo fmt --all -- --check`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo test --locked` 通过
 
 ## 影响面
 
@@ -30,7 +30,7 @@ UI 改动必填，亮色与暗色各一张。
 
 ## 自查
 
-- [ ] 分支已 rebase 到最新 `origin/develop`，历史中没有 merge 提交
+- [ ] 普通 feature/fix 分支已 rebase 到最新 `origin/develop`；release/hotfix 按发布流程同步，未改写共享历史
 - [ ] 提交信息符合 Conventional Commits
-- [ ] diff 尽量控制在 400 行以内（超出已在描述中说明原因）
+- [ ] 改动范围与 PR 描述符合 [Git 协作规范](../docs/conventions/git-workflow.md)
 - [ ] 相关文档已同步更新

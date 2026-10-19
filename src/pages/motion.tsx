@@ -184,7 +184,11 @@ export default function Motion() {
                 +20%
               </Button>
             </div>
-            <Progress value={progress} className="h-2" />
+            <Progress
+              value={progress}
+              className="h-2"
+              aria-label={t("motion.progress")}
+            />
           </CardContent>
         </Card>
 

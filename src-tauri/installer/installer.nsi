@@ -173,6 +173,10 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
+; ---- CUSTOM BRANDING ----
+!define MUI_WELCOMEPAGE_TITLE "$(StarterWelcomeTitle)"
+!define MUI_WELCOMEPAGE_TEXT "$(StarterWelcomeText)"
+; ---- /CUSTOM BRANDING ----
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
 
@@ -419,6 +423,10 @@ Var AppStartMenuFolder
 
 ; 8. Finish page
 ;
+; ---- CUSTOM BRANDING ----
+!define MUI_FINISHPAGE_TITLE "$(StarterFinishTitle)"
+!define MUI_FINISHPAGE_TEXT "$(StarterFinishText)"
+; ---- /CUSTOM BRANDING ----
 ; Don't auto jump to finish page after installation page,
 ; because the installation page has useful info that can be used debug any issues with the installer.
 !define MUI_FINISHPAGE_NOAUTOCLOSE
@@ -491,21 +499,20 @@ FunctionEnd
 {{/each}}
 
 ; ---- CUSTOM BRANDING ----
-; 欢迎页 / 完成页文案。必须放在 MUI_LANGUAGE 之后：NSIS 允许重复定义 LangString，
-; 后定义生效（编译时会出现 "LangString set multiple times ... wasting space" 警告，无副作用）。
-; 新增安装语言时，为它补一段 LangString，否则回落到 NSIS 默认翻译。
+; 页面宏引用独立的 LangString，避免覆盖 NSIS 内置翻译及重复定义警告。
+; 新增安装语言时，同时补齐这四个字符串。
 !ifdef LANG_SIMPCHINESE
-  LangString MUI_TEXT_WELCOME_INFO_TITLE ${LANG_SIMPCHINESE} "欢迎安装 ${PRODUCTNAME}"
-  LangString MUI_TEXT_WELCOME_INFO_TEXT ${LANG_SIMPCHINESE} "本向导将引导你完成 ${PRODUCTNAME} ${VERSION} 的安装，约需一分钟。$\r$\n$\r$\n安装完成后可在「设置 → 应用」中卸载。$\r$\n$\r$\n$_CLICK"
-  LangString MUI_TEXT_FINISH_TITLE ${LANG_SIMPCHINESE} "安装完成"
-  LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_SIMPCHINESE} "${PRODUCTNAME} 已成功安装。$\r$\n$\r$\n点击 [完成] 退出向导；需要的话勾选下方选项立即运行。"
+  LangString StarterWelcomeTitle ${LANG_SIMPCHINESE} "欢迎安装 ${PRODUCTNAME}"
+  LangString StarterWelcomeText ${LANG_SIMPCHINESE} "本向导将引导你完成 ${PRODUCTNAME} ${VERSION} 的安装，约需一分钟。$\r$\n$\r$\n安装完成后可在「设置 → 应用」中卸载。$\r$\n$\r$\n$_CLICK"
+  LangString StarterFinishTitle ${LANG_SIMPCHINESE} "安装完成"
+  LangString StarterFinishText ${LANG_SIMPCHINESE} "${PRODUCTNAME} 已成功安装。$\r$\n$\r$\n点击 [完成] 退出向导；需要的话勾选下方选项立即运行。"
 !endif
 
 !ifdef LANG_ENGLISH
-  LangString MUI_TEXT_WELCOME_INFO_TITLE ${LANG_ENGLISH} "Welcome to ${PRODUCTNAME}"
-  LangString MUI_TEXT_WELCOME_INFO_TEXT ${LANG_ENGLISH} "This wizard will install ${PRODUCTNAME} ${VERSION}. It takes about a minute.$\r$\n$\r$\nYou can uninstall it later from Settings > Apps.$\r$\n$\r$\n$_CLICK"
-  LangString MUI_TEXT_FINISH_TITLE ${LANG_ENGLISH} "Installation complete"
-  LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_ENGLISH} "${PRODUCTNAME} has been installed successfully.$\r$\n$\r$\nClick Finish to exit, or select the option below to launch it now."
+  LangString StarterWelcomeTitle ${LANG_ENGLISH} "Welcome to ${PRODUCTNAME}"
+  LangString StarterWelcomeText ${LANG_ENGLISH} "This wizard will install ${PRODUCTNAME} ${VERSION}. It takes about a minute.$\r$\n$\r$\nYou can uninstall it later from Settings > Apps.$\r$\n$\r$\n$_CLICK"
+  LangString StarterFinishTitle ${LANG_ENGLISH} "Installation complete"
+  LangString StarterFinishText ${LANG_ENGLISH} "${PRODUCTNAME} has been installed successfully.$\r$\n$\r$\nClick Finish to exit, or select the option below to launch it now."
 !endif
 ; ---- /CUSTOM BRANDING ----
 
@@ -601,9 +608,10 @@ Section WebView2
     ; Skip if updating
     ${If} $UpdateMode <> 1
       !if "${INSTALLWEBVIEW2MODE}" == "downloadBootstrapper"
-        Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+        ; Keep runtime installers in this installer's private temporary directory.
+        InitPluginsDir
         DetailPrint "$(webview2Downloading)"
-        NSISdl::download "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+        NSISdl::download "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$PLUGINSDIR\MicrosoftEdgeWebview2Setup.exe"
         Pop $0
         ${If} $0 == "success"
           DetailPrint "$(webview2DownloadSuccess)"
@@ -611,23 +619,23 @@ Section WebView2
           DetailPrint "$(webview2DownloadError)"
           Abort "$(webview2AbortError)"
         ${EndIf}
-        StrCpy $6 "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+        StrCpy $6 "$PLUGINSDIR\MicrosoftEdgeWebview2Setup.exe"
         Goto install_webview2
       !endif
 
       !if "${INSTALLWEBVIEW2MODE}" == "embedBootstrapper"
-        Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
-        File "/oname=$TEMP\MicrosoftEdgeWebview2Setup.exe" "${WEBVIEW2BOOTSTRAPPERPATH}"
+        InitPluginsDir
+        File "/oname=$PLUGINSDIR\MicrosoftEdgeWebview2Setup.exe" "${WEBVIEW2BOOTSTRAPPERPATH}"
         DetailPrint "$(installingWebview2)"
-        StrCpy $6 "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+        StrCpy $6 "$PLUGINSDIR\MicrosoftEdgeWebview2Setup.exe"
         Goto install_webview2
       !endif
 
       !if "${INSTALLWEBVIEW2MODE}" == "offlineInstaller"
-        Delete "$TEMP\MicrosoftEdgeWebView2RuntimeInstaller.exe"
-        File "/oname=$TEMP\MicrosoftEdgeWebView2RuntimeInstaller.exe" "${WEBVIEW2INSTALLERPATH}"
+        InitPluginsDir
+        File "/oname=$PLUGINSDIR\MicrosoftEdgeWebView2RuntimeInstaller.exe" "${WEBVIEW2INSTALLERPATH}"
         DetailPrint "$(installingWebview2)"
-        StrCpy $6 "$TEMP\MicrosoftEdgeWebView2RuntimeInstaller.exe"
+        StrCpy $6 "$PLUGINSDIR\MicrosoftEdgeWebView2RuntimeInstaller.exe"
         Goto install_webview2
       !endif
 
@@ -636,8 +644,10 @@ Section WebView2
       install_webview2:
         DetailPrint "$(installingWebview2)"
         ; $6 holds the path to the webview2 installer
-        ExecWait "$6 ${WEBVIEW2INSTALLERARGS} /install" $1
-        ${If} $1 = 0
+        ClearErrors
+        ExecWait '"$6" ${WEBVIEW2INSTALLERARGS} /install' $1
+        ${IfNot} ${Errors}
+        ${AndIf} $1 = 0
           DetailPrint "$(webview2InstallSuccess)"
         ${Else}
           DetailPrint "$(webview2InstallError)"
@@ -704,7 +714,7 @@ Section Install
   ; Create file associations
   {{#each file_associations as |association| ~}}
     {{#each association.ext as |ext| ~}}
-       !insertmacro APP_ASSOCIATE "{{ext}}" "{{or association.name ext}}" "{{association-description association.description ext}}" "$INSTDIR\${MAINBINARYNAME}.exe,0" "Open with ${PRODUCTNAME}" "$INSTDIR\${MAINBINARYNAME}.exe $\"%1$\""
+       !insertmacro APP_ASSOCIATE "{{ext}}" "{{or association.name ext}}" "{{association-description association.description ext}}" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0" "Open with ${PRODUCTNAME}" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
     {{/each}}
   {{/each}}
 

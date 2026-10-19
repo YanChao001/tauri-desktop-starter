@@ -135,7 +135,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((previous) => ({ ...previous, ...patch }));
   }, []);
 
-  const reset = useCallback(() => setSettings(DEFAULT_SETTINGS), []);
+  const reset = useCallback(
+    () =>
+      setSettings((previous) => ({
+        ...DEFAULT_SETTINGS,
+        language: previous.language,
+      })),
+    [],
+  );
 
   const value = useMemo(
     () => ({ settings, update, reset }),

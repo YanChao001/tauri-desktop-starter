@@ -37,6 +37,7 @@ import {
   type Background,
   type Font,
   type FontSize,
+  type Language,
   type Radius,
 } from "@/providers/settings";
 import { getAppInfo, isTauri, openExternal } from "@/lib/tauri";
@@ -139,15 +140,20 @@ export default function Settings() {
 
   useEffect(() => {
     if (!isTauri()) return;
+    let cancelled = false;
     void (async () => {
       try {
         const info = await getAppInfo();
+        if (cancelled) return;
         setVersion(info.version);
         setTauriVersion(info.tauriVersion);
       } catch (error) {
         console.error("读取版本信息失败", error);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleOpenLink(url: string) {
@@ -178,6 +184,24 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <SettingRow label={t("common.language")}>
+            <Select
+              value={settings.language}
+              onValueChange={(value) => update({ language: value as Language })}
+            >
+              <SelectTrigger
+                className="w-40"
+                size="sm"
+                aria-label={t("common.language")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="zh">简体中文</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
           <div className="space-y-2">
             <Label className="text-xs">{t("settings.theme")}</Label>
             <div className="grid grid-cols-3 gap-2">
@@ -187,6 +211,7 @@ export default function Settings() {
                   <button
                     key={item.value}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => setTheme(item.value)}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-lg border px-3 py-3 text-xs transition-colors",
@@ -218,6 +243,7 @@ export default function Settings() {
                     key={accent}
                     type="button"
                     aria-label={accent}
+                    aria-pressed={active}
                     onClick={() => update({ accent })}
                     className={cn(
                       "flex size-7 items-center justify-center rounded-full border transition-transform hover:scale-110",
@@ -240,6 +266,7 @@ export default function Settings() {
           <SettingRow label={t("settings.radius")}>
             <ToggleGroup
               type="single"
+              aria-label={t("settings.radius")}
               size="sm"
               value={settings.radius}
               onValueChange={(value) => {
@@ -263,7 +290,11 @@ export default function Settings() {
               value={settings.font}
               onValueChange={(value) => update({ font: value as Font })}
             >
-              <SelectTrigger className="w-40" size="sm">
+              <SelectTrigger
+                className="w-40"
+                size="sm"
+                aria-label={t("settings.font")}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -279,6 +310,7 @@ export default function Settings() {
           <SettingRow label={t("settings.fontSize")}>
             <ToggleGroup
               type="single"
+              aria-label={t("settings.fontSize")}
               size="sm"
               value={settings.fontSize}
               onValueChange={(value) => {
@@ -311,6 +343,7 @@ export default function Settings() {
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={settings.background === value}
                   onClick={() => update({ background: value })}
                   className={cn(
                     "space-y-1.5 rounded-lg border p-2 text-left transition-colors",
@@ -332,6 +365,7 @@ export default function Settings() {
           >
             <ToggleGroup
               type="single"
+              aria-label={t("settings.motion")}
               size="sm"
               value={settings.motion}
               onValueChange={(value) => {

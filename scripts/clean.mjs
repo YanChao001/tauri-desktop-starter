@@ -5,14 +5,15 @@
  * 只删这张固定列表里的目录，不接受命令行传入路径——
  * 一个能删任意路径的清理脚本，迟早会被写成 `rm -rf $1` 然后闯祸。
  */
-import { existsSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+import { removeProjectPath } from "./fs-utils.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
 const BUILD_OUTPUT = [
   ["dist", "前端构建产物"],
   ["dist-portable", "便携版产物"],
+  ["coverage", "测试覆盖率报告"],
   ["src-tauri/target", "Rust 编译缓存（通常 1 GB 以上）"],
 ];
 
@@ -27,22 +28,23 @@ const HINTS = {
 };
 
 const all = process.argv.includes("--all");
+if (process.argv.slice(2).some((arg) => arg !== "--all")) {
+  console.error("用法: pnpm clean [--all]；不接受自定义路径");
+  process.exit(1);
+}
 const targets = all ? [...BUILD_OUTPUT, ...DEPENDENCIES] : BUILD_OUTPUT;
 
 let removed = 0;
 const failed = [];
 
 for (const [relative, label] of targets) {
-  const absolute = join(ROOT, relative);
-  if (!existsSync(absolute)) {
-    console.log(`跳过 ${relative}（不存在）`);
-    continue;
-  }
-
   try {
-    rmSync(absolute, { recursive: true, force: true });
-    console.log(`已删除 ${relative.padEnd(20)} ${label}`);
-    removed += 1;
+    if (removeProjectPath(ROOT, relative)) {
+      console.log(`已删除 ${relative.padEnd(20)} ${label}`);
+      removed += 1;
+    } else {
+      console.log(`跳过 ${relative}（不存在）`);
+    }
   } catch (error) {
     const code = error.code ?? "UNKNOWN";
     console.error(

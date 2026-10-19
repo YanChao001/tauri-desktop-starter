@@ -33,7 +33,7 @@ gitGraph
 | `release/<x.y.z>`        | 发布准备，只修 bug、只改版本号       | `develop` | `main` + `develop` | 发布后删除 |
 | `hotfix/<x.y.z>`         | 线上紧急修复                         | `main`    | `main` + `develop` | 发布后删除 |
 
-**分支命名**：全小写，单词用连字符，带上 issue 号。
+**分支命名**：全小写，单词用连字符；功能 / 普通修复分支有 issue 时带上编号，发布 / 紧急修复分支使用版本号。
 
 ```
 feature/42-command-palette
@@ -142,7 +142,7 @@ docs: 补充发布流程中的签名说明
 要求：
 
 - subject 不超过 50 字，动词开头，结尾不加句号。
-- 一次提交只做一件事。混了格式化 + 逻辑改动的提交，review 成本翻倍。
+- 一次提交围绕一个明确问题；必要的格式整理和文档同步随对应改动提交，避免夹带无关重排。
 - 破坏性变更在 footer 写 `BREAKING CHANGE: 说明`，并在 PR 标题加 `!`，如 `feat(ipc)!: 重命名 invoke 封装`。
 
 ## 本地不装 git hook
@@ -154,7 +154,7 @@ docs: 补充发布流程中的签名说明
 - 每次提交多几秒等待，加上 Windows 上偶发的路径问题，收益不划算。
 
 代价是本地可能提交格式不对的代码。用一条命令兜住：提交前跑 `pnpm verify`，
-忘了也没关系，CI 会拦下来，改完再推即可。
+CI 会再次执行这些检查；是否禁止合并还取决于仓库管理员是否配置必需检查与分支保护。
 
 如果团队确实需要，加装成本很低（`pnpm add -D husky lint-staged`），
 但先想清楚它能带来什么 CI 给不了的东西。
@@ -205,12 +205,13 @@ docs: 补充发布流程中的签名说明
 
 ```bash
 git remote add origin git@github.com:<org>/<repo>.git
+git switch main
+git branch develop
 git push -u origin main
 git push -u origin develop
-git push origin --tags
 ```
 
-推完到仓库设置里把默认分支改成 `develop`，再按下表配置保护。
+上例假设 `main` 已存在、`develop` 尚未创建；已有集成分支时跳过创建。不要把模板原仓库的历史标签作为新产品的版本一起推送。推完到仓库设置里把默认分支改成 `develop`，再按下表配置保护。
 
 ## 仓库设置（一次性）
 
@@ -246,14 +247,15 @@ git rebase --abort
 原则：
 
 - 冲突解决后**必须重新跑一遍自检**，rebase 后的代码和你想的不一定一样。
-- 涉及 `pnpm-lock.yaml`、`Cargo.lock` 的冲突，不要手改，重新生成：`pnpm install`、`cargo update -p <crate>`。
+- 锁文件冲突先合并清单，再基于已有锁文件重新解析并审查差异，见 [锁文件冲突处理](../troubleshooting.md#pnpm-锁文件冲突)；不要借解决冲突全量升级依赖。
 - 不确定的冲突找提交者一起看，不要凭感觉删代码。
 
 ## 发布流程
 
 ```bash
 # 1. 从 develop 切发布分支
-git switch develop && git pull --ff-only
+git switch develop
+git pull --ff-only
 git switch -c release/1.2.0
 
 # 2. 同步版本号（见 scripts/set-version.mjs）
@@ -269,7 +271,8 @@ git push -u origin release/1.2.0
 # 等两个 PR 的 CI 和审批通过后合并；main / develop 保持保护，不直接 push
 
 # 6. 两个 PR 合并后，在 main 的发布合并提交上打标签
-git switch main && git pull --ff-only
+git switch main
+git pull --ff-only
 git tag -a v1.2.0 -m "v1.2.0"
 git push origin v1.2.0
 
@@ -284,14 +287,16 @@ git push origin --delete release/1.2.0
 ## 紧急修复
 
 ```bash
-git switch main && git pull --ff-only
+git switch main
+git pull --ff-only
 git switch -c hotfix/1.1.1
 # 修 bug，自检，提交
 git push -u origin hotfix/1.1.1
 # 分别向 main 与 develop 开 PR，CI 和审批通过后合并两处
 
 # main PR 合并后，在对应合并提交打标签
-git switch main && git pull --ff-only
+git switch main
+git pull --ff-only
 git tag -a v1.1.1 -m "v1.1.1"
 git push origin v1.1.1
 ```

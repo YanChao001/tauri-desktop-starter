@@ -44,22 +44,24 @@ pnpm app:build
 pnpm tauri build --bundles nsis
 ```
 
-当前工程实测值（Windows x64，release）见 [README 的构建产物一节](../README.md#构建产物)。
+默认路径与平台限制见 [README 的构建产物一节](../README.md#构建产物)。显式指定 `--target` 或 `CARGO_TARGET_DIR` 时，以 Cargo 实际目标目录为准。
 
 ### 便携版（免安装）
 
-Windows 没有 portable 打包目标。用 `--no-bundle` 出单文件 exe，再收集到 `dist-portable/`：
+Windows 没有 portable 打包目标。脚本使用 `rustc -vV` 的 host target 显式构建单文件 exe，再收集到 `dist-portable/`：
 
 ```bash
 pnpm app:portable              # 构建 + 收集
-pnpm app:portable --skip-build # 复用已有 release 产物
+pnpm app:portable --skip-build # 只复用先前便携版构建的同一 host 产物
 ```
+
+脚本通过 Cargo metadata 识别目标目录，支持 `CARGO_TARGET_DIR` 与 Cargo `target-dir`，读取 `<target_directory>/<host>/release/`；普通 `app:build` 不带目标参数的目录不会被 `--skip-build` 误选。复用旧构建前需自行确认源码与版本。
 
 产物包含 exe 与一份 `使用说明.txt`，压缩后即可分发。适用前提与限制：
 
 - 目标机器需要 WebView2 运行时（Win11 自带；老 Win10 缺失时按说明安装）。
 - 窗口位置、日志仍写入当前用户的 AppData，不随 exe 移动；要做"绿色版"需自行改路径。
-- 未签名的 exe 会触发 SmartScreen，对外分发仍要按上文配置代码签名。
+- 未签名的 exe 可能触发 SmartScreen，对外分发应按下文配置代码签名；签名也不保证立即获得信誉。
 - `--no-bundle` 不经过打包器，**不会**自动签名；需要签名的便携版请对 exe 单独执行 `signtool`。
 - Linux 的 AppImage 本身就是便携格式；macOS 用 `.app` 拖拽安装，无需另做便携包。
 
@@ -87,34 +89,29 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 - 两张 WiX 位图由 `scripts/gen-installer-bitmaps.py` 生成（依赖 `pip install pillow`），改样式后重跑脚本并重新 `pnpm tauri build`。
 - 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
 - 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
-- 模板自带 `src-tauri/installer/installer.nsi`（基于 tauri-cli 2.12.3 的官方模板）。欢迎页/完成页的文案与配色在文件里的 `CUSTOM BRANDING` 标记之间，按语言分别定义：
-  - 在 `MUI_LANGUAGE` 之后用 `LangString` 覆盖 MUI 默认文案，后定义生效；编译时会出现 `LangString set multiple times ... wasting space` 警告，属预期，不影响产物。
-  - 新增安装语言时，为它补一段 `LangString`，否则回落到 NSIS 自带翻译。
-- **升级 Tauri 后**：官方 NSIS 模板可能新增变量或修正逻辑。按同版本源码重新复制 `installer.nsi`，再把 `CUSTOM BRANDING` 两段合并回去，不要整份沿用旧模板。MSI 同理，对应 `wix.template`。
+- 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在 `CUSTOM BRANDING` 标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
+  - 新增安装语言时，要为自定义文案补齐对应语言的 `LangString`，并实际编译检查，不能假设自定义键会自动回落到内置翻译。
+- **升级 Tauri 后**：对照同版本官方 NSIS 模板合并更新，保留 `CUSTOM BRANDING` 各段的配色、页面宏引用与语言字符串，并复核 WebView2 临时路径、执行引号和文件关联修复是否已被上游覆盖。不要整份沿用旧模板。自定义 MSI 模板同理，对应 `wix.template`。
 
 ## 代码签名
 
 ### Windows
 
-没有签名的 exe 会触发 SmartScreen「未知发布者」，多数用户看到蓝色拦截页就放弃了。先记住 2023 年后的硬规则：
+Windows Authenticode 签名标识发布者并验证文件完整性，不能保证立即消除 SmartScreen 告警。公共信任证书的私钥保护要求、服务地区与价格会变化，购买或配置前以服务商当前政策为准；Tauri 的旧 PFX 教程仅适用于允许导出私钥的旧证书，新签发 OV / EV 应使用签发方支持的硬件或托管流程。参见 [Tauri Windows 签名指南](https://v2.tauri.app/distribute/sign/windows/)。
 
-> CA/Browser Forum 要求代码签名私钥必须存放在 FIPS 140-2 L2 / CC EAL4+ 硬件（USB Token 或云 HSM）中，
-> **新证书不能再导出 PFX 交给 CI**。2026 年 3 月起证书最长有效期 460 天。
-> 网上大量「导出 PFX → base64 塞 secret」的教程，只适用于 2023-06-01 之前签发、仍可导出的老证书。
+本仓库提供的接入点：
 
-三条可落地的路线：
-
-| 路线                                         | 成本         | CI 友好                       | 用户看到的发布者    | 适用                                                                                                                   |
-| -------------------------------------------- | ------------ | ----------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| SignPath Foundation                          | 免费（开源） | ✅                            | SignPath Foundation | 公开开源项目                                                                                                           |
-| Azure Artifact Signing（原 Trusted Signing） | $9.99/月起   | ✅                            | 你的组织名          | 受地区与身份限制，见 [官方前置条件](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart#prerequisites) |
-| OV / EV 证书 + USB Token                     | ¥1k–3k / 年  | ⚠️ 需自托管 runner 或云签服务 | 你的公司名          | 必须用自己的发布者名称                                                                                                 |
+| 路线                                | 仓库现状                        | 需要完成                                           |
+| ----------------------------------- | ------------------------------- | -------------------------------------------------- |
+| SignPath Foundation                 | 可选签名 job 已实现             | 申请通过、配置门户与仓库参数、人工审批             |
+| Azure Artifact Signing 或证书商 HSM | 未安装 CLI，也未注入 Azure 变量 | 修改 workflow，安装工具，配置 `signCommand` 与凭据 |
+| 可导出的 PFX 证书                   | 导入与验证步骤已实现            | 确认证书仍有效且用途符合分发范围，配置 Secrets     |
 
 #### 路线 A：SignPath Foundation（开源免费）
 
 仓库侧已经接好，剩下的是 SignPath 的申请与参数配置。
 
-**前置条件**（SignPath 硬性要求）：
+申请要求以 [SignPath Foundation 条款](https://signpath.org/terms) 为准，主要包括：
 
 - 项目公开、使用 OSI 许可（本项目 MIT）、**已经发布过至少一个版本**；
 - SignPath 与 GitHub 账号都启用 MFA；
@@ -123,7 +120,7 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 **申请**：
 
 1. 打开 <https://signpath.org/>，用 GitHub 登录并提交 OSS 申请（仓库 URL、许可证、用途、构建方式）；
-2. 审核通常几天到两周，通过后拿到组织与项目。
+2. 申请通过后取得组织与项目，并确认签名审批责任人。
 
 **在 SignPath 门户配置**：
 
@@ -144,19 +141,19 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 | Secret    | `SIGNPATH_API_TOKEN`                   | API token                   |
 
 **发版**：打 tag 后，`release.yml` 的 `build` job 产出 draft Release，并将未签名的 NSIS 包直接上传为本次运行的 artifact；随后 `sign-windows` job 使用该 artifact 的 ID
-提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。这样签名来源直接关联到本次构建。SignPath 与遗留 PFX 签名应二选一。
+提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。这样签名来源直接关联到本次构建。SignPath 与 PFX 签名应二选一。
 未配置 `SIGNPATH_ORGANIZATION_ID` 时该 job 直接跳过，现有发布流程不受影响。
 
 **限制**：
 
 - 发布者显示 "SignPath Foundation"，不是你的名字；
 - 每次发版要在 SignPath 门户人工批准一次；
-- 只签 NSIS 安装包外层，安装后的应用 exe 不带签名；内外层都要签需改用 MSI + 深签名配置。
+- 当前配置只签 NSIS 安装包外层，安装后的应用 exe 与 MSI 不会被该 job 签名；需要调整嵌套签名范围时，必须同时修改 artifact 配置、产物收集和验证步骤。
 - 当前 SignPath 流程不能直接与 `createUpdaterArtifacts` 组合：打包后重签会改变安装包字节，使先前生成的更新签名失效。流水线会拒绝该组合；接入自动更新时，须将更新签名生成移到 Authenticode 签名之后。
 
 #### 路线 B：Azure Artifact Signing（原名 Trusted Signing）
 
-微软的托管签名服务，私钥在 Azure HSM 中，CI 直接调用，不需要任何硬件：
+微软的托管签名服务，私钥由托管服务保护；当前仓库尚未接入。实施步骤以 [Tauri 签名指南](https://v2.tauri.app/distribute/sign/windows/) 和 [微软前置条件](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart#prerequisites) 为准：
 
 1. 在 Azure 创建 Artifact Signing 账户与证书配置文件（Certificate Profile）；
 2. 创建 App Registration，在证书配置文件范围向它授予 **Artifact Signing Certificate Profile Signer** 角色（见 [微软角色说明](https://learn.microsoft.com/en-us/azure/artifact-signing/tutorial-assign-roles)）；
@@ -186,12 +183,12 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 - CI 二选一：自托管 runner 插着 Token 跑；或购买 CA 的云签名服务（SSL.com eSigner、DigiCert KeyLocker、GlobalSign），用 `signCommand` 调它的 CLI；
 - EV 自 2024 年起**不再即时绕过 SmartScreen**，和 OV 一样按下载量积累信誉，不必为「秒过」多花钱。
 
-#### 遗留 PFX 流程（仅 2023-06-01 前的老证书）
+#### 可导出 PFX 流程
 
-证书仍可导出 PFX 时，签名参数不要写进 `tauri.conf.json`，用 `--config` 在构建时合并：
+仅在证书有效且发行策略允许导出私钥时使用，例如受组织信任的内部分发证书。自签名 / 内部证书不会自动获得公共信任；不要据此采购新公共 OV / EV 证书。签名参数不要写进仓库，使用临时配置文件在构建时合并：
 
 ```bash
-pnpm tauri build --config '{"bundle":{"windows":{"certificateThumbprint":"<THUMBPRINT>","digestAlgorithm":"sha256","timestampUrl":"http://timestamp.digicert.com"}}}'
+pnpm tauri build --config <临时签名配置文件路径>
 ```
 
 查本机证书指纹：
@@ -209,12 +206,12 @@ Get-ChildItem Cert:\CurrentUser\My | Select-Object Subject, Thumbprint
 
 #### 先不签名可以吗
 
-可以。开源模板、内测包完全能先不签，代价是用户要点「更多信息 → 仍要运行」。
+可以生成未签名的模板或内测包；Windows 用户可能遇到信誉提示，实际运行行为还受系统与组织策略限制。
 不要为此买 EV：2024 年后 EV 也不再即时消除警告。
 
 ### macOS
 
-必须同时做签名和公证（notarization），否则用户首次打开会被 Gatekeeper 拦截。
+面向站外分发时应做 Developer ID 签名和公证（notarization），并在干净机器上验证 Gatekeeper 行为。
 
 ```bash
 export APPLE_CERTIFICATE="<base64 的 .p12>"
@@ -241,7 +238,7 @@ Tauri 会自动完成签名、公证与打包。
 pnpm tauri add updater
 ```
 
-1. 生成签名密钥对（**私钥必须离线保存**，丢了就无法给老版本推更新）：
+1. 生成签名密钥对（私钥安全保存并离线备份；CI 用 Secrets 注入，不能提交仓库）：
 
 ```bash
 pnpm tauri signer generate -w ~/.tauri/myapp.key
@@ -310,7 +307,11 @@ if (update) {
 ## CI 多平台构建
 
 `.github/workflows/ci.yml` 只做校验（格式、lint、类型、测试、编译）。
-出正式包由 `.github/workflows/release.yml` 负责，打 tag 触发，矩阵覆盖：
+出正式包由 `.github/workflows/release.yml` 负责，打 tag 触发。
+
+发布流程先由 `validate` job 执行冻结安装和 `pnpm verify`，通过后才进入各平台构建；PFX 签名验证按配置检查实际启用的 NSIS / MSI 产物，缺失或签名无效会失败。
+
+构建矩阵覆盖：
 
 | 平台            | 产物           |
 | --------------- | -------------- |
@@ -320,17 +321,17 @@ if (update) {
 
 产物以 **draft Release** 上传，人工确认后再发布。
 
-**签名密钥一律走 GitHub Secrets。** 当前流水线识别这些（未配置时自动跳过，产物仍可用）：
+**签名密钥一律走 GitHub Secrets。** 下表区分已接线参数与需要额外实施的参数；未配置签名时仍会生成包，但不代表满足公开分发要求：
 
-| Secret                                                                        | 用途                                                            |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD`                        | Windows 遗留 PFX（仅 2023-06-01 前签发、可导出的证书）          |
-| `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`                 | Azure Artifact Signing（需改用 `signCommand`，见 Windows 一节） |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名                                                      |
-| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                                                      |
-| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）                             |
+| Secret                                                                        | 用途                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD`                        | 已接线：允许导出且有效的 Windows PFX，受证书用途与信任范围约束           |
+| `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`                 | 未接线：Azure Artifact Signing，需安装 CLI、注入变量并配置 `signCommand` |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名                                                               |
+| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                                                               |
+| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）                                      |
 
-当前 `release.yml` 内置了**遗留 PFX**、macOS 与可选的 SignPath 链路；SignPath 需要配置门户与仓库参数，Azure 需要额外安装 CLI 并注入三个环境变量。
+当前 `release.yml` 内置了 **PFX**、macOS 与可选的 SignPath 链路；SignPath 需要配置门户与仓库参数，Azure 需要额外安装 CLI 并注入三个环境变量。
 
 证书和私钥永远不进仓库——进了就当作已泄露，必须吊销重签。
 
@@ -345,16 +346,17 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 
 发布前逐项确认，任何一项没过就不发：
 
-- [ ] `develop` 已合并到 `release/x.y.z`，CI 全绿
+- [ ] 已从 `develop` 创建 `release/x.y.z`，检查本次提交范围
 - [ ] `pnpm version:set x.y.z` 已执行，四处版本号一致
 - [ ] `git log v上一版..HEAD --oneline` 过一遍，确认没有漏进版本的提交，也没有不该进的
-- [ ] 在干净机器上安装过一次（不是开发机），确认能启动
-- [ ] Windows 已签名，SmartScreen 无"未知发布者"
-- [ ] macOS 已公证，`spctl -a -vvv -t install <app>` 通过
-- [ ] 自动更新链路验证：装旧版本 → 发布新版本 → 能收到并成功升级
+- [ ] `pnpm verify` 和目标平台 Rust 检查通过，发布分支 CI 全绿
+- [ ] 在目标平台的干净机器上安装并验证启动、窗口操作、外链与 IPC
+- [ ] 需要签名的 Windows 分发渠道已检查签名状态与发布者；SignPath 仅覆盖 NSIS 外层
+- [ ] 发布 macOS 包时已完成签名、公证，并用 `spctl -a -vvv -t install <app>` 验证
+- [ ] 若接入自动更新：验证旧版本能够收到并成功安装新版本
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
-- [ ] 打 tag `vX.Y.Z`，触发 CI 出包并上传 Release
-- [ ] `release/*` 已合回 `main` 和 `develop`
+- [ ] `release/*` 已通过 PR 合入 `main` 和 `develop`，在 `main` 对应合并提交打 tag `vX.Y.Z`
+- [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布
 - [ ] 发布公告与更新说明同步给使用方
 
 ## 回滚

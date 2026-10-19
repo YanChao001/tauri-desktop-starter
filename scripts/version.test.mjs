@@ -175,3 +175,42 @@ test("release outputs distinguish prereleases from build metadata", (t) => {
     );
   }
 });
+
+test("missing tracked Cargo.lock fails validation and leaves version files unchanged", (t) => {
+  const root = fixture(t);
+  rmSync(join(root, "src-tauri/Cargo.lock"));
+  assert.throws(() => checkVersions(root), /ENOENT/);
+  assert.equal(setVersion(root, "2.0.0").status, 1);
+  assert.equal(
+    JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version,
+    "1.0.0",
+  );
+});
+
+test("an explicit MSI version is validated before any version file is written", (t) => {
+  for (const version of [
+    "256.1.0",
+    "1.256.0",
+    "1.2.65536",
+    "1.2.3.65536",
+    "1.2",
+    "1.2.3-beta",
+    "",
+    123,
+  ]) {
+    const root = fixture(t, {
+      config: { bundle: { targets: ["msi"], windows: { wix: { version } } } },
+    });
+    assert.equal(setVersion(root, "2.0.0").status, 1, String(version));
+    assert.equal(
+      JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version,
+      "1.0.0",
+    );
+  }
+  validateVersion("1.2.3-beta.1", {
+    bundle: {
+      targets: ["msi"],
+      windows: { wix: { version: "255.255.65535.65535" } },
+    },
+  });
+});

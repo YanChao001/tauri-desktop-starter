@@ -31,16 +31,14 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
    3 秒后才出现 → 前端渲染有问题，去看 DevTools。
 2. `pnpm dev` 打开 `http://localhost:1420`，看浏览器里是否正常。
    浏览器正常、应用白屏 → 多半是资源路径或 CSP 问题。
-3. 应用内右键 →「检查」看 Console。生产构建打不开 DevTools 时，在 `lib.rs` 里临时加
-   `window.open_devtools()` 调试。
+3. 在开发构建打开 WebView 调试工具查看 Console。仅在 release 出现时，保留日志与复现条件，再用 debug 构建定位；不要把调试入口发布给用户。
 4. 检查 `tauri.conf.json` 的 `build.frontendDist` 是否指向 `../dist`，以及 `dist` 是否真的构建出来了。
 
 ## 双击图标没反应
 
-**原因**：单实例插件检测到已有进程，把窗口聚焦到已有实例上了，但那个窗口可能被最小化到托盘或隐藏。
+**可能原因**：已有实例未能恢复窗口，或新进程在初始化阶段退出。本模板没有托盘功能，重复启动的回调会还原、显示并聚焦主窗口。
 
-**处理**：看任务管理器是否已有进程，结束它再启动。如果是打包后首次运行就这样，检查
-`lib.rs` 里 `single_instance` 的回调是否调用了 `show()`。
+**处理**：先查看任务管理器和日志，确认进程归属后关闭旧实例再试；同时检查 `single_instance` 回调和后续插件初始化错误。
 
 ## WebView2 缺失（Win10 老机器）
 
@@ -52,8 +50,7 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
 https://go.microsoft.com/fwlink/p/?LinkId=2124703
 ```
 
-长期方案是在安装包里内置引导：在 `tauri.conf.json` 的 `bundle.windows.webviewInstallMode`
-里配置 `downloadBootstrapper`，NSIS 安装时会自动检测并安装。
+安装包的引导行为由 `bundle.windows.webviewInstallMode` 控制；免安装 exe 不会执行安装器引导。离线部署需要另行准备运行时安装方案。
 
 ## 打包时卡在下载 NSIS
 
@@ -66,16 +63,9 @@ failed to bundle project: `CONNECT proxy failed: proxy server responded 502`
 
 **原因**：Tauri 打包器需要下载 NSIS 与 `nsis_tauri_utils.dll`，公司代理或网络环境拦了 GitHub。
 
-**处理**：手动放到缓存目录，重跑打包。
+**处理**：先确认终端代理与 GitHub 下载地址可达，修正代理后重新 `pnpm app:build`。安装器工具缓存在 Windows 的 `%LOCALAPPDATA%\tauri` 下；需要离线缓存时，按当前构建日志确认工具版本、下载地址和解压层级，勿从旧教程复制 DLL 覆盖不同版本的缓存。
 
-```bash
-DLL_DIR="%LOCALAPPDATA%/tauri/NSIS/Plugins/x86-unicode"
-curl -L -o "$DLL_DIR/nsis_tauri_utils.dll" \
-  https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
-```
-
-MSI 需要的是 WiX，缓存在 `%LOCALAPPDATA%\tauri\WixTools*`，处理方式相同（下载后解压到对应目录）。
-实在不行就先只出 NSIS：`pnpm tauri build --bundles nsis`。
+只缺 WiX 时可暂时只构建 NSIS：`pnpm tauri build --bundles nsis`。NSIS 自身下载失败时，改目标不会修复该依赖；可用 `pnpm app:portable` 先验证不经过打包器的应用构建。
 
 ## cargo 报 linker not found
 
@@ -90,8 +80,8 @@ error: linker `link.exe` not found
 **处理**：打开 Visual Studio Installer，勾选「使用 C++ 的桌面开发」。
 确认已装：
 
-```bash
-"C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
+```powershell
+& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" `
   -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 ```
 
@@ -99,9 +89,11 @@ error: linker `link.exe` not found
 
 ## 端口 1420 被占用
 
-```bash
+```powershell
 netstat -ano | findstr :1420
-taskkill /PID <pid> /F
+Get-Process -Id <pid>
+# 确认是自己的开发进程后再停止
+Stop-Process -Id <pid>
 ```
 
 `vite.config.ts` 里 `strictPort: true` 是故意的——Tauri 必须连固定端口。
@@ -112,16 +104,14 @@ taskkill /PID <pid> /F
 **原因**：Rust 侧函数没注册，或前端命令名拼错（大小写敏感）。
 
 ```rust
-.invoke_handler(tauri::generate_handler![greet, read_config])
+.invoke_handler(tauri::generate_handler![commands::greet, commands::read_config])
 ```
 
 命令名就是函数名，前端 `invoke("read_config")` 必须完全一致。
 
 ## invoke 报 not allowed / permission denied
 
-**原因**：`src-tauri/capabilities/default.json` 没放开对应权限。
-
-错误信息里会写明需要哪个权限标识，加进去后**重启** `app:dev`（能力文件不支持热更新）。
+核心或插件命令先检查 `src-tauri/capabilities/default.json` 中的窗口绑定、权限和 scope；自定义命令还要检查是否启用了应用 ACL。按 [能力最小化](./security.md#能力最小化) 补齐必要范围，重新编译原生端验证，不要直接授予宽泛权限。
 
 ## 自定义标题栏下原生边框又出现了
 
@@ -162,38 +152,45 @@ taskkill /PID <pid> /F
 2. 向厂商提交误报申诉，附安装包与哈希。
 3. 内网分发时提供 SHA256 校验值。
 
-## 路径含中文或空格导致构建失败
+## 路径相关的构建失败
 
-- 项目路径尽量纯英文。Rust 的 `link.exe` 对含空格路径偶发问题。
-- 如果必须放在中文路径下，确认 `CARGO_TARGET_DIR` 指向一个纯英文目录：
+先保留完整错误并检查具体工具的路径引用，中文或空格本身不能证明是 Rust 链接器问题。可把编译产物暂存到较短路径，比较是否与路径长度或缓存有关：
 
-```bash
-export CARGO_TARGET_DIR=D:/cargo-target
+```powershell
+$env:CARGO_TARGET_DIR = "D:/cargo-target"
+pnpm app:build
+# 排查结束后恢复当前终端
+Remove-Item Env:CARGO_TARGET_DIR
 ```
 
-- 用户数据目录不要硬编码，用 `app_data_dir()` 获取。
+自定义目标目录不在 `pnpm clean` 的固定清理范围内，需要由设置者管理；用户数据路径仍使用 Tauri 路径 API 获取。
 
 ## pnpm 锁文件冲突
 
-**不要手改 `pnpm-lock.yaml`**。
+先合并依赖清单，再从合并目标分支恢复锁文件作为基线，安装 / 检查后审查差异。以下是普通特性分支同步 `origin/develop` 的示例：
 
 ```bash
-git checkout --theirs pnpm-lock.yaml   # 或者 --ours，先选一边
-pnpm install                            # 重新生成到正确状态
+git restore --source=origin/develop -- pnpm-lock.yaml src-tauri/Cargo.lock
+pnpm install
+cargo check --manifest-path src-tauri/Cargo.toml
+pnpm version:check
+git diff -- pnpm-lock.yaml src-tauri/Cargo.lock
+# 确认没有无关升级后再 git add，并继续 merge / rebase
 ```
 
-`Cargo.lock` 同理，冲突时删掉重新 `cargo build` 生成。
+不要删除整个 `Cargo.lock` 来处理单个冲突，否则会重新解析全部依赖。`--ours` / `--theirs` 在 rebase 中的含义容易误读，使用明确的来源分支更便于核对。
 
 ## 编译内存不足
 
 **现象**：`link.exe` 报 out of memory，或系统卡死。
 
-```bash
-export CARGO_BUILD_JOBS=2
+```powershell
+$env:CARGO_BUILD_JOBS = "2"
 pnpm app:build
+Remove-Item Env:CARGO_BUILD_JOBS
 ```
 
-长期方案：关闭杀软实时扫描 `src-tauri/target` 目录。
+仍失败时检查可用内存、交换文件、并行构建进程和链接器报错；不应通过关闭安全软件来处理内存不足。
 
 ## 更新包下载后装不上
 
@@ -201,13 +198,13 @@ pnpm app:build
 
 - 确认构建时设置了 `TAURI_SIGNING_PRIVATE_KEY`，且与 `tauri.conf.json` 的 `pubkey` 配对。
 - 检查 `platforms` 的 key 是否为 `windows-x86_64` 这类准确标识。
-- 降级安装默认被拒绝，需要在代码里显式允许。
+- 默认更新器只接受更高版本，Windows 安装器还有独立的降级限制；回滚策略见 [构建与发布](./build-release.md#回滚)。
 
 ## 还是没解决
 
 提 issue 时附上这些信息，能少两轮往返：
 
-- 操作系统与版本、WebView2 版本（`edge://version`）
+- 操作系统与版本、WebView 运行时版本（Edge 浏览器版本不一定等于应用使用的 WebView2 Runtime）
 - `node -v`、`pnpm -v`、`rustc -V`
 - 完整报错日志（不要截图，贴文本）
 - 复现步骤，以及是否只在打包后出现

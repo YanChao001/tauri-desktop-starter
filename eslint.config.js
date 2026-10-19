@@ -9,7 +9,7 @@ export default tseslint.config(
       "dist/**",
       "node_modules/**",
       "src-tauri/**",
-      // shadcn 生成的原子组件保持上游原样，不纳入本项目规范
+      // shadcn 原子组件沿用上游编码风格；行为修复仍需类型检查与回归验证
       "src/components/ui/**",
     ],
   },

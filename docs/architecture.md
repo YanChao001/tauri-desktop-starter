@@ -2,7 +2,7 @@
 
 ## 一句话
 
-Rust 负责"能做什么"，WebView 负责"长什么样"，两者只通过 `invoke` 与事件通信。
+React 负责界面与偏好，`src/lib/tauri.ts` 封装原生能力，Rust 负责命令与桌面生命周期。业务 IPC 当前使用请求 / 响应，另有窗口尺寸事件订阅；自定义业务事件可在需要时接入。
 
 ## 运行时结构
 
@@ -10,39 +10,41 @@ Rust 负责"能做什么"，WebView 负责"长什么样"，两者只通过 `invo
 flowchart LR
   subgraph web["WebView（渲染层）"]
     UI["React 页面与组件"]
-    IPC["lib/tauri.ts<br/>唯一 IPC 出口"]
+    IPC["lib/tauri.ts<br/>原生能力边界"]
     UI --> IPC
   end
 
   subgraph rust["Rust 主进程"]
     CMD["命令处理层<br/>commands.rs"]
     PLUGIN["官方插件<br/>log / opener / window-state / single-instance"]
-    SYS["系统能力<br/>文件、网络、数据库、硬件"]
+    CORE["Tauri 核心<br/>窗口 / 应用信息"]
   end
 
   IPC -- "invoke(command, args)" --> CMD
   CMD -- "返回值 / 错误" --> IPC
-  CMD --> SYS
-  PLUGIN --> CMD
+  IPC -- "核心 API" --> CORE
+  IPC -- "openUrl" --> PLUGIN
 ```
 
 要点：
 
-- WebView 里跑的是标准的 Web 应用，没有 Node 环境，碰不到文件系统。
-- 所有系统能力必须先在 Rust 侧写成命令，再暴露给前端。
+- WebView 没有 Node 环境；文件访问等操作需通过受限制的浏览器 API 或原生能力完成。
+- 原生能力通过 Tauri 核心、已注册插件或自定义 Rust 命令提供，不需要为已有插件重复写命令。
+- 当前自定义命令只有 `greet`；文件、网络、数据库与硬件访问尚未实现。后文的存储与事件方案是扩展约定。
 - Tauri 核心与插件能力由 `src-tauri/capabilities/default.json` 分配；自定义命令另需应用 ACL 才受此限制，见 [安全规范](./security.md#能力最小化)。
 
 ## 前端分层
 
-依赖方向是单向的，反过来就是设计出了问题：
+页面由路由表加载，外壳读取同一份路由元数据；复用逻辑与平台边界分开：
 
 ```
-routes.tsx ── 路由与导航的唯一数据源
-     │
-     ▼
-layouts/ ──> pages/ ──> components/
-     │           │            │
-     └───────────┴────────────┴──> hooks/ ──> providers/ ──> lib/ ──> @tauri-apps/api
+App.tsx ──> layouts/ ──> routes.tsx ──> pages/
+   │            │                         │
+   └────────────┴────> components/ <───────┘
+                             │
+                         hooks/ / providers/ / lib/
+                                               │
+                                      lib/tauri.ts ──> @tauri-apps/*
 ```
 
 | 层            | 职责                                      | 不该做的事                          |
@@ -55,7 +57,7 @@ layouts/ ──> pages/ ──> components/
 | `providers/`  | 跨页面的 React Context（外观偏好、i18n）  | 不放业务数据，不渲染页面结构        |
 | `lib/`        | 纯 TS：IPC 封装、格式化、校验             | 不含 JSX，不 import React           |
 
-`components/ui/` 是第三方生成的原子组件，不受上述约束。应用外壳组件 `title-bar.tsx` 可以导航并读取设置，`theme-toggle.tsx` 可以读取主题与翻译；这类组件须置于对应 Provider 内。
+`components/ui/` 保留上游组件的结构与导出方式，应用自有组件遵守分层约定。应用外壳组件 `title-bar.tsx` 可以导航并读取设置，`theme-toggle.tsx` 可以读取主题与翻译；这类组件须置于对应 Provider 内。
 
 `layouts/` 负责路由页的整体布局：`AppShell` 用 `useLocation`、渲染 `Outlet`，所以它在 `layouts/`。标题栏等外壳部件仍放在 `components/`。
 
@@ -76,7 +78,7 @@ layouts/ ──> pages/ ──> components/
 
 ### 界面偏好与多语言
 
-`providers/` 是唯一允许放全局 React Context 的层：
+应用自有的全局 React Context 放在 `providers/`：
 
 - `providers/settings.tsx`：外观偏好（主题色、圆角、字体、字号、背景、动效、语言、菜单栏），
   写入 `localStorage`，并把值映射到 `<html>` 的 `data-*`；样式全部由 `index.css` 接管。
@@ -114,7 +116,7 @@ macOS 例外：`src-tauri/tauri.macos.conf.json` 把窗口改回 `decorations: t
 
 ### 命令变多以后
 
-`lib/tauri.ts` 现在是单文件。命令超过 5 个、或出现明显领域划分时，改成目录：
+`lib/tauri.ts` 现在是单文件。出现明显领域划分、难以独立维护时，可改成目录：
 
 ```
 lib/tauri/
@@ -125,7 +127,7 @@ lib/tauri/
   fs.ts         文件相关命令
 ```
 
-对外路径仍是 `@/lib/tauri`，调用方不用改。
+对外路径仍是 `@/lib/tauri`。拆分时同时更新 `eslint.config.js` 的原生 API 允许路径与边界测试，不能仅移动文件。
 
 ## 通信机制
 
@@ -136,6 +138,7 @@ lib/tauri/
 ```ts
 // lib/tauri.ts
 export async function invokeGreet(name: string): Promise<string> {
+  if (!isTauri()) throw new Error("请用 pnpm app:dev 启动");
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("greet", { name });
 }
@@ -187,20 +190,21 @@ try {
 ### 事件（emit / listen）
 
 Rust 主动通知前端，或窗口之间广播。适合"进度更新、后台任务完成、菜单点击"。
-当前工程未使用，需要时：
+当前没有自定义业务事件，需要时：
 
 ```rust
 app.emit("download-progress", 42)?;
 ```
 
 ```ts
+// 封装在 src/lib/tauri.ts，Hook 只调用此处导出的订阅函数
 import { listen } from "@tauri-apps/api/event";
 const unlisten = await listen<number>("download-progress", (e) =>
   setProgress(e.payload),
 );
 ```
 
-`useEffect` 里注册监听必须返回 `unlisten`，否则组件卸载后仍会响应。
+`listen()` 异步返回取消函数。Hook 需要在 effect cleanup 中取消监听，也要处理「组件已经卸载、注册才完成」的情况，不能直接把 Promise 作为 cleanup 返回。现有窗口订阅模式可参考 `components/title-bar.tsx`。
 
 ## 状态管理
 
@@ -219,12 +223,14 @@ const unlisten = await listen<number>("download-progress", (e) =>
 
 ## 数据存储
 
-| 数据                            | 存哪                                  | 原因                                |
-| ------------------------------- | ------------------------------------- | ----------------------------------- |
-| UI 偏好（主题、语言、窗口布局） | `localStorage`                        | 不需要 Rust 参与，重启即恢复        |
-| 业务数据                        | SQLite（`tauri-plugin-sql`）          | 事务、索引、迁移，比 JSON 文件可靠  |
-| 导出文件、缓存、日志            | `appDataDir`                          | 安装目录（Program Files）没有写权限 |
-| 令牌、密钥                      | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文，不写进 localStorage       |
+| 数据                           | 存哪                                  | 原因                               |
+| ------------------------------ | ------------------------------------- | ---------------------------------- |
+| UI 偏好（主题、语言、菜单栏）  | `localStorage`                        | 已实现，不需要 Rust 参与           |
+| 原生窗口尺寸、位置与最大化状态 | `tauri-plugin-window-state`           | 已实现，存储于应用配置目录         |
+| 业务数据                       | SQLite（`tauri-plugin-sql`）          | 事务、索引、迁移，比 JSON 文件可靠 |
+| 用户导出文件                   | 用户明确选择的位置                    | 不强制写入应用数据目录             |
+| 缓存、日志                     | `appCacheDir`、`appLogDir`            | 使用对应的系统目录                 |
+| 令牌、密钥                     | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文，不写进 localStorage      |
 
 **绝对不要**把数据写到 exe 所在目录。Windows 下装在 `Program Files` 时是只读的，
 开发机上能跑、装完就崩，这类问题排查成本极高。
@@ -273,7 +279,7 @@ src-tauri/
 
 | 取舍                               | 得到什么               | 失去什么                                        |
 | ---------------------------------- | ---------------------- | ----------------------------------------------- |
-| 用系统 WebView 而不是自带 Chromium | 安装包 1.4MB、内存低   | 三端渲染细节有差异，Linux 的 WebKitGTK 偏旧     |
+| 用系统 WebView 而不是自带 Chromium | 无需随包携带浏览器引擎 | 三端渲染细节与系统 WebView 版本有差异           |
 | HashRouter 而不是 BrowserRouter    | 自定义协议下刷新不 404 | URL 里带 `#`，不好看                            |
 | 不建 `features/` 层                | 目录浅，找文件快       | 单领域文件超过 10 个时要重构                    |
 | 不预装状态管理库                   | 起步轻，没有多余概念   | 跨页状态变多时需要补                            |

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2Icon, TerminalIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -39,22 +39,38 @@ export default function Bridge() {
   const [name, setName] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   async function handleInvoke() {
+    // 回车和按钮共用入口；React 提交 disabled 之前也只能发出一次调用。
+    if (inFlight.current) return;
     if (!isTauri()) {
       toast.error(t("bridge.browserOnly"));
       return;
     }
+    inFlight.current = true;
     setPending(true);
     try {
       const message = await invokeGreet(name);
+      if (!mounted.current) return;
       setResult(message);
       toast.success(t("bridge.success"));
     } catch (error) {
-      setResult(null);
-      toast.error(t("bridge.failed", { error: String(error) }));
+      if (!mounted.current) return;
+      const message = t("bridge.failed", { error: String(error) });
+      setResult(message);
+      toast.error(message);
     } finally {
-      setPending(false);
+      inFlight.current = false;
+      if (mounted.current) setPending(false);
     }
   }
 
@@ -83,7 +99,14 @@ export default function Bridge() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-end gap-2">
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleInvoke();
+            }}
+            aria-busy={pending}
+          >
             <div className="min-w-48 flex-1 space-y-1.5">
               <Label htmlFor="name" className="text-xs">
                 {t("bridge.name")}
@@ -94,17 +117,24 @@ export default function Bridge() {
                 onChange={(event) => setName(event.target.value)}
                 placeholder={t("bridge.namePlaceholder")}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") void handleInvoke();
+                  // 中文输入法确认候选词的 Enter 不应提交表单。
+                  if (event.key === "Enter" && event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                  }
                 }}
               />
             </div>
-            <Button onClick={() => void handleInvoke()} disabled={pending}>
+            <Button type="submit" disabled={pending}>
               {pending ? <Loader2Icon className="animate-spin" /> : null}
               {t("bridge.call")}
             </Button>
-          </div>
+          </form>
 
-          <div className="rounded-md border bg-muted/40 px-3 py-2.5">
+          <div
+            className="rounded-md border bg-muted/40 px-3 py-2.5"
+            role="status"
+            aria-live="polite"
+          >
             <p className="text-xs text-muted-foreground">
               {t("bridge.result")}
             </p>

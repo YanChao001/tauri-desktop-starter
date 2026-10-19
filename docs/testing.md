@@ -9,12 +9,13 @@
 
 ## 测试分层
 
-| 层            | 工具                       | 覆盖什么                          | 优先级       |
-| ------------- | -------------------------- | --------------------------------- | ------------ |
-| Rust 单元测试 | `cargo test`               | 命令函数、纯逻辑、数据转换        | 高           |
-| 前端单元测试  | Vitest                     | `lib/` 下的工具函数、校验、格式化 | 高           |
-| 组件测试      | Vitest + Testing Library   | 关键交互（表单校验、状态切换）    | 中           |
-| 端到端        | tauri-driver + WebdriverIO | 启动、窗口、IPC 主链路            | 低（成本高） |
+| 层               | 工具                       | 覆盖什么                          | 优先级         |
+| ---------------- | -------------------------- | --------------------------------- | -------------- |
+| Rust 单元测试    | `cargo test`               | 命令函数、纯逻辑、数据转换        | 高             |
+| 前端单元测试     | Vitest                     | `lib/` 下的工具函数、校验、格式化 | 高             |
+| 组件测试         | Vitest + Testing Library   | 关键交互（表单校验、状态切换）    | 中             |
+| 构建脚本测试     | Node 内置测试器            | 版本解析、同步与打包边界          | 高             |
+| 端到端（未接入） | tauri-driver + WebdriverIO | 启动、窗口、IPC 主链路            | 按发布风险选择 |
 
 **不要追求覆盖率数字。** 判断标准是：这段代码出错时，用户会不会感知到？
 
@@ -25,7 +26,7 @@
 - 涉及金额、日期、文件路径的转换逻辑
 - 修 bug 时先补一个能复现的测试，再改代码
 
-**不用测**：纯展示组件、shadcn 生成的原子组件、样式。
+纯展示组件、shadcn 生成的原子组件与样式通常由人工检查；关键无障碍行为或历史缺陷可按风险补回归测试。
 
 ## 前端测试怎么跑
 
@@ -48,10 +49,10 @@ src/hooks/use-external-links.test.tsx
 pnpm test           # 跑一遍，CI 用这个
 pnpm test:watch     # 监听模式，边写边跑
 pnpm test:coverage  # 覆盖率报告
-pnpm test:scripts   # 版本同步与校验脚本的回归测试（Node 内置测试器）
+pnpm test:scripts   # 版本、便携包与清理脚本的回归测试（Node 内置测试器）
 ```
 
-覆盖率只统计 `src/`，已排除 `components/ui/`（shadcn 原子组件）和测试自身。
+覆盖率只统计 `src/`，已排除 `components/ui/`（shadcn 原子组件）和测试自身，具体范围以 [`vitest.config.ts`](../vitest.config.ts) 为准。
 **不要为了数字去测 getter。**
 
 ## Mock Tauri API
@@ -116,11 +117,13 @@ mod tests {
 只有参数里带 `AppHandle`、`State` 的命令才需要 `tauri::test::mock_builder()` 搭环境。
 
 ```bash
-cd src-tauri
-cargo test
+pnpm build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
-涉及文件系统的测试用 `std::env::temp_dir()`，不要写死路径，也不要污染用户目录。
+以上命令从仓库根目录运行。先构建前端，确保 `generate_context!` 需要的 `dist` 存在。涉及文件系统的测试应在临时目录中创建独立子目录并清理，避免并行用例互相污染或写入用户数据目录。
 
 ## 端到端（可选）
 
@@ -131,18 +134,11 @@ cargo test
 cargo install tauri-driver --locked
 ```
 
-## 覆盖率目标
-
-| 范围                          | 目标                   |
-| ----------------------------- | ---------------------- |
-| `src-tauri` 命令层与业务逻辑  | ≥ 70%                  |
-| `src/lib`                     | ≥ 70%                  |
-| `src/pages`、`src/components` | 不设目标，只测关键交互 |
+覆盖率报告用于查找未覆盖的风险分支，当前 CI 不设置百分比门槛；Rust 覆盖率工具尚未接入。
 
 ## CI 里跑什么
 
-`.github/workflows/ci.yml` 的 `frontend` job 执行：格式检查、ESLint、类型检查（覆盖源码与 vite/vitest 配置文件）、单元测试、前端构建。
+`.github/workflows/ci.yml` 的 `frontend` job 执行：版本一致性、脚本测试、格式检查、ESLint、类型检查（覆盖源码与 vite/vitest 配置文件）、单元测试、前端构建。
 `rust` job 在 Windows、Ubuntu、macOS 三个平台执行 `cargo clippy` 与 `cargo test`，`cargo fmt` 只在 Windows 跑一次。
 
-端到端测试当前**没有**进 CI：`ci.yml` 只有 `frontend` 与 `rust` 两个 job。要接入时单开一个 job 并设
-`continue-on-error: true`（允许失败），避免偶发超时卡住合并。
+端到端测试当前**没有**进 CI。接入时单开 job，明确目标平台、超时和失败日志；作为发布或合并门槛的关键链路不能静默忽略失败。

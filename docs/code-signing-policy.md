@@ -1,6 +1,6 @@
 # Code signing policy
 
-> Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+拟申请 [SignPath Foundation](https://signpath.org/) 的开源签名服务；申请状态与签名结果以实际发布记录为准。
 
 ## 状态
 
@@ -10,8 +10,7 @@ Windows 产物目前**尚未签名**。本页是提交 SignPath Foundation 申�
 ## 签名范围
 
 - Windows x64 的 **NSIS 安装包**：`Tauri Desktop Starter_<version>_x64-setup.exe`；
-- 当前配置只签安装包外层，安装后的应用二进制不带签名；需要内外层都签名时改用 MSI，
-  由 SignPath 做嵌套签名；
+- 当前配置只签 NSIS 安装包外层，安装后的应用二进制与 MSI 不在此签名范围；需要嵌套签名时须一并修改 artifact 配置、工作流产物收集和验证；
 - WebView2、Rust / npm 依赖等第三方组件不使用本项目的签名额度。
 
 ## 角色与审批
@@ -22,7 +21,7 @@ Windows 产物目前**尚未签名**。本页是提交 SignPath Foundation 申�
 - 评审：外部 PR 必须由 [YanChao001](https://github.com/YanChao001) 评审后合并
 - 签名审批：[YanChao001](https://github.com/YanChao001)，每次签名请求在 SignPath 门户人工批准
 
-SignPath 与 GitHub 账号均启用 MFA。
+签名服务启用前，维护者必须确认 SignPath 与 GitHub 账号均启用 MFA；账号设置不由本地仓库配置。
 
 ## 构建与签名流程
 
@@ -47,7 +46,7 @@ SignPath 与 GitHub 账号均启用 MFA。
 ## 隐私
 
 本程序不会向其他联网系统传输信息，除非用户明确要求（当前版本没有遥测，也没有启用自动更新）。
-日志只写本地 `%LOCALAPPDATA%`。WebView2 运行时由 Microsoft 提供，其数据处理见 Microsoft 的隐私声明。
+应用日志只写本地系统日志目录，位置见 [排障手册](./troubleshooting.md#先看日志)。外链由用户触发后交给系统浏览器；应用未接入遥测或自动更新。WebView2 运行时由 Microsoft 提供，其数据处理由 Microsoft 的隐私声明说明。
 
 ## 变更
 
