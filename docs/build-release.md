@@ -78,6 +78,11 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 
 - 位图用 24 位 BMP（不要带 alpha），配色与主界面一致（neutral + indigo 强调色）。
 - NSIS 在 125% / 150% 缩放下会整体放大小图，图里不要放小字，否则会发虚。
+- **WiX 会在位图之上叠加自己的文字控件**（`WixUI_InstallDir`，dlu→px 为 4/3），画图必须避开：
+  - banner（493×58）：标题文字 x 20–287 / y 8–28，描述文字 x 33–406 / y 31–51 ⇒ 图形放右侧（x > 290）或底部条带（y > 52）。
+  - dialog（493×312）：标题与描述文字都在右侧 x 180–473 / y 27–187 ⇒ 主视觉放左侧（x < 180）或底部（y > 190）。
+  - 压到文字就是"图标错位"。MSI 实测布局可从 WiX 工具集 `WixUIExtension.dll` 内嵌 objects XML 提取。
+- 两张 WiX 位图由 `scripts/gen-installer-bitmaps.py` 生成（依赖 `pip install pillow`），改样式后重跑脚本并重新 `pnpm tauri build`。
 - 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
 - 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
 - 模板自带 `src-tauri/installer/installer.nsi`（基于 tauri-cli 2.12.3 的官方模板）。欢迎页/完成页的文案与配色在文件里的 `CUSTOM BRANDING` 标记之间，按语言分别定义：
