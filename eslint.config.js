@@ -19,7 +19,6 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
-      globals: { ...globals.browser, ...globals.node },
     },
     plugins: { "react-hooks": reactHooks },
     rules: {
@@ -30,6 +29,16 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
     },
+  },
+  {
+    // 应用源码是浏览器环境：误用 process、Buffer 这类 Node API 会直接报错
+    files: ["src/**/*.{ts,tsx}"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    // 构建脚本与配置文件是 Node 环境
+    files: ["*.config.{js,ts}", "scripts/**/*.mjs"],
+    languageOptions: { globals: globals.node },
   },
   {
     // 架构约束：系统能力只能从 lib/tauri.ts 出去。

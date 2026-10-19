@@ -5,16 +5,15 @@
 | 组件             | 版本                                 | 说明                             |
 | ---------------- | ------------------------------------ | -------------------------------- |
 | Node.js          | 22.12+（见 `.nvmrc`）                | 前端构建                         |
-| pnpm             | 12+                                  | 包管理器，不要用 npm 生成锁文件  |
-| Rust             | 1.88+（stable-msvc）                 | edition 2024 与 let-chain 的要求 |
+| pnpm             | 12.14.0（`packageManager` 字段锁定） | 包管理器，不要用 npm 生成锁文件  |
+| Rust             | 1.99.1（`rust-toolchain.toml` 钉定） | edition 2024 与 let-chain 的要求 |
 | Visual Studio    | 2022/2026，含「使用 C++ 的桌面开发」 | 提供 MSVC 链接器                 |
 | Windows SDK      | 10.0.19041 以上                      | 链接系统库                       |
 | WebView2 Runtime | 任意近期版本                         | Win11 自带，Win10 多数已装       |
 
 macOS 需要 Xcode Command Line Tools；Linux 需要 `libwebkit2gtk-4.1-dev` 等依赖，详见 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)。
 
-仓库自带 `rust-toolchain.toml`，rustup 会自动切到 stable 并补上 `rustfmt` 与 `clippy`——
-不用手动 `rustup component add`，版本也不用记，照着文档写的最低版本只是下限。
+仓库自带 `rust-toolchain.toml`，钉在具体版本上，rustup 会自动安装该版本并补上 `rustfmt` 与 `clippy`——不用手动 `rustup component add`。升级 Rust 时，把它和 `ci.yml` 里 `dtolnay/rust-toolchain` 的 `toolchain` 字段一起改。
 
 ## 首次启动
 

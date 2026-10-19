@@ -1,4 +1,6 @@
 [toolchain]
-channel = "stable"
+# 钉具体版本而不是 stable：防止上游新版本带出新的 clippy lint 让 CI 变红。
+# 升级时与 ci.yml 里 dtolnay/rust-toolchain 的 toolchain 字段一起改。
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
