@@ -34,8 +34,13 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 生成目录不参与 HMR；Windows 上目录监听可能阻止归档时的原子重命名。
+      ignored: [
+        "**/src-tauri/**",
+        "**/artifacts/**",
+        "**/dist/**",
+        "**/coverage/**",
+      ],
     },
   },
 }));

@@ -52,6 +52,8 @@ Vite 的 `dist/` 与 Cargo 默认 `src-tauri/target/` 是编译中间产物与�
 
 `app:build` 默认构建 release，先通过 `tauri build --no-bundle` 编译并从 Cargo 结构化输出确定真实产物，再打包并归档。它沿用 Cargo 默认缓存，不为默认构建强制增加 host target 子目录。打包阶段隔离旧 bundle，成功后归档本次输出；失败时恢复旧 bundle，避免把旧安装包误作本次结果。
 
+分发切换使用同级目录重命名；Windows 短暂占用时最多等待 1.3 秒重试，每次重新校验路径。Vite 和 VS Code 均排除生成目录的文件监听，支持开发预览运行时归档；自定义监听配置须保留这一约定。持续占用的处理见 [Windows 归档目录出现 EPERM](./troubleshooting.md#windows-归档目录出现-eperm)。
+
 常用参数：
 
 | 参数                                                           | 用途                                                       |

@@ -9,11 +9,11 @@ import {
   openSync,
   readSync,
   realpathSync,
-  renameSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { removeProjectPath } from "./fs-utils.mjs";
+import { renameWithRetry } from "./rename-with-retry.mjs";
 
 export function fileSha256(path) {
   const hash = createHash("sha256");
@@ -130,6 +130,15 @@ export function publishArtifacts(root, { version, target, kind, entries }) {
   mkdirSync(parent, { recursive: true });
   const staging = mkdtempSync(join(parent, `.${kind}-`));
   const backup = join(parent, `.${kind}-previous-${randomUUID()}`);
+  const renamePublication = (source, destination) =>
+    renameWithRetry(source, destination, {
+      validate: () => {
+        publicationPath(root, source);
+        publicationPath(root, destination);
+        if (dirname(source) !== parent || dirname(destination) !== parent)
+          throw new Error("发布目录只允许在同一个父目录内替换");
+      },
+    });
   try {
     const files = sources.map(({ source, path, directory, contents }) => {
       const destination = join(staging, path);
@@ -151,11 +160,11 @@ export function publishArtifacts(root, { version, target, kind, entries }) {
       join(staging, "manifest.json"),
       `${JSON.stringify({ version, target, kind, createdAt: new Date().toISOString(), files }, null, 2)}\n`,
     );
-    if (existsSync(outputDir)) renameSync(outputDir, backup);
+    if (existsSync(outputDir)) renamePublication(outputDir, backup);
     try {
-      renameSync(staging, outputDir);
+      renamePublication(staging, outputDir);
     } catch (error) {
-      if (existsSync(backup)) renameSync(backup, outputDir);
+      if (existsSync(backup)) renamePublication(backup, outputDir);
       throw error;
     }
     if (existsSync(backup)) {

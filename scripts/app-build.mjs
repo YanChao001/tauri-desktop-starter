@@ -31,7 +31,14 @@ if (args.length === 1 && ["--help", "-h"].includes(args[0])) {
       console.log(`\n安装包已归档：${outputDir}`);
     }
   } catch (error) {
-    console.error(`应用构建失败：${error.message}`);
+    console.error(
+      `应用构建失败${error.code ? ` [${error.code}]` : ""}：${error.message}`,
+    );
+    if (["EPERM", "EBUSY", "EACCES"].includes(error.code)) {
+      console.error(
+        "请关闭占用分发目录的安装器、预览窗口或位于该目录的终端，检查写入权限后重试。",
+      );
+    }
     process.exitCode = error.exitCode ?? 1;
   }
 }
