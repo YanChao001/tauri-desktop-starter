@@ -44,12 +44,11 @@
 pnpm install
 pnpm app:dev      # 开发模式，热更新
 pnpm app:build    # 产出安装包
-pnpm typecheck    # 只做类型检查
-pnpm lint         # ESLint
-pnpm format       # Prettier 格式化
+pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构建
 ```
 
 `pnpm dev` 只起前端（浏览器里能看界面，但 `invoke` 不可用）。
+`pnpm test` 跑单元测试，`pnpm clean` 清掉 `dist` 与 1 GB 以上的 Rust 编译缓存。
 
 ## 目录结构
 
@@ -76,7 +75,8 @@ pnpm format       # Prettier 格式化
 │   │   └── utils.ts         # cn()
 │   ├── App.tsx              # Provider + 路由
 │   ├── main.tsx
-│   └── index.css            # Tailwind 入口与主题变量
+│   ├── index.css            # Tailwind 入口与主题变量
+│   └── test/setup.ts        # 测试环境初始化
 ├── src-tauri/
 │   ├── src/lib.rs           # 只做组装：插件、命令注册、启动兜底
 │   ├── src/commands.rs      # 前端可调用的命令实现
@@ -94,10 +94,12 @@ pnpm format       # Prettier 格式化
 │   ├── conventions/         # 代码风格、Git 协作、界面规范
 │   └── adr/                 # 架构决策记录
 ├── scripts/
+│   ├── clean.mjs            # 清理 dist 与 Rust 编译缓存
 │   └── set-version.mjs      # 同步四处版本号
-├── .github/                 # CI、PR 与 Issue 模板
+├── vitest.config.ts         # 测试配置，alias 复用 vite.config.ts
+├── rust-toolchain.toml      # 固定 stable，自动装 rustfmt / clippy
+├── .github/                 # CI、发布流水线、依赖更新、PR 与 Issue 模板
 ├── CONTRIBUTING.md
-├── CHANGELOG.md
 ├── SECURITY.md              # 安全邮箱为占位，新项目需替换
 ├── LICENSE                  # MIT，版权方需按项目替换
 └── .env.example             # 环境变量示例，复制为 .env.local 使用
@@ -115,6 +117,7 @@ pnpm format       # Prettier 格式化
 6. **体积优化** —— `Cargo.toml` 的 release 档已开 `lto`、`codegen-units=1`、`opt-level="s"`、`strip`、`panic="abort"`。
 7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
 8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
+9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`）。release 构建没有控制台，用户报问题时这是唯一能拿到的线索。
 
 ## 拿它开新项目
 
@@ -140,23 +143,37 @@ pnpm format       # Prettier 格式化
 pnpm dlx shadcn@latest add dialog table form select
 ```
 
-**加一个 Rust 命令**
+**加一个 Rust 命令**（三步，少一步就会报 "command not found"）
 
 ```rust
-// src-tauri/src/lib.rs
+// 1. src-tauri/src/commands.rs
 use tauri::Manager;
 
 #[tauri::command]
-fn read_config(app: tauri::AppHandle) -> Result<String, String> {
+pub fn read_config(app: tauri::AppHandle) -> Result<String, String> {
     // 数据目录随系统变化，不要用相对路径或 exe 所在目录
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::read_to_string(dir.join("config.json")).map_err(|e| e.to_string())
 }
 ```
 
-注册进 `generate_handler![greet, read_config]`，前端 `invoke<string>("read_config")`。
+```rust
+// 2. src-tauri/src/lib.rs —— 登记到 handler
+.invoke_handler(tauri::generate_handler![commands::greet, commands::read_config])
+```
 
-> 注意：前端 `invoke` 的返回类型不会被自动校验，建议像 `lib/tauri.ts` 那样统一包一层函数并显式标注泛型。项目变大后可以接 `tauri-specta` 自动生成类型绑定。
+```ts
+// 3. src/lib/tauri.ts —— 前端只通过这里调用
+export async function readConfig(): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("read_config");
+}
+```
+
+页面里直接 `await readConfig()`，不要自己 import `@tauri-apps/api`——ESLint 会拦。
+
+> `invoke` 的返回类型不会被运行时校验。后端结构变了，前端不会立刻报错，
+> 所以跨边界的返回值要当不可信数据处理。项目再大一些可以接 `tauri-specta` 自动生成类型绑定。
 
 **加官方插件**（文件系统、对话框、通知、剪贴板等）
 
@@ -178,11 +195,11 @@ pnpm tauri add dialog
 
 本机（Windows x64，release 档）实测：
 
-| 产物                                   | 体积   |
-| -------------------------------------- | ------ |
-| 可执行文件 `tauri-desktop-starter.exe` | 3.4 MB |
-| MSI 安装包                             | 1.9 MB |
-| NSIS 安装包                            | 1.4 MB |
+| 产物                                   | 体积    |
+| -------------------------------------- | ------- |
+| 可执行文件 `tauri-desktop-starter.exe` | 3.5 MB  |
+| MSI 安装包                             | 1.92 MB |
+| NSIS 安装包                            | 1.39 MB |
 
 首次 `pnpm app:build` 需要编译全部 Rust 依赖，约 7 分钟；之后改前端不动 Rust，几十秒即可。
 `src-tauri/target` 会占 1.5 GB 左右（编译缓存，已在 .gitignore 中）。

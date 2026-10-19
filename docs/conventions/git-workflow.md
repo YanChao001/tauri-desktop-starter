@@ -56,8 +56,8 @@ git switch -c feature/42-command-palette
 git fetch origin
 git rebase origin/develop
 
-# 4. 提交前自检
-pnpm format:check && pnpm lint && pnpm typecheck
+# 4. 提交前自检（一条命令覆盖 CI 的全部检查）
+pnpm verify
 
 # 5. 推送（首次）
 git push -u origin feature/42-command-palette
@@ -145,6 +145,20 @@ docs: 补充发布流程中的签名说明
 - 一次提交只做一件事。混了格式化 + 逻辑改动的提交，review 成本翻倍。
 - 破坏性变更在 footer 写 `BREAKING CHANGE: 说明`，并在 PR 标题加 `!`，如 `feat(ipc)!: 重命名 invoke 封装`。
 
+## 本地不装 git hook
+
+模板**不引入 husky / lint-staged**，这是有意的：
+
+- hook 能被 `--no-verify` 跳过，它拦不住不想守规矩的人。
+- 真正绕不过去的是 CI 和分支保护，那才是保障。
+- 每次提交多几秒等待，加上 Windows 上偶发的路径问题，收益不划算。
+
+代价是本地可能提交格式不对的代码。用一条命令兜住：提交前跑 `pnpm verify`，
+忘了也没关系，CI 会拦下来，改完再推即可。
+
+如果团队确实需要，加装成本很低（`pnpm add -D husky lint-staged`），
+但先想清楚它能带来什么 CI 给不了的东西。
+
 ## 合并方式
 
 | 合并路径                        | 命令                              | 说明                                              |
@@ -230,7 +244,9 @@ git switch -c release/1.2.0
 # 2. 同步版本号（见 scripts/set-version.mjs）
 pnpm version:set 1.2.0
 
-# 3. 更新 CHANGELOG（把 Unreleased 段落改为 1.2.0 并写日期）
+# 3. 过一遍本次要发的提交，确认没有漏或误入
+git log v上一个版本..HEAD --oneline
+
 # 4. 此分支只允许 fix，不允许 feat
 
 # 5. 合入 main 并打标签

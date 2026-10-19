@@ -2,6 +2,24 @@
 
 按现象查，每条都给出原因和可执行的解法。
 
+## 先看日志
+
+release 构建没有控制台，日志落在系统日志目录下的 `app.log`：
+
+| 平台    | 路径                                              |
+| ------- | ------------------------------------------------- |
+| Windows | `%LOCALAPPDATA%\com.starter.desktop\logs\app.log` |
+| macOS   | `~/Library/Logs/com.starter.desktop/app.log`      |
+| Linux   | `~/.local/share/com.starter.desktop/logs/app.log` |
+
+路径由 `identifier`（`tauri.conf.json`）决定，改标识符后要跟着变。
+默认记 `Info` 级；临时要看细节，把 `lib.rs` 里的 `.level(log::LevelFilter::Info)` 调成 `Debug`。
+
+> 日志文件是 UTF-8 无 BOM。Windows PowerShell 5.1 默认按 GBK 读，中文会显示成乱码：
+> 用 `Get-Content app.log -Encoding UTF8`，或者直接用 VS Code / 记事本打开。
+
+报问题时附上这个文件，比描述「它就是打不开」有用得多。
+
 ## 窗口不出现 / 白屏
 
 **现象**：进程在跑，但看不到窗口；或者窗口出现了但一片白。

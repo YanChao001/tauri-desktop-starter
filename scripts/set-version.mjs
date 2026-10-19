@@ -90,4 +90,6 @@ console.log("  package.json");
 console.log("  src-tauri/tauri.conf.json");
 console.log("  src-tauri/Cargo.toml");
 console.log("  src-tauri/Cargo.lock（如存在）");
-console.log("\n下一步：更新 CHANGELOG.md，然后提交并打 tag。");
+console.log(
+  `\n下一步：提交后打 tag（git tag -a v${next} -m "v${next}"）并推送。`,
+);

@@ -152,45 +152,19 @@ if (update?.available) {
 
 ## CI 多平台构建
 
-`.github/workflows/ci.yml` 只做校验（格式、lint、类型、编译）。
-出正式包建议单独一个 `release.yml`，由 tag 触发：
+`.github/workflows/ci.yml` 只做校验（格式、lint、类型、测试、编译）。
+出正式包由 `.github/workflows/release.yml` 负责，打 tag 触发，矩阵覆盖：
 
-```yaml
-on:
-  push:
-    tags: ["v*"]
+| 平台            | 产物           |
+| --------------- | -------------- |
+| Windows x64     | nsis / msi     |
+| macOS arm64+x64 | dmg / app      |
+| Linux x64       | deb / appimage |
 
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            args: --bundles nsis,msi
-          - os: macos-latest
-            args: --bundles dmg
-          - os: ubuntu-22.04
-            args: --bundles deb,appimage
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
-      - run: pnpm install --frozen-lockfile
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          args: ${{ matrix.args }}
-```
+产物以 **draft Release** 上传，人工确认后再发布。
+
+**签名密钥一律走 GitHub Secrets。** 需要哪几个 secrets，写在 workflow 顶部的注释里；
+证书和私钥永远不进仓库——进了就当作已泄露，必须吊销重签。
 
 Linux 构建需要先装系统依赖：
 
@@ -204,8 +178,8 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 发布前逐项确认，任何一项没过就不发：
 
 - [ ] `develop` 已合并到 `release/x.y.z`，CI 全绿
-- [ ] `pnpm version:set x.y.z` 已执行，三处版本号一致
-- [ ] `CHANGELOG.md` 已更新，`Unreleased` 段落已归档并标注日期
+- [ ] `pnpm version:set x.y.z` 已执行，四处版本号一致
+- [ ] `git log v上一版..HEAD --oneline` 过一遍，确认没有漏进版本的提交，也没有不该进的
 - [ ] 在干净机器上安装过一次（不是开发机），确认能启动
 - [ ] Windows 已签名，SmartScreen 无"未知发布者"
 - [ ] macOS 已公证，`spctl -a -vvv -t install <app>` 通过

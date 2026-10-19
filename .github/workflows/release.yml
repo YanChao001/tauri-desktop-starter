@@ -1,0 +1,76 @@
+name: Release
+
+# 打 tag 触发（v1.2.0），也可在 Actions 页面手动触发。
+# 产物默认作为 draft Release 上传，人工确认后再发布。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
+    strategy:
+      # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Linux 系统依赖
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 未配置签名时产物可用，但用户会看到"未知发布者"（Windows）或无法通过公证（macOS）。
+      # 正式发布前按 docs/build-release.md 配好下面这些 secrets：
+      #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD（自动更新签名）
+      #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY /
+      #   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID（macOS 公证）
+      # 证书不能进仓库，只能放 secrets。
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "v__VERSION__"
+          releaseBody: "构建产物见下方 Assets。变更内容请查看本 tag 与上一版本之间的提交记录。"
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

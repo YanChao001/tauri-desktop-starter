@@ -2,8 +2,10 @@
 
 ## 现状
 
-工程目前**没有接入测试框架**——这是有意的取舍，模板阶段保持依赖精简。
-但只要开始写业务逻辑，下面这套分层就该补上，不要等到出事故。
+前端已接入 Vitest（jsdom + Testing Library），Rust 用内置的 `cargo test`，CI 两边都会跑。
+
+模板只带了 7 个用例，覆盖两个最容易悄悄坏掉的地方：路由匹配、错误边界。
+**这是骨架，不是覆盖率目标。** 写业务时按下面的分层往上加。
 
 ## 测试分层
 
@@ -25,50 +27,30 @@
 
 **不用测**：纯展示组件、shadcn 生成的原子组件、样式。
 
-## 接入前端测试
+## 前端测试怎么跑
+
+配置已经就位，不用再做接入：
+
+| 文件                | 作用                                           |
+| ------------------- | ---------------------------------------------- |
+| `vitest.config.ts`  | jsdom 环境；alias 复用 `vite.config.ts` 的导出 |
+| `src/test/setup.ts` | 注册 jest-dom 的 DOM 断言                      |
+
+测试文件与被测代码同目录，命名 `*.test.ts(x)`：
+
+```
+src/routes.test.ts
+src/components/error-boundary.test.tsx
+```
 
 ```bash
-pnpm add -D vitest @vitest/coverage-v8 jsdom \
-  @testing-library/react @testing-library/user-event @testing-library/jest-dom
+pnpm test           # 跑一遍，CI 用这个
+pnpm test:watch     # 监听模式，边写边跑
+pnpm test:coverage  # 覆盖率报告
 ```
 
-新建 `vitest.config.ts`（与 `vite.config.ts` 分开，避免污染构建配置）：
-
-```ts
-import path from "node:path";
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
-
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: { "@": path.resolve(import.meta.dirname, "./src") },
-  },
-  test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/test/setup.ts"],
-  },
-});
-```
-
-`src/test/setup.ts`：
-
-```ts
-import "@testing-library/jest-dom/vitest";
-```
-
-`package.json` 增加：
-
-```json
-{
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
-  }
-}
-```
+覆盖率只统计 `src/`，已排除 `components/ui/`（shadcn 原子组件）和测试自身。
+**不要为了数字去测 getter。**
 
 ## Mock Tauri API
 
@@ -108,7 +90,7 @@ ESLint 的边界规则对 `*.test.*` / `*.spec.*` 开了例外，第二种写法
 
 ## Rust 测试
 
-命令函数就是普通函数，直接测：
+命令函数就是普通函数，直接测。`src-tauri/src/commands.rs` 里有现成的写法：
 
 ```rust
 #[cfg(test)]
@@ -116,16 +98,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn greet_contains_name() {
-        assert!(greet("世界").contains("世界"));
+    fn greet_returns_greeting() {
+        assert_eq!(greet("世界").unwrap(), "你好，世界！这条消息来自 Rust。");
     }
 
     #[test]
-    fn greet_handles_empty_name() {
-        assert!(!greet("").is_empty());
+    fn greet_rejects_blank_name() {
+        assert!(greet("").is_err());
+        assert!(greet("   ").is_err());
     }
 }
 ```
+
+关键点：`#[tauri::command]` 标注的函数可以直接调用，不需要构造窗口或 App 实例。
+只有参数里带 `AppHandle`、`State` 的命令才需要 `tauri::test::mock_builder()` 搭环境。
 
 ```bash
 cd src-tauri

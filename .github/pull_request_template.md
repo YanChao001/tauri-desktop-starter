@@ -9,7 +9,7 @@
 ## 怎么验证
 
 - [ ] 本地 `pnpm app:dev` 手动走通了改动路径
-- [ ] `pnpm format:check && pnpm lint && pnpm typecheck` 通过
+- [ ] `pnpm verify` 通过（格式 / lint / 类型 / 测试 / 构建）
 - [ ] 涉及 Rust：`cargo fmt --check`、`cargo clippy`、`cargo test` 通过
 
 ## 影响面
@@ -18,7 +18,7 @@
 - [ ] 修改了 `src-tauri/tauri.conf.json`（窗口 / 打包 / 标识符）
 - [ ] 修改了 `Cargo.toml` 或新增依赖（需说明体积与许可证影响）
 - [ ] 涉及数据结构或迁移
-- [ ] 修改了对外行为（需要同步文档或 CHANGELOG）
+- [ ] 修改了对外行为（需要同步 `docs/` 里对应的说明）
 
 ## 截图
 

@@ -15,8 +15,8 @@ flowchart LR
   end
 
   subgraph rust["Rust 主进程"]
-    CMD["命令处理层<br/>#[tauri::command]"]
-    PLUGIN["官方插件<br/>opener / window-state / single-instance"]
+    CMD["命令处理层<br/>commands.rs"]
+    PLUGIN["官方插件<br/>log / opener / window-state / single-instance"]
     SYS["系统能力<br/>文件、网络、数据库、硬件"]
   end
 

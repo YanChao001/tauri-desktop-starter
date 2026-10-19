@@ -20,3 +20,28 @@ pub fn greet(name: &str) -> Result<String, String> {
     }
     Ok(format!("你好，{name}！这条消息来自 Rust。"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn greet_returns_greeting() {
+        assert_eq!(greet("世界").unwrap(), "你好，世界！这条消息来自 Rust。");
+    }
+
+    #[test]
+    fn greet_trims_surrounding_spaces() {
+        assert_eq!(
+            greet("  世界  ").unwrap(),
+            "你好，世界！这条消息来自 Rust。"
+        );
+    }
+
+    #[test]
+    fn greet_rejects_blank_name() {
+        // 空串和纯空白都要拦住，这是「校验在边界」的具体体现
+        assert!(greet("").is_err());
+        assert!(greet("   ").is_err());
+    }
+}

@@ -18,8 +18,8 @@ pnpm app:dev
 git switch develop && git pull --rebase
 git switch -c feature/42-command-palette
 
-# 4. 写代码，提交前自检
-pnpm format:check && pnpm lint && pnpm typecheck
+# 4. 写代码，提交前自检（等价于 CI 的全部检查）
+pnpm verify
 
 # 5. 提交并首次推送
 git add -A

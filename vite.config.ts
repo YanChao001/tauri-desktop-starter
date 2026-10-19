@@ -6,15 +6,16 @@ import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
+/** 路径别名，`vitest.config.ts` 复用这一份，避免两处各写一遍。 */
+export const alias = {
+  "@": path.resolve(import.meta.dirname, "./src"),
+};
+
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
 
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "./src"),
-    },
-  },
+  resolve: { alias },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

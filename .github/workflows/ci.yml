@@ -38,6 +38,9 @@ jobs:
       - name: 类型检查
         run: pnpm typecheck
 
+      - name: 单元测试
+        run: pnpm test
+
       - name: 构建前端
         run: pnpm build
 
