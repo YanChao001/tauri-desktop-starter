@@ -10,9 +10,12 @@ import { removeProjectPath } from "./fs-utils.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
+const DISTRIBUTIONS = [["artifacts", "按版本归档的分发产物"]];
+
 const BUILD_OUTPUT = [
   ["dist", "前端构建产物"],
-  ["dist-portable", "便携版产物"],
+  ...DISTRIBUTIONS,
+  ["dist-portable", "旧版便携产物（兼容清理）"],
   ["coverage", "测试覆盖率报告"],
   ["src-tauri/target", "Rust 编译缓存（通常 1 GB 以上）"],
 ];
@@ -28,11 +31,19 @@ const HINTS = {
 };
 
 const all = process.argv.includes("--all");
-if (process.argv.slice(2).some((arg) => arg !== "--all")) {
-  console.error("用法: pnpm clean [--all]；不接受自定义路径");
+const artifactsOnly = process.argv.includes("--artifacts");
+if (
+  (all && artifactsOnly) ||
+  process.argv.slice(2).some((arg) => arg !== "--all" && arg !== "--artifacts")
+) {
+  console.error("用法: pnpm clean [--all | --artifacts]；不接受自定义路径");
   process.exit(1);
 }
-const targets = all ? [...BUILD_OUTPUT, ...DEPENDENCIES] : BUILD_OUTPUT;
+const targets = artifactsOnly
+  ? DISTRIBUTIONS
+  : all
+    ? [...BUILD_OUTPUT, ...DEPENDENCIES]
+    : BUILD_OUTPUT;
 
 let removed = 0;
 const failed = [];
@@ -61,6 +72,8 @@ if (failed.length > 0) {
   console.log("\n没有需要清理的内容。");
 } else if (all) {
   console.log("\n完成。依赖已删除，下一步执行 pnpm install。");
+} else if (artifactsOnly) {
+  console.log("\n完成。分发产物已清理，编译缓存与依赖已保留。");
 } else {
   console.log("\n完成。下次构建会自动重建。");
 }

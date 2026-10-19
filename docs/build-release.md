@@ -21,6 +21,8 @@ pnpm version:set 1.2.0
 
 当前包含 MSI，版本须满足 major ≤ 255、minor ≤ 255、patch ≤ 65535。预发布标识或构建元数据若用于 MSI 第四段，必须为 ≤ 65535 的整数；使用 `beta.1` 等文本时，需要显式配置 `bundle.windows.wix.version` 或仅构建 NSIS。非法版本在写入前就会被拒绝。
 
+版本校验依据项目配置执行；若选择仅构建 NSIS 来使用文本预发布，需先在配置中移除 MSI 目标，仅传 `--bundles nsis` 不会改变版本校验依据。
+
 > 版本号是**用户可见的契约**：自动更新靠它判断新旧，降级安装会被拒绝。已经发布过的版本号不要复用。
 
 ## 构建
@@ -29,35 +31,59 @@ pnpm version:set 1.2.0
 pnpm app:build
 ```
 
-产物在 `src-tauri/target/release/bundle/`：
+脚本完成 Tauri 构建后，将本次安装包收集到 `artifacts/<version>/<target-triple>/installers/`。完整分发目录与源码 / 中间产物的区别见 [README · 构建产物](../README.md#构建产物)。
 
 | 平台    | 产物                               | 说明                               |
 | ------- | ---------------------------------- | ---------------------------------- |
-| Windows | `nsis/*.exe`                       | 推荐分发，无需管理员权限，体积最小 |
-| Windows | `msi/*.msi`                        | 企业内网分发用，可走组策略         |
+| Windows | `nsis/*.exe`                       | 当前配置按用户安装，无需管理员权限 |
+| Windows | `msi/*.msi`                        | 适合企业分发                       |
 | macOS   | `dmg/*.dmg`、`macos/*.app`         |                                    |
 | Linux   | `deb/*.deb`、`appimage/*.AppImage` |                                    |
 
 只出某一个格式：
 
 ```bash
-pnpm tauri build --bundles nsis
+pnpm app:build --bundles nsis
 ```
 
-默认路径与平台限制见 [README 的构建产物一节](../README.md#构建产物)。显式指定 `--target` 或 `CARGO_TARGET_DIR` 时，以 Cargo 实际目标目录为准。
+Vite 的 `dist/` 与 Cargo 默认 `src-tauri/target/` 是编译中间产物与缓存；直接运行 `pnpm tauri build` 保留 Tauri 原始输出，不执行项目脚本的分发收集。需要交付时使用 `pnpm app:build` 或 `pnpm app:portable`，只清理交付目录使用 `pnpm clean:artifacts`。
+
+分发目录按项目版本与 Rust target triple 隔离；每次只更新当前版本 / target 下对应的 `installers/` 或 `portable/`，保留其他版本、target 和另一类产物。自定义 Cargo 编译目录不会改变 `artifacts/` 的统一位置。
+
+`app:build` 默认构建 release，先通过 `tauri build --no-bundle` 编译并从 Cargo 结构化输出确定真实产物，再打包并归档。它沿用 Cargo 默认缓存，不为默认构建强制增加 host target 子目录。打包阶段隔离旧 bundle，成功后归档本次输出；失败时恢复旧 bundle，避免把旧安装包误作本次结果。
+
+常用参数：
+
+| 参数                                                           | 用途                                                       |
+| -------------------------------------------------------------- | ---------------------------------------------------------- |
+| `--target` / `-t`                                              | 指定 Rust 编译目标，分发目录使用对应 target triple         |
+| `--bundles` / `-b`                                             | 指定安装包格式，支持列表或逗号分隔                         |
+| `--config` / `-c`                                              | 合并 JSON 配置文件或 JSON 字符串；合并后版本必须与项目一致 |
+| `--features` / `-f`                                            | 指定 Cargo features                                        |
+| `--ci`、`--no-sign`、`--skip-stapling`、`--no-binary-patching` | 透传对应构建 / 打包选项                                    |
+| `--verbose` / `-v`                                             | 增加工具日志                                               |
+| `--no-bundle`                                                  | 只编译应用，不生成本轮分发归档                             |
+
+`--debug`、自定义 runner、裸 Cargo 参数与 macOS universal target 不在封装范围内；需要这些高级能力时直接使用 `pnpm tauri`，并自行管理其输出。若只构建 NSIS，当前 `installers/` 会整体替换，旧 MSI 不会混入这次交付。
+
+`installers/` 与 `portable/` 各有 `manifest.json`，包含版本、target、类别、收集时间和普通文件 SHA-256；`.app` 等目录包记录目录类型，校验分发完整性时使用 `.dmg` 或归档文件的哈希。安装器子目录保留原格式布局，便携目录包含 exe、`使用说明.txt` 与清单。清单不会改变程序的数据目录或系统签名状态。
 
 ### 便携版（免安装）
 
-Windows 没有 portable 打包目标。脚本使用 `rustc -vV` 的 host target 显式构建单文件 exe，再收集到 `dist-portable/`：
+Windows 没有 portable 打包目标。脚本编译应用 exe，再收集到 `artifacts/<version>/<target-triple>/portable/`：
 
 ```bash
 pnpm app:portable              # 构建 + 收集
-pnpm app:portable --skip-build # 只复用先前便携版构建的同一 host 产物
+pnpm app:portable --skip-build # 复用已有构建；确认源码与版本后使用
 ```
 
-脚本通过 Cargo metadata 识别目标目录，支持 `CARGO_TARGET_DIR` 与 Cargo `target-dir`，读取 `<target_directory>/<host>/release/`；普通 `app:build` 不带目标参数的目录不会被 `--skip-build` 误选。复用旧构建前需自行确认源码与版本。
+默认构建沿用 Cargo 编译目录与缓存，支持 `CARGO_TARGET_DIR` 和 Cargo `target-dir`。旧 `dist-portable/` 不再作为输出目录。
 
-产物包含 exe 与一份 `使用说明.txt`，压缩后即可分发。适用前提与限制：
+便携脚本支持共享的 release 参数，如 `--target` / `-t`、`--config` / `-c`、`--features` / `-f`、`--ci`、`--no-sign` 与 verbose；不接受 `--bundles`。配置合并后版本必须与项目一致，Windows 便携版的编译目标也必须是 Windows。
+
+`--skip-build` 必须通过先前便携构建记录的版本、配置、构建参数与 exe SHA-256 校验；缺少记录或 exe 已被其他打包步骤改写时，需要重新运行不带 `--skip-build` 的便携构建。收据不判断源码是否修改，使用者仍需确认现有 exe 对应准备交付的源码。
+
+产物包含 exe、`使用说明.txt` 与 `manifest.json`，压缩后即可分发。适用前提与限制：
 
 - 目标机器需要 WebView2 运行时（Win11 自带；老 Win10 缺失时按说明安装）。
 - 窗口位置、日志仍写入当前用户的 AppData，不随 exe 移动；要做"绿色版"需自行改路径。
@@ -86,7 +112,7 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
   - banner（493×58）：标题文字 x 20–287 / y 8–28，描述文字 x 33–406 / y 31–51 ⇒ 图形放右侧（x > 290）或底部条带（y > 52）。
   - dialog（493×312）：标题与描述文字都在右侧 x 180–473 / y 27–187 ⇒ 主视觉放左侧（x < 180）或底部（y > 190）。
   - 压到文字就是"图标错位"。MSI 实测布局可从 WiX 工具集 `WixUIExtension.dll` 内嵌 objects XML 提取。
-- 两张 WiX 位图由 `scripts/gen-installer-bitmaps.py` 生成（依赖 `pip install pillow`），改样式后重跑脚本并重新 `pnpm tauri build`。
+- 两张 WiX 位图由 `scripts/gen-installer-bitmaps.py` 生成（依赖 `pip install pillow`），改样式后重跑脚本并重新 `pnpm app:build`。
 - 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
 - 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
 - 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在 `CUSTOM BRANDING` 标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
@@ -188,7 +214,7 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 仅在证书有效且发行策略允许导出私钥时使用，例如受组织信任的内部分发证书。自签名 / 内部证书不会自动获得公共信任；不要据此采购新公共 OV / EV 证书。签名参数不要写进仓库，使用临时配置文件在构建时合并：
 
 ```bash
-pnpm tauri build --config <临时签名配置文件路径>
+pnpm app:build --config <临时签名配置文件路径>
 ```
 
 查本机证书指纹：
@@ -320,6 +346,10 @@ if (update) {
 | Linux x64       | deb / appimage |
 
 产物以 **draft Release** 上传，人工确认后再发布。
+
+工作流另将 `tauri-action` 本次返回的产物收集到同一套 `artifacts/<version>/<target>/installers/` 结构，生成清单并上传为 `build-installers-<target>`。这是 build 阶段的归档，尚未经过可选的 SignPath 后签名；启用 SignPath 后，签名 job 会重新生成签名文件的清单，上传 `signed-installers-x86_64-pc-windows-msvc` 并覆盖 draft Release 的 NSIS 资产。需要 SignPath 签名包时，使用签名 job 的归档或完成签名后的 Release。
+
+CI 只收集 `tauri-action` 明确返回的文件，不按相邻文件猜测签名或压缩包。macOS 上传 workflow artifact 前，会把已归档的 `installers/` 整体打成 tar 包以保留 `.app` 的执行权限和符号链接；Release 中的应用压缩包仍由 `tauri-action` 生成。
 
 **签名密钥一律走 GitHub Secrets。** 下表区分已接线参数与需要额外实施的参数；未配置签名时仍会生成包，但不代表满足公开分发要求：
 

@@ -24,29 +24,40 @@ pnpm app:dev
 
 第一次 `app:dev` 会编译全部 Rust 依赖，5–10 分钟属于正常。之后改前端是秒级热更新。
 
+源码入口与两种运行模式见 [README · 从源码运行](../README.md#从源码运行)。`pnpm dev` 适合浏览器预览界面；`pnpm app:dev` 才会启动 Rust 和原生窗口。
+
 ## 常用命令
 
-| 命令                     | 作用                                                               | 什么时候用                 |
-| ------------------------ | ------------------------------------------------------------------ | -------------------------- |
-| `pnpm app:dev`           | 启动完整桌面应用（含 Rust）                                        | 日常开发，需要系统能力时   |
-| `pnpm dev`               | 只起 Vite（localhost:1420）                                        | 纯调样式，不想等 Rust 编译 |
-| `pnpm app:build`         | 打包安装程序                                                       | 出测试包 / 发布            |
-| `pnpm app:portable`      | 免安装便携版（单文件 exe + 说明）                                  | 内测分发、免安装场景       |
-| `pnpm verify`            | 格式、lint、类型、前端/脚本测试、版本检查、前端构建                | 提交前跑一次；Rust 另查    |
-| `pnpm test`              | 跑一遍单元测试                                                     | 改完逻辑                   |
-| `pnpm test:watch`        | 测试监听模式                                                       | 边写边测                   |
-| `pnpm test:coverage`     | 生成覆盖率报告                                                     | 想知道哪里没测到           |
-| `pnpm test:scripts`      | Node 构建与版本脚本回归测试                                        | 修改脚本后                 |
-| `pnpm typecheck`         | 类型检查，不产物                                                   | 排查类型错误               |
-| `pnpm lint`              | ESLint                                                             | 排查越界与未使用变量       |
-| `pnpm lint:fix`          | ESLint 自动修复                                                    | 批量修小问题               |
-| `pnpm format`            | Prettier 格式化                                                    | 提交前                     |
-| `pnpm clean`             | 删 `dist` / `dist-portable` / `coverage` / 默认 `src-tauri/target` | 磁盘吃紧、构建状态异常     |
-| `pnpm clean:all`         | 连同 `node_modules` 一起删                                         | 准备把工程复制给别人       |
-| `pnpm version:set x.y.z` | 同步四处版本号                                                     | 发布时                     |
-| `pnpm version:check`     | 检查配置、清单与锁文件的版本一致性                                 | 修改版本或发布前           |
+| 命令                     | 作用                                                | 什么时候用                   |
+| ------------------------ | --------------------------------------------------- | ---------------------------- |
+| `pnpm app:dev`           | 启动完整桌面应用（含 Rust）                         | 日常开发，需要系统能力时     |
+| `pnpm dev`               | 只起 Vite（localhost:1420）                         | 纯调样式，不想等 Rust 编译   |
+| `pnpm app:build`         | 构建安装包并收集到版本化 `artifacts/`               | 出测试包 / 发布              |
+| `pnpm app:portable`      | 收集 Windows exe 与说明到版本化 `artifacts/`        | 内测分发、免安装场景         |
+| `pnpm build`             | 只构建前端 `dist/`                                  | 前端验证或原生构建前置       |
+| `pnpm preview`           | 通过本地 HTTP 服务预览 `dist/`                      | 检查前端构建结果，无原生能力 |
+| `pnpm verify`            | 格式、lint、类型、前端/脚本测试、版本检查、前端构建 | 提交前跑一次；Rust 另查      |
+| `pnpm test`              | 跑一遍单元测试                                      | 改完逻辑                     |
+| `pnpm test:watch`        | 测试监听模式                                        | 边写边测                     |
+| `pnpm test:coverage`     | 生成覆盖率报告                                      | 想知道哪里没测到             |
+| `pnpm test:scripts`      | Node 构建与版本脚本回归测试                         | 修改脚本后                   |
+| `pnpm typecheck`         | 类型检查，不产物                                    | 排查类型错误                 |
+| `pnpm lint`              | ESLint                                              | 排查越界与未使用变量         |
+| `pnpm lint:fix`          | ESLint 自动修复                                     | 批量修小问题                 |
+| `pnpm format`            | Prettier 格式化                                     | 提交前                       |
+| `pnpm clean:artifacts`   | 只删 `artifacts/`，保留 Rust 编译缓存               | 清理最终分发文件             |
+| `pnpm clean`             | 清理默认构建产物与缓存，见下节                      | 磁盘吃紧、构建状态异常       |
+| `pnpm clean:all`         | 连同 `node_modules` 一起删                          | 准备把工程复制给别人         |
+| `pnpm version:set x.y.z` | 同步四处版本号                                      | 发布时                       |
+| `pnpm version:check`     | 检查配置、清单与锁文件的版本一致性                  | 修改版本或发布前             |
 
-`pnpm clean` 只删除固定目录中的构建产物，下次构建会重建。复制工程优先使用 Git clone 或模板仓库，避免携带本地依赖与缓存。
+## 清理构建产物
+
+`pnpm clean:artifacts` 只删除最终分发目录 `artifacts/`，不会清除 `dist/` 或 Rust 编译缓存。`pnpm clean` 删除 `artifacts/`、`dist/`、`coverage/`、默认 `src-tauri/target/` 及旧版遗留的 `dist-portable/`；`pnpm clean:all` 还会删除 `node_modules/`。
+
+清理后构建可以重建输出，但删除 Rust 缓存会使下次完整编译更慢。`CARGO_TARGET_DIR` 或 Cargo `target-dir` 指向的自定义目录不在固定清理范围内，由设置者管理。分发目录布局见 [README · 构建产物](../README.md#构建产物)。
+
+复制工程优先使用 Git clone 或模板仓库，避免携带本地依赖与缓存。
 
 ## 环境变量
 
@@ -185,3 +196,5 @@ Rust 侧额外注意：编译时间也是成本，一个依赖可能让 CI 多�
 - **EditorConfig for VS Code**：统一换行与缩进
 
 仓库已包含 [`.vscode/settings.json`](../.vscode/settings.json)，配置保存格式化、Rust 专用 formatter 与搜索排除项；无需再复制一份设置。
+
+VS Code 资源管理器默认隐藏 `dist/` 与 `src-tauri/target/`，保留 `artifacts/` 可见，便于直接找到最终分发文件；隐藏设置不改变实际构建路径。

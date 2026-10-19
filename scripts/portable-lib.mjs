@@ -1,20 +1,17 @@
-import { existsSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  existsSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { fileSha256 } from "./artifact-lib.mjs";
 
-/** Windows 环境变量不区分大小写；避免同时传入 Path 与 PATH。 */
-export function buildEnvironment(source = process.env) {
-  const env = { ...source };
-  const pathKeys = Object.keys(env).filter((key) => /^path$/i.test(key));
-  const searchPath = pathKeys.map((key) => env[key]).filter(Boolean);
-  for (const key of pathKeys) delete env[key];
-  const cargoBin = join(source.CARGO_HOME ?? join(homedir(), ".cargo"), "bin");
-  if (existsSync(join(cargoBin, "cargo.exe"))) searchPath.unshift(cargoBin);
-  env.PATH = searchPath.join(";");
-  return env;
-}
-
-function fileName(value, label) {
+export function portableFileName(value) {
   if (
     typeof value !== "string" ||
     !value ||
@@ -23,51 +20,71 @@ function fileName(value, label) {
     /[. ]$/.test(value) ||
     /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value)
   ) {
-    throw new Error(`${label} 不是有效的 Windows 文件名：${value}`);
+    throw new Error(`不是有效的 Windows 程序文件名：${value}`);
   }
-  return value;
+  return `${value}.exe`;
 }
 
-/** 使用 Cargo 的真实输出目录，兼容 CARGO_TARGET_DIR 与 .cargo/config.toml。 */
-export function portablePaths(root, config, metadata, target) {
-  if (typeof target !== "string" || !/^[a-zA-Z0-9_-]+$/.test(target)) {
-    throw new Error("无法确定本机 Rust target");
-  }
-  const manifest = resolve(root, "src-tauri/Cargo.toml");
-  const pkg = metadata.packages.find(
-    (entry) => resolve(entry.manifest_path) === manifest,
-  );
-  if (!pkg) throw new Error("cargo metadata 中没有找到应用 package");
-  const binaries = pkg.targets.filter((target) => target.kind.includes("bin"));
-  const binary = pkg.default_run
-    ? binaries.find((target) => target.name === pkg.default_run)
-    : (binaries.find((target) => target.name === pkg.name) ??
-      (binaries.length === 1 ? binaries[0] : undefined));
-  if (!binary)
-    throw new Error("无法确定主程序，请设置 Cargo.toml 的 default-run");
-  const productName = fileName(config.productName ?? pkg.name, "productName");
-  const binaryName = fileName(config.mainBinaryName ?? binary.name, "主程序名");
-  return {
-    productName,
-    builtExe: join(
-      metadata.target_directory,
-      target,
-      "release",
-      `${binaryName}.exe`,
-    ),
-    portableExe: join(root, "dist-portable", `${productName}.exe`),
+function receiptPath(plan) {
+  return join(plan.metadata.target_directory, ".starter-portable.json");
+}
+
+function fingerprint(plan) {
+  return createHash("sha256")
+    .update(JSON.stringify({ config: plan.config, buildArgs: plan.buildArgs }))
+    .digest("hex");
+}
+
+export function recordPortableBuild(plan, built) {
+  const receipt = {
+    root: realpathSync(plan.root),
+    version: plan.version,
+    fingerprint: fingerprint(plan),
+    target: built.target,
+    executable: realpathSync(built.executable),
+    sha256: fileSha256(built.executable),
   };
+  const file = receiptPath(plan);
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  mkdirSync(dirname(file), { recursive: true });
+  try {
+    writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`);
+    renameSync(temporary, file);
+  } finally {
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
 }
 
-export function assertSeparateOutput(source, output) {
-  if (!existsSync(output)) return;
-  const offset = relative(realpathSync(output), realpathSync(source));
-  if (
-    offset === "" ||
-    (offset !== ".." && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
-  ) {
+/** --skip-build 仅复用本项目相同版本和配置且未被打包器改写的便携编译。 */
+export function loadPortableBuild(plan) {
+  try {
+    const receipt = JSON.parse(readFileSync(receiptPath(plan), "utf8"));
+    const executable = realpathSync(receipt.executable);
+    const offset = relative(
+      realpathSync(plan.metadata.target_directory),
+      executable,
+    );
+    if (
+      !offset ||
+      offset === ".." ||
+      offset.startsWith(`..${sep}`) ||
+      isAbsolute(offset) ||
+      receipt.root !== realpathSync(plan.root) ||
+      receipt.version !== plan.version ||
+      receipt.fingerprint !== fingerprint(plan) ||
+      receipt.sha256 !== fileSha256(executable)
+    ) {
+      throw new Error("版本、配置或程序内容已经变化");
+    }
+    return {
+      executable,
+      outputDir: dirname(executable),
+      target: receipt.target,
+    };
+  } catch (error) {
     throw new Error(
-      "Cargo 产物位于 dist-portable 中，拒绝清理源文件；请使用其他 target-dir",
+      `不能跳过构建：${error.message}。请先执行 pnpm app:portable。`,
+      { cause: error },
     );
   }
 }

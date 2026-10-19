@@ -7,6 +7,8 @@ export default tseslint.config(
   {
     ignores: [
       "dist/**",
+      "dist-portable/**",
+      "artifacts/**",
       "node_modules/**",
       "src-tauri/**",
       // shadcn 原子组件沿用上游编码风格；行为修复仍需类型检查与回归验证

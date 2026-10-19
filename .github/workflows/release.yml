@@ -42,12 +42,16 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
+            target: x86_64-pc-windows-msvc
             args: ""
           - platform: macos-latest
+            target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin"
           - platform: macos-latest
+            target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
           - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
             args: ""
 
     runs-on: ${{ matrix.platform }}
@@ -143,7 +147,9 @@ jobs:
           if ($env:SIGNPATH_ORGANIZATION_ID -and $env:WINDOWS_CERTIFICATE) {
             throw "SignPath 与 WINDOWS_CERTIFICATE 只能配置一种 Windows 签名方式"
           }
-          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $configJson = node scripts/build-lib.mjs windows
+          if ($LASTEXITCODE -ne 0) { throw "读取 Windows 生效配置失败" }
+          $config = $configJson | ConvertFrom-Json
           if ($env:SIGNPATH_ORGANIZATION_ID -and $config.bundle.createUpdaterArtifacts) {
             throw "SignPath 会改变安装包字节；启用 updater 时必须在 Authenticode 签名后重新生成 .sig 和 latest.json，当前签名 job 尚未支持此组合"
           }
@@ -180,6 +186,7 @@ jobs:
       #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD（自动更新签名）
       # 证书不能进仓库，只能放 secrets。
       - uses: tauri-apps/tauri-action@v1
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -197,7 +204,9 @@ jobs:
           $release = "src-tauri/target/release"
           $files = @(Get-ChildItem $release -Filter *.exe -File -ErrorAction Stop)
           if ($files.Count -eq 0) { throw "没有找到待验证的 Windows 产物" }
-          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $configJson = node scripts/build-lib.mjs windows
+          if ($LASTEXITCODE -ne 0) { throw "读取 Windows 生效配置失败" }
+          $config = $configJson | ConvertFrom-Json
           $targets = @($config.bundle.targets ?? "all")
           foreach ($target in @("nsis", "msi")) {
             if ($config.bundle.active -eq $false -or ($targets -notcontains "all" -and $targets -notcontains $target)) { continue }
@@ -214,13 +223,33 @@ jobs:
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
 
+      - name: 归档本次分发产物
+        id: collect
+        env:
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          ARTIFACT_TARGET: ${{ matrix.target }}
+        run: node scripts/collect-artifacts.mjs
+
+      - name: 保留 macOS 应用归档的文件权限
+        if: matrix.platform == 'macos-latest'
+        env:
+          ARTIFACT_DIR: ${{ steps.collect.outputs.artifact-dir }}
+        run: tar -czf "$ARTIFACT_DIR.tar.gz" -C "$ARTIFACT_DIR/.." installers
+
+      - name: 保存按版本归档的安装包
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-installers-${{ matrix.target }}
+          path: ${{ matrix.platform == 'macos-latest' && format('{0}.tar.gz', steps.collect.outputs.artifact-dir) || steps.collect.outputs.artifact-dir }}
+          if-no-files-found: error
+
       # 直接保存本次 Windows 构建，签名 job 不从可变的 Release 资产重新取包。
       - name: 保存未签名 Windows 安装包
         if: matrix.platform == 'windows-latest' && vars.SIGNPATH_ORGANIZATION_ID != ''
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-nsis
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: ${{ steps.collect.outputs.artifact-dir }}/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -238,6 +267,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
 
       - name: 计算 tag 与版本号
         shell: pwsh
@@ -285,7 +318,9 @@ jobs:
         run: |
           $files = Get-ChildItem signed -Filter *.exe -Recurse -ErrorAction Stop
           if (-not $files) { throw "SignPath 没有返回签名产物" }
-          $productName = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).productName
+          $configJson = node scripts/build-lib.mjs windows
+          if ($LASTEXITCODE -ne 0) { throw "读取 Windows 生效配置失败" }
+          $productName = ($configJson | ConvertFrom-Json).productName
           $expectedName = "${productName}_$($env:VERSION)_x64-setup.exe"
           if (@($files).Count -ne 1 -or $files[0].Name -ne $expectedName) {
             throw "SignPath 返回的文件与本次构建不匹配，应为 $expectedName"
@@ -304,10 +339,36 @@ jobs:
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
 
+      - name: 归档签名后的安装包
+        id: collect-signed
+        shell: pwsh
+        env:
+          ARTIFACT_TARGET: x86_64-pc-windows-msvc
+        run: |
+          $files = @(Get-ChildItem signed -Filter *-setup.exe -Recurse -File | ForEach-Object { $_.FullName })
+          $env:TAURI_ARTIFACT_PATHS = ConvertTo-Json -InputObject $files -Compress
+          node scripts/collect-artifacts.mjs --signed-nsis
+
+      - name: 保存签名后的安装包
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-installers-x86_64-pc-windows-msvc
+          path: ${{ steps.collect-signed.outputs.artifact-dir }}
+          if-no-files-found: error
+
       - name: 用签名产物覆盖 draft Release 资产
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $files = Get-ChildItem signed -Filter *.exe -Recurse | ForEach-Object { $_.FullName }
-          gh release upload $env:TAG @files --clobber
+          $uploadDir = Join-Path $env:RUNNER_TEMP "signed-release-assets"
+          New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
+          $uploads = @()
+          foreach ($file in Get-ChildItem signed -Filter *.exe -Recurse -File) {
+            # 与 tauri-action 的 ghAssetName 规则一致，保证覆盖同一个 Release 资产。
+            $assetName = $file.Name.Trim() -replace '[^a-zA-Z0-9_-]', '.' -replace '\.\.', '.'
+            $destination = Join-Path $uploadDir $assetName
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+            $uploads += $destination
+          }
+          gh release upload $env:TAG @uploads --clobber

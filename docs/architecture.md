@@ -4,6 +4,8 @@
 
 React 负责界面与偏好，`src/lib/tauri.ts` 封装原生能力，Rust 负责命令与桌面生命周期。业务 IPC 当前使用请求 / 响应，另有窗口尺寸事件订阅；自定义业务事件可在需要时接入。
 
+源码启动入口与运行命令见 [README · 从源码运行](../README.md#从源码运行)。`src/` 与 `src-tauri/src/` 是维护入口；`dist/` 和 Cargo target 目录由工具生成，最终本地分发文件收集到版本化的 `artifacts/`，职责见 [产物目录说明](../README.md#构建产物)。
+
 ## 运行时结构
 
 ```mermaid

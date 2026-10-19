@@ -4,56 +4,65 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import {
-  assertSeparateOutput,
-  buildEnvironment,
-  portablePaths,
+  loadPortableBuild,
+  portableFileName,
+  recordPortableBuild,
 } from "./portable-lib.mjs";
 
-const root = resolve("portable-fixture");
-const manifest = join(root, "src-tauri/Cargo.toml");
-const target = "x86_64-pc-windows-msvc";
-const metadata = {
-  target_directory: resolve("custom-target"),
-  packages: [
-    {
-      name: "rust-app",
-      manifest_path: manifest,
-      default_run: "desktop",
-      targets: [
-        { name: "rust_app_lib", kind: ["rlib", "cdylib"] },
-        { name: "desktop", kind: ["bin"] },
-        { name: "helper", kind: ["bin"] },
-      ],
-    },
-  ],
-};
-
-test("portable output follows Cargo's target directory and default-run", () => {
-  assert.deepEqual(portablePaths(root, {}, metadata, target), {
-    productName: "rust-app",
-    builtExe: join(metadata.target_directory, target, "release/desktop.exe"),
-    portableExe: join(root, "dist-portable/rust-app.exe"),
+function fixture(t) {
+  const root = mkdtempSync(join(tmpdir(), "tauri-portable-receipt-"));
+  t.after(() => {
+    assert.equal(dirname(root), resolve(tmpdir()));
+    rmSync(root, { recursive: true, force: true });
   });
-  const paths = portablePaths(
+  const targetDirectory = join(root, "custom-target");
+  const executable = join(targetDirectory, "release/app.exe");
+  mkdirSync(dirname(executable), { recursive: true });
+  writeFileSync(executable, "fresh portable program");
+  const plan = {
     root,
-    { productName: "Desktop App", mainBinaryName: "renamed" },
-    metadata,
-    target,
-  );
-  assert.equal(
-    paths.builtExe,
-    join(metadata.target_directory, target, "release/renamed.exe"),
-  );
-  assert.equal(paths.portableExe, join(root, "dist-portable/Desktop App.exe"));
+    version: "1.2.3",
+    config: { productName: "Desktop App" },
+    buildArgs: ["--no-bundle"],
+    metadata: { target_directory: targetDirectory },
+  };
+  const built = {
+    executable,
+    outputDir: dirname(executable),
+    target: "x86_64-pc-windows-msvc",
+  };
+  return { root, plan, built };
+}
+
+test("portable receipt follows the actual Cargo output without forcing a second target cache", (t) => {
+  const { plan, built } = fixture(t);
+  recordPortableBuild(plan, built);
+  assert.deepEqual(loadPortableBuild(plan), built);
+  assert.equal(portableFileName("Desktop App"), "Desktop App.exe");
 });
 
-test("ambiguous binaries and unsafe output names fail before collecting files", () => {
-  const ambiguous = structuredClone(metadata);
-  ambiguous.packages[0].default_run = null;
+test("skip-build rejects absent receipts, configuration drift and rewritten executables", (t) => {
+  const { plan, built } = fixture(t);
+  assert.throws(() => loadPortableBuild(plan), /不能跳过构建/);
+  recordPortableBuild(plan, built);
+  assert.throws(() => loadPortableBuild({ ...plan, version: "1.2.4" }), /变化/);
   assert.throws(
-    () => portablePaths(root, {}, ambiguous, target),
-    /default-run/,
+    () => loadPortableBuild({ ...plan, config: { productName: "Other App" } }),
+    /变化/,
   );
+  assert.throws(
+    () =>
+      loadPortableBuild({
+        ...plan,
+        buildArgs: ["--features", "other", "--no-bundle"],
+      }),
+    /变化/,
+  );
+  writeFileSync(built.executable, "patched by installer bundling");
+  assert.throws(() => loadPortableBuild(plan), /变化/);
+});
+
+test("portable filenames reject path traversal and reserved Windows names", () => {
   for (const name of [
     "../other",
     "..\\other",
@@ -62,44 +71,6 @@ test("ambiguous binaries and unsafe output names fail before collecting files", 
     "app.",
     "app ",
     "app:name",
-  ]) {
-    assert.throws(
-      () => portablePaths(root, { productName: name }, metadata, target),
-      /Windows/,
-    );
-    assert.throws(
-      () => portablePaths(root, { mainBinaryName: name }, metadata, target),
-      /Windows/,
-    );
-  }
-});
-
-test("portable collection refuses to delete its own Cargo source directory", (t) => {
-  const output = mkdtempSync(join(tmpdir(), "tauri-portable-output-"));
-  t.after(() => {
-    assert.equal(dirname(output), resolve(tmpdir()));
-    rmSync(output, { recursive: true, force: true });
-  });
-  const source = join(output, "target/app.exe");
-  mkdirSync(dirname(source));
-  writeFileSync(source, "compiled application");
-  assert.throws(() => assertSeparateOutput(source, output), /拒绝清理/);
-});
-
-test("Windows child processes receive one PATH and respect CARGO_HOME", (t) => {
-  const cargoHome = mkdtempSync(join(tmpdir(), "tauri-cargo-home-"));
-  t.after(() => {
-    assert.equal(dirname(cargoHome), resolve(tmpdir()));
-    rmSync(cargoHome, { recursive: true, force: true });
-  });
-  mkdirSync(join(cargoHome, "bin"));
-  writeFileSync(join(cargoHome, "bin/cargo.exe"), "");
-  const input = { Path: "tools", PATH: "other-tools", CARGO_HOME: cargoHome };
-  const env = buildEnvironment(input);
-  assert.deepEqual(
-    Object.keys(env).filter((key) => /^path$/i.test(key)),
-    ["PATH"],
-  );
-  assert.equal(env.PATH, `${join(cargoHome, "bin")};tools;other-tools`);
-  assert.equal(input.Path, "tools");
+  ])
+    assert.throws(() => portableFileName(name), /Windows/);
 });

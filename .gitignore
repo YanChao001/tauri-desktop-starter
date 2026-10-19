@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 dist-portable
+artifacts
 *.local
 
 # 测试覆盖率报告

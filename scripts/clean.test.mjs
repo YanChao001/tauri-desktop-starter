@@ -27,6 +27,7 @@ function fixture(t) {
   }
   for (const path of [
     "dist",
+    "artifacts",
     "coverage",
     "dist-portable",
     "src-tauri/target",
@@ -50,6 +51,7 @@ test("clean removes generated output and only removes dependencies with --all", 
   assert.equal(result.status, 0, result.stderr);
   for (const path of [
     "dist",
+    "artifacts",
     "coverage",
     "dist-portable",
     "src-tauri/target",
@@ -59,6 +61,49 @@ test("clean removes generated output and only removes dependencies with --all", 
   assert.equal(existsSync(join(root, "node_modules/artifact")), true);
   assert.equal(run("--all").status, 0);
   assert.equal(existsSync(join(root, "node_modules")), false);
+});
+
+test("--artifacts only removes current distributions and preserves legacy output and caches", (t) => {
+  const { root } = fixture(t);
+  const versioned = join(root, "artifacts/0.1.0/windows-x64");
+  mkdirSync(versioned, { recursive: true });
+  writeFileSync(join(versioned, "app.exe"), "versioned distribution");
+  const result = spawnSync(
+    process.execPath,
+    [join(root, "scripts/clean.mjs"), "--artifacts"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(root, "artifacts")), false);
+  for (const path of [
+    "dist",
+    "dist-portable",
+    "coverage",
+    "src-tauri/target",
+    "node_modules",
+  ]) {
+    assert.equal(existsSync(join(root, path, "artifact")), true, path);
+  }
+});
+
+test("mutually exclusive cleanup modes fail before deleting any output", (t) => {
+  const { root } = fixture(t);
+  const result = spawnSync(
+    process.execPath,
+    [join(root, "scripts/clean.mjs"), "--all", "--artifacts"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 1);
+  for (const path of [
+    "dist",
+    "artifacts",
+    "dist-portable",
+    "coverage",
+    "src-tauri/target",
+    "node_modules",
+  ]) {
+    assert.equal(existsSync(join(root, path, "artifact")), true, path);
+  }
 });
 
 test("cleanup rejects the project root, traversal and ancestor junction escapes", (t) => {

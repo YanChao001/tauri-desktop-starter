@@ -44,14 +44,21 @@
 ```bash
 pnpm install --frozen-lockfile
 pnpm app:dev      # 开发模式，热更新
-pnpm app:build    # 按当前平台产出安装包；Windows 为 msi / nsis
-pnpm app:portable # 产出免安装便携版（Windows 单文件 exe）
+pnpm app:build    # 构建安装包并收集到 artifacts/<version>/<target>/installers/
+pnpm app:portable # 构建 Windows 便携版到 artifacts/<version>/<target>/portable/
 pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致性、前端构建
 ```
 
-`pnpm dev` 只起前端（浏览器里能看界面，但 `invoke` 不可用）。
-`pnpm test` 跑单元测试，`pnpm clean` 删除 `dist`、`dist-portable`、`coverage` 与默认 `src-tauri/target`。自定义 Cargo 目标目录不在清理范围内。
+`pnpm test` 跑单元测试。只清理最终分发目录用 `pnpm clean:artifacts`，保留 Rust 编译缓存；`pnpm clean` 清理所有默认构建输出，范围见 [清理说明](./docs/development.md#清理构建产物)。
 `pnpm verify` 不编译 Rust；修改原生端后还需运行 [Rust 检查](./docs/testing.md#rust-测试)。
+
+## 从源码运行
+
+在仓库根目录运行 `pnpm app:dev` 启动完整桌面应用，前端与 Rust 源码修改后会热更新或重新编译。只调整界面时运行 `pnpm dev`，浏览器访问 `http://localhost:1420`；此模式没有 Rust 进程，IPC 与原生窗口功能不可用。
+
+前端入口是根目录的 [`index.html`](./index.html) → [`src/main.tsx`](./src/main.tsx) → [`src/App.tsx`](./src/App.tsx)；桌面入口是 [`src-tauri/src/main.rs`](./src-tauri/src/main.rs) → [`src-tauri/src/lib.rs`](./src-tauri/src/lib.rs)。修改界面请编辑 `src/`，修改命令和原生生命周期请编辑 `src-tauri/src/`。
+
+`pnpm build` 只把前端编译到 `dist/`，其中的 `dist/index.html` 是生成文件，不应手改或双击作为应用入口。查看已构建的前端可运行 `pnpm preview`，需要完整桌面功能则运行 `pnpm app:dev` 或安装 / 启动 [分发产物](#构建产物)。
 
 ## 界面能力
 
@@ -117,10 +124,12 @@ pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致�
 │   └── adr/                 # 架构决策记录
 ├── scripts/
 │   ├── clean.mjs            # 清理 dist 与 Rust 编译缓存
+│   ├── app-build.mjs        # 安装包构建与版本化分发收集
 │   ├── portable.mjs         # Windows 便携版构建与收集
 │   ├── set-version.mjs      # 同步四处版本号
 │   ├── check-version.mjs    # 版本一致性与发布标签校验
 │   └── version.mjs          # 共用版本解析与校验
+├── index.html               # 前端源码入口，加载 src/main.tsx
 ├── vitest.config.ts         # 测试配置，alias 复用 vite.config.ts
 ├── rust-toolchain.toml      # 固定具体 Rust 版本，自动装 rustfmt / clippy
 ├── .github/                 # CI、发布流水线、依赖更新、PR 与 Issue 模板
@@ -225,21 +234,36 @@ CLI 会修改插件依赖与初始化配置；运行后审查差异，按实际�
 
 ## 构建产物
 
-`pnpm app:build` 之后在 `src-tauri/target/release/bundle/` 下：
+最终分发文件统一在 `artifacts/<version>/<target-triple>/`，例如 Windows x64：
 
-- Windows：`nsis/*.exe`（安装包）、`msi/*.msi`
-- macOS：`dmg/*.dmg`、`macos/*.app`
-- Linux：`deb/*.deb`、`appimage/*.AppImage`
+```text
+artifacts/
+└── 0.1.0/
+    └── x86_64-pc-windows-msvc/
+        ├── installers/     # pnpm app:build：按 nsis/、msi/ 等保留安装包
+        │   └── manifest.json
+        └── portable/       # pnpm app:portable：应用 exe、使用说明与 manifest.json
+```
 
-以上路径对应默认 Cargo 目标目录；CI 显式指定编译目标时还会包含目标三元组。体积与构建耗时取决于依赖、工具链、平台和签名配置，以实际产物为准。
+安装包类型随平台不同：
 
-**便携版（免安装）**：`pnpm app:portable` 按本机 Rust host target 执行 `tauri build --no-bundle --target <host>`，从 Cargo 实际目标目录的 `<host>/release/` 收集 exe 与使用说明到 `dist-portable/`。`--skip-build` 只复用同一 host 目录下已有产物，不能代替版本与来源检查。
+- Windows：NSIS `.exe`、MSI `.msi`
+- macOS：`.dmg`、`.app`
+- Linux：`.deb`、`.AppImage`
+
+每次构建只替换当前版本、目标平台对应的 `installers/` 或 `portable/`，避免混入旧文件；其他版本、目标平台与另一类分发产物保留。`pnpm clean:artifacts` 删除整个分发目录。
+
+每类产物附带 `manifest.json`，记录版本、目标平台、类别、收集时间和普通文件 SHA-256；`.app` 等目录包记录目录类型。交付时可用安装包或归档文件的哈希核对完整性。
+
+`dist/` 是前端编译中间产物，`src-tauri/target/` 是 Rust 编译缓存与 Tauri 原始输出，均保留工具默认布局；`artifacts/` 才是整理后的本地分发入口。旧 `dist-portable/` 不再接收新产物，仅兼容历史清理。自定义 Cargo 目标目录也不会改变最终 `artifacts/` 的位置。
+
+**便携版（免安装）**：`pnpm app:portable` 构建单文件 exe 并生成使用说明，默认沿用 Cargo 的编译目录与缓存。完整命令、复用已有构建的规则与运行限制见 [构建与发布](./docs/build-release.md#便携版免安装)。
 
 **安装器外观**：NSIS 安装器已做基础品牌化——中文界面（`SimpChinese` / `English`）、页眉与侧栏位图、安装器图标，页脚取自 `bundle.copyright`。位图在 `src-tauri/installer/`，替换后重新打包即可；MSI 使用同目录下的 WiX banner / dialog 位图。
 
 Tauri 的 Windows 打包目标只有 msi / nsis，没有官方 portable 目标；但前端资源在编译期已嵌进二进制，`--no-bundle` 产出的 exe 本身就是便携程序。两点限制：目标机器需要 WebView2 运行时（Win11 自带）；窗口位置与日志仍写 AppData，不随 exe 移动。
 
-首次 `pnpm app:build` 需要编译全部 Rust 依赖，明显慢于增量构建。`src-tauri/target` 是编译缓存，已被 Git 忽略，需要释放磁盘时使用 `pnpm clean`。
+首次 `pnpm app:build` 需要编译全部 Rust 依赖，明显慢于增量构建。体积与耗时取决于依赖、工具链、平台和签名配置，以实际产物为准。
 
 ## 说明
 

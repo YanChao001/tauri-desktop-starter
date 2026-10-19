@@ -9,9 +9,15 @@
     "editor.formatOnSave": true
   },
   "files.eol": "\n",
+  "files.exclude": {
+    "**/dist": true,
+    "**/src-tauri/target": true
+  },
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
+    "**/dist-portable": true,
+    "**/artifacts": true,
     "**/src-tauri/target": true,
     "**/src-tauri/gen": true
   }

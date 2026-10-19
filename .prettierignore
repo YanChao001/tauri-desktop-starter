@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-portable
+artifacts
 coverage
 src-tauri/target
 src-tauri/gen
