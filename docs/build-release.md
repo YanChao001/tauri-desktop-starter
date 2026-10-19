@@ -105,13 +105,46 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 
 #### 路线 A：SignPath Foundation（开源免费）
 
-适合公开开源项目，私钥由 SignPath 的 HSM 托管，不需要买证书：
+仓库侧已经接好，剩下的是 SignPath 的申请与参数配置。
 
-1. 在 <https://signpath.org/> 提交项目、关联 GitHub 仓库，等待审核；
-2. 按 SignPath 提供的 GitHub Action 示例，在 `release.yml` 打包后上传待签名安装包、再下载签名后的文件；
-3. 发布签名后的产物。发布者显示为 "SignPath Foundation"，不是你的名字。
+**前置条件**（SignPath 硬性要求）：
 
-限制：需要符合 OSS 资格，签名在 SignPath 的流水线里完成，不适合闭源商业软件。
+- 项目公开、使用 OSI 许可（本项目 MIT）、**已经发布过至少一个版本**；
+- SignPath 与 GitHub 账号都启用 MFA；
+- 仓库里有签名策略页：[code-signing-policy.md](./code-signing-policy.md)（README 已链接）。
+
+**申请**：
+
+1. 打开 <https://signpath.org/>，用 GitHub 登录并提交 OSS 申请（仓库 URL、许可证、用途、构建方式）；
+2. 审核通常几天到两周，通过后拿到组织与项目。
+
+**在 SignPath 门户配置**：
+
+1. 创建 project，slug 记为 `SIGNPATH_PROJECT_SLUG`；
+2. 创建 artifact configuration：上传一个打好的 `*-setup.exe` 作为样本，或直接粘贴
+   `.signpath/artifact-configuration.xml`，slug 记为 `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`；
+3. 创建 signing policy（如 `release-signing`）并开启人工审批，slug 记为 `SIGNPATH_SIGNING_POLICY_SLUG`；
+4. 生成 API token（需要项目提交权限），存为 `SIGNPATH_API_TOKEN`。
+
+**在 GitHub 仓库配置（Settings → Secrets and variables → Actions）**：
+
+| 类型      | 名称                                   | 值                          |
+| --------- | -------------------------------------- | --------------------------- |
+| Variables | `SIGNPATH_ORGANIZATION_ID`             | SignPath 组织 ID            |
+| Variables | `SIGNPATH_PROJECT_SLUG`                | 项目 slug                   |
+| Variables | `SIGNPATH_SIGNING_POLICY_SLUG`         | 签名策略 slug               |
+| Variables | `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` | artifact configuration slug |
+| Secret    | `SIGNPATH_API_TOKEN`                   | API token                   |
+
+**发版**：打 tag 后，`release.yml` 的 `build` job 产出 draft Release；随后 `sign-windows` job 自动
+下载安装包 → 上传 artifact → 提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。
+未配置 `SIGNPATH_ORGANIZATION_ID` 时该 job 直接跳过，现有发布流程不受影响。
+
+**限制**：
+
+- 发布者显示 "SignPath Foundation"，不是你的名字；
+- 每次发版要在 SignPath 门户人工批准一次；
+- 只签 NSIS 安装包外层，安装后的应用 exe 不带签名；内外层都要签需改用 MSI + 深签名配置。
 
 #### 路线 B：Azure Artifact Signing（原名 Trusted Signing）
 

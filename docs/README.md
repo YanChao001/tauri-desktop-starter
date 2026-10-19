@@ -5,19 +5,20 @@
 
 ## 按"我想做什么"找
 
-| 我想……                         | 看这份                                                          |
-| ------------------------------ | --------------------------------------------------------------- |
-| 搞清楚这个应用是怎么跑起来的   | [架构说明](./architecture.md)                                   |
-| 把项目跑起来、知道有哪些命令   | [开发指南](./development.md)                                    |
-| 写代码前确认命名和写法         | [代码风格与命名](./conventions/code-style.md)                   |
-| 判断该不该抽公共函数、怎么去重 | [代码风格 · 重复与抽象](./conventions/code-style.md#重复与抽象) |
-| 提交代码、开 PR、处理分支      | [Git 协作规范](./conventions/git-workflow.md)                   |
-| 加界面、调样式                 | [界面规范](./conventions/ui-guidelines.md)                      |
-| 写测试                         | [测试规范](./testing.md)                                        |
-| 打包、签名、发版、做自动更新   | [构建与发布](./build-release.md)                                |
-| 加权限、配 CSP、处理敏感数据   | [安全规范](./security.md)                                       |
-| 遇到报错                       | [排障手册](./troubleshooting.md)                                |
-| 想知道某个技术选型为什么这么定 | [决策记录](./adr/README.md)                                     |
+| 我想……                             | 看这份                                                          |
+| ---------------------------------- | --------------------------------------------------------------- |
+| 搞清楚这个应用是怎么跑起来的       | [架构说明](./architecture.md)                                   |
+| 把项目跑起来、知道有哪些命令       | [开发指南](./development.md)                                    |
+| 写代码前确认命名和写法             | [代码风格与命名](./conventions/code-style.md)                   |
+| 判断该不该抽公共函数、怎么去重     | [代码风格 · 重复与抽象](./conventions/code-style.md#重复与抽象) |
+| 提交代码、开 PR、处理分支          | [Git 协作规范](./conventions/git-workflow.md)                   |
+| 加界面、调样式                     | [界面规范](./conventions/ui-guidelines.md)                      |
+| 写测试                             | [测试规范](./testing.md)                                        |
+| 打包、签名、发版、做自动更新       | [构建与发布](./build-release.md)                                |
+| 申请 SignPath 免费签名、查签名范围 | [代码签名策略](./code-signing-policy.md)                        |
+| 加权限、配 CSP、处理敏感数据       | [安全规范](./security.md)                                       |
+| 遇到报错                           | [排障手册](./troubleshooting.md)                                |
+| 想知道某个技术选型为什么这么定     | [决策记录](./adr/README.md)                                     |
 
 ## 文档地图
 
@@ -28,6 +29,7 @@ docs/
 ├── development.md         环境、命令、调试、镜像、依赖评审
 ├── testing.md             测试分层与接入步骤
 ├── build-release.md       版本、签名、自动更新、发布清单
+├── code-signing-policy.md SignPath 申请、签名范围与审批流程
 ├── security.md            攻击面、CSP、权限、密钥、审计
 ├── troubleshooting.md     常见故障的现象与解法
 ├── conventions/
@@ -82,7 +84,7 @@ git tag -l --sort=-v:refname | head -5     # 最近的版本
 
 **能不能并进现有文档的一节？** 能并就别新建。
 
-文档数量本身不是资产。13 份文档里如果有人只看其中 3 份，剩下 10 份就是在稀释注意力。
+文档数量本身不是资产。14 份文档里如果有人只看其中 3 份，剩下 11 份就是在稀释注意力。
 宁可让一份文档长一点、结构清楚一点，也不要拆成五份互相引用。
 
 ### 其他

@@ -30,6 +30,7 @@
 | 界面与设计规范       | [docs/conventions/ui-guidelines.md](./docs/conventions/ui-guidelines.md) |
 | 测试策略             | [docs/testing.md](./docs/testing.md)                                     |
 | 构建、签名、发布     | [docs/build-release.md](./docs/build-release.md)                         |
+| 代码签名策略         | [docs/code-signing-policy.md](./docs/code-signing-policy.md)             |
 | 安全规范             | [docs/security.md](./docs/security.md)                                   |
 | 常见故障排查         | [docs/troubleshooting.md](./docs/troubleshooting.md)                     |
 | 技术选型决策         | [docs/adr/](./docs/adr/README.md)                                        |
