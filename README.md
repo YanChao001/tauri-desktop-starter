@@ -56,22 +56,30 @@ pnpm format       # Prettier 格式化
 ```
 .
 ├── src/
-│   ├── components/
-│   │   ├── ui/              # shadcn 组件，随用随加，可直接改源码
-│   │   ├── app-shell.tsx    # 侧边栏 + 顶栏 + 内容区骨架
-│   │   └── theme-toggle.tsx
+│   ├── routes.tsx           # 路由与侧边导航的唯一数据源
+│   ├── layouts/
+│   │   └── app-shell.tsx    # 侧边栏 + 顶栏 + 内容区骨架
 │   ├── pages/
 │   │   ├── overview.tsx     # 概览页（含命令速查）
-│   │   ├── bridge.tsx       # 前端 ↔ Rust 调用示例
+│   │   ├── bridge.tsx       # 前端 ↔ Rust 调用示例（含错误链路）
 │   │   └── settings.tsx     # 主题切换、运行时信息
+│   ├── components/
+│   │   ├── ui/              # shadcn 组件，随用随加，可直接改源码
+│   │   ├── error-boundary.tsx     # 渲染层兜底，崩溃不白屏
+│   │   └── theme-toggle.tsx
+│   ├── hooks/
+│   │   ├── use-external-links.ts  # 外链交给系统浏览器
+│   │   └── use-reveal-window.ts   # 首帧后显示窗口
 │   ├── lib/
-│   │   ├── tauri.ts         # 环境判断、外链、窗口显示、invoke 封装
+│   │   ├── tauri.ts         # 唯一的系统能力出口：环境判断、外链、窗口、IPC
+│   │   ├── clipboard.ts     # 复制文本，含降级
 │   │   └── utils.ts         # cn()
 │   ├── App.tsx              # Provider + 路由
 │   ├── main.tsx
 │   └── index.css            # Tailwind 入口与主题变量
 ├── src-tauri/
-│   ├── src/lib.rs           # Rust 侧入口，命令与插件注册
+│   ├── src/lib.rs           # 只做组装：插件、命令注册、启动兜底
+│   ├── src/commands.rs      # 前端可调用的命令实现
 │   ├── src/main.rs          # 二进制入口，调用 lib.rs
 │   ├── capabilities/        # 前端可调用的接口白名单
 │   ├── tauri.conf.json      # 窗口、打包、标识符
@@ -86,7 +94,7 @@ pnpm format       # Prettier 格式化
 │   ├── conventions/         # 代码风格、Git 协作、界面规范
 │   └── adr/                 # 架构决策记录
 ├── scripts/
-│   └── set-version.mjs      # 同步三处版本号
+│   └── set-version.mjs      # 同步四处版本号
 ├── .github/                 # CI、PR 与 Issue 模板
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
@@ -106,6 +114,7 @@ pnpm format       # Prettier 格式化
 5. **HashRouter 而非 BrowserRouter** —— 生产环境前端跑在自定义协议下，BrowserRouter 刷新或深链会 404。
 6. **体积优化** —— `Cargo.toml` 的 release 档已开 `lto`、`codegen-units=1`、`opt-level="s"`、`strip`、`panic="abort"`。
 7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
+8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
 
 ## 拿它开新项目
 
@@ -116,7 +125,7 @@ pnpm format       # Prettier 格式化
 3. `src-tauri/src/main.rs` → 把 `tauri_desktop_starter_lib::run()` 换成新的 lib 名
 4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`
 5. `index.html` → `<title>`
-6. `src/components/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
+6. `src/layouts/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
 7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`
 8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
 9. `SECURITY.md` → 把 `security@example.com` 换成真实的安全邮箱

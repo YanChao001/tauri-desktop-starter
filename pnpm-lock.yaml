@@ -44,9 +44,6 @@ importers:
       react-router-dom:
         specifier: ^7.18.4
         version: 7.18.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      shadcn:
-        specifier: ^4.22.0
-        version: 4.22.0
       sonner:
         specifier: ^2.0.8
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -87,6 +84,9 @@ importers:
       prettier:
         specifier: ^3.9.10
         version: 3.9.10
+      shadcn:
+        specifier: ^4.22.0
+        version: 4.22.0
       typescript:
         specifier: ~6.0.3
         version: 6.0.3

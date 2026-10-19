@@ -61,7 +61,7 @@ const base = import.meta.env.VITE_API_BASE;
 - 开发模式下窗口内右键 →「检查」，或 `Ctrl + Shift + I`，打开的是标准 Chromium DevTools。
 - React 组件树用 React DevTools（需要单独装浏览器扩展，或在 DevTools 里加载）。
 - 也可以直接 `pnpm dev`，在浏览器里调样式和交互，**但 `invoke` 会失败**——
-  `lib/tauri.ts` 里的 `isTauri` 判断会拦住并给出提示。
+  `lib/tauri.ts` 里的 `isTauri()` 判断会拦住并给出提示。
 
 ### Rust
 

@@ -31,4 +31,36 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // 架构约束：系统能力只能从 lib/tauri.ts 出去。
+    // 这条规则在 architecture.md 里写成「硬规则」，这里是它的执行者——
+    // 没有这道校验，越界只能靠 review 时用眼睛发现。
+    files: ["src/**/*.{ts,tsx}"],
+    // 测试文件需要直接 mock @tauri-apps 模块，属于规则的有效例外
+    ignores: ["src/lib/**", "src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@tauri-apps/**"],
+              message:
+                "系统能力统一收敛在 src/lib/tauri.ts。页面、组件、hooks 请调用那里的函数，不要直接引入 Tauri API。",
+            },
+          ],
+        },
+      ],
+      // no-restricted-imports 只检查静态 import 声明，拦不住 import()。
+      // 而本工程的 Tauri 调用恰好都是动态引入，所以这条必须单独补。
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: String.raw`ImportExpression[source.value=/^@tauri-apps\//]`,
+          message:
+            "系统能力统一收敛在 src/lib/tauri.ts。页面、组件、hooks 请调用那里的函数，不要直接引入 Tauri API。",
+        },
+      ],
+    },
+  },
 );

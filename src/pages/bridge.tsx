@@ -14,18 +14,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { invokeGreet, isTauri } from "@/lib/tauri";
 
-const RUST_SNIPPET = `#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("你好，{name}！这条消息来自 Rust。")
+const RUST_SNIPPET = `// src-tauri/src/commands.rs
+#[tauri::command]
+pub fn greet(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("名称不能为空".into());
+    }
+    Ok(format!("你好，{name}！这条消息来自 Rust。"))
 }`;
 
 const TS_SNIPPET = `// lib/tauri.ts —— 所有 IPC 收敛在这里
-export async function invokeGreet(name: string) {
+export async function invokeGreet(name: string): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("greet", { name });
 }
 
-// 页面里只调用封装好的函数
+// 页面里只调用封装好的函数，并处理它抛出的错误
 const message = await invokeGreet("超哥");`;
 
 export default function Bridge() {
@@ -34,16 +39,17 @@ export default function Bridge() {
   const [pending, setPending] = useState(false);
 
   async function handleInvoke() {
-    if (!isTauri) {
+    if (!isTauri()) {
       toast.error("浏览器预览模式下无法调用，请用 pnpm app:dev 启动");
       return;
     }
     setPending(true);
     try {
-      const message = await invokeGreet(name.trim() || "世界");
+      const message = await invokeGreet(name);
       setResult(message);
       toast.success("Rust 命令执行成功");
     } catch (error) {
+      setResult(null);
       toast.error(`调用失败：${String(error)}`);
     } finally {
       setPending(false);
@@ -70,7 +76,8 @@ export default function Bridge() {
         <CardHeader>
           <CardTitle className="text-sm">调用示例</CardTitle>
           <CardDescription className="text-xs">
-            修改参数后点按钮，结果由 Rust 侧生成并返回。
+            修改参数后点按钮。名称留空会命中 Rust 侧的校验，用来演示错误如何跨
+            IPC 传回前端。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

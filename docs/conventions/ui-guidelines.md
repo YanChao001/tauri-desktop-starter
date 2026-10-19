@@ -132,16 +132,15 @@ export default function Reports() {
 ```
 
 ```tsx
-// 2. src/App.tsx —— 注册路由
-<Route path="reports" element={<Reports />} />
+// 2. src/routes.tsx —— 加一条路由，侧边导航会自动出现
+{
+  path: "/reports",
+  label: "报表",
+  icon: FileTextIcon,
+  component: Reports,
+}
 ```
 
-```tsx
-// 3. src/components/app-shell.tsx —— 加入侧边栏导航
-const NAV_ITEMS = [
-  ...,
-  { to: "/reports", label: "报表", icon: FileTextIcon, end: false },
-];
-```
+`routes.tsx` 是路由与导航的唯一数据源，不要再去 `App.tsx` 或 `app-shell.tsx` 里各改一遍。
 
-页面的业务逻辑抽到 `src/lib/` 或自定义 hook，`pages/` 里只做组合，方便以后复用到别处。
+页面的业务逻辑抽到 `src/lib/` 或 `src/hooks/`，`pages/` 里只做组合，方便以后复用到别处。

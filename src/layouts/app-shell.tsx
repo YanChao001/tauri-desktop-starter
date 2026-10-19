@@ -1,21 +1,18 @@
-import { LayoutDashboardIcon, SettingsIcon, TerminalIcon } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { APP_ROUTES, matchRoute } from "@/routes";
 
-const NAV_ITEMS = [
-  { to: "/", label: "概览", icon: LayoutDashboardIcon, end: true },
-  { to: "/bridge", label: "前端 ↔ Rust", icon: TerminalIcon, end: false },
-  { to: "/settings", label: "设置", icon: SettingsIcon, end: false },
-];
-
+/**
+ * 应用外壳：侧边栏 + 顶栏 + 内容区。
+ *
+ * 它感知路由，所以放在 `layouts/` 而不是 `components/`——
+ * `components/` 里的通用组件不应知道当前在哪一页。
+ */
 export function AppShell() {
   const { pathname } = useLocation();
-  const current =
-    NAV_ITEMS.find((item) =>
-      item.end ? pathname === item.to : pathname.startsWith(item.to),
-    ) ?? NAV_ITEMS[0];
+  const current = matchRoute(pathname);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -33,11 +30,11 @@ export function AppShell() {
         </div>
 
         <nav className="flex-1 space-y-0.5 p-2">
-          {NAV_ITEMS.map((item) => (
+          {APP_ROUTES.map(({ path, label, icon: Icon, exact }) => (
             <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
+              key={path}
+              to={path}
+              end={exact}
               className={({ isActive }) =>
                 cn(
                   "flex h-8 items-center gap-2 rounded-md px-2.5 text-sm transition-colors",
@@ -47,15 +44,15 @@ export function AppShell() {
                 )
               }
             >
-              <item.icon className="size-4" />
-              {item.label}
+              <Icon className="size-4" />
+              {label}
             </NavLink>
           ))}
         </nav>
 
         <div className="space-y-1 border-t border-sidebar-border px-4 py-3 text-xs text-muted-foreground">
           <p>Tauri 2 · React 19</p>
-          <p>{isTauri ? "运行于原生窗口" : "浏览器预览模式"}</p>
+          <p>{isTauri() ? "运行于原生窗口" : "浏览器预览模式"}</p>
         </div>
       </aside>
 

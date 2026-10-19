@@ -14,8 +14,25 @@
 - 工程规范文档体系：架构、开发、测试、发布、安全、排障、代码风格、Git 协作、界面规范
 - 架构决策记录（ADR）机制与首批两份决策
 - ESLint + Prettier 配置，CI 中强制执行
-- `pnpm version:set` 脚本，同步三处版本号
+- `pnpm version:set` 脚本，同步四处版本号
 - GitHub Actions 校验流水线与 PR / Issue 模板
+
+### 变更
+
+- 前端分层调整：`layouts/` 承接应用外壳，`hooks/` 承接 React 逻辑，`lib/` 回归纯 TS
+- 路由与侧边导航合并为 `routes.tsx` 单一数据源，加页面只改一处
+- Rust 侧拆出 `commands.rs`，`lib.rs` 只做组装；`greet` 改为返回 `Result` 以示范错误链路
+- ESLint 增加 IPC 边界规则，静态 `import` 与动态 `import()` 都会被拦
+- `shadcn` CLI 从 `dependencies` 移到 `devDependencies`
+- 复制文本能力抽到 `lib/clipboard.ts`，并加 `execCommand` 降级
+
+### 移除
+
+- 删除未使用的 `tabs`、`avatar` 组件
+
+### 修复
+
+- `useRevealWindow` 改为双 `requestAnimationFrame`，避免首帧未绘制就显示窗口
 
 ## [0.1.0] - 2026-10-19
 

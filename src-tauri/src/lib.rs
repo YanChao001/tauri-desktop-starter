@@ -1,12 +1,11 @@
+//! 应用入口，只做组装：注册插件、挂命令、启动逻辑。
+//! 具体命令的实现放在 `commands.rs`，不要让这个文件变成第二个业务层。
+
+mod commands;
+
 use std::time::Duration;
 
 use tauri::Manager;
-
-// 前端通过 invoke("greet", { name }) 调用，返回值会自动序列化成 TypeScript 字符串
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("你好，{name}！这条消息来自 Rust。")
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,7 +38,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![commands::greet])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

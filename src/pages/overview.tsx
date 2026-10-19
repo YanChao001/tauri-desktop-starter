@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { copyText } from "@/lib/clipboard";
 
 const FEATURES = [
   {
@@ -50,9 +51,9 @@ const COMMANDS = [
   { command: "pnpm app:build", hint: "出安装包" },
 ];
 
-async function copyText(text: string) {
+async function handleCopy(text: string) {
   try {
-    await navigator.clipboard.writeText(text);
+    await copyText(text);
     toast.success("已复制到剪贴板");
   } catch {
     toast.error("复制失败，请手动选择文本");
@@ -141,7 +142,7 @@ export default function Overview() {
                     variant="ghost"
                     size="icon-xs"
                     aria-label={`复制 ${item.command}`}
-                    onClick={() => void copyText(item.command)}
+                    onClick={() => void handleCopy(item.command)}
                   >
                     <CopyIcon />
                   </Button>

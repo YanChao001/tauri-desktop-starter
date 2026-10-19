@@ -1,12 +1,11 @@
 import { ThemeProvider } from "next-themes";
 import { HashRouter, Route, Routes } from "react-router-dom";
-import { AppShell } from "@/components/app-shell";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useExternalLinks, useRevealWindow } from "@/lib/tauri";
-import Bridge from "@/pages/bridge";
-import Overview from "@/pages/overview";
-import Settings from "@/pages/settings";
+import { useExternalLinks } from "@/hooks/use-external-links";
+import { useRevealWindow } from "@/hooks/use-reveal-window";
+import { AppShell } from "@/layouts/app-shell";
+import { APP_ROUTES } from "@/routes";
 
 export default function App() {
   useExternalLinks();
@@ -24,9 +23,14 @@ export default function App() {
         <HashRouter>
           <Routes>
             <Route element={<AppShell />}>
-              <Route index element={<Overview />} />
-              <Route path="bridge" element={<Bridge />} />
-              <Route path="settings" element={<Settings />} />
+              {APP_ROUTES.map(({ path, component: Page, index }) => (
+                <Route
+                  key={path}
+                  index={index}
+                  path={index ? undefined : path}
+                  element={<Page />}
+                />
+              ))}
             </Route>
           </Routes>
         </HashRouter>

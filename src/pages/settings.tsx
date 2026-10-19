@@ -31,7 +31,7 @@ export default function Settings() {
   const [tauriVersion, setTauriVersion] = useState("—");
 
   useEffect(() => {
-    if (!isTauri) return;
+    if (!isTauri()) return;
     void (async () => {
       try {
         const info = await getAppInfo();
@@ -98,7 +98,7 @@ export default function Settings() {
           <Separator />
           <Row
             label="运行环境"
-            value={isTauri ? "原生窗口" : "浏览器预览"}
+            value={isTauri() ? "原生窗口" : "浏览器预览"}
             badge
           />
         </CardContent>
