@@ -170,7 +170,7 @@ export async function revealWindow(): Promise<void> {}
 ///
 /// 返回 `Result` 是刻意的：Tauri 会把 `Err` 原样 reject 到前端。
 #[tauri::command]
-pub fn greet(name: &str) -> Result<String, String> {}
+pub fn greet(name: &str, language: Option<&str>) -> Result<String, String> {}
 ```
 
 **3. 行内——只写"读到这里会疑惑"的地方**
@@ -207,7 +207,7 @@ requestAnimationFrame(() => {});
 
 ## 文案与排版
 
-- 界面文案加入 `providers/i18n.tsx` 并同时提供简体中文、英文；技术名词保留原词（WebView、IPC、Rust）。
+- 界面文案加入 `src/i18n/zh-CN.ts` 与 `en.ts`，同时提供简体中文、英文；新语言只在 `registry.ts` 注册，技术名词保留原词（WebView、IPC、Rust）。
 - 中英文之间加空格：`打开 WebView 设置`，不是 `打开WebView设置`。
 - 中文标点用全角，代码与命令用半角。
 - 按钮文案用动词开头：「保存」「新建项目」，不用「确定」这种无信息量的词（除非是系统约定的确认框）。

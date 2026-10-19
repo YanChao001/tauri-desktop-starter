@@ -7,8 +7,27 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  DEFAULT_LANGUAGE,
+  detectLanguage,
+  getLocale,
+  LANGUAGES,
+  type Language,
+} from "@/i18n/registry";
+import {
+  BACKGROUNDS,
+  BACKGROUND_INTENSITIES,
+  type Background,
+  type BackgroundIntensity,
+} from "@/lib/backgrounds";
 
-export const LANGUAGES = ["zh", "en"] as const;
+export { LANGUAGES, type Language } from "@/i18n/registry";
+export {
+  BACKGROUNDS,
+  BACKGROUND_INTENSITIES,
+  type Background,
+  type BackgroundIntensity,
+} from "@/lib/backgrounds";
 export const ACCENTS = [
   "neutral",
   "indigo",
@@ -21,15 +40,12 @@ export const ACCENTS = [
 export const RADII = ["sharp", "soft", "round"] as const;
 export const FONTS = ["geist", "system", "serif", "mono"] as const;
 export const FONT_SIZES = ["sm", "md", "lg"] as const;
-export const BACKGROUNDS = ["plain", "gradient", "grid", "dots"] as const;
 export const MOTIONS = ["full", "reduced"] as const;
 
-export type Language = (typeof LANGUAGES)[number];
 export type Accent = (typeof ACCENTS)[number];
 export type Radius = (typeof RADII)[number];
 export type Font = (typeof FONTS)[number];
 export type FontSize = (typeof FONT_SIZES)[number];
-export type Background = (typeof BACKGROUNDS)[number];
 export type Motion = (typeof MOTIONS)[number];
 
 export type AppSettings = {
@@ -39,22 +55,32 @@ export type AppSettings = {
   font: Font;
   fontSize: FontSize;
   background: Background;
+  backgroundIntensity: BackgroundIntensity;
   motion: Motion;
   menuBar: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  language: "zh",
+  language: DEFAULT_LANGUAGE,
   accent: "neutral",
   radius: "soft",
   font: "geist",
   fontSize: "md",
   background: "plain",
+  backgroundIntensity: "balanced",
   motion: "full",
   menuBar: true,
 };
 
 const STORAGE_KEY = "tauri-starter:settings";
+const LEGACY_BACKGROUNDS: Record<string, string> = {
+  gradient: "cloudscape",
+  grid: "starlight",
+  dots: "starlight",
+  contour: "starlight",
+  orbits: "starlight",
+  waves: "cloudscape",
+};
 
 function pick<T extends readonly string[]>(
   values: T,
@@ -68,21 +94,29 @@ function pick<T extends readonly string[]>(
 
 /** 读取本地设置，任何异常都回落到默认值——坏掉的 localStorage 不该白屏。 */
 export function loadSettings(): AppSettings {
-  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  const defaults = { ...DEFAULT_SETTINGS, language: detectLanguage() };
+  if (typeof window === "undefined") return defaults;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     return {
-      language: pick(LANGUAGES, parsed.language, DEFAULT_SETTINGS.language),
+      language: pick(LANGUAGES, parsed.language, defaults.language),
       accent: pick(ACCENTS, parsed.accent, DEFAULT_SETTINGS.accent),
       radius: pick(RADII, parsed.radius, DEFAULT_SETTINGS.radius),
       font: pick(FONTS, parsed.font, DEFAULT_SETTINGS.font),
       fontSize: pick(FONT_SIZES, parsed.fontSize, DEFAULT_SETTINGS.fontSize),
       background: pick(
         BACKGROUNDS,
-        parsed.background,
+        typeof parsed.background === "string"
+          ? (LEGACY_BACKGROUNDS[parsed.background] ?? parsed.background)
+          : parsed.background,
         DEFAULT_SETTINGS.background,
+      ),
+      backgroundIntensity: pick(
+        BACKGROUND_INTENSITIES,
+        parsed.backgroundIntensity,
+        DEFAULT_SETTINGS.backgroundIntensity,
       ),
       motion: pick(MOTIONS, parsed.motion, DEFAULT_SETTINGS.motion),
       menuBar:
@@ -91,7 +125,7 @@ export function loadSettings(): AppSettings {
           : DEFAULT_SETTINGS.menuBar,
     };
   } catch {
-    return DEFAULT_SETTINGS;
+    return defaults;
   }
 }
 
@@ -106,8 +140,10 @@ export function applySettings(settings: AppSettings) {
   root.dataset.font = settings.font;
   root.dataset.fontSize = settings.fontSize;
   root.dataset.background = settings.background;
+  root.dataset.backgroundIntensity = settings.backgroundIntensity;
   root.dataset.motion = settings.motion;
-  root.lang = settings.language === "zh" ? "zh-CN" : "en";
+  root.dataset.language = settings.language;
+  root.lang = getLocale(settings.language).documentLang;
 }
 
 type SettingsContextValue = {

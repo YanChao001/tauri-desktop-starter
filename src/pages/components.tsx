@@ -291,7 +291,10 @@ export default function Components() {
             <DialogTrigger asChild>
               <Button variant="outline">{t("components.dialog")}</Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent
+              className="sm:max-w-md"
+              closeLabel={t("common.close")}
+            >
               <DialogHeader>
                 <DialogTitle>{t("components.dialogTitle")}</DialogTitle>
                 <DialogDescription>
@@ -486,10 +489,16 @@ export default function Components() {
                   {t("components.toggleGroup")}
                 </span>
                 <ToggleGroup type="single" defaultValue="grid" size="sm">
-                  <ToggleGroupItem value="grid" aria-label="grid">
+                  <ToggleGroupItem
+                    value="grid"
+                    aria-label={t("components.layoutGrid")}
+                  >
                     <Grid2x2Icon />
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="list" aria-label="list">
+                  <ToggleGroupItem
+                    value="list"
+                    aria-label={t("components.layoutList")}
+                  >
                     <ListIcon />
                   </ToggleGroupItem>
                 </ToggleGroup>

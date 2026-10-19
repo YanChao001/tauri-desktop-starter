@@ -15,22 +15,35 @@
 
 外观由 `<html>` 上的 data 属性驱动，组件只写语义 token，不判断当前设置：
 
-| 属性              | 取值                                                      | 作用                                                         |
-| ----------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
-| `data-accent`     | neutral / indigo / blue / emerald / amber / rose / violet | 覆盖 `--primary`、`--ring`、`--chart-1`、`--sidebar-primary` |
-| `data-radius`     | sharp / soft / round                                      | 改写 `--radius`                                              |
-| `data-font`       | geist / system / serif / mono                             | 改写动态变量 `--app-font-sans`                               |
-| `data-font-size`  | sm / md / lg                                              | 根字号 14 / 16 / 17px                                        |
-| `data-background` | plain / gradient / grid / dots                            | body 背景纹理                                                |
-| `data-motion`     | full / reduced                                            | 全局压缩动画与过渡                                           |
+| 属性                        | 取值                                                          | 作用                                                         |
+| --------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------ |
+| `data-accent`               | neutral / indigo / blue / emerald / amber / rose / violet     | 覆盖 `--primary`、`--ring`、`--chart-1`、`--sidebar-primary` |
+| `data-radius`               | sharp / soft / round                                          | 改写 `--radius`                                              |
+| `data-font`                 | geist / system / serif / mono                                 | 改写动态变量 `--app-font-sans`                               |
+| `data-font-size`            | sm / md / lg                                                  | 根字号 14 / 16 / 17px                                        |
+| `data-background`           | plain / starlight / sakura / moonlit / botanical / cloudscape | 全窗口原创主题插画                                           |
+| `data-background-intensity` | subtle / balanced / strong                                    | 装饰强度，默认 balanced                                      |
+| `data-motion`               | full / reduced                                                | 全局压缩动画与过渡                                           |
 
 **加一个外观项的顺序**：`providers/settings.tsx` 加类型、默认值、校验 →
 `applySettings` 写 data 属性 → `index.css` 写对应规则 → 设置页加控件。
 不要在业务组件里读 `useSettings()` 来决定颜色。
 
+背景枚举与元数据统一在 `lib/backgrounds.ts` 注册，实际画面在 `components/window-background.tsx`。新增皮肤时同时补齐绘制分支与中英文文案，设置画廊从注册表生成。纯色模式隐藏装饰并禁用强度控制；旧版背景设置会迁移为当前插画选项。
+
+## 主题插画与轻量资源
+
+皮肤以原创矢量插画表达主题，使用路径、基础形状、渐变与透明度组织层次。不要把位图用 base64 或 `<image>` 包进 SVG 后称作矢量压缩；复杂动漫图片更适合重新设计为少量主体、轮廓与色块，细节越多的自动描摹也可能增加体积与绘制成本。
+
+- 全窗口背景覆盖标题栏、侧栏和主体，承载内容的 surface 单独控制透明度，表单与弹层保持清晰可读。
+- 设置页缩略预览和实际背景复用同一绘制源，避免预览另画一份导致效果不一致。
+- 装饰层不响应鼠标、不进入无障碍阅读顺序；不加载远端图像、字体或脚本。
+- 明暗主题和强调色共用语义 token；高对比度与强制颜色模式优先恢复实体 surface，移除装饰。
+- 静态插画优先，限制节点数量、滤镜和模糊范围；需要动态效果时提供减少动态的降级，不依赖持续重绘来保持视觉效果。
+
 ## 标题栏
 
-- 高度 40px（`h-10`），自绘：左侧应用名与菜单，右侧主题切换与窗口按钮。
+- 高度 40px（`h-10`），自绘：左侧应用名与菜单，右侧语言、主题切换与窗口按钮；语言入口不依赖菜单栏是否显示。
 - 拖拽区域用 `data-tauri-drag-region`，只加在空白容器上；按钮与菜单不要加。
 - 窗口按钮只在 Tauri 原生窗口显示；浏览器预览显示「浏览器预览」小标签。
 - macOS 保留系统红绿灯（`tauri.macos.conf.json`），标题栏左侧留 `pl-[78px]` 并隐藏自绘按钮。
@@ -59,7 +72,7 @@
 <div className="bg-card text-muted-foreground border" />
 ```
 
-例外只有两处：图表配色、第三方组件无法覆盖时。遇到例外在 PR 里说明。
+图表、主题插画的调色板和无法覆盖的第三方组件可以有专用颜色；将它们集中在对应 token 或绘制规则中，并在 PR 说明。主题插画需同时检查明暗主题与强调色，业务页面继续使用语义 token。
 
 ## 布局常量
 
@@ -177,8 +190,11 @@ const Reports = lazy(() => import("@/pages/reports"));
 ```
 
 ```ts
-// 3. src/providers/i18n.tsx —— 在 DICT 补齐双语文案
-"nav.reports": ["报表", "Reports"],
+// 3. 分别在两份词典补齐同一个键
+// src/i18n/zh-CN.ts
+"nav.reports": "报表",
+// src/i18n/en.ts
+"nav.reports": "Reports",
 ```
 
 `routes.tsx` 是路由与导航的唯一数据源，不要再去 `App.tsx` 或 `app-shell.tsx` 里各改一遍。

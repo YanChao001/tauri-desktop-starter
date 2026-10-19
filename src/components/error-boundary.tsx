@@ -1,5 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { getLocale, isLanguage } from "@/i18n/registry";
+import { createTranslator } from "@/i18n/translate";
+import { loadSettings } from "@/providers/settings";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -35,15 +38,21 @@ export class ErrorBoundary extends Component<
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
+    // 错误边界位于 provider 外，provider 本身出错时也能独立读取语言。
+    const language = document.documentElement.dataset.language;
+    const t = createTranslator(
+      getLocale(isLanguage(language) ? language : loadSettings().language)
+        .messages,
+    );
 
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background p-8 text-center text-foreground">
-        <p className="text-sm font-medium">界面出错了</p>
+        <p className="text-sm font-medium">{t("common.renderError")}</p>
         <p className="max-w-md font-mono text-xs break-words text-muted-foreground">
           {error.message}
         </p>
         <Button size="sm" onClick={() => window.location.reload()}>
-          重新加载
+          {t("common.reload")}
         </Button>
       </div>
     );

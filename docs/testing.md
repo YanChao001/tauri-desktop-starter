@@ -74,7 +74,7 @@ vi.mock("@/lib/tauri", () => ({
 ```ts
 import { invokeGreet } from "@/lib/tauri";
 
-expect(vi.mocked(invokeGreet)).toHaveBeenCalledWith("测试");
+expect(vi.mocked(invokeGreet)).toHaveBeenCalledWith("测试", "zh");
 ```
 
 只有一件事值得直接 mock `@tauri-apps/api/core`——验证命令名、参数名有没有写错。
@@ -85,7 +85,10 @@ import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-expect(vi.mocked(invoke)).toHaveBeenCalledWith("greet", { name: "测试" });
+expect(vi.mocked(invoke)).toHaveBeenCalledWith("greet", {
+  name: "测试",
+  language: "zh",
+});
 ```
 
 **这也是为什么要统一走 `lib/tauri.ts`**：常规测试只需要 mock 一个地方。
@@ -102,13 +105,13 @@ mod tests {
 
     #[test]
     fn greet_returns_greeting() {
-        assert_eq!(greet("世界").unwrap(), "你好，世界！这条消息来自 Rust。");
+        assert_eq!(greet("世界", None).unwrap(), "你好，世界！这条消息来自 Rust。");
     }
 
     #[test]
     fn greet_rejects_blank_name() {
-        assert!(greet("").is_err());
-        assert!(greet("   ").is_err());
+        assert!(greet("", None).is_err());
+        assert!(greet("   ", Some("en")).is_err());
     }
 }
 ```

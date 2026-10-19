@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2Icon, TerminalIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -14,33 +14,51 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/providers/i18n";
 import { invokeGreet, isTauri } from "@/lib/tauri";
+import type { Language } from "@/i18n/registry";
 
 const RUST_SNIPPET = `// src-tauri/src/commands.rs
 #[tauri::command]
-pub fn greet(name: &str) -> Result<String, String> {
+pub fn greet(name: &str, language: Option<&str>) -> Result<String, String> {
     let name = name.trim();
+    let english = language == Some("en");
     if name.is_empty() {
-        return Err("名称不能为空".into());
+        return Err(if english { "Name cannot be empty" }
+                   else { "名称不能为空" }.into());
     }
-    Ok(format!("你好，{name}！这条消息来自 Rust。"))
+    Ok(if english {
+        format!("Hello, {name}! This message comes from Rust.")
+    } else {
+        format!("你好，{name}！这条消息来自 Rust。")
+    })
 }`;
 
-const TS_SNIPPET = `// lib/tauri.ts —— 所有 IPC 收敛在这里
-export async function invokeGreet(name: string): Promise<string> {
+const TS_SNIPPET = `// lib/tauri.ts
+export async function invokeGreet(
+  name: string, language: Language = "zh",
+): Promise<string> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name });
+  return invoke<string>("greet", { name, language });
 }
 
-// 页面里只调用封装好的函数，并处理它抛出的错误
-const message = await invokeGreet("超哥");`;
+// pages/bridge.tsx
+const { language } = useI18n();
+const message = await invokeGreet("Ada", language);`;
 
 export default function Bridge() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [name, setName] = useState("");
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    message: string;
+    language: Language;
+  } | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const mounted = useRef(false);
+  const currentLanguage = useRef(language);
+
+  useLayoutEffect(() => {
+    currentLanguage.current = language;
+  }, [language]);
 
   useEffect(() => {
     mounted.current = true;
@@ -59,14 +77,14 @@ export default function Bridge() {
     inFlight.current = true;
     setPending(true);
     try {
-      const message = await invokeGreet(name);
-      if (!mounted.current) return;
-      setResult(message);
+      const message = await invokeGreet(name, language);
+      if (!mounted.current || currentLanguage.current !== language) return;
+      setResult({ message, language });
       toast.success(t("bridge.success"));
     } catch (error) {
-      if (!mounted.current) return;
+      if (!mounted.current || currentLanguage.current !== language) return;
       const message = t("bridge.failed", { error: String(error) });
-      setResult(message);
+      setResult({ message, language });
       toast.error(message);
     } finally {
       inFlight.current = false;
@@ -139,7 +157,9 @@ export default function Bridge() {
               {t("bridge.result")}
             </p>
             <p className="mt-1 font-mono text-sm">
-              {result ?? t("bridge.notCalled")}
+              {result?.language === language
+                ? result.message
+                : t("bridge.notCalled")}
             </p>
           </div>
         </CardContent>

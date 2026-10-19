@@ -1,15 +1,20 @@
-import { cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
 import { openExternal } from "@/lib/tauri";
 import { useExternalLinks } from "./use-external-links";
 
+const language = vi.hoisted(() => ({ value: "" }));
+
 vi.mock("@/lib/tauri", () => ({
   openExternal: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/providers/i18n", () => ({
-  useI18n: () => ({ t: (key: string) => key }),
+  useI18n: () => {
+    const current = language.value;
+    return { t: (key: string) => (current ? `${current}:${key}` : key) };
+  },
 }));
 
 vi.mock("sonner", () => ({
@@ -24,7 +29,9 @@ function getAnchor(): HTMLAnchorElement {
 
 describe("useExternalLinks", () => {
   beforeEach(() => {
-    vi.mocked(openExternal).mockClear();
+    language.value = "";
+    vi.mocked(openExternal).mockReset().mockResolvedValue(undefined);
+    vi.mocked(toast.error).mockClear();
     document.body.innerHTML = "";
   });
 
@@ -119,5 +126,26 @@ describe("useExternalLinks", () => {
     );
     await Promise.resolve();
     expect(toast.error).toHaveBeenCalledWith("common.openFailed");
+  });
+
+  it("外链请求等待期间切换语言，失败通知使用完成时的语言", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let rejectOpen!: (error: Error) => void;
+    vi.mocked(openExternal).mockImplementationOnce(
+      () => new Promise((_, reject) => (rejectOpen = reject)),
+    );
+    language.value = "zh";
+    const { rerender } = renderHook(() => useExternalLinks());
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<a href="https://example.com">文档</a>',
+    );
+    getAnchor().dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    language.value = "en";
+    rerender();
+    await act(async () => rejectOpen(new Error("denied")));
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("en:common.openFailed");
   });
 });

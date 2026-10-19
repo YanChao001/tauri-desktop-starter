@@ -1,14 +1,14 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { openExternal } from "@/lib/tauri";
-import { useI18n } from "@/providers/i18n";
 
 /**
  * 拦截页面上所有 http(s) 链接，交给系统浏览器打开。
  * 桌面应用里直接在 WebView 中跳转外部站点是最常见的体验事故。
  */
 export function useExternalLinks(): void {
-  const { t } = useI18n();
+  const t = useLatestTranslator();
   useEffect(() => {
     const handler = (event: MouseEvent) => {
       // 已被其他处理器处理过的点击不再抢

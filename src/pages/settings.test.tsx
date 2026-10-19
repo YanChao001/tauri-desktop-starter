@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+﻿import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/providers/i18n";
 import { DEFAULT_SETTINGS, SettingsProvider } from "@/providers/settings";
@@ -16,6 +16,10 @@ vi.mock("@/lib/tauri", () => ({
 describe("设置页", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.localStorage.setItem(
+      "tauri-starter:settings",
+      JSON.stringify({ language: "zh" }),
+    );
     Element.prototype.scrollIntoView = vi.fn();
   });
   afterEach(() => {
@@ -59,6 +63,8 @@ describe("设置页", () => {
         font: "mono",
         motion: "reduced",
         menuBar: false,
+        background: "sakura",
+        backgroundIntensity: "strong",
       }),
     );
     render(
@@ -74,5 +80,37 @@ describe("设置页", () => {
     expect(
       JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
     ).toEqual({ ...DEFAULT_SETTINGS, language: "en" });
+  });
+
+  it("皮肤与强度即时生效、持久化，并在纯色皮肤下禁用强度", () => {
+    const view = () => (
+      <SettingsProvider>
+        <I18nProvider>
+          <Settings />
+        </I18nProvider>
+      </SettingsProvider>
+    );
+    const { unmount } = render(view());
+    expect(screen.getByRole("radio", { name: "轻盈" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("radio", { name: "樱花来信" }));
+    fireEvent.click(screen.getByRole("radio", { name: "鲜明" }));
+    expect(document.documentElement).toHaveAttribute(
+      "data-background",
+      "sakura",
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-background-intensity",
+      "strong",
+    );
+    unmount();
+    render(view());
+    expect(screen.getByRole("radio", { name: "樱花来信" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "鲜明" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
+    expect(screen.getByRole("radio", { name: "鲜明" })).toBeDisabled();
+    expect(document.documentElement).toHaveAttribute(
+      "data-background",
+      "plain",
+    );
   });
 });

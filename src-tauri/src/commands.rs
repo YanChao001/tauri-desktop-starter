@@ -14,12 +14,22 @@
 /// 而不是把校验散落在页面里。
 /// 错误需要分叉处理时，升级为 `serde::Serialize` 的 enum，见 architecture.md。
 #[tauri::command]
-pub fn greet(name: &str) -> Result<String, String> {
+pub fn greet(name: &str, language: Option<&str>) -> Result<String, String> {
     let name = name.trim();
+    let english = language == Some("en");
     if name.is_empty() {
-        return Err("名称不能为空".into());
+        return Err(if english {
+            "Name cannot be empty"
+        } else {
+            "名称不能为空"
+        }
+        .into());
     }
-    Ok(format!("你好，{name}！这条消息来自 Rust。"))
+    Ok(if english {
+        format!("Hello, {name}! This message comes from Rust.")
+    } else {
+        format!("你好，{name}！这条消息来自 Rust。")
+    })
 }
 
 #[cfg(test)]
@@ -28,13 +38,16 @@ mod tests {
 
     #[test]
     fn greet_returns_greeting() {
-        assert_eq!(greet("世界").unwrap(), "你好，世界！这条消息来自 Rust。");
+        assert_eq!(
+            greet("世界", None).unwrap(),
+            "你好，世界！这条消息来自 Rust。"
+        );
     }
 
     #[test]
     fn greet_trims_surrounding_spaces() {
         assert_eq!(
-            greet("  世界  ").unwrap(),
+            greet("  世界  ", Some("zh")).unwrap(),
             "你好，世界！这条消息来自 Rust。"
         );
     }
@@ -42,7 +55,27 @@ mod tests {
     #[test]
     fn greet_rejects_blank_name() {
         // 空串和纯空白都要拦住，这是「校验在边界」的具体体现
-        assert!(greet("").is_err());
-        assert!(greet("   ").is_err());
+        assert_eq!(greet("", None).unwrap_err(), "名称不能为空");
+        assert!(greet("   ", Some("zh")).is_err());
+    }
+
+    #[test]
+    fn greet_uses_english_for_message_and_validation() {
+        assert_eq!(
+            greet(" Ada ", Some("en")).unwrap(),
+            "Hello, Ada! This message comes from Rust."
+        );
+        assert_eq!(
+            greet("   ", Some("en")).unwrap_err(),
+            "Name cannot be empty"
+        );
+    }
+
+    #[test]
+    fn greet_unknown_language_falls_back_to_chinese() {
+        assert_eq!(
+            greet("世界", Some("fr")).unwrap(),
+            greet("世界", None).unwrap()
+        );
     }
 }

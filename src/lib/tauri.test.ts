@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 
 import {
   getAppInfo,
@@ -7,6 +8,8 @@ import {
   openExternal,
   revealWindow,
 } from "./tauri";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 describe("isTauri", () => {
   afterEach(() => {
@@ -64,5 +67,37 @@ describe("浏览器预览模式的守卫", () => {
 
   it("revealWindow 静默返回，不抛错", async () => {
     await expect(revealWindow()).resolves.toBeUndefined();
+  });
+});
+
+describe("greet 语言参数", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    vi.resetAllMocks();
+  });
+
+  it("将当前语言传给 Rust，并保留省略语言时的中文默认值", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    vi.mocked(invoke).mockResolvedValue("greeting");
+    await expect(invokeGreet("Ada", "en")).resolves.toBe("greeting");
+    expect(invoke).toHaveBeenLastCalledWith("greet", {
+      name: "Ada",
+      language: "en",
+    });
+    await invokeGreet("世界");
+    expect(invoke).toHaveBeenLastCalledWith("greet", {
+      name: "世界",
+      language: "zh",
+    });
+  });
+
+  it("英文浏览器预览给出同语言的启动提示", async () => {
+    await expect(invokeGreet("Ada", "en")).rejects.toThrow(
+      "Start the desktop app with pnpm app:dev",
+    );
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

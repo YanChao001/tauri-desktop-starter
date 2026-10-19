@@ -62,10 +62,11 @@ pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致�
 
 ## 界面能力
 
-- **外观**：7 种主题色、3 档圆角、4 种字体、3 档字号、4 种背景、动效开关，即时生效并保存在本地
-- **语言**：中文 / English 即时切换，字典在 `src/providers/i18n.tsx`
+- **外观**：7 种主题色、3 档圆角、4 种字体、3 档字号、纯色与 5 款原创 SVG 插画皮肤、3 档皮肤强度和动效开关，即时生效并保存在本地
+- **语言**：简体中文 / English，标题栏与设置页即时切换并保留选择；首次按系统偏好匹配，词典和扩展注册表在 `src/i18n/`
 - **标题栏**：自绘窗口框，含文件 / 编辑 / 视图 / 帮助菜单、拖拽区域与窗口按钮；macOS 保留系统红绿灯
 - **主题切换**：View Transitions 圆形扩散，从点击位置铺满窗口；关闭动效时直接切换
+- **全窗口皮肤**：星光、樱花、月夜、枝叶与云景覆盖标题栏、侧栏和主体；设置页复用实际 SVG 作为预览，表单与弹层保留清晰表面
 - **演示页**：概览、组件、动效、前端 ↔ Rust、设置。组件页覆盖按钮、表单、浮层、表格、骨架屏等常用控件
 
 ## 目录结构
@@ -85,6 +86,9 @@ pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致�
 │   ├── components/
 │   │   ├── ui/              # shadcn 组件，随用随加，可直接改源码
 │   │   ├── title-bar.tsx    # 自绘标题栏：菜单、拖拽、窗口按钮
+│   │   ├── language-switch.tsx # 标题栏与设置页共用的语言入口
+│   │   ├── window-background.tsx # 窗口与缩略图共用的原创矢量插画
+│   │   ├── skin-picker.tsx  # 皮肤画廊与强度设置
 │   │   ├── error-boundary.tsx     # 渲染层兜底，崩溃不白屏
 │   │   └── theme-toggle.tsx
 │   ├── hooks/
@@ -93,11 +97,13 @@ pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致�
 │   │   └── use-theme-switch.ts    # 主题切换 + 圆形扩散
 │   ├── providers/
 │   │   ├── settings.tsx     # 外观偏好：类型、默认值、localStorage
-│   │   └── i18n.tsx         # 中英文字典与 t()
+│   │   └── i18n.tsx         # 语言 Context 与 t()
+│   ├── i18n/                # 中英文词典、locale 注册表与翻译函数
 │   ├── lib/
 │   │   ├── tauri.ts         # 唯一的系统能力出口：环境判断、外链、窗口、IPC
 │   │   ├── clipboard.ts     # 复制文本，含降级
 │   │   ├── platform.ts      # 平台判断（macOS / Windows / Linux）
+│   │   ├── backgrounds.ts   # 皮肤、强度与显示元数据注册表
 │   │   └── utils.ts         # cn()
 │   ├── App.tsx              # Provider + 路由
 │   ├── main.tsx
@@ -163,7 +169,7 @@ pnpm verify       # 格式、lint、类型、前端/脚本测试、版本一致�
 3. `src-tauri/src/main.rs` → 把 `tauri_desktop_starter_lib::run()` 换成新的 lib 名
 4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`、`bundle.copyright`（安装器页脚）；窗口标题也要同步到 `tauri.macos.conf.json`
 5. `index.html` → `<title>` 与 favicon（引用的是 `public/tauri.svg`）
-6. `src/providers/i18n.tsx` → 品牌与双语文案；检查 `title-bar.tsx`、`app-shell.tsx` 中的外壳展示
+6. `src/i18n/zh-CN.ts`、`en.ts` → 品牌与双语文案；检查 `title-bar.tsx`、`app-shell.tsx` 中的外壳展示
 7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`；安装器外观图在 `src-tauri/installer/`，按现有尺寸替换（页眉 150×57、侧栏 164×314、WiX banner 493×58 / dialog 493×312），欢迎页/完成页文案在同目录 `installer.nsi` 的 `CUSTOM BRANDING` 段
 8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
 9. `SECURITY.md` → 配置实际可用的私密报告渠道；`docs/code-signing-policy.md` → 替换维护者并完成真实签名配置

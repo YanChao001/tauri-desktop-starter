@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { LanguageSwitch } from "@/components/language-switch";
+import { SkinPicker } from "@/components/skin-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,15 +31,14 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import {
   ACCENTS,
   useSettings,
   type Accent,
-  type Background,
   type Font,
   type FontSize,
-  type Language,
   type Radius,
 } from "@/providers/settings";
 import { getAppInfo, isTauri, openExternal } from "@/lib/tauri";
@@ -72,45 +73,6 @@ const LINKS = [
   { label: "Tailwind CSS", url: "https://tailwindcss.com/" },
 ];
 
-function BackgroundPreview({ kind }: { kind: Background }) {
-  if (kind === "gradient") {
-    return (
-      <div
-        className="h-10 rounded-md border"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 25% 20%, color-mix(in oklch, var(--primary) 40%, transparent), transparent 70%)",
-        }}
-      />
-    );
-  }
-  if (kind === "grid") {
-    return (
-      <div
-        className="h-10 rounded-md border"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, var(--pattern) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern) 1px, transparent 1px)",
-          backgroundSize: "10px 10px",
-        }}
-      />
-    );
-  }
-  if (kind === "dots") {
-    return (
-      <div
-        className="h-10 rounded-md border"
-        style={{
-          backgroundImage:
-            "radial-gradient(var(--pattern) 1.2px, transparent 1.2px)",
-          backgroundSize: "8px 8px",
-        }}
-      />
-    );
-  }
-  return <div className="h-10 rounded-md border bg-muted/40" />;
-}
-
 function SettingRow({
   label,
   hint,
@@ -133,6 +95,7 @@ function SettingRow({
 
 export default function Settings() {
   const { t } = useI18n();
+  const translateLatest = useLatestTranslator();
   const { theme, setTheme } = useTheme();
   const { settings, update, reset } = useSettings();
   const [version, setVersion] = useState("—");
@@ -161,7 +124,7 @@ export default function Settings() {
       await openExternal(url);
     } catch (error) {
       console.error("打开外链失败", error);
-      toast.error(t("common.openFailed"));
+      toast.error(translateLatest("common.openFailed"));
     }
   }
 
@@ -176,6 +139,8 @@ export default function Settings() {
         </p>
       </div>
 
+      <SkinPicker />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">{t("settings.appearance")}</CardTitle>
@@ -185,22 +150,7 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <SettingRow label={t("common.language")}>
-            <Select
-              value={settings.language}
-              onValueChange={(value) => update({ language: value as Language })}
-            >
-              <SelectTrigger
-                className="w-40"
-                size="sm"
-                aria-label={t("common.language")}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="zh">简体中文</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-              </SelectContent>
-            </Select>
+            <LanguageSwitch />
           </SettingRow>
           <div className="space-y-2">
             <Label className="text-xs">{t("settings.theme")}</Label>
@@ -242,7 +192,8 @@ export default function Settings() {
                   <button
                     key={accent}
                     type="button"
-                    aria-label={accent}
+                    aria-label={t(`settings.color.${accent}`)}
+                    title={t(`settings.color.${accent}`)}
                     aria-pressed={active}
                     onClick={() => update({ accent })}
                     className={cn(
@@ -328,36 +279,6 @@ export default function Settings() {
               </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-
-          <div className="space-y-2">
-            <Label className="text-xs">{t("settings.background")}</Label>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(
-                [
-                  ["plain", "settings.bgPlain"],
-                  ["gradient", "settings.bgGradient"],
-                  ["grid", "settings.bgGrid"],
-                  ["dots", "settings.bgDots"],
-                ] as const
-              ).map(([value, labelKey]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={settings.background === value}
-                  onClick={() => update({ background: value })}
-                  className={cn(
-                    "space-y-1.5 rounded-lg border p-2 text-left transition-colors",
-                    settings.background === value
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-muted/40",
-                  )}
-                >
-                  <BackgroundPreview kind={value} />
-                  <span className="block text-[11px]">{t(labelKey)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           <SettingRow
             label={t("settings.motion")}

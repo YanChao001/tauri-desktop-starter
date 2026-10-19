@@ -135,14 +135,6 @@
  * 全部由 <html> 上的 data-* 驱动，组件不需要知道当前设置。
  * ========================================================== */
 
-:root {
-  --pattern: oklch(0.145 0 0 / 4%);
-}
-
-.dark {
-  --pattern: oklch(0.985 0 0 / 6%);
-}
-
 /* 主题色：neutral 用基础变量，其余覆盖 primary / ring / sidebar / chart */
 html[data-accent="indigo"] {
   --primary: oklch(0.51 0.23 277);
@@ -266,30 +258,154 @@ html[data-font-size="lg"] {
   font-size: 17px;
 }
 
-/* 背景皮肤 */
-html[data-background="gradient"] body {
-  background-image:
-    radial-gradient(
-      70rem 40rem at 10% -12%,
-      color-mix(in oklch, var(--primary) 16%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      55rem 38rem at 100% 0%,
-      color-mix(in oklch, var(--primary) 9%, transparent),
-      transparent 68%
-    );
-  background-attachment: fixed;
+/* 插画只铺在窗口底层；阅读表面与装饰分别调节，避免降低文字对比度。 */
+:root {
+  --skin-strength: 1;
+  --skin-glow-opacity: 0.16;
+  --skin-fill-opacity: 0.46;
+  --skin-line-opacity: 0.3;
+  --skin-chrome-opacity: 52%;
+  --skin-sidebar-opacity: 42%;
+  --skin-card-opacity: 78%;
 }
-html[data-background="grid"] body {
-  background-image:
-    linear-gradient(to right, var(--pattern) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--pattern) 1px, transparent 1px);
-  background-size: 28px 28px;
+
+.dark {
+  --skin-glow-opacity: 0.2;
+  --skin-fill-opacity: 0.34;
+  --skin-line-opacity: 0.38;
+  --skin-chrome-opacity: 58%;
+  --skin-sidebar-opacity: 46%;
+  --skin-card-opacity: 82%;
 }
-html[data-background="dots"] body {
-  background-image: radial-gradient(var(--pattern) 1.2px, transparent 1.2px);
-  background-size: 18px 18px;
+
+html[data-background-intensity="subtle"] {
+  --skin-strength: 0.6;
+}
+html[data-background-intensity="strong"] {
+  --skin-strength: 1.4;
+}
+html[data-background="plain"] {
+  --skin-chrome-opacity: 100%;
+  --skin-sidebar-opacity: 100%;
+  --skin-card-opacity: 100%;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+.window-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: var(--background);
+}
+.app-workspace,
+.app-title-bar {
+  position: relative;
+  z-index: 1;
+}
+.app-title-bar,
+.app-page-header {
+  background-color: color-mix(
+    in oklch,
+    var(--background) var(--skin-chrome-opacity),
+    transparent
+  );
+  backdrop-filter: none;
+}
+.app-sidebar {
+  background-color: color-mix(
+    in oklch,
+    var(--sidebar) var(--skin-sidebar-opacity),
+    transparent
+  );
+}
+.app-main {
+  background: transparent;
+}
+.app-main [data-slot="card"] {
+  background-color: color-mix(
+    in oklch,
+    var(--card) var(--skin-card-opacity),
+    transparent
+  );
+}
+.app-main
+  :where(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"]
+  ) {
+  background-color: var(--background);
+}
+
+.pattern-artwork {
+  --skin-color: color-mix(in oklch, var(--primary) 48%, #a3b4da);
+  --skin-secondary: color-mix(in oklch, var(--primary) 30%, #c3cfee);
+  --skin-ink: color-mix(in oklch, var(--primary) 38%, #8393bd);
+  --skin-highlight: color-mix(in oklch, var(--primary) 12%, #cba760);
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: var(--background);
+}
+.pattern-artwork[data-pattern="sakura"] {
+  --skin-color: color-mix(in oklch, var(--primary) 18%, #e7afc7);
+  --skin-secondary: color-mix(in oklch, var(--primary) 10%, #efb7cd);
+  --skin-ink: color-mix(in oklch, var(--primary) 20%, #b08192);
+  --skin-highlight: #d0ab76;
+}
+.pattern-artwork[data-pattern="moonlit"] {
+  --skin-color: color-mix(in oklch, var(--primary) 35%, #8da0d3);
+  --skin-secondary: color-mix(in oklch, var(--primary) 35%, #a2accd);
+  --skin-ink: color-mix(in oklch, var(--primary) 35%, #6d7aa6);
+  --skin-highlight: #dccca3;
+}
+.pattern-artwork[data-pattern="botanical"] {
+  --skin-color: color-mix(in oklch, var(--primary) 18%, #a9b69a);
+  --skin-secondary: color-mix(in oklch, var(--primary) 18%, #a6b998);
+  --skin-ink: color-mix(in oklch, var(--primary) 25%, #81917b);
+  --skin-highlight: #b8a585;
+}
+.pattern-artwork[data-pattern="cloudscape"] {
+  --skin-color: color-mix(in oklch, var(--primary) 22%, #afc8e5);
+  --skin-secondary: color-mix(in oklch, var(--background) 65%, #bfd2e8);
+  --skin-ink: color-mix(in oklch, var(--primary) 22%, #8aa6c8);
+  --skin-highlight: #e5c98d;
+}
+.skin-glow {
+  opacity: calc(var(--skin-glow-opacity) * var(--skin-strength));
+}
+.skin-fill {
+  opacity: calc(var(--skin-fill-opacity) * var(--skin-strength));
+}
+.skin-lines {
+  opacity: calc(var(--skin-line-opacity) * var(--skin-strength));
+}
+.pattern-artwork--preview {
+  --skin-strength: 1;
+  --skin-glow-opacity: 0.3;
+  --skin-fill-opacity: 0.8;
+  --skin-line-opacity: 0.7;
+  border-radius: inherit;
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  .window-background,
+  .pattern-artwork--preview {
+    display: none;
+  }
+  .app-title-bar,
+  .app-page-header,
+  .app-sidebar,
+  .app-main [data-slot="card"] {
+    background-color: var(--background);
+  }
 }
 
 /* 精简动效 */

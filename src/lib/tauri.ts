@@ -1,3 +1,5 @@
+import type { Language } from "@/i18n/registry";
+
 /**
  * 系统能力的唯一出口。
  *
@@ -85,12 +87,19 @@ export async function onWindowResized(
  * 空名称由 Rust 侧返回 Err，前端拿到的就是一个 reject——
  * 这是模板刻意示范的错误链路：校验放在边界，错误由调用方展示。
  */
-export async function invokeGreet(name: string): Promise<string> {
+export async function invokeGreet(
+  name: string,
+  language: Language = "zh",
+): Promise<string> {
   if (!isTauri()) {
-    throw new Error("浏览器预览模式下无法调用，请用 pnpm app:dev 启动");
+    throw new Error(
+      language === "en"
+        ? "Unavailable in browser preview. Start the desktop app with pnpm app:dev."
+        : "浏览器预览模式下无法调用，请用 pnpm app:dev 启动",
+    );
   }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name });
+  return invoke<string>("greet", { name, language });
 }
 
 export type AppInfo = {

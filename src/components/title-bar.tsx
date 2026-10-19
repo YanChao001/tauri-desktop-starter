@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LanguageSwitch } from "@/components/language-switch";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import { isMacOS } from "@/lib/platform";
 import { useSettings } from "@/providers/settings";
@@ -68,6 +70,7 @@ const REPO_URL = "https://github.com/YanChao001/tauri-desktop-starter";
 export function TitleBar() {
   const navigate = useNavigate();
   const { t } = useI18n();
+  const translateLatest = useLatestTranslator();
   const { settings, update } = useSettings();
   const { theme, setTheme, toggle } = useThemeSwitch();
   const mac = isMacOS();
@@ -118,9 +121,9 @@ export function TitleBar() {
   async function handleCopyLink() {
     try {
       await copyText(window.location.href);
-      toast.success(t("common.copied"));
+      toast.success(translateLatest("common.copied"));
     } catch {
-      toast.error(t("common.copyFailed"));
+      toast.error(translateLatest("common.copyFailed"));
     }
   }
 
@@ -129,7 +132,7 @@ export function TitleBar() {
       await openExternal(url);
     } catch (error) {
       console.error("打开外链失败", error);
-      toast.error(t("common.openFailed"));
+      toast.error(translateLatest("common.openFailed"));
     }
   }
 
@@ -140,7 +143,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-10 shrink-0 select-none items-stretch border-b bg-background/80 backdrop-blur"
+      className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b bg-background/80 backdrop-blur"
     >
       <div
         className={cn(
@@ -264,6 +267,7 @@ export function TitleBar() {
       <div data-tauri-drag-region className="min-w-8 flex-1" />
 
       <div className="flex items-stretch">
+        <LanguageSwitch compact className="my-auto" />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -337,7 +341,7 @@ export function TitleBar() {
       </div>
 
       <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" closeLabel={t("common.close")}>
           <DialogHeader>
             <DialogTitle>{t("title.aboutTitle")}</DialogTitle>
             <DialogDescription>{t("title.aboutBody")}</DialogDescription>

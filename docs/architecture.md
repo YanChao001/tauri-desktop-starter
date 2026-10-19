@@ -57,6 +57,7 @@ App.tsx ──> layouts/ ──> routes.tsx ──> pages/
 | `components/` | 可复用的展示与交互单元                    | 普通展示组件不感知路由或业务状态    |
 | `hooks/`      | 可复用的 React 逻辑（副作用、订阅、状态） | 不含 JSX，不承载业务规则            |
 | `providers/`  | 跨页面的 React Context（外观偏好、i18n）  | 不放业务数据，不渲染页面结构        |
+| `i18n/`       | 语言注册、类型化词典和纯翻译函数          | 不渲染界面，不依赖 provider         |
 | `lib/`        | 纯 TS：IPC 封装、格式化、校验             | 不含 JSX，不 import React           |
 
 `components/ui/` 保留上游组件的结构与导出方式，应用自有组件遵守分层约定。应用外壳组件 `title-bar.tsx` 可以导航并读取设置，`theme-toggle.tsx` 可以读取主题与翻译；这类组件须置于对应 Provider 内。
@@ -83,11 +84,20 @@ App.tsx ──> layouts/ ──> routes.tsx ──> pages/
 应用自有的全局 React Context 放在 `providers/`：
 
 - `providers/settings.tsx`：外观偏好（主题色、圆角、字体、字号、背景、动效、语言、菜单栏），
-  写入 `localStorage`，并把值映射到 `<html>` 的 `data-*`；样式全部由 `index.css` 接管。
+  写入 `localStorage`，并把值映射到 `<html>` 的 `data-*`；`index.css` 控制主题、表面层次和插画强度。
   加设置项的顺序是「类型 → 默认值 → `applySettings` → CSS → 设置页」。
-- `providers/i18n.tsx`：`[中文, English]` 字典 + `t(key, vars)`，不引入 i18next。
-  新增文案必须两种语言都写，缺失时 TypeScript 会报错。
+- `providers/i18n.tsx`：从设置读取语言，提供 `t(key, vars)`；词典与翻译逻辑在 `src/i18n/`，不引入 i18next。
+- `i18n/registry.ts`：唯一语言注册表，当前仅启用 `zh`（简体中文）和 `en`（English），集中管理名称、文档语言、系统语言匹配与词典。
+- `i18n/zh-CN.ts` 提供词条键，`en.ts` 通过 `satisfies Messages` 检查同键覆盖。新增文案须同时维护两份词典；运行时缺失或空词条回落到简体中文。
 - `hooks/use-theme-switch.ts`：统一主题切换入口，View Transitions 的圆形扩散也在这里。
+
+语言读取顺序是「有效用户存档 → `navigator.languages` 中首个可匹配语言 → 简体中文」。中文地区标签目前统一匹配简体中文，不代表已提供繁体资源。标题栏与设置页复用 `LanguageSwitch`，同步前端文案、`html.lang` 和本地存档；存储不可用时当次会话仍可切换，外观重置保留用户语言。自带 `greet` 示例由 Bridge 传递当前语言，Rust 同时返回对应问候与校验错误；外层错误边界优先使用当前已应用的语言，没有会话偏好时独立读取存档或系统语言。系统对话框与安装器语言由各自实现决定。
+
+异步外链和复制通知使用 `useLatestTranslator`，完成时读取最新已提交语言。Bridge 在切换语言后忽略旧语言请求的结果和通知，避免把旧语言回复写进当前界面。
+
+新增语言时，先创建满足 `Messages` 的完整词典，再在注册表补齐显示名称、`documentLang` 和匹配规则；选择器与存档校验从注册表派生，无需在各页面维护第二份语言列表。当前没有其他已启用语言。
+
+`lib/backgrounds.ts` 是皮肤与强度注册表。`components/window-background.tsx` 将原创静态 SVG 固定铺在窗口底层，标题栏、侧栏与内容区共享这层画面；`SkinPicker` 使用同一个 `PatternArtwork` 绘制缩略图。表面透明度与插画强度由 CSS 分别控制，表单和弹层保留实体背景；高对比度或强制颜色模式移除装饰并恢复实体表面。皮肤资源约定见 [界面规范](./conventions/ui-guidelines.md#主题插画与轻量资源)。
 
 ### 窗口外壳
 
@@ -139,14 +149,26 @@ lib/tauri/
 
 ```ts
 // lib/tauri.ts
-export async function invokeGreet(name: string): Promise<string> {
-  if (!isTauri()) throw new Error("请用 pnpm app:dev 启动");
+import type { Language } from "@/i18n/registry";
+
+export async function invokeGreet(
+  name: string,
+  language: Language = "zh",
+): Promise<string> {
+  if (!isTauri()) {
+    throw new Error(
+      language === "en"
+        ? "Unavailable in browser preview. Start the desktop app with pnpm app:dev."
+        : "浏览器预览模式下无法调用，请用 pnpm app:dev 启动",
+    );
+  }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name });
+  return invoke<string>("greet", { name, language });
 }
 ```
 
 Rust 侧返回 `Result<String, String>`，`Err` 会原样 reject 到前端。
+`language` 可选，当前识别 `en`，省略或其他值回落到中文；前端从语言注册表取得有效值。
 模板刻意让 `greet` 对空名称返回错误，而不是在页面里兜底——
 **校验放在边界，错误由调用方展示**。照着这个写，错误链路天然是通的。
 
@@ -262,6 +284,7 @@ src/
     <domain>/       跨页面复用的业务组件
   hooks/            可复用的 React 逻辑，use-xxx.ts
   providers/        跨页面 React Context（外观偏好、i18n）
+  i18n/             语言注册表、类型化词典、纯翻译函数
   lib/              纯 TS：IPC 封装、工具、校验
   styles/           内置的 shadcn 基础样式（上游逐字复制，勿手改）
 src-tauri/
@@ -285,6 +308,18 @@ src-tauri/
 | HashRouter 而不是 BrowserRouter    | 自定义协议下刷新不 404 | URL 里带 `#`，不好看                            |
 | 不建 `features/` 层                | 目录浅，找文件快       | 单领域文件超过 10 个时要重构                    |
 | 不预装状态管理库                   | 起步轻，没有多余概念   | 跨页状态变多时需要补                            |
-| 使用内置中英文字典                 | 零额外依赖，即时切换   | 复杂复数、日期等本地化需另行扩展                |
+| 使用类型检查的中英文词典与注册表   | 零额外依赖，即时切换   | 复杂复数、日期等本地化需另行扩展                |
 | 剪贴板不用官方插件                 | 少一个 Rust 依赖       | 个别 WebView 组合下可能失败，已做 textarea 回退 |
 | `invoke` 泛型不做运行时校验        | 简单、零开销           | 后端返回结构变了前端不会立刻报错                |
+
+## 参考与扩展
+
+以下参考核对了仓库说明和实际源码，只借鉴职责划分与交互方式。当前功能以本仓库的实现和测试为准，表中的扩展条件不代表已经接入对应能力。
+
+| 参考                                                                                                                                                                                                                                                                               | 可取之处                                                     | 本项目的扩展边界                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| pehcst：[语言注册](https://github.com/pehcst/tauri-template-react/blob/9fb91958a6624e4708f961ff8b1ea7f531f50ae0/src/i18n/locales.ts)、[初始语言与持久化](https://github.com/pehcst/tauri-template-react/blob/9fb91958a6624e4708f961ff8b1ea7f531f50ae0/src/i18n/LocaleProvider.tsx) | 类型检查词典键、用户偏好优先、系统语言回退、存储失败仍可切换 | 当前只维护中英文；出现复杂复数、ICU 或远程词典需求时再评估专用 i18n 库                                 |
+| mihasm：[语义皮肤](https://github.com/mihasm/tauri-desktop-template/blob/378cb803ae8ce211c24bf7e28a08d0c7ac4b07c4/src/styles/themes.css)、[命令与快捷键表](https://github.com/mihasm/tauri-desktop-template/blob/378cb803ae8ce211c24bf7e28a08d0c7ac4b07c4/src/lib/shortcuts.ts)    | 用 token 划分背景层次，统一 Cmd / Ctrl 的命令表示            | 快捷操作变多时再建统一注册表；需自行补齐输入框、输入法和快捷键冲突处理，不因应用内操作引入全局热键权限 |
+| somus：[独立生成 IPC 绑定](https://github.com/somus/create-tauri-react-app/blob/117a2a3d38e7fe1b4344cbf5ef9bc8817e956c57/src-tauri/src/bin/generate_bindings.rs)                                                                                                                   | 从 Rust 命令生成类型，以联合类型区分成功与失败               | 命令和返回结构变多后再引入生成器及 CI 校验；生成类型仍不能替代边界入参校验                             |
+
+语言偏好与 SVG 皮肤使用现有前端能力，`greet` 复用已有 IPC；这些改动不需要新增文件存储、系统通知、自动更新或后台全局热键插件。多窗口共享设置、真实更新服务等需求成立后，再按 [安全规范](./security.md#能力最小化) 评估依赖和权限；不整体复制其他模板的插件清单或素材。

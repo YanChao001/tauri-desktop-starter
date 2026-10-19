@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { TitleBar } from "@/components/title-bar";
+import { WindowBackground } from "@/components/window-background";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/providers/i18n";
 import { isTauri } from "@/lib/tauri";
@@ -20,11 +21,12 @@ export function AppShell() {
   const { t } = useI18n();
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden text-foreground">
+    <div className="app-shell flex h-screen flex-col overflow-hidden text-foreground">
+      <WindowBackground />
       <TitleBar />
 
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground backdrop-blur">
+      <div className="app-workspace flex min-h-0 flex-1">
+        <aside className="app-sidebar flex w-56 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
           <p className="px-4 pb-1 pt-4 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
             {t("app.tagline")}
           </p>
@@ -57,13 +59,13 @@ export function AppShell() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-11 shrink-0 items-center justify-between border-b px-5">
+          <header className="app-page-header flex h-11 shrink-0 items-center justify-between border-b px-5">
             <h1 className="text-sm font-medium">{t(current.labelKey)}</h1>
             <span className="font-mono text-[11px] text-muted-foreground">
               v{version}
             </span>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto">
+          <main className="app-main min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-5xl px-6 py-6">
               <Suspense
                 fallback={
