@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口能力声明：前端只能调用这里显式允许的接口",
+  "description": "主窗口的 Tauri 核心与插件能力声明；自定义命令另由应用 ACL 控制",
   "windows": ["main"],
   "permissions": [
     "core:default",

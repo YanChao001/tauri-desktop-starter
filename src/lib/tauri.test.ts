@@ -1,6 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getAppInfo, invokeGreet, isTauri, revealWindow } from "./tauri";
+import {
+  getAppInfo,
+  invokeGreet,
+  isTauri,
+  openExternal,
+  revealWindow,
+} from "./tauri";
 
 describe("isTauri", () => {
   afterEach(() => {
@@ -17,6 +23,32 @@ describe("isTauri", () => {
       configurable: true,
     });
     expect(isTauri()).toBe(true);
+  });
+});
+
+describe("openExternal", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("noopener 返回 null 仍算成功，避免浏览器已打开却提示失败", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    await expect(
+      openExternal("https://example.com/docs"),
+    ).resolves.toBeUndefined();
+    expect(open).toHaveBeenCalledWith(
+      "https://example.com/docs",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,hello",
+    "file:///tmp/example",
+  ])("拒绝非网页协议 %s", async (url) => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    await expect(openExternal(url)).rejects.toThrow("http(s)");
+    expect(open).not.toHaveBeenCalled();
   });
 });
 

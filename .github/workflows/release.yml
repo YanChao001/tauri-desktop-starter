@@ -39,18 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 手动触发（workflow_dispatch）没有 tag，自动跳过
-      - name: 校验 tag 与版本一致
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          EXPECTED="v$(node -p "require('./package.json').version")"
-          if [ "$TAG" != "$EXPECTED" ]; then
-            echo "::error::tag（$TAG）与 package.json 版本（$EXPECTED）不一致。请运行 pnpm version:set <版本> 后重新打 tag。"
-            exit 1
-          fi
-
       - name: 安装 Linux 系统依赖
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -66,6 +54,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
+          # 与 rust-toolchain.toml 一致；交叉编译 target 必须安装在实际使用的工具链上。
+          toolchain: "1.99.1"
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
@@ -74,6 +64,10 @@ jobs:
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+
+      - name: 校验项目版本与 tag
+        id: version
+        run: node scripts/check-version.mjs
 
       # 只在 secret 非空时写入环境变量：Tauri 用 env::var_os 判断是否签名，
       # 空字符串同样会被当成“已配置”，导致 macOS 签名流程拿到空证书直接失败。
@@ -91,26 +85,17 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${IN_APPLE_CERTIFICATE:-}" ]; then
-            {
-              echo "APPLE_CERTIFICATE<<__ENV__"
-              echo "$IN_APPLE_CERTIFICATE"
-              echo "__ENV__"
-              echo "APPLE_CERTIFICATE_PASSWORD<<__ENV__"
-              echo "$IN_APPLE_CERTIFICATE_PASSWORD"
-              echo "__ENV__"
-              echo "APPLE_SIGNING_IDENTITY<<__ENV__"
-              echo "$IN_APPLE_SIGNING_IDENTITY"
-              echo "__ENV__"
-              echo "APPLE_ID<<__ENV__"
-              echo "$IN_APPLE_ID"
-              echo "__ENV__"
-              echo "APPLE_PASSWORD<<__ENV__"
-              echo "$IN_APPLE_PASSWORD"
-              echo "__ENV__"
-              echo "APPLE_TEAM_ID<<__ENV__"
-              echo "$IN_APPLE_TEAM_ID"
-              echo "__ENV__"
-            } >> "$GITHUB_ENV"
+            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              input_name="IN_$name"
+              value="${!input_name}"
+              if [ -n "$value" ]; then
+                {
+                  echo "$name<<__ENV__"
+                  echo "$value"
+                  echo "__ENV__"
+                } >> "$GITHUB_ENV"
+              fi
+            done
             echo "已注入 Apple 签名凭据"
           else
             echo "未配置 APPLE_CERTIFICATE，macOS 产物不签名、不公证"
@@ -136,7 +121,15 @@ jobs:
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
         run: |
+          if ($env:SIGNPATH_ORGANIZATION_ID -and $env:WINDOWS_CERTIFICATE) {
+            throw "SignPath 与 WINDOWS_CERTIFICATE 只能配置一种 Windows 签名方式"
+          }
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($env:SIGNPATH_ORGANIZATION_ID -and $config.bundle.createUpdaterArtifacts) {
+            throw "SignPath 会改变安装包字节；启用 updater 时必须在 Authenticode 签名后重新生成 .sig 和 latest.json，当前签名 job 尚未支持此组合"
+          }
           if (-not $env:WINDOWS_CERTIFICATE) {
             Write-Host "未配置 WINDOWS_CERTIFICATE，Windows 产物不签名"
             exit 0
@@ -177,15 +170,16 @@ jobs:
           releaseName: "v__VERSION__"
           releaseBody: "构建产物见下方 Assets。变更内容请查看本 tag 与上一版本之间的提交记录。"
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.prerelease }}
           args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }}
 
       - name: 校验 Windows 签名
         if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
         shell: pwsh
         run: |
-          $installers = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" -ErrorAction Stop
-          foreach ($file in $installers) {
+          $files = @(Get-ChildItem "src-tauri/target/release/*.exe", "src-tauri/target/release/bundle/nsis/*.exe", "src-tauri/target/release/bundle/msi/*.msi" -ErrorAction Stop)
+          if ($files.Count -eq 0) { throw "没有找到待验证的 Windows 产物" }
+          foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file.FullName
             if ($sig.Status -ne "Valid") {
               throw "签名无效：$($file.Name) -> $($sig.Status) $($sig.StatusMessage)"
@@ -193,9 +187,20 @@ jobs:
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
 
+      # 直接保存本次 Windows 构建，签名 job 不从可变的 Release 资产重新取包。
+      - name: 保存未签名 Windows 安装包
+        if: matrix.platform == 'windows-latest' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-nsis
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
   # 可选：SignPath Foundation（开源免费签名）。未配置仓库变量时整个 job 跳过，
   # 不影响现有发布流程。申请与配置步骤见 docs/build-release.md 的「路线 A」。
-  # 与上面的 PFX 链路二选一：同时配置会对同一文件二次签名。
+  # 与上面的 PFX 链路二选一：同时配置会在构建前报错。
   # Variables: SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
   #            SIGNPATH_SIGNING_POLICY_SLUG / SIGNPATH_ARTIFACT_CONFIGURATION_SLUG
   # Secret:    SIGNPATH_API_TOKEN
@@ -219,22 +224,17 @@ jobs:
           "TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "VERSION=$($tag.TrimStart('v'))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: 从 draft Release 下载未签名安装包
+      - name: 查找本次构建的未签名 artifact
+        id: unsigned
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          New-Item -ItemType Directory -Force unsigned | Out-Null
-          gh release download $env:TAG --pattern "*-setup.exe" --dir unsigned
-          if (-not (Get-ChildItem unsigned -Filter *.exe)) { throw "没有下载到安装包" }
-
-      - uses: actions/upload-artifact@v7
-        id: upload
-        with:
-          name: unsigned-nsis
-          path: unsigned/*.exe
-          if-no-files-found: error
-          retention-days: 1
+          $response = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/artifacts?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "读取 workflow artifacts 失败" }
+          $artifacts = @(($response | ConvertFrom-Json).artifacts | Where-Object { $_.name -eq "unsigned-nsis" -and -not $_.expired })
+          if ($artifacts.Count -ne 1) { throw "本次 run 必须恰好有一个 unsigned-nsis artifact" }
+          "artifact-id=$($artifacts[0].id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: 提交 SignPath 签名请求
         id: signpath
@@ -245,7 +245,7 @@ jobs:
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
           artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
           # 每次签名都要在 SignPath 门户人工批准，留够时间
           wait-for-completion-timeout-in-seconds: 3600
@@ -258,7 +258,15 @@ jobs:
         run: |
           $files = Get-ChildItem signed -Filter *.exe -Recurse -ErrorAction Stop
           if (-not $files) { throw "SignPath 没有返回签名产物" }
+          $productName = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).productName
+          $expectedName = "${productName}_$($env:VERSION)_x64-setup.exe"
+          if (@($files).Count -ne 1 -or $files[0].Name -ne $expectedName) {
+            throw "SignPath 返回的文件与本次构建不匹配，应为 $expectedName"
+          }
           foreach ($file in $files) {
+            if ($file.VersionInfo.ProductVersion -ne $env:VERSION -or $file.VersionInfo.FileVersion -ne $env:VERSION) {
+              throw "签名产物版本与本次 tag 不一致：$($file.Name)"
+            }
             $sig = Get-AuthenticodeSignature $file.FullName
             if ($sig.Status -ne "Valid") {
               throw "签名无效：$($file.Name) -> $($sig.Status)"

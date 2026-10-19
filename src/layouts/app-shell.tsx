@@ -6,6 +6,7 @@ import { useI18n } from "@/providers/i18n";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { APP_ROUTES, matchRoute } from "@/routes";
+import { version } from "../../package.json";
 
 /**
  * 应用外壳：自绘标题栏 + 侧边栏 + 页面标题 + 内容区。
@@ -19,7 +20,7 @@ export function AppShell() {
   const { t } = useI18n();
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen flex-col overflow-hidden text-foreground">
       <TitleBar />
 
       <div className="flex min-h-0 flex-1">
@@ -59,7 +60,7 @@ export function AppShell() {
           <header className="flex h-11 shrink-0 items-center justify-between border-b px-5">
             <h1 className="text-sm font-medium">{t(current.labelKey)}</h1>
             <span className="font-mono text-[11px] text-muted-foreground">
-              v0.1.0
+              v{version}
             </span>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto">

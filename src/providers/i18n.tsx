@@ -53,6 +53,10 @@ const DICT = {
     "复制失败，请手动选择文本",
     "Copy failed, select the text manually",
   ],
+  "common.openFailed": [
+    "无法打开链接，请手动复制地址到浏览器",
+    "Unable to open the link. Copy the address into your browser.",
+  ],
   "common.reset": ["恢复默认设置", "Reset to defaults"],
   "common.resetDone": ["已恢复默认设置", "Settings reset"],
   "common.sampleData": ["示例数据", "Sample data"],

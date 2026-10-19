@@ -53,7 +53,7 @@ const conf = JSON.parse(
 const productName = conf.productName;
 const identifier = conf.identifier;
 const version = conf.version;
-const binaryName = readPackageName();
+const binaryName = conf.mainBinaryName ?? readPackageName();
 
 const builtExe = join(
   ROOT,
@@ -97,20 +97,20 @@ rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 copyFileSync(builtExe, portableExe);
 
-const readme = `Tauri Desktop Starter 便携版 v${version}
+const readme = `${productName} 便携版 v${version}
 ${"=".repeat(40)}
 
-这是免安装版本：双击 exe 即可运行，不需要管理员权限，也不会写注册表。
+这是免安装版本：满足运行要求后，双击 exe 即可运行，不需要管理员权限。
 
 运行要求
 - Windows 10 / 11
 - Microsoft Edge WebView2 Runtime
-  Win11 自带；较老的 Win10 若缺失，会提示安装，或手动装：
+  Win11 自带；较老的 Win10 若缺失，请先手动安装：
   https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
 数据存放位置
-- 窗口位置、日志等仍写入当前用户的 AppData：
-  %LOCALAPPDATA%\\${identifier}
+- 窗口状态写入 %APPDATA%\\${identifier}
+- 日志与 WebView 数据写入 %LOCALAPPDATA%\\${identifier}
   数据不随 exe 移动。如果要求"数据跟着 U 盘走"，把窗口状态与日志路径
   改成 exe 同级目录（注意：放在 Program Files 时该目录不可写）。
 

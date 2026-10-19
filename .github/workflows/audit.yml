@@ -30,7 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 只读 Cargo.lock，基于 RustSec 数据库比对
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # 直接使用 cargo-audit 的退出码，发现漏洞时让 job 失败。
+      # audit-check action 默认查仓库根目录，且报告 issue/check 需要额外写权限。
+      - name: 安装 cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo audit
+        run: cargo audit --file src-tauri/Cargo.lock

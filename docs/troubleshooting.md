@@ -14,7 +14,7 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
 
 路径由 `identifier`（`tauri.conf.json`）决定，改标识符后要跟着变。
 默认记 `Info` 级；临时要看细节，把 `lib.rs` 里的 `.level(log::LevelFilter::Info)` 调成 `Debug`。
-日志时间戳是**本地时区**，单份上限 1 MB、保留最近 3 份（见 `lib.rs` 的日志配置）。
+日志时间戳是**本地时区**，单份上限 1 MB、保留 3 份历史归档及当前日志（见 `lib.rs` 的日志配置）。
 
 > 日志文件是 UTF-8 无 BOM。Windows PowerShell 5.1 默认按 GBK 读，中文会显示成乱码：
 > 用 `Get-Content app.log -Encoding UTF8`，或者直接用 VS Code / 记事本打开。
@@ -122,6 +122,17 @@ taskkill /PID <pid> /F
 **原因**：`src-tauri/capabilities/default.json` 没放开对应权限。
 
 错误信息里会写明需要哪个权限标识，加进去后**重启** `app:dev`（能力文件不支持热更新）。
+
+## 自定义标题栏下原生边框又出现了
+
+**现象**：`tauri.conf.json` 里配了 `"decorations": false`，运行时窗口顶部仍然有原生标题栏，和自绘标题栏叠成两层。
+
+- 真凶通常是 `tauri-plugin-window-state`：它的默认 `StateFlags::all()` 含 `DECORATIONS`，会把**旧版本存盘**的 `decorated: true` 在启动时 `set_decorations(true)` 恢复回来，覆盖配置。升级过版本的机器必现（新装机器不现）。
+- 排查：看 `%APPDATA%\<identifier>\.window-state.json` 里有没有 `"decorated": true`。
+- 修复：装饰是设计决策而非用户状态，初始化插件时剔除该 flag——
+  `with_state_flags(StateFlags::all().difference(StateFlags::DECORATIONS | StateFlags::VISIBLE))`（本项目已这么配）。
+- 同时剔除 `VISIBLE`，避免插件提前显示窗口，绕过前端首帧与 Rust 的 3 秒兜底。
+- macOS 的 `titleBarStyle: "Overlay"` 依赖 `decorations: true`，由 `tauri.macos.conf.json` 平台配置控制，不受此影响。
 
 ## 中文输入法候选框位置错乱
 

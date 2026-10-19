@@ -41,6 +41,32 @@ describe("useExternalLinks", () => {
     expect(openExternal).toHaveBeenCalledWith("https://example.com/docs");
   });
 
+  it.each([
+    "HTTPS://example.com/docs",
+    "  https://example.com/docs",
+    "//example.com/docs",
+  ])("覆盖大小写、空白与协议相对地址：%s", (href) => {
+    renderHook(() => useExternalLinks());
+    document.body.innerHTML = `<a href="${href}"><span>文档</span></a>`;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    getAnchor().firstElementChild?.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(openExternal).toHaveBeenCalledWith(getAnchor().href);
+  });
+
+  it("鼠标中键打开外链也交给系统浏览器", () => {
+    renderHook(() => useExternalLinks());
+    document.body.innerHTML = '<a href="https://example.com/docs">文档</a>';
+    const click = new MouseEvent("auxclick", {
+      bubbles: true,
+      cancelable: true,
+      button: 1,
+    });
+    getAnchor().dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(openExternal).toHaveBeenCalledWith(getAnchor().href);
+  });
+
   it("站内锚点等其他链接不拦截", () => {
     renderHook(() => useExternalLinks());
     document.body.innerHTML = '<a href="#section">锚点</a>';

@@ -17,7 +17,9 @@
 pnpm version:set 1.2.0
 ```
 
-脚本会校验语义化版本格式，并同时写入上面四处。
+脚本先读取并校验所有版本文件，再同时更新上面四处；Cargo 包名与 npm 包名不同也会正确定位自身锁文件条目。`pnpm version:check` 检查四处版本一致，CI 和发布流程都会执行。
+
+当前包含 MSI，版本须满足 major ≤ 255、minor ≤ 255、patch ≤ 65535。预发布标识或构建元数据若用于 MSI 第四段，必须为 ≤ 65535 的整数；使用 `beta.1` 等文本时，需要显式配置 `bundle.windows.wix.version` 或仅构建 NSIS。非法版本在写入前就会被拒绝。
 
 > 版本号是**用户可见的契约**：自动更新靠它判断新旧，降级安装会被拒绝。已经发布过的版本号不要复用。
 
@@ -102,11 +104,11 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 
 三条可落地的路线：
 
-| 路线                                         | 成本         | CI 友好                       | 用户看到的发布者    | 适用                             |
-| -------------------------------------------- | ------------ | ----------------------------- | ------------------- | -------------------------------- |
-| SignPath Foundation                          | 免费（开源） | ✅                            | SignPath Foundation | 公开开源项目                     |
-| Azure Artifact Signing（原 Trusted Signing） | $9.99/月起   | ✅                            | 你的组织名          | 组织在 US/CA/EU/UK；个人仅 US/CA |
-| OV / EV 证书 + USB Token                     | ¥1k–3k / 年  | ⚠️ 需自托管 runner 或云签服务 | 你的公司名          | 必须用自己的发布者名称           |
+| 路线                                         | 成本         | CI 友好                       | 用户看到的发布者    | 适用                                                                                                                   |
+| -------------------------------------------- | ------------ | ----------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| SignPath Foundation                          | 免费（开源） | ✅                            | SignPath Foundation | 公开开源项目                                                                                                           |
+| Azure Artifact Signing（原 Trusted Signing） | $9.99/月起   | ✅                            | 你的组织名          | 受地区与身份限制，见 [官方前置条件](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart#prerequisites) |
+| OV / EV 证书 + USB Token                     | ¥1k–3k / 年  | ⚠️ 需自托管 runner 或云签服务 | 你的公司名          | 必须用自己的发布者名称                                                                                                 |
 
 #### 路线 A：SignPath Foundation（开源免费）
 
@@ -141,8 +143,8 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 | Variables | `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` | artifact configuration slug |
 | Secret    | `SIGNPATH_API_TOKEN`                   | API token                   |
 
-**发版**：打 tag 后，`release.yml` 的 `build` job 产出 draft Release；随后 `sign-windows` job 自动
-下载安装包 → 上传 artifact → 提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。
+**发版**：打 tag 后，`release.yml` 的 `build` job 产出 draft Release，并将未签名的 NSIS 包直接上传为本次运行的 artifact；随后 `sign-windows` job 使用该 artifact 的 ID
+提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。这样签名来源直接关联到本次构建。SignPath 与遗留 PFX 签名应二选一。
 未配置 `SIGNPATH_ORGANIZATION_ID` 时该 job 直接跳过，现有发布流程不受影响。
 
 **限制**：
@@ -150,13 +152,14 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 - 发布者显示 "SignPath Foundation"，不是你的名字；
 - 每次发版要在 SignPath 门户人工批准一次；
 - 只签 NSIS 安装包外层，安装后的应用 exe 不带签名；内外层都要签需改用 MSI + 深签名配置。
+- 当前 SignPath 流程不能直接与 `createUpdaterArtifacts` 组合：打包后重签会改变安装包字节，使先前生成的更新签名失效。流水线会拒绝该组合；接入自动更新时，须将更新签名生成移到 Authenticode 签名之后。
 
 #### 路线 B：Azure Artifact Signing（原名 Trusted Signing）
 
 微软的托管签名服务，私钥在 Azure HSM 中，CI 直接调用，不需要任何硬件：
 
 1. 在 Azure 创建 Artifact Signing 账户与证书配置文件（Certificate Profile）；
-2. 创建 App Registration，授予 **Key Vault Certificate User** 与 **Key Vault Crypto User** 角色；
+2. 创建 App Registration，在证书配置文件范围向它授予 **Artifact Signing Certificate Profile Signer** 角色（见 [微软角色说明](https://learn.microsoft.com/en-us/azure/artifact-signing/tutorial-assign-roles)）；
 3. 安装 CLI：`cargo install artifact-signing-cli`（需要 .NET 8 与较新的 Windows SDK）；
 4. 在 `tauri.conf.json` 配置签名命令：
 
@@ -224,7 +227,7 @@ export APPLE_TEAM_ID="<Team ID>"
 pnpm app:build
 ```
 
-Tauri 会自动完成签名 + 公证 + stable 打包。
+Tauri 会自动完成签名、公证与打包。
 
 ### Linux
 
@@ -266,7 +269,7 @@ export TAURI_SIGNING_PRIVATE_KEY="<私钥内容>"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="<私钥密码>"
 ```
 
-4. `bundle.createUpdaterArtifacts` 设为 `true`，构建会额外产出 `.sig` 与 `latest.json`。
+4. `bundle.createUpdaterArtifacts` 设为 `true`，构建会额外产出更新包与 `.sig`；发布流水线中的 `tauri-action` 再汇总生成 `latest.json`，本地 `tauri build` 不生成该清单。
 
 5. 前端调用检查更新：
 
@@ -274,10 +277,12 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="<私钥密码>"
 import { check } from "@tauri-apps/plugin-updater";
 
 const update = await check();
-if (update?.available) {
+if (update) {
   await update.downloadAndInstall();
 }
 ```
+
+`check()` 返回更新对象或 `null`，没有 `available` 字段。参见 [Tauri 2 更新插件文档](https://v2.tauri.app/plugin/updater/)。插件导入和调用应封装在 `src/lib/tauri.ts`，页面调用封装函数。
 
 ### 更新服务端
 
@@ -325,8 +330,7 @@ if (update?.available) {
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                                                      |
 | `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）                             |
 
-当前 `release.yml` 只内置了**遗留 PFX** 与 macOS 两条链路；选 Azure 或 SignPath 时，
-按 Windows 一节对应的步骤接入（Azure 需要额外安装 CLI 并注入三个环境变量）。
+当前 `release.yml` 内置了**遗留 PFX**、macOS 与可选的 SignPath 链路；SignPath 需要配置门户与仓库参数，Azure 需要额外安装 CLI 并注入三个环境变量。
 
 证书和私钥永远不进仓库——进了就当作已泄露，必须吊销重签。
 
@@ -355,7 +359,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 
 ## 回滚
 
-- **应用级**：把 `latest.json` 的 `version` 改回上一个版本并重新指向旧安装包。
-  注意 Tauri 默认不允许降级，需要在代码里显式放开 `allowDowngrades`，或让用户手动重装。
+- **应用级**：推荐把回滚后的代码发布为更高版本，让现有客户端正常升级。
+  仅将 `latest.json` 指向较旧版本不会触发默认更新；自动降级需要预先在 Rust 更新器中自定义版本比较，并处理 Windows 安装器的降级限制，否则让用户手动重装。
 - **代码级**：`git revert` 对应合并节点后重新发版，不要强推 tag。
 - **数据级**：涉及数据库结构变更的版本，必须提前设计向前兼容的迁移，不做"降级删表"。

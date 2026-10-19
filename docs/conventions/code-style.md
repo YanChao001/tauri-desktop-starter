@@ -106,7 +106,7 @@ export type Theme = (typeof THEMES)[number];
 - 命令函数返回 `Result<T, String>` 或自定义错误类型，**不要 `unwrap()`/`expect()`**（启动阶段除外）。
 - 命令函数名用动词开头：`read_config`、`save_settings`、`export_report`。
 - 新增命令必须同时改两处：函数定义 + `generate_handler![]`，漏了会报 "command not found"。
-- 阻塞操作（文件、网络、数据库）放进 `async` 命令或 `spawn_blocking`，不要卡住 UI 线程。
+- 文件、网络、数据库操作使用异步 API；同步阻塞调用放进 `spawn_blocking`，不要仅加 `async` 关键字就直接执行阻塞调用。
 - 错误信息写给开发者看，日志里要带上下文（哪个文件、哪个参数）。
 - `cargo fmt` + `cargo clippy -- -D warnings` 必须干净，CI 会卡这一条。
 

@@ -78,20 +78,35 @@ export function TitleBar() {
 
   useEffect(() => {
     if (!native) return;
+    let cancelled = false;
     let unlisten: (() => void) | undefined;
 
-    void (async () => {
+    async function syncMaximized() {
       try {
-        setMaximized(await isWindowMaximized());
-        unlisten = await onWindowResized(async () => {
-          setMaximized(await isWindowMaximized());
-        });
+        const value = await isWindowMaximized();
+        if (!cancelled) setMaximized(value);
       } catch (error) {
         console.warn("读取窗口状态失败", error);
       }
-    })();
+    }
 
-    return () => unlisten?.();
+    void syncMaximized();
+    void onWindowResized(() => {
+      void syncMaximized();
+    })
+      .then((stop) => {
+        // 订阅注册是异步的，StrictMode 的清理可能先于它完成
+        if (cancelled) stop();
+        else unlisten = stop;
+      })
+      .catch((error: unknown) => {
+        console.warn("监听窗口状态失败", error);
+      });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, [native]);
 
   function run(action: () => Promise<void>) {
@@ -112,7 +127,7 @@ export function TitleBar() {
       await openExternal(url);
     } catch (error) {
       console.error("打开外链失败", error);
-      toast.error(t("common.copyFailed"));
+      toast.error(t("common.openFailed"));
     }
   }
 

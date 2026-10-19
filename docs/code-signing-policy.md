@@ -28,7 +28,7 @@ SignPath 与 GitHub 账号均启用 MFA。
 
 1. 打 tag（`v<version>`）触发 [`.github/workflows/release.yml`](../.github/workflows/release.yml)；
 2. GitHub Actions 在 `windows-latest` 上从该 tag 的源码构建，产物进入 **draft Release**；
-3. 配置 SignPath 后，`sign-windows` job 下载 draft 中的安装包，提交签名请求并等待人工批准；
+3. 构建任务直接上传未签名安装包 artifact；配置 SignPath 后，`sign-windows` job 使用本次运行的 artifact ID 提交签名请求并等待人工批准；
 4. 用 `Get-AuthenticodeSignature` 校验签名有效后，以签名文件覆盖 draft 中的未签名资产；
 5. 人工确认 draft 内容后发布。
 
