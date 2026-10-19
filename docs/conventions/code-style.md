@@ -47,7 +47,7 @@
 ## TypeScript
 
 - **禁止 `any`。** 未知类型用 `unknown`，在使用处收窄。
-- 统一用 `type` 声明类型；不使用 `interface`，避免团队内两种写法并存。
+- 对象类型优先用 `type`，保持队内一种写法；需要声明合并（如扩展第三方类型）时用 `interface`，并在 PR 里说明原因。
 - 导出的工具函数显式标注返回类型；组件返回值交给推断。
 - 不用 `enum`，用 `as const` 对象 + 联合类型：
 
@@ -56,7 +56,7 @@ export const THEMES = ["light", "dark", "system"] as const;
 export type Theme = (typeof THEMES)[number];
 ```
 
-- 异步函数的返回类型写 `Promise<T>`，不要写 `Promise<void>` 之外再返回 `void`。
+- 异步函数一律返回 `Promise<T>`，不要在 `async` 函数里混用同步返回。
 - 非空断言 `!` 只在"运行到这里必然存在"且能一句话说清理由时使用，否则用可选链 + 默认值。
 - 跨进程的数据（IPC 返回值）一律视为不可信，先校验再用。
 
@@ -104,11 +104,3 @@ import { localHelper } from "./local-helper"; // 4. 相对路径（尽量少用�
 - 中文标点用全角，代码与命令用半角。
 - 按钮文案用动词开头：「保存」「新建项目」，不用「确定」这种无信息量的词（除非是系统约定的确认框）。
 - 错误提示说清「发生了什么 + 该怎么办」，不要只抛一句「操作失败」。
-
-## 提交前自检
-
-```bash
-pnpm format:check && pnpm lint && pnpm typecheck
-```
-
-三条都过再提 PR。CI 会跑同样的检查，本地先过能省一轮往返。

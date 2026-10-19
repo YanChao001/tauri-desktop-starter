@@ -38,7 +38,7 @@
 
 ## 快速开始
 
-前置：Node 20+、pnpm、Rust（`rustup` 安装 stable-msvc）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
+前置：Node 22（≥22.12）、pnpm 12+、Rust 1.88+（`rustup` 安装 stable-msvc）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
 
 ```bash
 pnpm install
@@ -131,9 +131,13 @@ pnpm dlx shadcn@latest add dialog table form select
 
 ```rust
 // src-tauri/src/lib.rs
+use tauri::Manager;
+
 #[tauri::command]
-fn read_config() -> Result<String, String> {
-    std::fs::read_to_string("config.json").map_err(|e| e.to_string())
+fn read_config(app: tauri::AppHandle) -> Result<String, String> {
+    // 数据目录随系统变化，不要用相对路径或 exe 所在目录
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::read_to_string(dir.join("config.json")).map_err(|e| e.to_string())
 }
 ```
 

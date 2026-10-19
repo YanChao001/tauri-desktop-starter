@@ -1,9 +1,11 @@
 # 参与开发
 
+这份文件只给路径，具体规则都在 `docs/`，避免同一个规则在两处各说一遍、最后说法不一致。
+
 ## 最短路径
 
 ```bash
-# 1. 环境：Node 22+ / pnpm 12+ / Rust stable-msvc / VS C++ 工具链
+# 1. 环境：Node 22.12+ / pnpm 12+ / Rust 1.88+ stable-msvc / VS C++ 工具链
 #    详细要求见 docs/development.md
 
 # 2. 拉起项目
@@ -14,66 +16,36 @@ pnpm app:dev
 
 # 3. 开分支（从 develop 切，不要从 main）
 git switch develop && git pull --rebase
-git switch -c feature/42-命令面板
+git switch -c feature/42-command-palette
 
 # 4. 写代码，提交前自检
 pnpm format:check && pnpm lint && pnpm typecheck
 
-# 5. 提交（Conventional Commits）
-git add .
+# 5. 提交并首次推送
+git add -A
 git commit -m "feat(ui): 增加命令面板"
+git push -u origin feature/42-command-palette
 
-# 6. 合并前同步主干（rebase，不要 merge）
+# 6. 合并前同步主干（rebase，不要 merge），然后强推自己的分支
 git fetch origin
 git rebase origin/develop
 git push --force-with-lease
 
-# 7. 开 PR，等 CI 绿 + 1 人 approve
+# 7. 开 PR → CI 绿 → 1 人 approve → --no-ff 合并
 ```
 
 ## 必读规范
 
-| 主题                            | 文档                                               |
-| ------------------------------- | -------------------------------------------------- |
-| 命名、组件写法、TS/Rust 约定    | [代码风格](./docs/conventions/code-style.md)       |
-| 分支模型、rebase 规则、提交格式 | [Git 协作规范](./docs/conventions/git-workflow.md) |
-| 颜色、间距、状态处理            | [界面规范](./docs/conventions/ui-guidelines.md)    |
-| 架构与分层                      | [架构说明](./docs/architecture.md)                 |
+| 主题                    | 文档                                                 |
+| ----------------------- | ---------------------------------------------------- |
+| 架构分层与 IPC 边界     | [架构说明](./docs/architecture.md)                   |
+| 命名、组件写法、TS/Rust | [代码风格](./docs/conventions/code-style.md)         |
+| 分支模型、rebase、提交  | [Git 协作规范](./docs/conventions/git-workflow.md)   |
+| 颜色、间距、状态处理    | [界面规范](./docs/conventions/ui-guidelines.md)      |
+| 环境变量与本地配置      | [开发指南](./docs/development.md#环境变量)           |
+| 新增依赖的评估标准      | [开发指南](./docs/development.md#新增依赖的评审标准) |
 
-## 提交要求
-
-- 一次提交只做一件事，不要把格式化和逻辑改动混在一起。
-- 提交信息用 Conventional Commits，scope 写模块名（`ui` / `tauri` / `ipc` / `build`）。
-- 不提交 `node_modules`、`dist`、`src-tauri/target`、任何密钥。
-
-## PR 要求
-
-- 标题符合同一套提交规范（`--no-ff` 合并后它就是合并节点的标题）。
-- 描述里写清：改了什么、为什么、怎么验证、影响面。
-- diff 控制在 400 行以内，超了先拆。
-- UI 改动附截图，**亮色和暗色各一张**。
-- 动了 `capabilities/default.json`、`tauri.conf.json`、`Cargo.toml` 要在描述里单独说明。
-- CI 必须全绿才可合并；reviewer 在 1 个工作日内给第一次反馈。
-
-## 代码审查看什么
-
-按优先级：
-
-1. **正确性**：边界条件、错误处理、异步竞态。
-2. **边界**：`pages/` 有没有直接调 `invoke`，`lib/` 有没有混入 JSX。
-3. **安全**：入参校验、路径穿越、权限是否开大了。
-4. **一致性**：命名、目录、样式 token 是否符合规范。
-5. **可维护性**：这段代码三个月后别人能不能改。
-
-风格问题交给 Prettier 和 ESLint，reviewer 不要在这上面花时间。
-
-## 常见退回原因
-
-- 分支没 rebase 到最新 `develop`
-- 提交信息是 "修改"、"fix bug" 这类无信息量的描述
-- UI 改动没有深色模式截图
-- 新增依赖没有说明理由
-- 文档没跟着改
+提交格式、PR 要求、review 关注点、合并方式都在 Git 协作规范里；PR 模板会自动带出清单。
 
 ## 新人第一周
 

@@ -72,14 +72,15 @@ git push --force-with-lease
 
 ## rebase 规则（必须遵守）
 
-| 场景                             | 做法                                                                               |
-| -------------------------------- | ---------------------------------------------------------------------------------- |
-| 拉取远端更新                     | `git pull --rebase`，配置 `git config --global pull.rebase true`                   |
-| 同步 `develop` 到特性分支        | `git rebase origin/develop`，**不允许** `git merge develop`                        |
-| 合并前                           | 必须 rebase 到最新 `origin/develop`，且本地自检通过                                |
-| 冲突                             | 本地解决 → `git add <file>` → `git rebase --continue`；放弃用 `git rebase --abort` |
-| 已推送的分支被 rebase            | `git push --force-with-lease`，**禁止** `--force`                                  |
-| `develop` / `main` / `release/*` | 永不 rebase、永不 force push、永不直接 push                                        |
+| 场景                      | 做法                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| 拉取远端更新              | `git pull --rebase`，配置 `git config --global pull.rebase true`                   |
+| 同步 `develop` 到特性分支 | `git rebase origin/develop`，**不允许** `git merge develop`                        |
+| 合并前                    | 必须 rebase 到最新 `origin/develop`，且本地自检通过                                |
+| 冲突                      | 本地解决 → `git add <file>` → `git rebase --continue`；放弃用 `git rebase --abort` |
+| 已推送的分支被 rebase     | `git push --force-with-lease`，**禁止** `--force`                                  |
+| `develop` / `main`        | 保护分支：只能通过 PR 合并，不 rebase、不 force push、不直接 push                  |
+| `release/*` / `hotfix/*`  | 由发布负责人推送，不 force push；期间只允许修复提交                                |
 
 **为什么特性分支上禁止 merge develop：** 会产生一条"整合提交"，把别人的几十个提交混进你的分支历史里。review 的人打开 PR 看到的全是噪音，分不清哪些是你改的。
 
@@ -166,13 +167,38 @@ docs: 补充发布流程中的签名说明
 3. 怎么验证的（手动步骤或测试）
 4. 影响面（是否涉及打包、权限、数据结构变更）
 
-**硬性要求**：
+**关于规模**：
 
-- 单个 PR 的 diff 控制在 400 行以内，超了就拆。拆分比 review 快。
+- 单个 PR 建议控制在 400 行 diff 以内；超出请在描述里说明为什么不能拆。拆分通常比 review 更快。
 - UI 改动附截图，**亮色与暗色各一张**。
 - 涉及 `capabilities/default.json`、`tauri.conf.json`、`Cargo.toml` 的改动，要在描述里单独标出。
-- reviewer 在 1 个工作日内给出第一次反馈。
-- 作者负责跟进评论，不要等 reviewer 催。
+- 作者负责跟进评论，不要等 reviewer 催。reviewer 尽量在 1 个工作日内给第一次反馈。
+
+## Review 时看什么
+
+按优先级，前三条能挡住大部分问题：
+
+1. **正确性**：边界条件、错误处理、异步竞态。
+2. **边界**：`pages/` 有没有直接调 `invoke`，`lib/` 有没有混入 JSX。
+3. **安全**：入参校验、路径穿越、权限是否开大了。
+4. **一致性**：命名与样式 token 是否符合规范。
+
+风格问题交给 Prettier 和 ESLint，reviewer 不要在这上面花时间。
+
+## 仓库设置（一次性）
+
+规范能不能落地，取决于服务端有没有开保护。新建仓库后由管理员完成：
+
+| 设置         | 值                                           |
+| ------------ | -------------------------------------------- |
+| 默认分支     | `develop`                                    |
+| 保护分支     | `main`、`develop`                            |
+| 合并前要求   | CI 通过 + 至少 1 个 approve                  |
+| 允许强推     | 关闭                                         |
+| 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致） |
+| 合并后       | 自动删除源分支                               |
+
+GitHub 路径：Settings → Branches → Add branch protection rule。
 
 ## 冲突处理
 
@@ -201,7 +227,7 @@ git rebase --abort
 git switch develop && git pull --rebase
 git switch -c release/1.2.0
 
-# 2. 同步三处版本号（脚本见 scripts/set-version.mjs）
+# 2. 同步版本号（见 scripts/set-version.mjs）
 pnpm version:set 1.2.0
 
 # 3. 更新 CHANGELOG（把 Unreleased 段落改为 1.2.0 并写日期）

@@ -46,7 +46,7 @@ GitFlow 的经典做法是用 `--no-ff` 合并出特性边界，而 rebase 追�
 **缓解措施**
 
 - 把命令写进规范，新人不靠记忆
-- CI 在 PR 上校验分支是否落后于 `develop`
+- PR 模板里带「已 rebase 到最新 develop」复选框，reviewer 合并前确认
 - 团队统一配置 `git config --global pull.rebase true`
 
 ## 复查条件

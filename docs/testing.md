@@ -87,7 +87,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 ```ts
 import { invoke } from "@tauri-apps/api/core";
 
-expect(invoke).toHaveBeenCalledWith("greet", { name: "测试" });
+expect(vi.mocked(invoke)).toHaveBeenCalledWith("greet", { name: "测试" });
 ```
 
 **这也是为什么要统一走 `lib/tauri.ts`**：只需要 mock 一个地方。

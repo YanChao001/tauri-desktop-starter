@@ -32,5 +32,5 @@ UI 改动必填，亮色与暗色各一张。
 
 - [ ] 分支已 rebase 到最新 `origin/develop`，历史中没有 merge 提交
 - [ ] 提交信息符合 Conventional Commits
-- [ ] 单个 PR 的 diff 在 400 行以内（超出已说明原因）
+- [ ] diff 尽量控制在 400 行以内（超出已在描述中说明原因）
 - [ ] 相关文档已同步更新

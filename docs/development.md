@@ -2,14 +2,14 @@
 
 ## 环境要求
 
-| 组件             | 版本                                 | 说明                            |
-| ---------------- | ------------------------------------ | ------------------------------- |
-| Node.js          | 22 LTS（见 `.nvmrc`）                | 前端构建                        |
-| pnpm             | 12+                                  | 包管理器，不要用 npm 生成锁文件 |
-| Rust             | 1.99+（stable-msvc）                 | 后端编译                        |
-| Visual Studio    | 2022/2026，含「使用 C++ 的桌面开发」 | 提供 MSVC 链接器                |
-| Windows SDK      | 10.0.19041 以上                      | 链接系统库                      |
-| WebView2 Runtime | 任意近期版本                         | Win11 自带，Win10 多数已装      |
+| 组件             | 版本                                 | 说明                             |
+| ---------------- | ------------------------------------ | -------------------------------- |
+| Node.js          | 22.12+（见 `.nvmrc`）                | 前端构建                         |
+| pnpm             | 12+                                  | 包管理器，不要用 npm 生成锁文件  |
+| Rust             | 1.88+（stable-msvc）                 | edition 2024 与 let-chain 的要求 |
+| Visual Studio    | 2022/2026，含「使用 C++ 的桌面开发」 | 提供 MSVC 链接器                 |
+| Windows SDK      | 10.0.19041 以上                      | 链接系统库                       |
+| WebView2 Runtime | 任意近期版本                         | Win11 自带，Win10 多数已装       |
 
 macOS 需要 Xcode Command Line Tools；Linux 需要 `libwebkit2gtk-4.1-dev` 等依赖，详见 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)。
 
@@ -33,6 +33,26 @@ pnpm app:dev
 | `pnpm lint`              | ESLint                      | 提交前                     |
 | `pnpm format`            | Prettier 格式化             | 提交前                     |
 | `pnpm version:set x.y.z` | 同步三处版本号              | 发布时                     |
+
+## 环境变量
+
+Vite 只把 `VITE_` 开头的变量注入前端代码，其余变量前端读不到。
+
+```bash
+# .env.local —— 已被 .gitignore 忽略，不要提交
+VITE_API_BASE=https://api.example.com
+```
+
+```ts
+const base = import.meta.env.VITE_API_BASE;
+```
+
+注意事项：
+
+- 前端能读到的变量会被**打进 bundle**，任何人解包都能看到，不要放密钥。
+- 需要保密的值放在 Rust 侧：用 `std::env::var("XXX")` 或配置文件读取，再通过命令返回结果。
+- 新增的 `VITE_` 变量要在 `src/vite-env.d.ts` 里补类型，否则是 `any`。
+- 仓库里只提交 `.env.example`，写清需要哪些变量和用途，不写真实值。
 
 ## 调试
 

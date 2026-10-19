@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# 环境变量：本地配置不进仓库，示例文件除外
+.env
+.env.*
+!.env.example
+
+# 证书与私钥：更新签名私钥、代码签名证书都不允许提交
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

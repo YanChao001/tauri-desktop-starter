@@ -4,6 +4,8 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+> 文末的版本对比链接是占位地址，接入代码仓库后替换为真实 URL。
+
 ## [Unreleased]
 
 ### 新增
