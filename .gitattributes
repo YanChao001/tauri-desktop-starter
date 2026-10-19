@@ -3,6 +3,7 @@
 
 # 二进制文件不做任何转换，也不参与 diff
 *.png binary
+*.bmp binary
 *.ico binary
 *.icns binary
 *.jpg binary

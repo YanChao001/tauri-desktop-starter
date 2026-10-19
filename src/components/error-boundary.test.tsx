@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -15,6 +15,8 @@ describe("ErrorBoundary", () => {
   });
 
   afterEach(() => {
+    // vitest 未开 globals，Testing Library 不会自动 cleanup
+    cleanup();
     vi.restoreAllMocks();
   });
 

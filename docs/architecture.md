@@ -208,7 +208,7 @@ let dir = app.path().app_data_dir()?; // 需要 tauri::Manager
 ## 安全边界
 
 1. **能力白名单**：`src-tauri/capabilities/default.json`。加插件后前端报 "not allowed"，就是这里没加权限。
-2. **CSP**：生产 CSP 已内建（`devCsp` 为 null 便于开发调试），收紧规则见 [安全规范](./security.md#csp)。
+2. **CSP**：生产 CSP 已内建，收紧规则见 [安全规范](./security.md#csp)。开发模式下页面由 Vite dev server（外部 URL）提供，Tauri 不注入 CSP，因此 HMR 不受限；`devCsp: null` 的语义是「开发构建回退到生产 CSP」，不是「开发模式没有 CSP」。
 3. **不做动态代码执行**：不 `eval`，不加载远端 JS。
 4. **外链隔离**：所有 http 链接由系统浏览器打开，不在 WebView 里导航。
 
@@ -224,6 +224,7 @@ src/
     <domain>/       跨页面复用的业务组件
   hooks/            可复用的 React 逻辑，use-xxx.ts
   lib/              纯 TS：IPC 封装、工具、校验
+  styles/           内置的 shadcn 基础样式（上游逐字复制，勿手改）
 src-tauri/
   src/lib.rs        组装：插件注册、命令注册、启动兜底
   src/main.rs       二进制入口，只调 lib.rs

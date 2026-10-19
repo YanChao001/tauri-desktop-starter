@@ -6,6 +6,7 @@
 ## 设计基础
 
 - 组件库：shadcn/ui（`radix-nova` 风格），配置在 `components.json`
+- 基础样式：`src/styles/shadcn.css`（内置自上游，勿手改；升级方式见文件头注释）
 - 字体：Geist Variable（随包内置，仅拉丁字符，中文回退系统字体）
 - 圆角：`--radius` 变量派生，组件里用 `rounded-md` / `rounded-lg`，不要写 `rounded-[7px]`
 - 主题：`next-themes` + `.dark` class，颜色全部走 CSS 变量

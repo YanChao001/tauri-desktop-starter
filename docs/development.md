@@ -26,22 +26,23 @@ pnpm app:dev
 
 ## 常用命令
 
-| 命令                     | 作用                             | 什么时候用                 |
-| ------------------------ | -------------------------------- | -------------------------- |
-| `pnpm app:dev`           | 启动完整桌面应用（含 Rust）      | 日常开发，需要系统能力时   |
-| `pnpm dev`               | 只起 Vite（localhost:1420）      | 纯调样式，不想等 Rust 编译 |
-| `pnpm app:build`         | 打包安装程序                     | 出测试包 / 发布            |
-| `pnpm verify`            | 格式 + lint + 类型 + 测试 + 构建 | 提交前跑一次，等价于 CI    |
-| `pnpm test`              | 跑一遍单元测试                   | 改完逻辑                   |
-| `pnpm test:watch`        | 测试监听模式                     | 边写边测                   |
-| `pnpm test:coverage`     | 生成覆盖率报告                   | 想知道哪里没测到           |
-| `pnpm typecheck`         | 类型检查，不产物                 | 排查类型错误               |
-| `pnpm lint`              | ESLint                           | 排查越界与未使用变量       |
-| `pnpm lint:fix`          | ESLint 自动修复                  | 批量修小问题               |
-| `pnpm format`            | Prettier 格式化                  | 提交前                     |
-| `pnpm clean`             | 删 `dist` 与 `src-tauri/target`  | 磁盘吃紧、构建状态异常     |
-| `pnpm clean:all`         | 连同 `node_modules` 一起删       | 准备把工程复制给别人       |
-| `pnpm version:set x.y.z` | 同步四处版本号                   | 发布时                     |
+| 命令                     | 作用                                             | 什么时候用                 |
+| ------------------------ | ------------------------------------------------ | -------------------------- |
+| `pnpm app:dev`           | 启动完整桌面应用（含 Rust）                      | 日常开发，需要系统能力时   |
+| `pnpm dev`               | 只起 Vite（localhost:1420）                      | 纯调样式，不想等 Rust 编译 |
+| `pnpm app:build`         | 打包安装程序                                     | 出测试包 / 发布            |
+| `pnpm app:portable`      | 免安装便携版（单文件 exe + 说明）                | 内测分发、免安装场景       |
+| `pnpm verify`            | 格式 + lint + 类型 + 测试 + 构建                 | 提交前跑一次，等价于 CI    |
+| `pnpm test`              | 跑一遍单元测试                                   | 改完逻辑                   |
+| `pnpm test:watch`        | 测试监听模式                                     | 边写边测                   |
+| `pnpm test:coverage`     | 生成覆盖率报告                                   | 想知道哪里没测到           |
+| `pnpm typecheck`         | 类型检查，不产物                                 | 排查类型错误               |
+| `pnpm lint`              | ESLint                                           | 排查越界与未使用变量       |
+| `pnpm lint:fix`          | ESLint 自动修复                                  | 批量修小问题               |
+| `pnpm format`            | Prettier 格式化                                  | 提交前                     |
+| `pnpm clean`             | 删 `dist` / `dist-portable` / `src-tauri/target` | 磁盘吃紧、构建状态异常     |
+| `pnpm clean:all`         | 连同 `node_modules` 一起删                       | 准备把工程复制给别人       |
+| `pnpm version:set x.y.z` | 同步四处版本号                                   | 发布时                     |
 
 `pnpm clean` 删的是构建产物，下次构建自动重建。`src-tauri/target` 通常 1 GB 以上，
 **复制这个工程开新项目前务必先跑一次**，否则每份副本都多背 1 GB。

@@ -43,12 +43,13 @@
 ```bash
 pnpm install
 pnpm app:dev      # 开发模式，热更新
-pnpm app:build    # 产出安装包
+pnpm app:build    # 产出安装包（msi / nsis）
+pnpm app:portable # 产出免安装便携版（Windows 单文件 exe）
 pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构建
 ```
 
 `pnpm dev` 只起前端（浏览器里能看界面，但 `invoke` 不可用）。
-`pnpm test` 跑单元测试，`pnpm clean` 清掉 `dist` 与 1 GB 以上的 Rust 编译缓存。
+`pnpm test` 跑单元测试，`pnpm clean` 删除 `dist`、`dist-portable` 与整个 `src-tauri/target`（通常 1 GB 以上）。
 
 ## 目录结构
 
@@ -76,13 +77,15 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 │   ├── App.tsx              # Provider + 路由
 │   ├── main.tsx
 │   ├── index.css            # Tailwind 入口与主题变量
+│   ├── styles/shadcn.css    # shadcn 基础样式，逐字复制自上游
 │   └── test/setup.ts        # 测试环境初始化
 ├── src-tauri/
 │   ├── src/lib.rs           # 只做组装：插件、命令注册、启动兜底
 │   ├── src/commands.rs      # 前端可调用的命令实现
 │   ├── src/main.rs          # 二进制入口，调用 lib.rs
 │   ├── capabilities/        # 前端可调用的接口白名单
-│   ├── tauri.conf.json      # 窗口、打包、标识符
+│   ├── installer/           # 安装器外观：NSIS 模板与位图
+│   ├── tauri.conf.json      # 窗口、打包、标识符、安装器外观
 │   └── Cargo.toml
 ├── docs/                    # 全部工程文档，入口 docs/README.md
 │   ├── architecture.md
@@ -118,7 +121,7 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
 8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
 9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`）。release 构建没有控制台，用户报问题时这是唯一能拿到的线索。
-10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道（`devCsp` 留空给 HMR）。即使页面被注入恶意内容，也加载不了外部脚本、外传不了数据，发布前不需要额外补配置。
+10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道。开发模式下前端由 Vite dev server 提供（外部 URL），Tauri 不向它注入 CSP，所以 HMR 不受影响；`devCsp` 为 `null` 时，开发构建会回退到生产 `csp`（Tauri 源码 `AppManager::csp()` 的行为），**不等于「开发模式没有 CSP」**。即使页面被注入恶意内容，也加载不了外部脚本、外传不了数据，发布前不需要额外补配置。
 
 ## 拿它开新项目
 
@@ -127,10 +130,10 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 1. `package.json` → `name`
 2. `src-tauri/Cargo.toml` → `package.name`、`[lib] name`（下划线命名）、`description`、`authors`
 3. `src-tauri/src/main.rs` → 把 `tauri_desktop_starter_lib::run()` 换成新的 lib 名
-4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`
+4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`、`bundle.copyright`（安装器页脚）
 5. `index.html` → `<title>` 与 favicon（引用的是 `public/tauri.svg`）
 6. `src/layouts/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
-7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`
+7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`；安装器外观图在 `src-tauri/installer/`，按现有尺寸替换（页眉 150×57、侧栏 164×314、WiX banner 493×58 / dialog 493×312），欢迎页/完成页文案在同目录 `installer.nsi` 的 `CUSTOM BRANDING` 段
 8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
 9. `SECURITY.md` → 把 `security@example.com` 换成真实的安全邮箱
 10. 全局收尾：`grep -ri starter` 过一遍，清理 docs 里残留的产物名与日志路径（`tauri-desktop-starter.exe`、`com.starter.desktop`）
@@ -144,6 +147,11 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 ```bash
 pnpm dlx shadcn@latest add dialog table form select
 ```
+
+模板没有把 shadcn CLI 装进 `dependencies`：它只负责生成组件，用 `dlx` 临时执行就够。
+`radix-nova` 风格依赖的基础样式（`data-open` 等变体、`scroll-fade` 等工具类）已内置在
+`src/styles/shadcn.css`，逐字复制自 `shadcn@4.22.0`；升级风格时整体覆盖该文件即可。
+如果 CLI 在 `index.css` 里自动加回 `@import "shadcn/tailwind.css"`，删掉那一行。
 
 **加一个 Rust 命令**（三步，少一步就会报 "command not found"）
 
@@ -200,8 +208,16 @@ pnpm tauri add dialog
 | 产物                                   | 体积    |
 | -------------------------------------- | ------- |
 | 可执行文件 `tauri-desktop-starter.exe` | 3.5 MB  |
-| MSI 安装包                             | 1.92 MB |
-| NSIS 安装包                            | 1.39 MB |
+| MSI 安装包                             | 2.38 MB |
+| NSIS 安装包                            | 1.41 MB |
+
+> 安装包体积包含自定义安装器位图（NSIS 页眉/侧栏、WiX banner/dialog）；不需要品牌化时可以删掉对应配置，MSI 会小约 0.45 MB。
+
+**便携版（免安装）**：`pnpm app:portable` 执行 `tauri build --no-bundle`，把单文件 exe 与一份使用说明收集到 `dist-portable/`（已在 .gitignore 中）。
+
+**安装器外观**：NSIS 安装器已做基础品牌化——中文界面（`SimpChinese` / `English`）、页眉与侧栏位图、安装器图标，页脚取自 `bundle.copyright`。位图在 `src-tauri/installer/`，替换后重新打包即可；MSI 使用同目录下的 WiX banner / dialog 位图。
+
+Tauri 的 Windows 打包目标只有 msi / nsis，没有官方 portable 目标；但前端资源在编译期已嵌进二进制，`--no-bundle` 产出的 exe 本身就是便携程序。两点限制：目标机器需要 WebView2 运行时（Win11 自带）；窗口位置与日志仍写 AppData，不随 exe 移动。
 
 首次 `pnpm app:build` 需要编译全部 Rust 依赖，约 7 分钟；之后改前端不动 Rust，几十秒即可。
 `src-tauri/target` 会占 1.5 GB 左右（编译缓存，已在 .gitignore 中）。

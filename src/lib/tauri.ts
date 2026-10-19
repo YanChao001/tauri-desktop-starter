@@ -14,7 +14,10 @@ export function isTauri(): boolean {
 /** 用系统默认浏览器打开外链；在浏览器预览时退化为新标签页。 */
 export async function openExternal(url: string): Promise<void> {
   if (!isTauri()) {
-    window.open(url, "_blank", "noopener,noreferrer");
+    // 弹窗被浏览器拦截时 window.open 返回 null，不能静默失败
+    if (!window.open(url, "_blank", "noopener,noreferrer")) {
+      throw new Error("浏览器阻止了弹出窗口，请手动复制链接");
+    }
     return;
   }
   const { openUrl } = await import("@tauri-apps/plugin-opener");

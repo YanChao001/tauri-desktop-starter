@@ -54,11 +54,15 @@ export const APP_ROUTES: AppRoute[] = [
 
 /** 按当前路径找对应路由，用于顶栏标题与导航高亮。 */
 export function matchRoute(pathname: string): AppRoute {
-  return (
-    APP_ROUTES.find((route) =>
-      route.exact
-        ? pathname === route.path
-        : pathname === route.path || pathname.startsWith(`${route.path}/`),
-    ) ?? APP_ROUTES[0]
+  const matched = APP_ROUTES.find((route) =>
+    route.exact
+      ? pathname === route.path
+      : pathname === route.path || pathname.startsWith(`${route.path}/`),
   );
+  if (matched) return matched;
+
+  // 未知路径回落到首页。APP_ROUTES 是编译期常量，这里只防御「被误删成空数组」
+  const fallback = APP_ROUTES[0];
+  if (!fallback) throw new Error("APP_ROUTES 不能为空");
+  return fallback;
 }

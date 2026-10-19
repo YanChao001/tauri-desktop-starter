@@ -14,6 +14,7 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
 
 路径由 `identifier`（`tauri.conf.json`）决定，改标识符后要跟着变。
 默认记 `Info` 级；临时要看细节，把 `lib.rs` 里的 `.level(log::LevelFilter::Info)` 调成 `Debug`。
+日志时间戳是**本地时区**，单份上限 1 MB、保留最近 3 份（见 `lib.rs` 的日志配置）。
 
 > 日志文件是 UTF-8 无 BOM。Windows PowerShell 5.1 默认按 GBK 读，中文会显示成乱码：
 > 用 `Get-Content app.log -Encoding UTF8`，或者直接用 VS Code / 记事本打开。
@@ -51,7 +52,8 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
 https://go.microsoft.com/fwlink/p/?LinkId=2124703
 ```
 
-长期方案是在安装包里内置引导，Tauri 支持在 NSIS 安装脚本里检测并提示。
+长期方案是在安装包里内置引导：在 `tauri.conf.json` 的 `bundle.windows.webviewInstallMode`
+里配置 `downloadBootstrapper`，NSIS 安装时会自动检测并安装。
 
 ## 打包时卡在下载 NSIS
 

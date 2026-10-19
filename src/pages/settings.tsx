@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -29,6 +30,16 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [version, setVersion] = useState("—");
   const [tauriVersion, setTauriVersion] = useState("—");
+
+  async function handleOpenLink(url: string) {
+    try {
+      await openExternal(url);
+    } catch (error) {
+      // 没有默认浏览器、权限被拒时不要让 promise 静默失败
+      console.error("打开外链失败", error);
+      toast.error("无法用系统浏览器打开链接，请手动复制地址");
+    }
+  }
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -116,7 +127,7 @@ export default function Settings() {
             <button
               key={link.url}
               type="button"
-              onClick={() => void openExternal(link.url)}
+              onClick={() => void handleOpenLink(link.url)}
               className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
             >
               <span>{link.label}</span>

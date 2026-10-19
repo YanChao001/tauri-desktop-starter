@@ -12,6 +12,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 
 const BUILD_OUTPUT = [
   ["dist", "前端构建产物"],
+  ["dist-portable", "便携版产物"],
   ["src-tauri/target", "Rust 编译缓存（通常 1 GB 以上）"],
 ];
 

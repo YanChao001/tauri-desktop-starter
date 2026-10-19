@@ -23,9 +23,9 @@ export async function copyText(text: string): Promise<void> {
   textarea.style.position = "fixed";
   textarea.style.opacity = "0";
   document.body.appendChild(textarea);
-  textarea.select();
 
   try {
+    textarea.select();
     if (!document.execCommand("copy")) {
       throw new Error("当前环境不支持复制");
     }

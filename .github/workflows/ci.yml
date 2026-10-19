@@ -52,12 +52,12 @@ jobs:
       matrix:
         # 平台差异（cfg 分支、系统库、链接器）必须在三端都过一遍编译，
         # 否则 macOS/Linux 的问题要到 release 流水线才第一次暴露
-        platform: [windows-latest, ubuntu-latest, macos-latest]
+        platform: [windows-latest, ubuntu-22.04, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
       - name: 安装 Linux 系统依赖
-        if: matrix.platform == 'ubuntu-latest'
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf

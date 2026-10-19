@@ -25,8 +25,9 @@ tauri-plugin-window-state = "2"
 # release 构建没有控制台，日志必须落文件，否则线上问题无从查起
 tauri-plugin-log = "2"
 log = "0.4"
+# 当前代码没有直接用到 serde，但 commands.rs 的文档示例（结构化错误 enum）
+# 依赖 `#[derive(serde::Serialize)]`，删掉会让照着文档写的第一步就编译失败
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 
 # 单实例只在桌面端有意义，移动端不编译这个 crate
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

@@ -8,6 +8,9 @@ import "./index.css";
 
 const container = document.getElementById("root");
 if (!container) {
+  // 此时 ErrorBoundary 还没挂载，只能用最原始的方式把错误留在屏幕上
+  document.body.textContent =
+    "应用初始化失败：找不到 #root 挂载点，请检查 index.html";
   throw new Error("找不到 #root 挂载点，检查 index.html");
 }
 

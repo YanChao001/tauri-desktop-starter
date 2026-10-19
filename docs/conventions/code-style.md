@@ -42,7 +42,7 @@
 - 不写 `React.FC`，直接写函数并标注 props 类型。
 - 组件文件名与组件名对应，`app-shell.tsx` → `export function AppShell`。
 - `ui/` 下的组件不参与 ESLint 与 Prettier（见 `.prettierignore`、`eslint.config.js`），
-  目的是保持与上游一致，避免每次 `shadcn add` 都产生冲突。
+  目的是保持与上游一致，避免每次 `shadcn add` 都产生冲突；内置的 `src/styles/shadcn.css` 同理。
 
 ## TypeScript
 

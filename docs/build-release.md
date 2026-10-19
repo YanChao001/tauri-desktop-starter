@@ -1,14 +1,15 @@
 # 构建与发布
 
-## 版本号：三个地方必须一致
+## 版本号：四个地方必须一致
 
-桌面应用的版本号散落在三个文件里，任何一个不同步都会出问题：
+桌面应用的版本号散落在四个文件里，任何一个不同步都会出问题：
 
 | 文件                        | 字段                | 影响             |
 | --------------------------- | ------------------- | ---------------- |
 | `package.json`              | `version`           | 前端与 CI        |
 | `src-tauri/tauri.conf.json` | `version`           | 安装包、更新检查 |
 | `src-tauri/Cargo.toml`      | `[package] version` | 二进制元信息     |
+| `src-tauri/Cargo.lock`      | 自身 package 条目   | 可复现构建       |
 
 用脚本一次改完，不要手改：
 
@@ -16,7 +17,7 @@
 pnpm version:set 1.2.0
 ```
 
-脚本会校验语义化版本格式，并同时写入上述三个文件；`Cargo.lock` 里的自身条目也会一并更新。
+脚本会校验语义化版本格式，并同时写入上面四处。
 
 > 版本号是**用户可见的契约**：自动更新靠它判断新旧，降级安装会被拒绝。已经发布过的版本号不要复用。
 
@@ -41,7 +42,47 @@ pnpm app:build
 pnpm tauri build --bundles nsis
 ```
 
-当前工程实测（Windows x64，release）：exe 3.4MB，MSI 1.9MB，NSIS 1.4MB。
+当前工程实测值（Windows x64，release）见 [README 的构建产物一节](../README.md#构建产物)。
+
+### 便携版（免安装）
+
+Windows 没有 portable 打包目标。用 `--no-bundle` 出单文件 exe，再收集到 `dist-portable/`：
+
+```bash
+pnpm app:portable              # 构建 + 收集
+pnpm app:portable --skip-build # 复用已有 release 产物
+```
+
+产物包含 exe 与一份 `使用说明.txt`，压缩后即可分发。适用前提与限制：
+
+- 目标机器需要 WebView2 运行时（Win11 自带；老 Win10 缺失时按说明安装）。
+- 窗口位置、日志仍写入当前用户的 AppData，不随 exe 移动；要做"绿色版"需自行改路径。
+- 未签名的 exe 会触发 SmartScreen，对外分发仍要按上文配置代码签名。
+- Linux 的 AppImage 本身就是便携格式；macOS 用 `.app` 拖拽安装，无需另做便携包。
+
+### 安装器外观
+
+NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tauri.conf.json > bundle.windows`：
+
+| 打包器 | 配置项                 | 尺寸    | 用途                  |
+| ------ | ---------------------- | ------- | --------------------- |
+| NSIS   | `nsis.headerImage`     | 150×57  | 内页页眉              |
+| NSIS   | `nsis.sidebarImage`    | 164×314 | 欢迎页 / 完成页侧栏   |
+| NSIS   | `nsis.installerIcon`   | .ico    | 安装器图标            |
+| NSIS   | `nsis.uninstallerIcon` | .ico    | 卸载器图标            |
+| WiX    | `wix.bannerPath`       | 493×58  | 内页顶部横幅          |
+| WiX    | `wix.dialogImagePath`  | 493×312 | 欢迎 / 完成对话框背景 |
+
+要点：
+
+- 位图用 24 位 BMP（不要带 alpha），配色与主界面一致（neutral + indigo 强调色）。
+- NSIS 在 125% / 150% 缩放下会整体放大小图，图里不要放小字，否则会发虚。
+- 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
+- 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
+- 模板自带 `src-tauri/installer/installer.nsi`（基于 tauri-cli 2.12.3 的官方模板）。欢迎页/完成页的文案与配色在文件里的 `CUSTOM BRANDING` 标记之间，按语言分别定义：
+  - 在 `MUI_LANGUAGE` 之后用 `LangString` 覆盖 MUI 默认文案，后定义生效；编译时会出现 `LangString set multiple times ... wasting space` 警告，属预期，不影响产物。
+  - 新增安装语言时，为它补一段 `LangString`，否则回落到 NSIS 自带翻译。
+- **升级 Tauri 后**：官方 NSIS 模板可能新增变量或修正逻辑。按同版本源码重新复制 `installer.nsi`，再把 `CUSTOM BRANDING` 两段合并回去，不要整份沿用旧模板。MSI 同理，对应 `wix.template`。
 
 ## 代码签名
 

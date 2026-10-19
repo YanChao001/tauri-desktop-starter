@@ -5,7 +5,7 @@
 ## 最短路径
 
 ```bash
-# 1. 环境：Node 22.12+ / pnpm 12+ / Rust 1.88+ stable-msvc / VS C++ 工具链
+# 1. 环境：Node 22.12+ / pnpm 12+ / Rust（以 rust-toolchain.toml 为准，当前 1.99.1）/ VS C++ 工具链
 #    详细要求见 docs/development.md
 
 # 2. 拉起项目

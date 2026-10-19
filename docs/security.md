@@ -24,7 +24,8 @@
     "core:default",
     "core:window:allow-show",
     "core:window:allow-set-focus",
-    "opener:default",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
     "window-state:default"
   ]
 }
@@ -56,7 +57,8 @@
 
 - `style-src 'unsafe-inline'` 是必需的：Radix 的浮层组件通过 `style` 属性做定位。
 - `connect-src` 里保留 `ipc:` 与 `http://ipc.localhost`，否则 `invoke` 会被拦。
-- `devCsp: null` 让开发模式不受限制（HMR 需要），生产环境仍走 `csp`。
+- `devCsp: null` 的准确含义：开发构建里 **回退到上面的生产 `csp`**（Tauri 源码 `AppManager::csp()`），不是「开发模式没有 CSP」。开发者实际感觉不到限制，是因为 `pnpm app:dev` 的页面由 Vite dev server（外部 URL）提供，Tauri 只对 `tauri://` 协议下的 HTML 注入 CSP。
+- 因此一旦把 `build.devUrl` 置空、改成在 Tauri 里直接加载 `dist`，生产 CSP 会在开发模式生效：此时 `connect-src` 需要补 `ws://localhost:1421`（HMR），或显式配置 `devCsp`。
 - 需要访问外部 API 时，在 `connect-src` 里精确列出域名，不要写 `*`。
 
 改完 CSP 后必须完整跑一遍应用：白屏、图标不显示、字体加载失败，通常都是 CSP 拦的。
@@ -104,6 +106,9 @@ cargo audit          # 需要先 cargo install cargo-audit
 cargo tree -d        # 检查重复依赖
 ```
 
+> 国内镜像（如 npmmirror）没有实现 npm 的 audit 端点，`pnpm audit` 会报 `ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`。
+> 临时指定官方源即可：`pnpm audit --registry https://registry.npmjs.org`。CI 不受影响，runner 默认就是官方源。
+
 - 锁文件（`pnpm-lock.yaml`、`Cargo.lock`）必须提交，保证构建可复现。
 - CI 每周一自动跑一遍两个生态的漏洞审计（`.github/workflows/audit.yml`），本节命令用于本地复查与修复验证。
 - 新增依赖按 [开发指南](./development.md#新增依赖的评审标准) 的三条标准评估。
@@ -129,7 +134,7 @@ cargo tree -d        # 检查重复依赖
 ## 日志
 
 - 生产构建默认不输出调试日志。
-- 日志文件写在 `appLogDir`，按大小轮转。
+- 日志文件写在 `appLogDir`，单份上限 1 MB、保留最近 3 份（`lib.rs` 显式配置，不依赖插件默认值），时间为本地时区。
 - 提供给用户"导出诊断日志"时，先脱敏（路径、用户名、令牌）。
 
 ## 漏洞上报

@@ -6,6 +6,7 @@ mod commands;
 use std::time::Duration;
 
 use tauri::Manager;
+use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +23,12 @@ pub fn run() {
                     }),
                 ])
                 .level(log::LevelFilter::Info)
+                // 插件默认 KeepOne + 40KB：超限会直接删掉旧日志，排障时只剩最后一小段。
+                // 这里保留最近 3 份、单份 1MB，够覆盖一个版本周期内的现场。
+                .max_file_size(1_000_000)
+                .rotation_strategy(RotationStrategy::KeepSome(3))
+                // 默认是 UTC，与用户反馈问题时的本地时间差 8 小时，排查容易对不上
+                .timezone_strategy(TimezoneStrategy::UseLocal)
                 .build(),
         );
 
