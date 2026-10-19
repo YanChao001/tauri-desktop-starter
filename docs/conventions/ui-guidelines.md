@@ -19,7 +19,7 @@
 | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
 | `data-accent`     | neutral / indigo / blue / emerald / amber / rose / violet | 覆盖 `--primary`、`--ring`、`--chart-1`、`--sidebar-primary` |
 | `data-radius`     | sharp / soft / round                                      | 改写 `--radius`                                              |
-| `data-font`       | geist / system / serif / mono                             | 改写 `--font-sans`                                           |
+| `data-font`       | geist / system / serif / mono                             | 改写动态变量 `--app-font-sans`                               |
 | `data-font-size`  | sm / md / lg                                              | 根字号 14 / 16 / 17px                                        |
 | `data-background` | plain / gradient / grid / dots                            | body 背景纹理                                                |
 | `data-motion`     | full / reduced                                            | 全局压缩动画与过渡                                           |
@@ -162,13 +162,21 @@ export default function Reports() {
 ```
 
 ```tsx
-// 2. src/routes.tsx —— 加一条路由，侧边导航会自动出现
+// 2. src/routes.tsx —— 声明懒加载组件，并在 APP_ROUTES 加一项
+const Reports = lazy(() => import("@/pages/reports"));
+
+// APP_ROUTES 内：
 {
   path: "/reports",
-  label: "报表",
+  labelKey: "nav.reports",
   icon: FileTextIcon,
   component: Reports,
 }
+```
+
+```ts
+// 3. src/providers/i18n.tsx —— 在 DICT 补齐双语文案
+"nav.reports": ["报表", "Reports"],
 ```
 
 `routes.tsx` 是路由与导航的唯一数据源，不要再去 `App.tsx` 或 `app-shell.tsx` 里各改一遍。

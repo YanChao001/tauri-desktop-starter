@@ -16,7 +16,9 @@
 
 ## 能力最小化
 
-`src-tauri/capabilities/default.json` 是**白名单**，没写的一律调不通。
+`src-tauri/capabilities/default.json` 是 Tauri 核心与插件命令的**白名单**，未授予的能力默认拒绝。
+
+自定义 Rust 命令另有规则：本项目没有启用应用命令 ACL，`generate_handler!` 注册的 `greet` 默认可由本地应用前端调用。需要按窗口限制自定义命令时，先通过 `tauri_build::AppManifest::commands` 定义应用 ACL，再声明权限并分配到 capability。入参校验始终放在命令内部。
 
 ```json
 {
@@ -70,7 +72,9 @@
 ```rust
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
-    let root = std::env::temp_dir();
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .map_err(|e| format!("允许目录无效: {e}"))?;
     let target = std::path::Path::new(&path)
         .canonicalize()
         .map_err(|e| format!("路径无效: {e}"))?;
@@ -114,6 +118,18 @@ cargo tree -d        # 检查重复依赖
 - 新增依赖按 [开发指南](./development.md#新增依赖的评审标准) 的三条标准评估。
 - 出现高危漏洞时优先升级；无法升级要记录原因与缓解措施。
 
+### 当前间接依赖告警（2026-10-19）
+
+使用当日 RustSec 数据库扫描锁文件中的 458 个 crate，未报告阻断性漏洞，仍有以下 5 项信息告警。`cargo audit` 退出码为 0 不表示没有告警：
+
+| 依赖                                                            | 告警                                                                                                                                                                                                                   | 来源与处理约束                                                                                                                         |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `glib 0.18.5`                                                   | [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)，`VariantStrIter` 内存安全问题                                                                                                              | Linux 的 `tauri → gtk 0.18 → glib 0.18` 链路；修复版本为 ≥ 0.20，不能在当前 GTK 版本约束内直接升级                                     |
+| `proc-macro-error 1.0.4`                                        | [RUSTSEC-2024-0370](https://rustsec.org/advisories/RUSTSEC-2024-0370.html)，停止维护                                                                                                                                   | 来自 `gtk3-macros` / `glib-macros`，属于构建期依赖，需随 GTK 上游迁移                                                                  |
+| `zvariant 5.15.1`、`zvariant_derive 5.15.1`、`zbus_names 4.3.5` | [RUSTSEC-2026-0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)、[0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html)、[0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html)，停止独立维护 | 来自 `tauri-plugin-opener 2.7.2` 与 `tauri-plugin-single-instance 2.5.4 → zbus 5`；这些库已合入 zbus 6，需由两个插件上游完成主版本迁移 |
+
+项目业务代码未直接使用 `VariantStrIter`，但不能据此认定上游调用链不受影响。Linux 发布前应复核该链路，并跟踪 Tauri/GTK、opener 与 single-instance 的兼容升级；当前保留审计告警，不用忽略列表掩盖，也不强行跨主版本替换 GUI/DBus 依赖。
+
 ## 更新通道
 
 - 端点必须 HTTPS。
@@ -122,19 +138,19 @@ cargo tree -d        # 检查重复依赖
 
 ## 本地数据
 
-| 数据       | 存放                         | 要求         |
-| ---------- | ---------------------------- | ------------ |
-| 用户偏好   | `localStorage`               | 不含敏感信息 |
-| 业务数据   | `appDataDir` 下的 SQLite     | 按用户隔离   |
-| 令牌、密码 | 系统钥匙串（`keyring` 插件） | 不落明文     |
-| 临时文件   | `appCacheDir`                | 退出时清理   |
+| 数据       | 存放                                  | 要求         |
+| ---------- | ------------------------------------- | ------------ |
+| 用户偏好   | `localStorage`                        | 不含敏感信息 |
+| 业务数据   | `appDataDir` 下的 SQLite              | 按用户隔离   |
+| 令牌、密码 | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文     |
+| 临时文件   | `appCacheDir`                         | 退出时清理   |
 
 界面里要提供「清除本地数据」入口，并说明清除范围——用户有权知道数据在哪。
 
 ## 日志
 
 - 生产构建默认不输出调试日志。
-- 日志文件写在 `appLogDir`，单份上限 1 MB、保留最近 3 份（`lib.rs` 显式配置，不依赖插件默认值），时间为本地时区。
+- 日志文件写在 `appLogDir`，单份上限 1 MB、保留 3 份历史归档及当前日志（`lib.rs` 显式配置，不依赖插件默认值），时间为本地时区。
 - 提供给用户"导出诊断日志"时，先脱敏（路径、用户名、令牌）。
 
 ## 漏洞上报

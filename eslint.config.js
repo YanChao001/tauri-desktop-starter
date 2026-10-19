@@ -46,7 +46,11 @@ export default tseslint.config(
     // 没有这道校验，越界只能靠 review 时用眼睛发现。
     files: ["src/**/*.{ts,tsx}"],
     // 测试文件需要直接 mock @tauri-apps 模块，属于规则的有效例外
-    ignores: ["src/lib/**", "src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
+    ignores: [
+      "src/lib/tauri.ts",
+      "src/**/*.test.{ts,tsx}",
+      "src/**/*.spec.{ts,tsx}",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",

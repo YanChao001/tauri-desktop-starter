@@ -496,14 +496,14 @@ FunctionEnd
 ; 新增安装语言时，为它补一段 LangString，否则回落到 NSIS 默认翻译。
 !ifdef LANG_SIMPCHINESE
   LangString MUI_TEXT_WELCOME_INFO_TITLE ${LANG_SIMPCHINESE} "欢迎安装 ${PRODUCTNAME}"
-  LangString MUI_TEXT_WELCOME_INFO_TEXT ${LANG_SIMPCHINESE} "本向导将引导你完成 ${PRODUCTNAME} ${VERSION} 的安装，约需一分钟。$\r$\n$\r$\n安装过程不会修改系统设置；以后可在「设置 → 应用」中卸载。$\r$\n$\r$\n$_CLICK"
+  LangString MUI_TEXT_WELCOME_INFO_TEXT ${LANG_SIMPCHINESE} "本向导将引导你完成 ${PRODUCTNAME} ${VERSION} 的安装，约需一分钟。$\r$\n$\r$\n安装完成后可在「设置 → 应用」中卸载。$\r$\n$\r$\n$_CLICK"
   LangString MUI_TEXT_FINISH_TITLE ${LANG_SIMPCHINESE} "安装完成"
   LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_SIMPCHINESE} "${PRODUCTNAME} 已成功安装。$\r$\n$\r$\n点击 [完成] 退出向导；需要的话勾选下方选项立即运行。"
 !endif
 
 !ifdef LANG_ENGLISH
   LangString MUI_TEXT_WELCOME_INFO_TITLE ${LANG_ENGLISH} "Welcome to ${PRODUCTNAME}"
-  LangString MUI_TEXT_WELCOME_INFO_TEXT ${LANG_ENGLISH} "This wizard will install ${PRODUCTNAME} ${VERSION}. It takes about a minute.$\r$\n$\r$\nNo system settings are changed; you can uninstall it later from Settings > Apps.$\r$\n$\r$\n$_CLICK"
+  LangString MUI_TEXT_WELCOME_INFO_TEXT ${LANG_ENGLISH} "This wizard will install ${PRODUCTNAME} ${VERSION}. It takes about a minute.$\r$\n$\r$\nYou can uninstall it later from Settings > Apps.$\r$\n$\r$\n$_CLICK"
   LangString MUI_TEXT_FINISH_TITLE ${LANG_ENGLISH} "Installation complete"
   LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_ENGLISH} "${PRODUCTNAME} has been installed successfully.$\r$\n$\r$\nClick Finish to exit, or select the option below to launch it now."
 !endif

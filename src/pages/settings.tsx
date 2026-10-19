@@ -155,7 +155,7 @@ export default function Settings() {
       await openExternal(url);
     } catch (error) {
       console.error("打开外链失败", error);
-      toast.error(t("common.copyFailed"));
+      toast.error(t("common.openFailed"));
     }
   }
 

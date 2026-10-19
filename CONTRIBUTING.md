@@ -5,7 +5,7 @@
 ## 最短路径
 
 ```bash
-# 1. 环境：Node 22.12+ / pnpm 12+ / Rust（以 rust-toolchain.toml 为准，当前 1.99.1）/ VS C++ 工具链
+# 1. 环境：Node（以 .nvmrc 为准，当前 22.22.2）/ pnpm 12+ / Rust（以 rust-toolchain.toml 为准，当前 1.99.1）/ VS C++ 工具链
 #    详细要求见 docs/development.md
 
 # 2. 拉起项目
@@ -15,10 +15,10 @@ pnpm install
 pnpm app:dev
 
 # 3. 开分支（从 develop 切，不要从 main）
-git switch develop && git pull --rebase
+git switch develop && git pull --ff-only
 git switch -c feature/42-command-palette
 
-# 4. 写代码，提交前自检（等价于 CI 的全部检查）
+# 4. 写代码，提交前跑前端检查；Rust 检查见 docs/testing.md
 pnpm verify
 
 # 5. 提交并首次推送

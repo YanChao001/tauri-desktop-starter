@@ -4,7 +4,7 @@
 
 前端已接入 Vitest（jsdom + Testing Library），Rust 用内置的 `cargo test`，CI 两边都会跑。
 
-模板带了 21 个用例，覆盖六处最容易悄悄坏掉的地方：路由匹配、错误边界、剪贴板降级链路、浏览器预览守卫、外链拦截、窗口显示。
+模板带有回归用例，覆盖路由匹配、错误边界、剪贴板降级链路、浏览器预览守卫、外链拦截、窗口显示、外观设置与主题切换。
 **这是骨架，不是覆盖率目标。** 写业务时按下面的分层往上加。
 
 ## 测试分层
@@ -48,6 +48,7 @@ src/hooks/use-external-links.test.tsx
 pnpm test           # 跑一遍，CI 用这个
 pnpm test:watch     # 监听模式，边写边跑
 pnpm test:coverage  # 覆盖率报告
+pnpm test:scripts   # 版本同步与校验脚本的回归测试（Node 内置测试器）
 ```
 
 覆盖率只统计 `src/`，已排除 `components/ui/`（shadcn 原子组件）和测试自身。

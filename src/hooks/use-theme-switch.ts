@@ -20,7 +20,12 @@ function switchThemeWithReveal(
 ) {
   const doc = document as ViewTransitionDocument;
 
-  if (!animated || typeof doc.startViewTransition !== "function") {
+  if (
+    !animated ||
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
+    typeof doc.startViewTransition !== "function" ||
+    typeof document.documentElement.animate !== "function"
+  ) {
     applyTheme();
     return;
   }
@@ -36,21 +41,25 @@ function switchThemeWithReveal(
     flushSync(applyTheme);
   });
 
-  void transition.ready.then(() => {
-    document.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${radius}px at ${x}px ${y}px)`,
-        ],
-      },
-      {
-        duration: 520,
-        easing: "ease-in-out",
-        pseudoElement: "::view-transition-new(root)",
-      },
-    );
-  });
+  void transition.ready
+    .then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${radius}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration: 520,
+          easing: "ease-in-out",
+          pseudoElement: "::view-transition-new(root)",
+        },
+      );
+    })
+    .catch(() => {
+      // 连续切换或窗口隐藏会跳过过渡并拒绝 ready，主题本身已经提交
+    });
 }
 
 /**

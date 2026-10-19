@@ -2,18 +2,18 @@
 
 ## 环境要求
 
-| 组件             | 版本                                 | 说明                             |
-| ---------------- | ------------------------------------ | -------------------------------- |
-| Node.js          | 22.12+（见 `.nvmrc`）                | 前端构建                         |
-| pnpm             | 12.14.0（`packageManager` 字段锁定） | 包管理器，不要用 npm 生成锁文件  |
-| Rust             | 1.99.1（`rust-toolchain.toml` 钉定） | edition 2024 与 let-chain 的要求 |
-| Visual Studio    | 2022/2026，含「使用 C++ 的桌面开发」 | 提供 MSVC 链接器                 |
-| Windows SDK      | 10.0.19041 以上                      | 链接系统库                       |
-| WebView2 Runtime | 任意近期版本                         | Win11 自带，Win10 多数已装       |
+| 组件             | 版本                                             | 说明                             |
+| ---------------- | ------------------------------------------------ | -------------------------------- |
+| Node.js          | 22.22.2（见 `.nvmrc`，其他支持版本见 `engines`） | 前端构建与测试                   |
+| pnpm             | 12.14.0（`packageManager` 字段锁定）             | 包管理器，不要用 npm 生成锁文件  |
+| Rust             | 1.99.1（`rust-toolchain.toml` 钉定）             | edition 2024 与 let-chain 的要求 |
+| Visual Studio    | 2022/2026，含「使用 C++ 的桌面开发」             | 提供 MSVC 链接器                 |
+| Windows SDK      | 10.0.19041 以上                                  | 链接系统库                       |
+| WebView2 Runtime | 任意近期版本                                     | Win11 自带，Win10 多数已装       |
 
 macOS 需要 Xcode Command Line Tools；Linux 需要 `libwebkit2gtk-4.1-dev` 等依赖，详见 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)。
 
-仓库自带 `rust-toolchain.toml`，钉在具体版本上，rustup 会自动安装该版本并补上 `rustfmt` 与 `clippy`——不用手动 `rustup component add`。升级 Rust 时，把它和 `ci.yml` 里 `dtolnay/rust-toolchain` 的 `toolchain` 字段一起改。
+仓库自带 `rust-toolchain.toml`，钉在具体版本上，rustup 会自动安装该版本并补上 `rustfmt` 与 `clippy`——不用手动 `rustup component add`。升级 Rust 时，同时修改 `ci.yml` 与 `release.yml` 中 `dtolnay/rust-toolchain` 的 `toolchain` 字段，确保跨平台编译目标装在同一工具链上。
 
 ## 首次启动
 
@@ -32,7 +32,7 @@ pnpm app:dev
 | `pnpm dev`               | 只起 Vite（localhost:1420）                      | 纯调样式，不想等 Rust 编译 |
 | `pnpm app:build`         | 打包安装程序                                     | 出测试包 / 发布            |
 | `pnpm app:portable`      | 免安装便携版（单文件 exe + 说明）                | 内测分发、免安装场景       |
-| `pnpm verify`            | 格式 + lint + 类型 + 测试 + 构建                 | 提交前跑一次，等价于 CI    |
+| `pnpm verify`            | 前端格式 + lint + 类型 + 测试 + 构建             | 提交前跑一次；Rust 另查    |
 | `pnpm test`              | 跑一遍单元测试                                   | 改完逻辑                   |
 | `pnpm test:watch`        | 测试监听模式                                     | 边写边测                   |
 | `pnpm test:coverage`     | 生成覆盖率报告                                   | 想知道哪里没测到           |

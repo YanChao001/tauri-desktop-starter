@@ -13,15 +13,17 @@ export function isTauri(): boolean {
 
 /** 用系统默认浏览器打开外链；在浏览器预览时退化为新标签页。 */
 export async function openExternal(url: string): Promise<void> {
+  const target = new URL(url);
+  if (target.protocol !== "https:" && target.protocol !== "http:") {
+    throw new Error("只允许打开 http(s) 外链");
+  }
   if (!isTauri()) {
-    // 弹窗被浏览器拦截时 window.open 返回 null，不能静默失败
-    if (!window.open(url, "_blank", "noopener,noreferrer")) {
-      throw new Error("浏览器阻止了弹出窗口，请手动复制链接");
-    }
+    // noopener 即使成功打开也会返回 null，不能用返回值判断弹窗是否被拦截
+    window.open(target.href, "_blank", "noopener,noreferrer");
     return;
   }
   const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(url);
+  await openUrl(target.href);
 }
 
 /** 显示并聚焦主窗口。窗口初始为隐藏，见 tauri.conf.json。 */

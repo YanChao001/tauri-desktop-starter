@@ -43,4 +43,17 @@ describe("ErrorBoundary", () => {
       screen.getByRole("button", { name: "重新加载" }),
     ).toBeInTheDocument();
   });
+
+  it.each(["字符串异常", null])("捕获非 Error 异常 %s", (error) => {
+    function ThrowValue(): ReactNode {
+      throw error;
+    }
+    render(
+      <ErrorBoundary>
+        <ThrowValue />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByText("界面出错了")).toBeInTheDocument();
+    expect(screen.getByText(String(error))).toBeInTheDocument();
+  });
 });

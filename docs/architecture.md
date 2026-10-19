@@ -30,7 +30,7 @@ flowchart LR
 
 - WebView 里跑的是标准的 Web 应用，没有 Node 环境，碰不到文件系统。
 - 所有系统能力必须先在 Rust 侧写成命令，再暴露给前端。
-- 前端能调什么，由 `src-tauri/capabilities/default.json` 决定，默认拒绝。
+- Tauri 核心与插件能力由 `src-tauri/capabilities/default.json` 分配；自定义命令另需应用 ACL 才受此限制，见 [安全规范](./security.md#能力最小化)。
 
 ## 前端分层
 
@@ -50,15 +50,14 @@ layouts/ ──> pages/ ──> components/
 | `routes.tsx`  | 路由路径、标题、图标、页面组件            | 不放业务逻辑                        |
 | `layouts/`    | 应用外壳（标题栏、侧边栏、内容区）        | 不写页面内容                        |
 | `pages/`      | 路由级编排、组合组件                      | 不写复杂业务逻辑，不直接调 `invoke` |
-| `components/` | 可复用的展示与交互单元                    | 不感知路由，不直接读全局状态        |
+| `components/` | 可复用的展示与交互单元                    | 普通展示组件不感知路由或业务状态    |
 | `hooks/`      | 可复用的 React 逻辑（副作用、订阅、状态） | 不含 JSX，不承载业务规则            |
 | `providers/`  | 跨页面的 React Context（外观偏好、i18n）  | 不放业务数据，不渲染页面结构        |
 | `lib/`        | 纯 TS：IPC 封装、格式化、校验             | 不含 JSX，不 import React           |
 
-**唯一例外**：`components/ui/` 是第三方生成的原子组件，不受上述约束。
+`components/ui/` 是第三方生成的原子组件，不受上述约束。应用外壳组件 `title-bar.tsx` 可以导航并读取设置，`theme-toggle.tsx` 可以读取主题与翻译；这类组件须置于对应 Provider 内。
 
-`layouts/` 和 `components/` 的分界线就一条：**要不要知道"当前在哪一页"**。
-`AppShell` 用 `useLocation`、渲染 `Outlet`，所以它在 `layouts/`。
+`layouts/` 负责路由页的整体布局：`AppShell` 用 `useLocation`、渲染 `Outlet`，所以它在 `layouts/`。标题栏等外壳部件仍放在 `components/`。
 
 `components/error-boundary.tsx` 包在 `App` 外层（见 `main.tsx`）。这不是可选项：
 窗口启动时是隐藏的，组件树一崩，用户看到的是 Rust 兜底线程弹出的空白窗口，
@@ -151,7 +150,7 @@ Rust 侧返回 `Result<String, String>`，`Err` 会原样 reject 到前端。
 
 ```rust
 #[derive(Debug, serde::Serialize)]
-#[serde(tag = "kind", content = "message")]
+#[serde(tag = "kind")]
 pub enum CommandError {
     Validation { message: String },
     NotFound { message: String },
@@ -165,13 +164,20 @@ pub fn read_config() -> Result<String, CommandError> {
 ```
 
 ```ts
-type CommandError = { kind: "Validation" | "NotFound" | "Io"; message: string };
-
-const message = await invoke<string, unknown[]>("read_config").catch(
-  (error: CommandError) => {
-    // 按 error.kind 决定提示文案与是否重试
-  },
-);
+try {
+  const config = await invoke<string>("read_config");
+  // 使用 config
+} catch (error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "kind" in error &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    // 校验 error.kind 后决定提示文案与是否重试
+  }
+}
 ```
 
 演进时机：只有一种错误时保持 `String`，错误分叉前不加层。
@@ -213,12 +219,12 @@ const unlisten = await listen<number>("download-progress", (e) =>
 
 ## 数据存储
 
-| 数据                            | 存哪                         | 原因                                |
-| ------------------------------- | ---------------------------- | ----------------------------------- |
-| UI 偏好（主题、语言、窗口布局） | `localStorage`               | 不需要 Rust 参与，重启即恢复        |
-| 业务数据                        | SQLite（`tauri-plugin-sql`） | 事务、索引、迁移，比 JSON 文件可靠  |
-| 导出文件、缓存、日志            | `appDataDir`                 | 安装目录（Program Files）没有写权限 |
-| 令牌、密钥                      | 系统钥匙串（`keyring` 插件） | 不落明文，不写进 localStorage       |
+| 数据                            | 存哪                                  | 原因                                |
+| ------------------------------- | ------------------------------------- | ----------------------------------- |
+| UI 偏好（主题、语言、窗口布局） | `localStorage`                        | 不需要 Rust 参与，重启即恢复        |
+| 业务数据                        | SQLite（`tauri-plugin-sql`）          | 事务、索引、迁移，比 JSON 文件可靠  |
+| 导出文件、缓存、日志            | `appDataDir`                          | 安装目录（Program Files）没有写权限 |
+| 令牌、密钥                      | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文，不写进 localStorage       |
 
 **绝对不要**把数据写到 exe 所在目录。Windows 下装在 `Program Files` 时是只读的，
 开发机上能跑、装完就崩，这类问题排查成本极高。
@@ -231,7 +237,7 @@ let dir = app.path().app_data_dir()?; // 需要 tauri::Manager
 
 ## 安全边界
 
-1. **能力白名单**：`src-tauri/capabilities/default.json`。加插件后前端报 "not allowed"，就是这里没加权限。
+1. **能力白名单**：`src-tauri/capabilities/default.json` 限制 Tauri 核心与插件调用；自定义命令默认向本地前端开放，按窗口限制需另启应用 ACL。
 2. **CSP**：生产 CSP 已内建，收紧规则见 [安全规范](./security.md#csp)。开发模式下页面由 Vite dev server（外部 URL）提供，Tauri 不注入 CSP，因此 HMR 不受限；`devCsp: null` 的语义是「开发构建回退到生产 CSP」，不是「开发模式没有 CSP」。
 3. **不做动态代码执行**：不 `eval`，不加载远端 JS。
 4. **外链隔离**：所有 http 链接由系统浏览器打开，不在 WebView 里导航。
@@ -241,7 +247,7 @@ let dir = app.path().app_data_dir()?; // 需要 tauri::Manager
 ```
 src/
   routes.tsx        路由与导航的唯一数据源
-  layouts/          应用外壳，唯一允许感知路由的地方
+  layouts/          路由页的整体布局
   pages/            路由级页面，默认导出
   components/
     ui/             shadcn 原子组件（不改导出名）
@@ -254,7 +260,7 @@ src-tauri/
   src/lib.rs        组装：插件注册、命令注册、启动兜底
   src/main.rs       二进制入口，只调 lib.rs
   src/commands.rs   前端可调用的命令实现
-  capabilities/     前端可调用接口白名单
+  capabilities/     Tauri 核心与插件能力白名单
   tauri.conf.json   窗口、打包、标识符
 ```
 
@@ -265,12 +271,12 @@ src-tauri/
 
 这些是有意为之，不是遗漏。改动前请先读 [ADR](./adr/README.md)。
 
-| 取舍                               | 得到什么                 | 失去什么                                        |
-| ---------------------------------- | ------------------------ | ----------------------------------------------- |
-| 用系统 WebView 而不是自带 Chromium | 安装包 1.4MB、内存低     | 三端渲染细节有差异，Linux 的 WebKitGTK 偏旧     |
-| HashRouter 而不是 BrowserRouter    | 自定义协议下刷新不 404   | URL 里带 `#`，不好看                            |
-| 不建 `features/` 层                | 目录浅，找文件快         | 单领域文件超过 10 个时要重构                    |
-| 不预装状态管理库                   | 起步轻，没有多余概念     | 跨页状态变多时需要补                            |
-| 暂不接入 i18n                      | 文案直接写中文，改起来快 | 要出海时得整体抽一遍                            |
-| 剪贴板不用官方插件                 | 少一个 Rust 依赖         | 个别 WebView 组合下可能失败，已做 textarea 回退 |
-| `invoke` 泛型不做运行时校验        | 简单、零开销             | 后端返回结构变了前端不会立刻报错                |
+| 取舍                               | 得到什么               | 失去什么                                        |
+| ---------------------------------- | ---------------------- | ----------------------------------------------- |
+| 用系统 WebView 而不是自带 Chromium | 安装包 1.4MB、内存低   | 三端渲染细节有差异，Linux 的 WebKitGTK 偏旧     |
+| HashRouter 而不是 BrowserRouter    | 自定义协议下刷新不 404 | URL 里带 `#`，不好看                            |
+| 不建 `features/` 层                | 目录浅，找文件快       | 单领域文件超过 10 个时要重构                    |
+| 不预装状态管理库                   | 起步轻，没有多余概念   | 跨页状态变多时需要补                            |
+| 使用内置中英文字典                 | 零额外依赖，即时切换   | 复杂复数、日期等本地化需另行扩展                |
+| 剪贴板不用官方插件                 | 少一个 Rust 依赖       | 个别 WebView 组合下可能失败，已做 textarea 回退 |
+| `invoke` 泛型不做运行时校验        | 简单、零开销           | 后端返回结构变了前端不会立刻报错                |

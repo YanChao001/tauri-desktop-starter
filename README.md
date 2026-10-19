@@ -39,7 +39,7 @@
 
 ## 快速开始
 
-前置：Node 22（≥22.12）、pnpm 12+（`packageManager` 字段已锁定，corepack 会自动对齐）、Rust 1.99.1（`rustup` 自动安装，见 `rust-toolchain.toml`）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
+前置：Node 22.22.2（见 `.nvmrc`；其他支持版本见 `package.json > engines`）、pnpm 12+（`packageManager` 字段已锁定）、Rust 1.99.1（`rustup` 自动安装，见 `rust-toolchain.toml`）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
 
 ```bash
 pnpm install
@@ -100,7 +100,7 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 │   ├── src/lib.rs           # 只做组装：插件、命令注册、启动兜底
 │   ├── src/commands.rs      # 前端可调用的命令实现
 │   ├── src/main.rs          # 二进制入口，调用 lib.rs
-│   ├── capabilities/        # 前端可调用的接口白名单
+│   ├── capabilities/        # Tauri 核心与插件能力白名单
 │   ├── installer/           # 安装器外观：NSIS 模板与位图
 │   ├── tauri.conf.json      # 窗口、打包、标识符、安装器外观
 │   ├── tauri.macos.conf.json # macOS 窗口覆盖：保留系统红绿灯
@@ -139,7 +139,7 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
 8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
 9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`）。release 构建没有控制台，用户报问题时这是唯一能拿到的线索。
-10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道。开发模式下前端由 Vite dev server 提供（外部 URL），Tauri 不向它注入 CSP，所以 HMR 不受影响；`devCsp` 为 `null` 时，开发构建会回退到生产 `csp`（Tauri 源码 `AppManager::csp()` 的行为），**不等于「开发模式没有 CSP」**。即使页面被注入恶意内容，也加载不了外部脚本、外传不了数据，发布前不需要额外补配置。
+10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道。开发模式下前端由 Vite dev server 提供（外部 URL），Tauri 不向它注入 CSP，所以 HMR 不受影响；`devCsp` 为 `null` 时，开发构建会回退到生产 `csp`（Tauri 源码 `AppManager::csp()` 的行为），**不等于「开发模式没有 CSP」**。CSP 限制资源加载与网络连接；命令仍需独立校验入参。
 
 ## 拿它开新项目
 

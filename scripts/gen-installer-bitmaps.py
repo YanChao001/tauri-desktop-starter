@@ -93,14 +93,14 @@ def gen_dialog() -> None:
     draw_dotted_grid(draw, w, h)
 
     # 左侧安全区（x < 180）放主图标
-    draw_ts_icon(draw, (52, 96, 128), load_font(62))
+    draw_ts_icon(draw, (44, 96, 128), load_font(62))
 
     # 图标下方强调短线
-    draw.rectangle([52, 244, 180, 248], fill=ACCENT)
+    draw.rectangle([44, 244, 172, 248], fill=ACCENT)
 
     # 底部（y > 190 安全）放产品名， Welcome / Exit 两个对话框复用
     draw.text((52, 262), "Tauri Desktop Starter", font=load_font(17), fill=INK)
-    draw.text((52, 286), "v0.1.0", font=load_font(13, bold=False), fill=MUTED)
+    # 版本由安装器自己的文字控件显示，位图不写死版本，避免下次发版残留旧值。
 
     # 底部强调线
     draw.rectangle([0, 307, w, 309], fill=ACCENT)

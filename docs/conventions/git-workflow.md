@@ -47,7 +47,7 @@ hotfix/1.1.1
 ```bash
 # 1. 更新本地集成分支
 git switch develop
-git pull --rebase
+git pull --ff-only
 
 # 2. 切特性分支
 git switch -c feature/42-command-palette
@@ -56,7 +56,7 @@ git switch -c feature/42-command-palette
 git fetch origin
 git rebase origin/develop
 
-# 4. 提交前自检（一条命令覆盖 CI 的全部检查）
+# 4. 提交前跑前端检查；Rust 检查见 docs/testing.md
 pnpm verify
 
 # 5. 推送（首次）
@@ -74,7 +74,7 @@ git push --force-with-lease
 
 | 场景                      | 做法                                                                               |
 | ------------------------- | ---------------------------------------------------------------------------------- |
-| 拉取远端更新              | `git pull --rebase`，配置 `git config --global pull.rebase true`                   |
+| 拉取远端更新              | 保护分支用 `git pull --ff-only`；自己的特性分支可用 `git pull --rebase`            |
 | 同步 `develop` 到特性分支 | `git rebase origin/develop`，**不允许** `git merge develop`                        |
 | 合并前                    | 必须 rebase 到最新 `origin/develop`，且本地自检通过                                |
 | 冲突                      | 本地解决 → `git add <file>` → `git rebase --continue`；放弃用 `git rebase --abort` |
@@ -168,7 +168,7 @@ docs: 补充发布流程中的签名说明
 | `release/*` → `develop`         | 同上                              | 把发布期间的修复带回集成分支                      |
 | `hotfix/*` → `main` / `develop` | 同上                              | 两处都要合，漏了 develop 会导致下个版本回退该修复 |
 
-**合并前必须满足**：CI 全绿、至少 1 人 approve、分支已 rebase 到最新 develop、无冲突。合并后删除远端分支。
+**合并前必须满足**：CI 全绿、至少 1 人 approve、无冲突；普通特性分支需 rebase 到最新 develop。发布和紧急修复分支不 rebase，两处合入后再删除远端分支。
 
 ## PR 规范
 
@@ -201,7 +201,7 @@ docs: 补充发布流程中的签名说明
 
 ## 首次推送
 
-本地仓库还没有远端。创建 GitHub 仓库后：
+复制模板并创建自己的 GitHub 仓库后，若本地还没有远端：
 
 ```bash
 git remote add origin git@github.com:<org>/<repo>.git
@@ -216,14 +216,14 @@ git push origin --tags
 
 规范能不能落地，取决于服务端有没有开保护。新建仓库后由管理员完成：
 
-| 设置         | 值                                           |
-| ------------ | -------------------------------------------- |
-| 默认分支     | `develop`                                    |
-| 保护分支     | `main`、`develop`                            |
-| 合并前要求   | CI 通过 + 至少 1 个 approve                  |
-| 允许强推     | 关闭                                         |
-| 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致） |
-| 合并后       | 自动删除源分支                               |
+| 设置         | 值                                               |
+| ------------ | ------------------------------------------------ |
+| 默认分支     | `develop`                                        |
+| 保护分支     | `main`、`develop`                                |
+| 合并前要求   | CI 通过 + 至少 1 个 approve                      |
+| 允许强推     | 关闭                                             |
+| 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致）     |
+| 合并后       | 特性分支可删除；发布与紧急修复分支两处合入后删除 |
 
 GitHub 路径：Settings → Branches → Add branch protection rule。
 
@@ -253,7 +253,7 @@ git rebase --abort
 
 ```bash
 # 1. 从 develop 切发布分支
-git switch develop && git pull --rebase
+git switch develop && git pull --ff-only
 git switch -c release/1.2.0
 
 # 2. 同步版本号（见 scripts/set-version.mjs）
@@ -264,18 +264,17 @@ git log v上一个版本..HEAD --oneline
 
 # 4. 此分支只允许 fix，不允许 feat
 
-# 5. 合入 main 并打标签
-git switch main && git pull --rebase
-git merge --no-ff release/1.2.0
-git tag -a v1.2.0 -m "v1.2.0"
-git push origin main --follow-tags
+# 5. 推送发布分支，分别向 main、develop 开 PR（保留 merge commit）
+git push -u origin release/1.2.0
+# 等两个 PR 的 CI 和审批通过后合并；main / develop 保持保护，不直接 push
 
-# 6. 合回 develop（关键，否则下个版本会丢掉发布期的修复）
-git switch develop
-git merge --no-ff release/1.2.0
-git push origin develop
+# 6. 两个 PR 合并后，在 main 的发布合并提交上打标签
+git switch main && git pull --ff-only
+git tag -a v1.2.0 -m "v1.2.0"
+git push origin v1.2.0
 
 # 7. 删除发布分支
+git fetch origin
 git branch -d release/1.2.0
 git push origin --delete release/1.2.0
 ```
@@ -285,15 +284,16 @@ git push origin --delete release/1.2.0
 ## 紧急修复
 
 ```bash
-git switch main && git pull --rebase
+git switch main && git pull --ff-only
 git switch -c hotfix/1.1.1
 # 修 bug，自检，提交
-git switch main && git merge --no-ff hotfix/1.1.1
-git tag -a v1.1.1 -m "v1.1.1"
-git push origin main --follow-tags
+git push -u origin hotfix/1.1.1
+# 分别向 main 与 develop 开 PR，CI 和审批通过后合并两处
 
-# 必须回合并到 develop
-git switch develop && git merge --no-ff hotfix/1.1.1 && git push
+# main PR 合并后，在对应合并提交打标签
+git switch main && git pull --ff-only
+git tag -a v1.1.1 -m "v1.1.1"
+git push origin v1.1.1
 ```
 
 判断标准：**只有线上故障才走 hotfix**。还没发布的 bug 一律回 develop 走正常流程。

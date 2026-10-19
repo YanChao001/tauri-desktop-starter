@@ -28,6 +28,11 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      - name: 版本一致性与发布脚本回归
+        run: |
+          node scripts/check-version.mjs
+          node --test scripts/*.test.mjs
+
       - name: 格式检查
         run: pnpm format:check
 
@@ -93,8 +98,8 @@ jobs:
 
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: 单元测试
         working-directory: src-tauri
-        run: cargo test
+        run: cargo test --locked
