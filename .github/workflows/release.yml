@@ -125,6 +125,9 @@ jobs:
             echo "已注入自动更新签名密钥"
           fi
 
+      # 仅适用于 2023-06-01 前签发、仍可导出 PFX 的老证书。
+      # 新证书私钥必须在硬件（USB Token / 云 HSM）中，不能导出 PFX，
+      # 请改用 bundle.windows.signCommand（Azure Artifact Signing 等），见 docs/build-release.md。
       - name: 导入 Windows 代码签名证书
         if: matrix.platform == 'windows-latest'
         shell: pwsh
