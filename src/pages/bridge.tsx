@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/providers/i18n";
 import { invokeGreet, isTauri } from "@/lib/tauri";
 
 const RUST_SNIPPET = `// src-tauri/src/commands.rs
@@ -34,23 +35,24 @@ export async function invokeGreet(name: string): Promise<string> {
 const message = await invokeGreet("超哥");`;
 
 export default function Bridge() {
-  const [name, setName] = useState("超哥");
+  const { t } = useI18n();
+  const [name, setName] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   async function handleInvoke() {
     if (!isTauri()) {
-      toast.error("浏览器预览模式下无法调用，请用 pnpm app:dev 启动");
+      toast.error(t("bridge.browserOnly"));
       return;
     }
     setPending(true);
     try {
       const message = await invokeGreet(name);
       setResult(message);
-      toast.success("Rust 命令执行成功");
+      toast.success(t("bridge.success"));
     } catch (error) {
       setResult(null);
-      toast.error(`调用失败：${String(error)}`);
+      toast.error(t("bridge.failed", { error: String(error) }));
     } finally {
       setPending(false);
     }
@@ -61,36 +63,36 @@ export default function Bridge() {
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-4 text-muted-foreground" />
-          <h2 className="text-base font-medium">前端 ↔ Rust 通信</h2>
+          <h2 className="text-xl font-semibold tracking-tight">
+            {t("bridge.title")}
+          </h2>
           <Badge variant="outline" className="font-normal">
             invoke
           </Badge>
         </div>
-        <p className="text-sm text-muted-foreground">
-          前端通过 <code className="font-mono text-xs">invoke</code> 调用 Rust
-          命令，返回值自动序列化为 TypeScript 类型。这是所有系统能力的入口。
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          {t("bridge.subtitle")}
         </p>
       </div>
 
-      <Card className="shadow-none">
+      <Card>
         <CardHeader>
-          <CardTitle className="text-sm">调用示例</CardTitle>
+          <CardTitle className="text-sm">{t("bridge.demo")}</CardTitle>
           <CardDescription className="text-xs">
-            修改参数后点按钮。名称留空会命中 Rust 侧的校验，用来演示错误如何跨
-            IPC 传回前端。
+            {t("bridge.demoHint")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-48 flex-1 space-y-1.5">
               <Label htmlFor="name" className="text-xs">
-                名称
+                {t("bridge.name")}
               </Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="输入一个名字"
+                placeholder={t("bridge.namePlaceholder")}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") void handleInvoke();
                 }}
@@ -98,22 +100,26 @@ export default function Bridge() {
             </div>
             <Button onClick={() => void handleInvoke()} disabled={pending}>
               {pending ? <Loader2Icon className="animate-spin" /> : null}
-              调用 greet
+              {t("bridge.call")}
             </Button>
           </div>
 
           <div className="rounded-md border bg-muted/40 px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">返回结果</p>
-            <p className="mt-1 font-mono text-sm">{result ?? "尚未调用"}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("bridge.result")}
+            </p>
+            <p className="mt-1 font-mono text-sm">
+              {result ?? t("bridge.notCalled")}
+            </p>
           </div>
         </CardContent>
       </Card>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <Card className="shadow-none">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-xs font-medium">
-              src-tauri/src/lib.rs
+            <CardTitle className="font-mono text-xs font-medium">
+              src-tauri/src/commands.rs
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -122,9 +128,11 @@ export default function Bridge() {
             </pre>
           </CardContent>
         </Card>
-        <Card className="shadow-none">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-xs font-medium">前端调用</CardTitle>
+            <CardTitle className="text-xs font-medium">
+              {t("bridge.frontend")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-xs leading-relaxed">
@@ -134,11 +142,7 @@ export default function Bridge() {
         </Card>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        新增命令时记得把它注册进{" "}
-        <code className="font-mono">invoke_handler</code>，否则前端调用会报
-        “command not found”。
-      </p>
+      <p className="text-xs text-muted-foreground">{t("bridge.note")}</p>
     </div>
   );
 }

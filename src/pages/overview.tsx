@@ -1,10 +1,13 @@
 import {
   ArrowRightIcon,
-  BoxesIcon,
-  CheckIcon,
+  CheckCircle2Icon,
   CopyIcon,
-  PaletteIcon,
-  ShieldCheckIcon,
+  FileTextIcon,
+  GitBranchIcon,
+  PackageIcon,
+  SettingsIcon,
+  SparklesIcon,
+  TimerIcon,
   ZapIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -18,140 +21,286 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { copyText } from "@/lib/clipboard";
+import { useI18n } from "@/providers/i18n";
 
-const FEATURES = [
-  {
-    icon: ZapIcon,
-    title: "启动不闪白屏",
-    description: "窗口默认隐藏，首帧渲染完成后再显示，Rust 侧还有 3 秒兜底。",
-  },
-  {
-    icon: PaletteIcon,
-    title: "主题开箱可用",
-    description: "浅色 / 深色 / 跟随系统三态，基于 CSS 变量，无闪烁切换。",
-  },
-  {
-    icon: ShieldCheckIcon,
-    title: "外链不劫持",
-    description: "页面里的 http 链接一律交给系统浏览器，不在 WebView 内跳走。",
-  },
-  {
-    icon: BoxesIcon,
-    title: "体积已压过",
-    description:
-      "release 档开启 LTO、strip、单 codegen unit，安装包维持在个位数 MB。",
-  },
+const STACK = [
+  "Tauri 2",
+  "React 19",
+  "TypeScript 6",
+  "Tailwind 4",
+  "shadcn/ui",
 ];
+
+const STATS = [
+  {
+    key: "tests",
+    labelKey: "overview.stats.tests",
+    value: "21",
+    hintKey: "overview.stats.testsHint",
+    icon: CheckCircle2Icon,
+    data: [3, 5, 6, 9, 12, 15, 18, 21],
+  },
+  {
+    key: "platforms",
+    labelKey: "overview.stats.platforms",
+    value: "3",
+    hintKey: "overview.stats.platformsHint",
+    icon: GitBranchIcon,
+    data: [1, 1, 2, 2, 3, 3, 3, 3],
+  },
+  {
+    key: "bundle",
+    labelKey: "overview.stats.bundle",
+    value: "144 KB",
+    hintKey: "overview.stats.bundleHint",
+    icon: ZapIcon,
+    data: [220, 200, 190, 180, 170, 160, 150, 144],
+  },
+  {
+    key: "installer",
+    labelKey: "overview.stats.installer",
+    value: "1.41 MB",
+    hintKey: "overview.stats.installerHint",
+    icon: PackageIcon,
+    data: [1.9, 1.8, 1.7, 1.6, 1.5, 1.45, 1.42, 1.41],
+  },
+] as const;
+
+const ACTIVITY = [
+  {
+    key: "build",
+    labelKey: "overview.activity.build",
+    metaKey: "overview.activity.buildMeta",
+    icon: CheckCircle2Icon,
+  },
+  {
+    key: "release",
+    labelKey: "overview.activity.release",
+    metaKey: "overview.activity.releaseMeta",
+    icon: PackageIcon,
+  },
+  {
+    key: "tests",
+    labelKey: "overview.activity.tests",
+    metaKey: "overview.activity.testsMeta",
+    icon: SparklesIcon,
+  },
+  {
+    key: "docs",
+    labelKey: "overview.activity.docs",
+    metaKey: "overview.activity.docsMeta",
+    icon: FileTextIcon,
+  },
+] as const;
 
 const COMMANDS = [
-  { command: "pnpm install", hint: "安装依赖" },
-  { command: "pnpm app:dev", hint: "开发模式（热更新）" },
-  { command: "pnpm app:build", hint: "出安装包" },
-];
+  { command: "pnpm install", hintKey: "overview.quickInstall" },
+  { command: "pnpm app:dev", hintKey: "overview.quickDev" },
+  { command: "pnpm app:build", hintKey: "overview.quickBuild" },
+] as const;
 
-async function handleCopy(text: string) {
+const HEALTH = [
+  { key: "overview.health.build", value: 100 },
+  { key: "overview.health.coverage", value: 86 },
+  { key: "overview.health.bundle", value: 72 },
+  { key: "overview.health.deps", value: 100 },
+] as const;
+
+function Sparkline({ data }: { data: readonly number[] }) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const span = max - min || 1;
+  const points = data
+    .map((value, index) => {
+      const x = (index / (data.length - 1)) * 100;
+      const y = 30 - ((value - min) / span) * 26;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg
+      viewBox="0 0 100 32"
+      preserveAspectRatio="none"
+      className="h-8 w-full"
+      aria-hidden="true"
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke="var(--chart-1)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+async function copyCommand(command: string, message: string) {
   try {
-    await copyText(text);
-    toast.success("已复制到剪贴板");
+    await copyText(command);
+    toast.success(message);
   } catch {
-    toast.error("复制失败，请手动选择文本");
+    toast.error("复制失败");
   }
 }
 
 export default function Overview() {
+  const { t } = useI18n();
+
   return (
     <div className="space-y-6">
-      <section className="space-y-3">
-        <div className="flex flex-wrap gap-1.5">
-          {["Tauri 2", "React 19", "Vite 8", "Tailwind 4", "shadcn/ui"].map(
-            (item) => (
+      <section className="relative overflow-hidden rounded-2xl border bg-card px-6 py-7">
+        <div className="pointer-events-none absolute -right-16 -top-20 size-64 rounded-full bg-primary/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 left-1/3 size-56 rounded-full bg-primary/5 blur-3xl" />
+
+        <div className="relative space-y-4">
+          <div className="flex flex-wrap gap-1.5">
+            {STACK.map((item) => (
               <Badge key={item} variant="secondary" className="font-normal">
                 {item}
               </Badge>
-            ),
-          )}
-        </div>
-        <h2 className="text-2xl font-medium tracking-tight">
-          桌面应用基座已就绪
-        </h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          这是一个可直接复用的 Tauri 桌面工程：前端负责界面，Rust
-          负责系统能力，两边通过类型化的 IPC
-          通信。把它复制一份、改掉名字，就能开始写业务。
-        </p>
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button asChild>
-            <Link to="/bridge">
-              试一试 Rust 调用
-              <ArrowRightIcon />
-            </Link>
-          </Button>
-          <Button asChild variant="outline">
-            <a href="https://v2.tauri.app/" target="_blank" rel="noreferrer">
-              阅读 Tauri 文档
-            </a>
-          </Button>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <h2 className="max-w-xl text-2xl font-semibold tracking-tight sm:text-3xl">
+              {t("overview.title")}
+            </h2>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {t("overview.subtitle")}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button asChild>
+              <Link to="/components">
+                {t("overview.cta.components")}
+                <ArrowRightIcon />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/settings">
+                <SettingsIcon />
+                {t("overview.cta.settings")}
+              </Link>
+            </Button>
+          </div>
         </div>
       </section>
 
-      <Separator />
-
-      <section className="grid gap-3 sm:grid-cols-2">
-        {FEATURES.map((feature) => (
-          <Card key={feature.title} className="shadow-none">
-            <CardHeader className="gap-1.5">
-              <div className="flex size-7 items-center justify-center rounded-md bg-muted">
-                <feature.icon className="size-4 text-muted-foreground" />
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {STATS.map((stat) => (
+          <Card key={stat.key} size="sm" className="gap-2">
+            <CardHeader className="gap-1">
+              <div className="flex items-center justify-between">
+                <CardDescription className="text-xs">
+                  {t(stat.labelKey)}
+                </CardDescription>
+                <stat.icon className="size-3.5 text-muted-foreground" />
               </div>
-              <CardTitle className="text-sm">{feature.title}</CardTitle>
-              <CardDescription className="text-xs leading-relaxed">
-                {feature.description}
-              </CardDescription>
+              <p className="text-2xl font-semibold tracking-tight">
+                {stat.value}
+              </p>
             </CardHeader>
+            <CardContent className="space-y-1">
+              <Sparkline data={stat.data} />
+              <p className="text-[11px] text-muted-foreground">
+                {t(stat.hintKey)}
+              </p>
+            </CardContent>
           </Card>
         ))}
       </section>
 
-      <section>
-        <Card className="shadow-none">
+      <div className="grid gap-3 lg:grid-cols-5">
+        <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle className="text-sm">三条命令</CardTitle>
+            <CardTitle className="text-sm">{t("overview.recent")}</CardTitle>
             <CardDescription className="text-xs">
-              从安装依赖到产出安装包，只需要这些。
+              {t("overview.recentHint")}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {COMMANDS.map((item) => (
-              <div
-                key={item.command}
-                className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                  <code className="truncate font-mono text-xs">
-                    {item.command}
-                  </code>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className="hidden text-xs text-muted-foreground sm:inline">
-                    {item.hint}
+          <CardContent>
+            <ol className="relative space-y-4">
+              <span className="absolute bottom-2 left-[5px] top-2 w-px bg-border" />
+              {ACTIVITY.map((item) => (
+                <li key={item.key} className="relative flex gap-3 pl-5">
+                  <span className="absolute left-0 top-1.5 flex size-2.5 items-center justify-center rounded-full border bg-background">
+                    <span className="size-1 rounded-full bg-primary" />
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`复制 ${item.command}`}
-                    onClick={() => void handleCopy(item.command)}
-                  >
-                    <CopyIcon />
-                  </Button>
-                </div>
-              </div>
-            ))}
+                  <item.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm">{t(item.labelKey)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t(item.metaKey)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </CardContent>
         </Card>
-      </section>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-sm">{t("overview.status")}</CardTitle>
+            <CardDescription className="text-xs">
+              {t("overview.statusHint")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {HEALTH.map((item) => (
+              <div key={item.key} className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{t(item.key)}</span>
+                  <span className="font-mono">{item.value}%</span>
+                </div>
+                <Progress value={item.value} className="h-1.5" />
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5 pt-1 text-[11px] text-muted-foreground">
+              <TimerIcon className="size-3" />
+              {t("common.sampleData")}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">{t("overview.quick")}</CardTitle>
+          <CardDescription className="text-xs">
+            {t("overview.quickHint")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {COMMANDS.map((item) => (
+            <div
+              key={item.command}
+              className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <CheckCircle2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                <code className="truncate font-mono text-xs">
+                  {item.command}
+                </code>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`${t("common.copy")} ${item.command}`}
+                onClick={() =>
+                  void copyCommand(item.command, t("common.copied"))
+                }
+              >
+                <CopyIcon />
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }

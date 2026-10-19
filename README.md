@@ -13,7 +13,7 @@
 | 样式 | Tailwind CSS 4               | 通过 `@tailwindcss/vite` 接入，无 config 文件 |
 | 组件 | shadcn/ui（radix + nova）    | 组件源码在 `src/components/ui`，可直接改      |
 | 路由 | React Router 7（HashRouter） | 见下方说明                                    |
-| 主题 | next-themes                  | 浅色 / 深色 / 跟随系统                        |
+| 主题 | next-themes + CSS 变量       | 浅色 / 深色 / 跟随系统，外观可配置            |
 | 图标 | lucide-react                 |                                               |
 | 提示 | sonner                       | `toast.success(...)`                          |
 
@@ -52,32 +52,48 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 `pnpm dev` 只起前端（浏览器里能看界面，但 `invoke` 不可用）。
 `pnpm test` 跑单元测试，`pnpm clean` 删除 `dist`、`dist-portable` 与整个 `src-tauri/target`（通常 1 GB 以上）。
 
+## 界面能力
+
+- **外观**：7 种主题色、3 档圆角、4 种字体、3 档字号、4 种背景、动效开关，即时生效并保存在本地
+- **语言**：中文 / English 即时切换，字典在 `src/providers/i18n.tsx`
+- **标题栏**：自绘窗口框，含文件 / 编辑 / 视图 / 帮助菜单、拖拽区域与窗口按钮；macOS 保留系统红绿灯
+- **主题切换**：View Transitions 圆形扩散，从点击位置铺满窗口；关闭动效时直接切换
+- **演示页**：概览、组件、动效、前端 ↔ Rust、设置。组件页覆盖按钮、表单、浮层、表格、骨架屏等常用控件
+
 ## 目录结构
 
 ```
 .
 ├── src/
-│   ├── routes.tsx           # 路由与侧边导航的唯一数据源
+│   ├── routes.tsx           # 路由与侧边导航的唯一数据源（页面懒加载）
 │   ├── layouts/
-│   │   └── app-shell.tsx    # 侧边栏 + 顶栏 + 内容区骨架
+│   │   └── app-shell.tsx    # 标题栏 + 侧边栏 + 页面标题 + 内容区
 │   ├── pages/
-│   │   ├── overview.tsx     # 概览页（含命令速查）
+│   │   ├── overview.tsx     # 概览：指标、动态、工程状态
+│   │   ├── components.tsx   # 组件演示：按钮、表单、浮层、表格
+│   │   ├── motion.tsx       # 动效：主题扩散、错峰入场、骨架屏
 │   │   ├── bridge.tsx       # 前端 ↔ Rust 调用示例（含错误链路）
-│   │   └── settings.tsx     # 主题切换、运行时信息
+│   │   └── settings.tsx     # 外观、语言、窗口、运行时信息
 │   ├── components/
 │   │   ├── ui/              # shadcn 组件，随用随加，可直接改源码
+│   │   ├── title-bar.tsx    # 自绘标题栏：菜单、拖拽、窗口按钮
 │   │   ├── error-boundary.tsx     # 渲染层兜底，崩溃不白屏
 │   │   └── theme-toggle.tsx
 │   ├── hooks/
 │   │   ├── use-external-links.ts  # 外链交给系统浏览器
-│   │   └── use-reveal-window.ts   # 首帧后显示窗口
+│   │   ├── use-reveal-window.ts   # 首帧后显示窗口
+│   │   └── use-theme-switch.ts    # 主题切换 + 圆形扩散
+│   ├── providers/
+│   │   ├── settings.tsx     # 外观偏好：类型、默认值、localStorage
+│   │   └── i18n.tsx         # 中英文字典与 t()
 │   ├── lib/
 │   │   ├── tauri.ts         # 唯一的系统能力出口：环境判断、外链、窗口、IPC
 │   │   ├── clipboard.ts     # 复制文本，含降级
+│   │   ├── platform.ts      # 平台判断（macOS / Windows / Linux）
 │   │   └── utils.ts         # cn()
 │   ├── App.tsx              # Provider + 路由
 │   ├── main.tsx
-│   ├── index.css            # Tailwind 入口与主题变量
+│   ├── index.css            # Tailwind 入口、主题变量与外观 data-* 规则
 │   ├── styles/shadcn.css    # shadcn 基础样式，逐字复制自上游
 │   └── test/setup.ts        # 测试环境初始化
 ├── src-tauri/
@@ -87,6 +103,7 @@ pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构�
 │   ├── capabilities/        # 前端可调用的接口白名单
 │   ├── installer/           # 安装器外观：NSIS 模板与位图
 │   ├── tauri.conf.json      # 窗口、打包、标识符、安装器外观
+│   ├── tauri.macos.conf.json # macOS 窗口覆盖：保留系统红绿灯
 │   └── Cargo.toml
 ├── docs/                    # 全部工程文档，入口 docs/README.md
 │   ├── architecture.md
