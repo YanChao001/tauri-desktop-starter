@@ -89,14 +89,65 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 
 ### Windows
 
-没有签名的 exe 会触发 SmartScreen 警告，用户看到"未知发布者"就会放弃安装。两种方案：
+没有签名的 exe 会触发 SmartScreen「未知发布者」，多数用户看到蓝色拦截页就放弃了。先记住 2023 年后的硬规则：
 
-| 方案                               | 成本             | 适用                  |
-| ---------------------------------- | ---------------- | --------------------- |
-| OV/EV 代码签名证书（U 盾或云签名） | 每年数千元       | 对外分发              |
-| Azure Trusted Signing              | 按月，需企业资质 | 已在 Azure 生态的团队 |
+> CA/Browser Forum 要求代码签名私钥必须存放在 FIPS 140-2 L2 / CC EAL4+ 硬件（USB Token 或云 HSM）中，
+> **新证书不能再导出 PFX 交给 CI**。2026 年 3 月起证书最长有效期 460 天。
+> 网上大量「导出 PFX → base64 塞 secret」的教程，只适用于 2023-06-01 之前签发、仍可导出的老证书。
 
-签名参数不写进 `tauri.conf.json`，而是构建时用 `--config` 合并——指纹与本机环境绑定，提交进仓库只会制造冲突：
+三条可落地的路线：
+
+| 路线                                         | 成本         | CI 友好                       | 用户看到的发布者    | 适用                             |
+| -------------------------------------------- | ------------ | ----------------------------- | ------------------- | -------------------------------- |
+| SignPath Foundation                          | 免费（开源） | ✅                            | SignPath Foundation | 公开开源项目                     |
+| Azure Artifact Signing（原 Trusted Signing） | $9.99/月起   | ✅                            | 你的组织名          | 组织在 US/CA/EU/UK；个人仅 US/CA |
+| OV / EV 证书 + USB Token                     | ¥1k–3k / 年  | ⚠️ 需自托管 runner 或云签服务 | 你的公司名          | 必须用自己的发布者名称           |
+
+#### 路线 A：SignPath Foundation（开源免费）
+
+适合公开开源项目，私钥由 SignPath 的 HSM 托管，不需要买证书：
+
+1. 在 <https://signpath.org/> 提交项目、关联 GitHub 仓库，等待审核；
+2. 按 SignPath 提供的 GitHub Action 示例，在 `release.yml` 打包后上传待签名安装包、再下载签名后的文件；
+3. 发布签名后的产物。发布者显示为 "SignPath Foundation"，不是你的名字。
+
+限制：需要符合 OSS 资格，签名在 SignPath 的流水线里完成，不适合闭源商业软件。
+
+#### 路线 B：Azure Artifact Signing（原名 Trusted Signing）
+
+微软的托管签名服务，私钥在 Azure HSM 中，CI 直接调用，不需要任何硬件：
+
+1. 在 Azure 创建 Artifact Signing 账户与证书配置文件（Certificate Profile）；
+2. 创建 App Registration，授予 **Key Vault Certificate User** 与 **Key Vault Crypto User** 角色；
+3. 安装 CLI：`cargo install artifact-signing-cli`（需要 .NET 8 与较新的 Windows SDK）；
+4. 在 `tauri.conf.json` 配置签名命令：
+
+```json
+{
+  "bundle": {
+    "windows": {
+      "signCommand": "artifact-signing-cli -e https://wus2.codesigning.azure.net -a <账户名> -c <证书配置文件> -d <产品名> %1"
+    }
+  }
+}
+```
+
+5. CI 注入三个环境变量：`AZURE_TENANT_ID`、`AZURE_CLIENT_ID`、`AZURE_CLIENT_SECRET`。
+
+`%1` 是 Tauri 传入的待签名文件路径；`-d` 的值会出现在 UAC 提示里，填产品名而不是随机串。
+官方参考：<https://v2.tauri.app/distribute/sign/windows/>。
+
+#### 路线 C：OV / EV 证书 + USB Token
+
+需要自己的发布者名称、又不满足 Azure 地区/资质要求时选这条：
+
+- 新证书私钥在 USB Token 或 CA 云 HSM 里，**不能导出 PFX**；
+- CI 二选一：自托管 runner 插着 Token 跑；或购买 CA 的云签名服务（SSL.com eSigner、DigiCert KeyLocker、GlobalSign），用 `signCommand` 调它的 CLI；
+- EV 自 2024 年起**不再即时绕过 SmartScreen**，和 OV 一样按下载量积累信誉，不必为「秒过」多花钱。
+
+#### 遗留 PFX 流程（仅 2023-06-01 前的老证书）
+
+证书仍可导出 PFX 时，签名参数不要写进 `tauri.conf.json`，用 `--config` 在构建时合并：
 
 ```bash
 pnpm tauri build --config '{"bundle":{"windows":{"certificateThumbprint":"<THUMBPRINT>","digestAlgorithm":"sha256","timestampUrl":"http://timestamp.digicert.com"}}}'
@@ -108,16 +159,17 @@ pnpm tauri build --config '{"bundle":{"windows":{"certificateThumbprint":"<THUMB
 Get-ChildItem Cert:\CurrentUser\My | Select-Object Subject, Thumbprint
 ```
 
-CI 由 `release.yml` 自动完成：PFX 转 base64 存入 `WINDOWS_CERTIFICATE`、密码存入
-`WINDOWS_CERTIFICATE_PASSWORD`；runner 导入证书后生成同样的 `--config`，构建完再用
-`Get-AuthenticodeSignature` 校验签名有效。证书与私钥**绝不进仓库**。
+`release.yml` 已内置这条链路：PFX 转 base64 存入 `WINDOWS_CERTIFICATE`、密码存入
+`WINDOWS_CERTIFICATE_PASSWORD`，runner 导入证书后用 `Get-AuthenticodeSignature` 校验。
+证书与私钥**绝不进仓库**。
 
 > 签名发生在**打包阶段**：`tauri build --no-bundle`（便携版）不会触发签名。
-> 需要签名的便携 exe 请单独执行 `signtool sign /sha1 <指纹> /fd sha256 <exe>`，
-> 或改用安装包分发。
+> 需要签名的便携 exe 请单独执行 `signtool sign /sha1 <指纹> /fd sha256 <exe>`。
 
-> `certificateThumbprint` 方式要求证书能以 PFX 导入 runner。硬件令牌、云 HSM 或
-> Azure Trusted Signing 需要改用 `bundle.windows.signCommand` 调用对应的签名工具。
+#### 先不签名可以吗
+
+可以。开源模板、内测包完全能先不签，代价是用户要点「更多信息 → 仍要运行」。
+不要为此买 EV：2024 年后 EV 也不再即时消除警告。
 
 ### macOS
 
@@ -227,12 +279,16 @@ if (update?.available) {
 
 **签名密钥一律走 GitHub Secrets。** 当前流水线识别这些（未配置时自动跳过，产物仍可用）：
 
-| Secret                                                                        | 用途                                     |
-| ----------------------------------------------------------------------------- | ---------------------------------------- |
-| `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD`                        | Windows 代码签名（PFX 的 base64 与密码） |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名                               |
-| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                               |
-| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）      |
+| Secret                                                                        | 用途                                                            |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD`                        | Windows 遗留 PFX（仅 2023-06-01 前签发、可导出的证书）          |
+| `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`                 | Azure Artifact Signing（需改用 `signCommand`，见 Windows 一节） |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名                                                      |
+| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                                                      |
+| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）                             |
+
+当前 `release.yml` 只内置了**遗留 PFX** 与 macOS 两条链路；选 Azure 或 SignPath 时，
+按 Windows 一节对应的步骤接入（Azure 需要额外安装 CLI 并注入三个环境变量）。
 
 证书和私钥永远不进仓库——进了就当作已泄露，必须吊销重签。
 
