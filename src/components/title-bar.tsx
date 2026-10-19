@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   CheckIcon,
   Code2Icon,
@@ -12,9 +11,11 @@ import {
   RefreshCwIcon,
   SettingsIcon,
   SunIcon,
+  SearchIcon,
   XIcon,
 } from "lucide-react";
-import { toast } from "sonner";
+import { APP_CONFIG } from "@/config/app";
+import { CommandMenuItem } from "@/components/command-menu-item";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitch } from "@/components/language-switch";
 import {
@@ -29,7 +30,6 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -42,24 +42,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
-import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import { isMacOS } from "@/lib/platform";
 import { useSettings } from "@/providers/settings";
-import {
-  closeWindow,
-  isTauri,
-  isWindowMaximized,
-  minimizeWindow,
-  onWindowResized,
-  openExternal,
-  toggleMaximizeWindow,
-} from "@/lib/tauri";
-import { copyText } from "@/lib/clipboard";
+import { useCommands } from "@/providers/commands";
+import { formatShortcut } from "@/commands/shortcuts";
+import { isTauri, isWindowMaximized, onWindowResized } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-
-const DOCS_URL = "https://v2.tauri.app/";
-const REPO_URL = "https://github.com/YanChao001/tauri-desktop-starter";
 
 /**
  * 自绘标题栏：菜单、拖拽区域与窗口按钮。
@@ -68,16 +57,14 @@ const REPO_URL = "https://github.com/YanChao001/tauri-desktop-starter";
  * 这里只负责给红绿灯让出位置（见 src-tauri/tauri.macos.conf.json）。
  */
 export function TitleBar() {
-  const navigate = useNavigate();
   const { t } = useI18n();
-  const translateLatest = useLatestTranslator();
-  const { settings, update } = useSettings();
-  const { theme, setTheme, toggle } = useThemeSwitch();
+  const { settings } = useSettings();
+  const { theme } = useThemeSwitch();
+  const { execute, aboutOpen, setAboutOpen } = useCommands();
   const mac = isMacOS();
 
   const native = useMemo(() => typeof window !== "undefined" && isTauri(), []);
   const [maximized, setMaximized] = useState(false);
-  const [aboutOpen, setAboutOpen] = useState(false);
 
   useEffect(() => {
     if (!native) return;
@@ -114,32 +101,6 @@ export function TitleBar() {
     };
   }, [native]);
 
-  function run(action: () => Promise<void>) {
-    void action().catch((error) => toast.error(String(error)));
-  }
-
-  async function handleCopyLink() {
-    try {
-      await copyText(window.location.href);
-      toast.success(translateLatest("common.copied"));
-    } catch {
-      toast.error(translateLatest("common.copyFailed"));
-    }
-  }
-
-  async function handleOpen(url: string) {
-    try {
-      await openExternal(url);
-    } catch (error) {
-      console.error("打开外链失败", error);
-      toast.error(translateLatest("common.openFailed"));
-    }
-  }
-
-  function handleSelectAll() {
-    document.execCommand("selectAll");
-  }
-
   return (
     <div
       data-tauri-drag-region
@@ -152,14 +113,14 @@ export function TitleBar() {
         )}
       >
         <div className="flex size-6 items-center justify-center rounded-md bg-primary text-[10px] font-semibold text-primary-foreground">
-          TS
+          {APP_CONFIG.shortName.slice(0, 2).toUpperCase()}
         </div>
-        <span className="hidden truncate text-xs font-medium sm:inline">
-          {t("app.name")}
+        <span className="hidden max-w-40 truncate text-xs font-medium sm:inline">
+          {APP_CONFIG.name}
         </span>
 
         {settings.menuBar ? (
-          <nav className="ml-1 flex items-center" aria-label={t("app.name")}>
+          <nav className="ml-1 flex items-center" aria-label={APP_CONFIG.name}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
@@ -167,22 +128,10 @@ export function TitleBar() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-44">
-                <DropdownMenuItem onSelect={() => navigate("/settings")}>
-                  <SettingsIcon />
-                  {t("title.settings")}
-                </DropdownMenuItem>
+                <CommandMenuItem id="open-settings" icon={SettingsIcon} />
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => window.location.reload()}>
-                  <RefreshCwIcon />
-                  {t("title.reload")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!native}
-                  onSelect={() => run(closeWindow)}
-                >
-                  <XIcon />
-                  {t("title.quit")}
-                </DropdownMenuItem>
+                <CommandMenuItem id="reload" icon={RefreshCwIcon} />
+                <CommandMenuItem id="quit" icon={XIcon} />
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -193,14 +142,8 @@ export function TitleBar() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuItem onSelect={() => void handleCopyLink()}>
-                  <CopyIcon />
-                  {t("title.copyLink")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleSelectAll}>
-                  <CheckIcon />
-                  {t("title.selectAll")}
-                </DropdownMenuItem>
+                <CommandMenuItem id="copy-link" icon={CopyIcon} />
+                <CommandMenuItem id="select-all" icon={CheckIcon} />
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -214,7 +157,7 @@ export function TitleBar() {
                 <DropdownMenuLabel>{t("settings.theme")}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={theme ?? "system"}
-                  onValueChange={setTheme}
+                  onValueChange={(value) => void execute(`theme-${value}`)}
                 >
                   <DropdownMenuRadioItem value="light">
                     <SunIcon />
@@ -232,10 +175,12 @@ export function TitleBar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem
                   checked={settings.menuBar}
-                  onCheckedChange={(checked) => update({ menuBar: checked })}
+                  onCheckedChange={() => void execute("toggle-menu")}
                 >
                   {t("title.toggleMenu")}
                 </DropdownMenuCheckboxItem>
+                <CommandMenuItem id="toggle-sidebar" />
+                <CommandMenuItem id="command-palette" icon={SearchIcon} />
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -246,18 +191,12 @@ export function TitleBar() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuItem onSelect={() => void handleOpen(DOCS_URL)}>
-                  <InfoIcon />
-                  {t("title.docs")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleOpen(REPO_URL)}>
-                  <Code2Icon />
-                  {t("title.repo")}
-                </DropdownMenuItem>
+                <CommandMenuItem id="open-docs" icon={InfoIcon} />
+                <CommandMenuItem id="open-repo" icon={Code2Icon} />
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setAboutOpen(true)}>
-                  {t("title.about")}
-                </DropdownMenuItem>
+                <CommandMenuItem id="check-updates" />
+                <CommandMenuItem id="copy-diagnostics" />
+                <CommandMenuItem id="about" />
               </DropdownMenuContent>
             </DropdownMenu>
           </nav>
@@ -267,6 +206,16 @@ export function TitleBar() {
       <div data-tauri-drag-region className="min-w-8 flex-1" />
 
       <div className="flex items-stretch">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-10 rounded-none"
+          aria-label={t("commands.open")}
+          title={formatShortcut({ key: "k", primary: true })}
+          onClick={() => void execute("command-palette")}
+        >
+          <SearchIcon className="size-4" />
+        </Button>
         <LanguageSwitch compact className="my-auto" />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -275,7 +224,11 @@ export function TitleBar() {
               size="icon"
               className="size-10 rounded-none"
               aria-label={t("title.toggleTheme")}
-              onClick={(event) => toggle(event)}
+              onClick={(event) =>
+                void execute("toggle-theme", {
+                  point: { clientX: event.clientX, clientY: event.clientY },
+                })
+              }
             >
               <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
               <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
@@ -293,7 +246,7 @@ export function TitleBar() {
                 <button
                   type="button"
                   aria-label={t("title.minimize")}
-                  onClick={() => run(minimizeWindow)}
+                  onClick={() => void execute("minimize-window")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <MinusIcon className="size-4" />
@@ -310,11 +263,7 @@ export function TitleBar() {
                   aria-label={
                     maximized ? t("title.restore") : t("title.maximize")
                   }
-                  onClick={() =>
-                    run(async () => {
-                      setMaximized(await toggleMaximizeWindow());
-                    })
-                  }
+                  onClick={() => void execute("toggle-maximize")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <Maximize2Icon className="size-3.5" />
@@ -327,7 +276,7 @@ export function TitleBar() {
             <button
               type="button"
               aria-label={t("title.close")}
-              onClick={() => run(closeWindow)}
+              onClick={() => void execute("close-window")}
               className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-white"
             >
               <XIcon className="size-4" />
@@ -343,22 +292,30 @@ export function TitleBar() {
       <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
         <DialogContent className="sm:max-w-md" closeLabel={t("common.close")}>
           <DialogHeader>
-            <DialogTitle>{t("title.aboutTitle")}</DialogTitle>
-            <DialogDescription>{t("title.aboutBody")}</DialogDescription>
+            <DialogTitle>
+              {t("title.about")} {APP_CONFIG.name}
+            </DialogTitle>
+            <DialogDescription>
+              {settings.appMode === "demo"
+                ? t("title.aboutBody")
+                : APP_CONFIG.name}
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-            {[
-              "Tauri 2",
-              "React 19",
-              "TypeScript 6",
-              "Tailwind 4",
-              "shadcn/ui",
-            ].map((item) => (
-              <span key={item} className="rounded-full border px-2 py-0.5">
-                {item}
-              </span>
-            ))}
-          </div>
+          {settings.appMode === "demo" ? (
+            <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+              {[
+                "Tauri 2",
+                "React 19",
+                "TypeScript 6",
+                "Tailwind 4",
+                "shadcn/ui",
+              ].map((item) => (
+                <span key={item} className="rounded-full border px-2 py-0.5">
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <DialogFooter>
             <Button onClick={() => setAboutOpen(false)}>
               {t("common.close")}

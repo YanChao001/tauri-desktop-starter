@@ -5,22 +5,24 @@
 
 ## 按"我想做什么"找
 
-| 我想……                             | 看这份                                                          |
-| ---------------------------------- | --------------------------------------------------------------- |
-| 搞清楚这个应用是怎么跑起来的       | [架构说明](./architecture.md)                                   |
-| 把项目跑起来、知道有哪些命令       | [开发指南](./development.md)                                    |
-| 找源码入口、区分中间产物与最终分发 | [README · 从源码运行与构建产物](../README.md#从源码运行)        |
-| 写代码前确认命名和写法             | [代码风格与命名](./conventions/code-style.md)                   |
-| 判断该不该抽公共函数、怎么去重     | [代码风格 · 重复与抽象](./conventions/code-style.md#重复与抽象) |
-| 提交代码、开 PR、处理分支          | [Git 协作规范](./conventions/git-workflow.md)                   |
-| 加界面、调样式                     | [界面规范](./conventions/ui-guidelines.md)                      |
-| 写测试                             | [测试规范](./testing.md)                                        |
-| 打包、签名、发版、做自动更新       | [构建与发布](./build-release.md)                                |
-| 申请 SignPath 免费签名、查签名范围 | [代码签名策略](./code-signing-policy.md)                        |
-| 加权限、配 CSP、处理敏感数据       | [安全规范](./security.md)                                       |
-| 遇到报错                           | [排障手册](./troubleshooting.md)                                |
-| 想知道某个技术选型为什么这么定     | [决策记录](./adr/README.md)                                     |
-| 查看开源模板参考与后续扩展边界     | [架构说明 · 参考与扩展](./architecture.md#参考与扩展)           |
+| 我想……                               | 看这份                                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| 搞清楚这个应用是怎么跑起来的         | [架构说明](./architecture.md)                                                                           |
+| 把项目跑起来、知道有哪些命令         | [开发指南](./development.md)                                                                            |
+| 自动配置品牌、诊断工具链、按 F5 调试 | [初始化](./development.md#项目初始化)、[诊断](./development.md#环境诊断)、[调试](./development.md#调试) |
+| 理解设置迁移、多窗口同步和 SQLite    | [架构说明](./architecture.md#状态管理与设置迁移)                                                        |
+| 找源码入口、区分中间产物与最终分发   | [README · 从源码运行与构建产物](../README.md#从源码运行)                                                |
+| 写代码前确认命名和写法               | [代码风格与命名](./conventions/code-style.md)                                                           |
+| 判断该不该抽公共函数、怎么去重       | [代码风格 · 重复与抽象](./conventions/code-style.md#重复与抽象)                                         |
+| 提交代码、开 PR、处理分支            | [Git 协作规范](./conventions/git-workflow.md)                                                           |
+| 加界面、调样式                       | [界面规范](./conventions/ui-guidelines.md)                                                              |
+| 写测试、运行真实桌面与重启验收       | [测试规范](./testing.md)                                                                                |
+| 打包、签名、发版、做自动更新         | [构建与发布](./build-release.md)                                                                        |
+| 申请 SignPath 免费签名、查签名范围   | [代码签名策略](./code-signing-policy.md)                                                                |
+| 加权限、配 CSP、处理敏感数据         | [安全规范](./security.md)                                                                               |
+| 遇到报错                             | [排障手册](./troubleshooting.md)                                                                        |
+| 想知道某个技术选型为什么这么定       | [决策记录](./adr/README.md)                                                                             |
+| 查看开源模板参考与后续扩展边界       | [架构说明 · 参考与扩展](./architecture.md#参考与扩展)                                                   |
 
 ## 文档地图
 
@@ -29,7 +31,7 @@ docs/
 ├── README.md              本文，索引
 ├── architecture.md        运行时结构、分层、通信、状态与存储策略
 ├── development.md         环境、命令、调试、镜像、依赖评审
-├── testing.md             测试分层与接入步骤
+├── testing.md             单元 / 脚本 / Rust / IPC / 真实桌面测试
 ├── build-release.md       版本、签名、自动更新、发布清单
 ├── code-signing-policy.md SignPath 申请、签名范围与审批流程
 ├── security.md            攻击面、CSP、权限、密钥、审计

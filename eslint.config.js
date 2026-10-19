@@ -33,13 +33,23 @@ export default tseslint.config(
     },
   },
   {
+    // Specta emits its own generic error adapter; keep this exception generated-only.
+    files: ["src/lib/generated/bindings.ts"],
+    rules: { "@typescript-eslint/no-explicit-any": "off" },
+  },
+  {
     // 应用源码是浏览器环境：误用 process、Buffer 这类 Node API 会直接报错
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: { globals: globals.browser },
   },
   {
     // 构建脚本与配置文件是 Node 环境
-    files: ["*.config.{js,ts}", "scripts/**/*.mjs"],
+    files: [
+      "*.config.{js,ts}",
+      "scripts/**/*.mjs",
+      "e2e/**/*.mjs",
+      "wdio*.mjs",
+    ],
     languageOptions: { globals: globals.node },
   },
   {
@@ -50,6 +60,7 @@ export default tseslint.config(
     // 测试文件需要直接 mock @tauri-apps 模块，属于规则的有效例外
     ignores: [
       "src/lib/tauri.ts",
+      "src/lib/generated/**",
       "src/**/*.test.{ts,tsx}",
       "src/**/*.spec.{ts,tsx}",
     ],

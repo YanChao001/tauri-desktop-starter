@@ -7,10 +7,12 @@ import {
   RotateCcwIcon,
   SunIcon,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { LanguageSwitch } from "@/components/language-switch";
 import { SkinPicker } from "@/components/skin-picker";
+import { SettingsSearch } from "@/components/settings-search";
+import { SettingsPersistence } from "@/components/settings-persistence";
+import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,16 +76,22 @@ const LINKS = [
 ];
 
 function SettingRow({
+  id,
   label,
   hint,
   children,
 }: {
+  id?: string;
   label: string;
   hint?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 py-3">
+    <div
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      className="flex items-center justify-between gap-6 rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <div className="min-w-0 space-y-0.5">
         <p className="text-sm">{label}</p>
         {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
@@ -96,7 +104,7 @@ function SettingRow({
 export default function Settings() {
   const { t } = useI18n();
   const translateLatest = useLatestTranslator();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme } = useThemeSwitch();
   const { settings, update, reset } = useSettings();
   const [version, setVersion] = useState("—");
   const [tauriVersion, setTauriVersion] = useState("—");
@@ -139,7 +147,15 @@ export default function Settings() {
         </p>
       </div>
 
-      <SkinPicker />
+      <SettingsSearch />
+      <SettingsPersistence />
+      <section
+        id="settings-skin"
+        tabIndex={-1}
+        className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <SkinPicker />
+      </section>
 
       <Card>
         <CardHeader>
@@ -149,10 +165,14 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <SettingRow label={t("common.language")}>
+          <SettingRow id="settings-language" label={t("common.language")}>
             <LanguageSwitch />
           </SettingRow>
-          <div className="space-y-2">
+          <div
+            id="settings-theme"
+            tabIndex={-1}
+            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <Label className="text-xs">{t("settings.theme")}</Label>
             <div className="grid grid-cols-3 gap-2">
               {THEMES.map((item) => {
@@ -178,7 +198,11 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div
+            id="settings-accent"
+            tabIndex={-1}
+            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <div className="flex items-center justify-between">
               <Label className="text-xs">{t("settings.accent")}</Label>
               <span className="text-[11px] text-muted-foreground">
@@ -214,7 +238,7 @@ export default function Settings() {
 
           <Separator />
 
-          <SettingRow label={t("settings.radius")}>
+          <SettingRow id="settings-radius" label={t("settings.radius")}>
             <ToggleGroup
               type="single"
               aria-label={t("settings.radius")}
@@ -236,7 +260,7 @@ export default function Settings() {
             </ToggleGroup>
           </SettingRow>
 
-          <SettingRow label={t("settings.font")}>
+          <SettingRow id="settings-font" label={t("settings.font")}>
             <Select
               value={settings.font}
               onValueChange={(value) => update({ font: value as Font })}
@@ -258,7 +282,7 @@ export default function Settings() {
             </Select>
           </SettingRow>
 
-          <SettingRow label={t("settings.fontSize")}>
+          <SettingRow id="settings-fontSize" label={t("settings.fontSize")}>
             <ToggleGroup
               type="single"
               aria-label={t("settings.fontSize")}
@@ -281,6 +305,7 @@ export default function Settings() {
           </SettingRow>
 
           <SettingRow
+            id="settings-motion"
             label={t("settings.motion")}
             hint={t("settings.motionHint")}
           >
@@ -313,6 +338,7 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="divide-y">
           <SettingRow
+            id="settings-menuBar"
             label={t("settings.menuBar")}
             hint={t("settings.menuBarHint")}
           >
@@ -324,6 +350,57 @@ export default function Settings() {
           </SettingRow>
           <SettingRow label={t("settings.customTitlebar")}>
             <Badge variant="secondary">{t("settings.enabled")}</Badge>
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card id="settings-layout" tabIndex={-1}>
+        <CardHeader>
+          <CardTitle className="text-sm">{t("settings.layout")}</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y">
+          <SettingRow
+            id="settings-appMode"
+            label={t("settings.appMode")}
+            hint={t("settings.appModeDescription")}
+          >
+            <ToggleGroup
+              type="single"
+              aria-label={t("settings.appMode")}
+              value={settings.appMode}
+              onValueChange={(value) => {
+                if (value === "demo" || value === "minimal")
+                  update({ appMode: value });
+              }}
+            >
+              <ToggleGroupItem value="demo">
+                {t("settings.modeDemo")}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="minimal">
+                {t("settings.modeMinimal")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </SettingRow>
+          <SettingRow label={t("settings.sidebarCollapsed")}>
+            <Switch
+              aria-label={t("settings.sidebarCollapsed")}
+              checked={settings.sidebarCollapsed}
+              onCheckedChange={(value) => update({ sidebarCollapsed: value })}
+            />
+          </SettingRow>
+          <SettingRow label={t("settings.sidebarWidth")}>
+            <input
+              type="range"
+              min={180}
+              max={360}
+              step={4}
+              value={settings.sidebarWidth}
+              onChange={(event) =>
+                update({ sidebarWidth: Number(event.target.value) })
+              }
+              aria-label={t("settings.sidebarWidth")}
+              className="w-40 accent-primary"
+            />
           </SettingRow>
         </CardContent>
       </Card>

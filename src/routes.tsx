@@ -5,6 +5,10 @@ import {
   SettingsIcon,
   SparklesIcon,
   TerminalIcon,
+  MonitorIcon,
+  DatabaseIcon,
+  ActivityIcon,
+  DownloadIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { DictKey } from "@/providers/i18n";
@@ -17,6 +21,10 @@ const Components = lazy(() => import("@/pages/components"));
 const Motion = lazy(() => import("@/pages/motion"));
 const Bridge = lazy(() => import("@/pages/bridge"));
 const Settings = lazy(() => import("@/pages/settings"));
+const Desktop = lazy(() => import("@/pages/desktop"));
+const Database = lazy(() => import("@/pages/database"));
+const Diagnostics = lazy(() => import("@/pages/diagnostics"));
+const Updates = lazy(() => import("@/pages/updates"));
 
 type PageComponent = ComponentType | LazyExoticComponent<ComponentType>;
 
@@ -38,6 +46,7 @@ export type AppRoute = {
   index?: boolean;
   /** 导航高亮是否精确匹配。父级路径（如 "/settings"）通常不需要 */
   exact?: boolean;
+  demoOnly?: boolean;
 };
 
 export const APP_ROUTES: AppRoute[] = [
@@ -54,18 +63,45 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.components",
     icon: BlocksIcon,
     component: Components,
+    demoOnly: true,
   },
   {
     path: "/motion",
     labelKey: "nav.motion",
     icon: SparklesIcon,
     component: Motion,
+    demoOnly: true,
   },
   {
     path: "/bridge",
     labelKey: "nav.bridge",
     icon: TerminalIcon,
     component: Bridge,
+    demoOnly: true,
+  },
+  {
+    path: "/desktop",
+    labelKey: "nav.desktop",
+    icon: MonitorIcon,
+    component: Desktop,
+  },
+  {
+    path: "/database",
+    labelKey: "nav.database",
+    icon: DatabaseIcon,
+    component: Database,
+  },
+  {
+    path: "/diagnostics",
+    labelKey: "nav.diagnostics",
+    icon: ActivityIcon,
+    component: Diagnostics,
+  },
+  {
+    path: "/updates",
+    labelKey: "nav.updates",
+    icon: DownloadIcon,
+    component: Updates,
   },
   {
     path: "/settings",

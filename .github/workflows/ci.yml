@@ -91,6 +91,10 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: 验证 Rust 生成的 IPC 类型
+        if: matrix.platform == 'windows-latest'
+        run: pnpm bindings:check
+
       # 格式与平台无关，跑一次就够
       - name: 格式检查
         if: matrix.platform == 'windows-latest'
@@ -104,3 +108,59 @@ jobs:
       - name: 单元测试
         working-directory: src-tauri
         run: cargo test --locked
+
+  desktop-e2e:
+    name: 真实桌面 E2E（${{ matrix.platform }}）
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Linux 桌面依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖与 Rust 工具链
+        run: |
+          pnpm install --frozen-lockfile
+          rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target/e2e
+          key: e2e
+
+      # 仅 feature=e2e 带内嵌 WebDriver，使用 .e2e 标识及临时用户数据。
+      - name: 构建测试专用桌面应用
+        run: pnpm e2e:build
+
+      - name: 桌面 E2E（Windows / macOS）
+        if: runner.os != 'Linux'
+        run: pnpm test:e2e --skip-build
+
+      - name: 桌面 E2E（Linux）
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --skip-build'
+
+      - name: 保留失败截图与测试日志
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-e2e-${{ runner.os }}
+          path: artifacts/e2e
+          if-no-files-found: ignore

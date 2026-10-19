@@ -1,11 +1,14 @@
+import { zhFeatures } from "./zh-features";
+import { APP_CONFIG } from "@/config/app";
 /** 默认语言也是词条键的唯一来源。 */
 export const zhCN = {
+  ...zhFeatures,
   "nav.overview": "概览",
   "nav.components": "组件",
   "nav.motion": "动效",
   "nav.bridge": "前端 ↔ Rust",
   "nav.settings": "设置",
-  "app.name": "Tauri Starter",
+  "app.name": APP_CONFIG.shortName,
   "app.tagline": "桌面应用基座",
   "app.native": "原生窗口",
   "app.preview": "浏览器预览",
@@ -38,8 +41,8 @@ export const zhCN = {
   "common.copied": "已复制到剪贴板",
   "common.copyFailed": "复制失败，请手动选择文本",
   "common.openFailed": "无法打开链接，请手动复制地址到浏览器",
-  "common.reset": "重置外观",
-  "common.resetDone": "已恢复默认外观",
+  "common.reset": "重置偏好",
+  "common.resetDone": "已恢复默认偏好",
   "common.sampleData": "示例数据",
   "common.cancel": "取消",
   "common.close": "关闭",
@@ -227,7 +230,8 @@ export const zhCN = {
   "settings.environment": "运行环境",
   "settings.links": "相关链接",
   "settings.linksHint": "点击后由系统默认浏览器打开",
-  "settings.resetHint": "恢复默认主题和界面样式，保留当前语言，不影响业务数据",
+  "settings.resetHint":
+    "恢复默认外观、布局和后台运行偏好，保留语言、笔记及系统自启动设置",
   "bridge.title": "前端 ↔ Rust 通信",
   "bridge.subtitle":
     "前端通过 invoke 调用 Rust 命令，返回值自动序列化为 TypeScript 类型。这是所有系统能力的入口。",

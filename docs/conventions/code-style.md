@@ -45,7 +45,7 @@
 
 ## TypeScript
 
-- **禁止 `any`。** 未知类型用 `unknown`，在使用处收窄。
+- **手写业务代码禁止 `any`。** 未知类型用 `unknown`，在使用处收窄；`lib/generated/` 保留导出工具的运行时代码，不手改生成的断言。
 - 对象类型优先用 `type`，保持队内一种写法；需要声明合并（如扩展第三方类型）时用 `interface`，并在 PR 里说明原因。
 - 导出的工具函数显式标注返回类型；组件返回值交给推断。
 - 不用 `enum`，用 `as const` 对象 + 联合类型：
@@ -57,7 +57,7 @@ export type Theme = (typeof THEMES)[number];
 
 - 异步函数一律返回 `Promise<T>`，不要在 `async` 函数里混用同步返回。
 - 非空断言 `!` 只在"运行到这里必然存在"且能一句话说清理由时使用，否则显式处理缺失分支。
-- 跨进程的数据（IPC 返回值）一律视为不可信，先校验再用。
+- Rust DTO 与命令从 `bindings.rs` 生成 TypeScript，页面通过 `lib/tauri.ts` 调用；边界输入和存储数据仍须运行时校验，不能把生成类型当作校验器。
 
 ## 重复与抽象
 
@@ -102,9 +102,9 @@ export type Theme = (typeof THEMES)[number];
 
 ## Rust
 
-- 命令函数返回 `Result<T, String>` 或自定义错误类型，**不要 `unwrap()`/`expect()`**（启动阶段除外）。
+- 命令函数统一返回 `NativeResult<T>`，使用 `NativeError { code, message, retryable }`；**不要 `unwrap()`/`expect()`**（启动阶段除外）。错误码表达稳定语义，前端不解析字符串。
 - 命令函数名用动词开头：`read_config`、`save_settings`、`export_report`。
-- 新增命令必须同时改两处：函数定义 + `generate_handler![]`，漏了会报 "command not found"。
+- 新增命令实现并标注 `#[tauri::command]` / `#[specta::specta]`，在 `bindings.rs` 的 `collect_commands!` 注册，再运行 `pnpm bindings:generate`；CI 用 `bindings:check` 检查漂移。前端新增门面函数，不另写字符串命令或 DTO。
 - 文件、网络、数据库操作使用异步 API；同步阻塞调用放进 `spawn_blocking`，不要仅加 `async` 关键字就直接执行阻塞调用。
 - 内部日志记录必要上下文并脱敏；返回前端的错误按用户可采取的动作组织，避免暴露敏感路径、令牌或请求内容。
 - `cargo fmt` + `cargo clippy -- -D warnings` 必须干净，CI 会卡这一条。
@@ -145,8 +145,8 @@ import { localHelper } from "./local-helper"; // 4. 相对路径（尽量少用�
 /**
  * 系统能力的唯一出口。
  *
- * 这个文件是 lib/ 里唯一允许 import @tauri-apps/* 的地方（ESLint 会强制）。
- * 页面、组件、hooks 只调用这里导出的函数，不直接碰 Tauri API。
+ * 手写应用代码只从这里调用 Tauri；lib/generated/ 是生成工具的底层例外。
+ * 页面、组件、hooks 依赖门面函数，不直接碰 Tauri API。
  */
 ```
 
@@ -166,11 +166,13 @@ export async function revealWindow(): Promise<void> {}
 ```
 
 ```rust
-/// 示例命令：把名字拼进一句问候语。
-///
-/// 返回 `Result` 是刻意的：Tauri 会把 `Err` 原样 reject 到前端。
+/// 名称由 Rust 边界校验；失败返回稳定错误码。
 #[tauri::command]
-pub fn greet(name: &str, language: Option<&str>) -> Result<String, String> {}
+#[specta::specta]
+pub fn greet(name: &str, language: Option<&str>) -> NativeResult<String> {
+    // 具体实现见 src-tauri/src/commands.rs
+    todo!()
+}
 ```
 
 **3. 行内——只写"读到这里会疑惑"的地方**
@@ -207,7 +209,7 @@ requestAnimationFrame(() => {});
 
 ## 文案与排版
 
-- 界面文案加入 `src/i18n/zh-CN.ts` 与 `en.ts`，同时提供简体中文、英文；新语言只在 `registry.ts` 注册，技术名词保留原词（WebView、IPC、Rust）。
+- 界面文案通过 `src/i18n/zh-CN.ts` 与 `en.ts` 维护，两份入口分别组合基础和功能词典；新键同时补齐中英，新语言在 `registry.ts` 注册。技术名词保留原词（WebView、IPC、Rust）。
 - 中英文之间加空格：`打开 WebView 设置`，不是 `打开WebView设置`。
 - 中文标点用全角，代码与命令用半角。
 - 按钮文案用动词开头：「保存」「新建项目」，不用「确定」这种无信息量的词（除非是系统约定的确认框）。

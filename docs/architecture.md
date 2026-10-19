@@ -1,325 +1,126 @@
 # 架构说明
 
-## 一句话
-
-React 负责界面与偏好，`src/lib/tauri.ts` 封装原生能力，Rust 负责命令与桌面生命周期。业务 IPC 当前使用请求 / 响应，另有窗口尺寸事件订阅；自定义业务事件可在需要时接入。
-
-源码启动入口与运行命令见 [README · 从源码运行](../README.md#从源码运行)。`src/` 与 `src-tauri/src/` 是维护入口；`dist/` 和 Cargo target 目录由工具生成，最终本地分发文件收集到版本化的 `artifacts/`，职责见 [产物目录说明](../README.md#构建产物)。
+本文说明运行入口、模块职责和数据边界。新增页面、命令或存储能力时，先复用已有入口；目录按实际职责拆分，不预建空的业务层。
 
 ## 运行时结构
 
 ```mermaid
 flowchart LR
-  subgraph web["WebView（渲染层）"]
-    UI["React 页面与组件"]
-    IPC["lib/tauri.ts<br/>原生能力边界"]
-    UI --> IPC
-  end
-
-  subgraph rust["Rust 主进程"]
-    CMD["命令处理层<br/>commands.rs"]
-    PLUGIN["官方插件<br/>log / opener / window-state / single-instance"]
-    CORE["Tauri 核心<br/>窗口 / 应用信息"]
-  end
-
-  IPC -- "invoke(command, args)" --> CMD
-  CMD -- "返回值 / 错误" --> IPC
-  IPC -- "核心 API" --> CORE
-  IPC -- "openUrl" --> PLUGIN
+  UI["React 页面与外壳"] --> Commands["命令注册表 / 设置 Provider"]
+  UI --> Facade["lib/tauri.ts 原生门面"]
+  Commands --> Facade
+  Facade --> Bindings["Rust 生成的 TypeScript IPC"]
+  Bindings --> Boundary["commands.rs 参数与错误边界"]
+  Boundary --> Services["storage / database / desktop / diagnostics / updater"]
+  Services --> Data["原子 JSON / SQLite / 系统能力"]
+  Services --> Events["设置、笔记、更新事件"]
+  Events --> Facade
 ```
 
-要点：
+前端由根 [`index.html`](../index.html) 加载 [`main.tsx`](../src/main.tsx)，挂载 App。App 组合设置、语言、主题、命令 Provider 和 HashRouter；AppShell 组合标题栏、侧栏与页面。原生由 [`main.rs`](../src-tauri/src/main.rs) 调用 [`lib.rs`](../src-tauri/src/lib.rs)，后者只组装插件、共享状态、命令和生命周期。
 
-- WebView 没有 Node 环境；文件访问等操作需通过受限制的浏览器 API 或原生能力完成。
-- 原生能力通过 Tauri 核心、已注册插件或自定义 Rust 命令提供，不需要为已有插件重复写命令。
-- 当前自定义命令只有 `greet`；文件、网络、数据库与硬件访问尚未实现。后文的存储与事件方案是扩展约定。
-- Tauri 核心与插件能力由 `src-tauri/capabilities/default.json` 分配；自定义命令另需应用 ACL 才受此限制，见 [安全规范](./security.md#能力最小化)。
+`pnpm dev` 只有浏览器界面；`pnpm app:dev` 同时启动 Rust 与 WebView。生产前端使用 Tauri 自定义协议和 HashRouter。源码入口、中间产物与交付目录见 [README](../README.md#从源码运行)。
 
-## 前端分层
+## 模块职责
 
-页面由路由表加载，外壳读取同一份路由元数据；复用逻辑与平台边界分开：
+| 位置                                             | 职责                                                     |
+| ------------------------------------------------ | -------------------------------------------------------- |
+| `src/routes.tsx`                                 | 懒加载页面、路径、导航文案及演示页面标记                 |
+| `src/config/app.ts` / `app.config.json`          | 品牌、默认演示 / 精简模式、部署更新默认值                |
+| `src/commands/` / `providers/commands.tsx`       | 命令描述、上下文可用性、菜单 / 面板 / 快捷键共用执行入口 |
+| `src/components/`                                | 交互与外壳；`ui/` 为 shadcn 原子组件                     |
+| `src/providers/settings.tsx`                     | 设置状态、保存反馈与生命周期                             |
+| `src/lib/settings-model.ts` / `settings-sync.ts` | schema 迁移、校验、局部字段合并、原生 revision 同步      |
+| `src/i18n/`                                      | 类型化词典、语言注册表、系统匹配与翻译回退               |
+| `src/lib/tauri.ts`                               | 系统能力的唯一前端门面；生成绑定是允许的底层例外         |
+| `src-tauri/src/commands.rs`                      | IPC 参数边界与服务编排                                   |
+| `src-tauri/src/bindings.rs`                      | 命令 / DTO 导出注册；Rust 是 IPC 契约来源                |
+| `storage.rs` / `database.rs`                     | 原子设置存储与 SQLite 迁移、事务、并发版本               |
+| `desktop.rs`                                     | 窗口复用、托盘、后台行为与自启动                         |
+| `diagnostics.rs` / `updater.rs`                  | 诊断脱敏及更新策略、下载 / 安装状态                      |
 
-```
-App.tsx ──> layouts/ ──> routes.tsx ──> pages/
-   │            │                         │
-   └────────────┴────> components/ <───────┘
-                             │
-                         hooks/ / providers/ / lib/
-                                               │
-                                      lib/tauri.ts ──> @tauri-apps/*
-```
+小领域继续放在现有页面、组件、Hook 和原生服务中；同一业务领域需要独立维护一组页面、数据与组件时，再引入 `features/<domain>/`。不要为消除几行相似代码增加空壳层。
 
-| 层            | 职责                                      | 不该做的事                          |
-| ------------- | ----------------------------------------- | ----------------------------------- |
-| `routes.tsx`  | 路由路径、标题、图标、页面组件            | 不放业务逻辑                        |
-| `layouts/`    | 应用外壳（标题栏、侧边栏、内容区）        | 不写页面内容                        |
-| `pages/`      | 路由级编排、组合组件                      | 不写复杂业务逻辑，不直接调 `invoke` |
-| `components/` | 可复用的展示与交互单元                    | 普通展示组件不感知路由或业务状态    |
-| `hooks/`      | 可复用的 React 逻辑（副作用、订阅、状态） | 不含 JSX，不承载业务规则            |
-| `providers/`  | 跨页面的 React Context（外观偏好、i18n）  | 不放业务数据，不渲染页面结构        |
-| `i18n/`       | 语言注册、类型化词典和纯翻译函数          | 不渲染界面，不依赖 provider         |
-| `lib/`        | 纯 TS：IPC 封装、格式化、校验             | 不含 JSX，不 import React           |
+## 命令与桌面交互
 
-`components/ui/` 保留上游组件的结构与导出方式，应用自有组件遵守分层约定。应用外壳组件 `title-bar.tsx` 可以导航并读取设置，`theme-toggle.tsx` 可以读取主题与翻译；这类组件须置于对应 Provider 内。
+菜单、命令面板和快捷键通过同一命令注册 / 执行入口调用。命令的可用性取决于当前路由、演示模式与原生环境；浏览器预览不会执行原生操作。快捷键匹配集中处理 Cmd / Ctrl、输入框、输入法组合输入、重复按键和冲突，避免各组件分别监听全局按键。
 
-`layouts/` 负责路由页的整体布局：`AppShell` 用 `useLocation`、渲染 `Outlet`，所以它在 `layouts/`。标题栏等外壳部件仍放在 `components/`。
+设置搜索索引指向稳定的控件锚点，命令面板可导航并聚焦对应设置。侧栏折叠、宽度和模式进入同一设置模型；路由表中的 `demoOnly` 控制演示页可见性，精简模式不删除源码。
 
-`components/error-boundary.tsx` 包在 `App` 外层（见 `main.tsx`）。这不是可选项：
-窗口启动时是隐藏的，组件树一崩，用户看到的是 Rust 兜底线程弹出的空白窗口，
-没有任何可反馈的信息。错误边界至少能把错误文本留在屏幕上。
+窗口标签固定为 `main` 和 `secondary`，再次打开次窗口会显示并聚焦已有实例。单实例插件最先注册；重复启动恢复主窗口。两个窗口共用原生设置和数据库，而各自保留渲染状态。
 
-**硬规则**：`@tauri-apps/*` 只允许出现在 `src/lib/tauri.ts`。
-所有 IPC 调用收敛到这一个文件，带来三个好处：
+窗口先隐藏，前端首帧后显示；Rust 为主 / 新建窗口提供兜底。位置恢复排除装饰与可见性，避免提前显示或覆盖平台装饰。macOS 用平台配置保留系统红绿灯；平台配置的 `app.windows` 数组整体替换，新增字段需同步。
 
-1. 换实现（比如接入 `tauri-specta` 生成类型）只改一个文件。
-2. 写测试时可以整体 mock 掉。
-3. 一眼能看出这个应用到底用了哪些系统能力。
-
-这条规则**由 ESLint 强制**，不是靠自觉：`eslint.config.js` 里同时配了
-`no-restricted-imports`（静态 import）和 `no-restricted-syntax`（动态 `import()`）。
-后者必不可少——本工程的 Tauri 调用全是动态引入，只配前者等于没配。
-
-### 界面偏好与多语言
-
-应用自有的全局 React Context 放在 `providers/`：
-
-- `providers/settings.tsx`：外观偏好（主题色、圆角、字体、字号、背景、动效、语言、菜单栏），
-  写入 `localStorage`，并把值映射到 `<html>` 的 `data-*`；`index.css` 控制主题、表面层次和插画强度。
-  加设置项的顺序是「类型 → 默认值 → `applySettings` → CSS → 设置页」。
-- `providers/i18n.tsx`：从设置读取语言，提供 `t(key, vars)`；词典与翻译逻辑在 `src/i18n/`，不引入 i18next。
-- `i18n/registry.ts`：唯一语言注册表，当前仅启用 `zh`（简体中文）和 `en`（English），集中管理名称、文档语言、系统语言匹配与词典。
-- `i18n/zh-CN.ts` 提供词条键，`en.ts` 通过 `satisfies Messages` 检查同键覆盖。新增文案须同时维护两份词典；运行时缺失或空词条回落到简体中文。
-- `hooks/use-theme-switch.ts`：统一主题切换入口，View Transitions 的圆形扩散也在这里。
-
-语言读取顺序是「有效用户存档 → `navigator.languages` 中首个可匹配语言 → 简体中文」。中文地区标签目前统一匹配简体中文，不代表已提供繁体资源。标题栏与设置页复用 `LanguageSwitch`，同步前端文案、`html.lang` 和本地存档；存储不可用时当次会话仍可切换，外观重置保留用户语言。自带 `greet` 示例由 Bridge 传递当前语言，Rust 同时返回对应问候与校验错误；外层错误边界优先使用当前已应用的语言，没有会话偏好时独立读取存档或系统语言。系统对话框与安装器语言由各自实现决定。
-
-异步外链和复制通知使用 `useLatestTranslator`，完成时读取最新已提交语言。Bridge 在切换语言后忽略旧语言请求的结果和通知，避免把旧语言回复写进当前界面。
-
-新增语言时，先创建满足 `Messages` 的完整词典，再在注册表补齐显示名称、`documentLang` 和匹配规则；选择器与存档校验从注册表派生，无需在各页面维护第二份语言列表。当前没有其他已启用语言。
-
-`lib/backgrounds.ts` 是皮肤与强度注册表。`components/window-background.tsx` 将原创静态 SVG 固定铺在窗口底层，标题栏、侧栏与内容区共享这层画面；`SkinPicker` 使用同一个 `PatternArtwork` 绘制缩略图。表面透明度与插画强度由 CSS 分别控制，表单和弹层保留实体背景；高对比度或强制颜色模式移除装饰并恢复实体表面。皮肤资源约定见 [界面规范](./conventions/ui-guidelines.md#主题插画与轻量资源)。
-
-### 窗口外壳
-
-窗口去掉了原生边框（`decorations: false`），标题栏由 `components/title-bar.tsx` 绘制：
-拖拽区域用 `data-tauri-drag-region`，按钮调用 `lib/tauri.ts` 封装的窗口命令。
-
-macOS 例外：`src-tauri/tauri.macos.conf.json` 把窗口改回 `decorations: true` +
-`titleBarStyle: "Overlay"`，保留系统红绿灯；前端检测到 macOS 时会隐藏自绘按钮并让出左侧空间。
-
-**注意**：平台配置按 JSON Merge Patch 合并，`app.windows` 数组是整体替换。
-改窗口字段时 `tauri.conf.json` 与 `tauri.macos.conf.json` 必须同步，否则 macOS 会丢字段。
-
-## 业务代码放哪
-
-模板只有展示页，没有业务。真写起来按这个顺序找位置，别一上来就加层：
-
-| 你要写的东西           | 放哪                                                 |
-| ---------------------- | ---------------------------------------------------- |
-| 一个页面               | `pages/`                                             |
-| 只在这个页面用的子组件 | 和页面同目录，需要时把页面变成 `pages/xxx/index.tsx` |
-| 跨页面复用的组件       | `components/`                                        |
-| 一段带状态的复用逻辑   | `hooks/`                                             |
-| 纯函数、格式化、校验   | `lib/`                                               |
-| 需要 Rust 参与的能力   | `lib/tauri.ts` 加封装 + `src-tauri/src/commands.rs`  |
-
-**什么时候升级成 `features/<domain>/`**：同一个领域同时出现「页面 + 组件 + 请求封装」，
-且该领域文件超过 10 个时。提前建空目录只增加导航成本，不产生结构收益。
-
-### 命令变多以后
-
-`lib/tauri.ts` 现在是单文件。出现明显领域划分、难以独立维护时，可改成目录：
-
-```
-lib/tauri/
-  index.ts      对外门面，页面只从这里 import
-  env.ts        isTauri
-  invoke.ts     统一 invoke 封装（错误归一化）
-  app.ts        应用级命令
-  fs.ts         文件相关命令
-```
-
-对外路径仍是 `@/lib/tauri`。拆分时同时更新 `eslint.config.js` 的原生 API 允许路径与边界测试，不能仅移动文件。
+默认正常关闭窗口；启用后台运行且托盘可用时，关闭请求改为隐藏。明确的「退出」调用 `quit_app` 结束应用。自启动由用户主动开关，测试构建禁止读写系统自启动项。
 
 ## 通信机制
 
-### 请求 / 响应（invoke）
+Rust `tauri-specta` 从命令与 DTO 生成 [`src/lib/generated/bindings.ts`](../src/lib/generated/bindings.ts)。开发者实现命令、添加 `#[specta::specta]` 并在 `bindings.rs` 注册，然后运行：
 
-前端调 Rust，等返回值。适合"取数据、执行动作"。
-
-```ts
-// lib/tauri.ts
-import type { Language } from "@/i18n/registry";
-
-export async function invokeGreet(
-  name: string,
-  language: Language = "zh",
-): Promise<string> {
-  if (!isTauri()) {
-    throw new Error(
-      language === "en"
-        ? "Unavailable in browser preview. Start the desktop app with pnpm app:dev."
-        : "浏览器预览模式下无法调用，请用 pnpm app:dev 启动",
-    );
-  }
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name, language });
-}
+```bash
+pnpm bindings:generate
+pnpm bindings:check
 ```
 
-Rust 侧返回 `Result<String, String>`，`Err` 会原样 reject 到前端。
-`language` 可选，当前识别 `en`，省略或其他值回落到中文；前端从语言注册表取得有效值。
-模板刻意让 `greet` 对空名称返回错误，而不是在页面里兜底——
-**校验放在边界，错误由调用方展示**。照着这个写，错误链路天然是通的。
+页面和 Hook 只依赖 `lib/tauri.ts`；门面加载生成的 `commands` 并归一化成功 / 失败。不要手改生成文件、在页面拼命令字符串，或额外维护一套返回 DTO。
 
-命令变多、同一类错误需要不同的用户提示或重试策略时，把 `String` 升级为结构化错误，
-前端按类型分支，而不是解析错误字符串：
+命令返回 `NativeResult<T>`，错误统一包含 `code`、`message`、`retryable`。前端按稳定 code 决定文案和行为，不解析错误文本，也不对对象直接 `String(error)`。生成类型检查源码契约，不能替代 Rust 入参校验、数据大小限制与路径边界。
 
-```rust
-#[derive(Debug, serde::Serialize)]
-#[serde(tag = "kind")]
-pub enum CommandError {
-    Validation { message: String },
-    NotFound { message: String },
-    Io { message: String },
-}
+事件通过门面订阅：设置快照、笔记变更和更新进度各有明确语义。订阅异步返回取消函数；组件卸载、StrictMode 重建或注册晚到时都必须取消，不能把 Promise 当 cleanup。事件用于通知失效与刷新，写入结果仍以命令返回为准。
 
-#[tauri::command]
-pub fn read_config() -> Result<String, CommandError> {
-    // ...
-}
-```
+## 状态管理与设置迁移
 
-```ts
-try {
-  const config = await invoke<string>("read_config");
-  // 使用 config
-} catch (error: unknown) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "kind" in error &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    // 校验 error.kind 后决定提示文案与是否重试
-  }
-}
-```
+组件局部状态使用 React 状态；跨页偏好由 SettingsProvider 管理，命令上下文由 CommandsProvider 管理。当前没有引入 Zustand、TanStack Query 或通用表单状态库。
 
-演进时机：只有一种错误时保持 `String`，错误分叉前不加层。
+设置文档的版本由 [`settings-model.ts`](../src/lib/settings-model.ts) 维护，当前为 schema 2：
 
-注意：`invoke<T>` 的泛型**不做运行时校验**，它只是一个断言。跨进程边界的数据要当成不可信输入，必要时用 zod 校验。
+- 读取旧版无版本扁平存档和 schema 1 包装结构，迁移主题、外观与布局字段。
+- 未提供主题时兼容旧 `theme` 存储键；旧纹理背景映射到现有 SVG 插画。
+- 字段按白名单规范化；侧栏宽度限制在支持范围，未知字段不写回。
+- 未来 schema 显示不兼容错误并阻止自动覆盖；明确重置后才允许替换。
+- 首次语言按系统偏好匹配 zh / en，已保存选择优先；重置保留用户语言。
 
-### 事件（emit / listen）
+原生设置是权威快照，存于配置目录的 `settings.json`，采用原子替换和 revision compare-and-swap。SettingsSync 将未提交字段与在途修改分开合并，冲突后读取新快照并有限重试；保存失败保留用户修改，界面提供状态和重试。跨窗口事件只接受新的 revision，不能让旧事件覆盖新状态。
 
-Rust 主动通知前端，或窗口之间广播。适合"进度更新、后台任务完成、菜单点击"。
-当前没有自定义业务事件，需要时：
-
-```rust
-app.emit("download-progress", 42)?;
-```
-
-```ts
-// 封装在 src/lib/tauri.ts，Hook 只调用此处导出的订阅函数
-import { listen } from "@tauri-apps/api/event";
-const unlisten = await listen<number>("download-progress", (e) =>
-  setProgress(e.payload),
-);
-```
-
-`listen()` 异步返回取消函数。Hook 需要在 effect cleanup 中取消监听，也要处理「组件已经卸载、注册才完成」的情况，不能直接把 Promise 作为 cleanup 返回。现有窗口订阅模式可参考 `components/title-bar.tsx`。
-
-## 状态管理
-
-按这个顺序升级，不要一上来就上库：
-
-| 场景                                 | 方案                                    | 现在有吗         |
-| ------------------------------------ | --------------------------------------- | ---------------- |
-| 单个组件内部                         | `useState` / `useReducer`               | 有               |
-| 兄弟组件共享                         | 状态提升到共同父级                      | 有               |
-| 跨页面 UI 偏好（主题、字体、语言）   | `providers/settings.tsx` + localStorage | 有               |
-| 跨页面业务状态（当前项目、协作状态） | Zustand                                 | 未安装，需要时装 |
-| 来自数据库/接口、需要缓存与失效      | TanStack Query                          | 未安装           |
-| 表单 + 校验                          | react-hook-form + zod                   | 未安装           |
-
-判断标准：**能靠组件树解决的就别引入全局状态**。全局状态每多一个，调试成本就多一分。
+浏览器模式使用 localStorage；原生模式保留本地缓存用于初始渲染与旧设置迁移，成功保存仍以原生快照为准。主题也纳入同一模型，避免 next-themes 与多窗口分别保存出两份事实。
 
 ## 数据存储
 
-| 数据                           | 存哪                                  | 原因                               |
-| ------------------------------ | ------------------------------------- | ---------------------------------- |
-| UI 偏好（主题、语言、菜单栏）  | `localStorage`                        | 已实现，不需要 Rust 参与           |
-| 原生窗口尺寸、位置与最大化状态 | `tauri-plugin-window-state`           | 已实现，存储于应用配置目录         |
-| 业务数据                       | SQLite（`tauri-plugin-sql`）          | 事务、索引、迁移，比 JSON 文件可靠 |
-| 用户导出文件                   | 用户明确选择的位置                    | 不强制写入应用数据目录             |
-| 缓存、日志                     | `appCacheDir`、`appLogDir`            | 使用对应的系统目录                 |
-| 令牌、密钥                     | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文，不写进 localStorage      |
+| 数据           | 位置与边界                                                              |
+| -------------- | ----------------------------------------------------------------------- |
+| 设置、窗口存档 | Tauri `appConfigDir`；设置损坏时备份后恢复，未来版本不覆盖              |
+| 笔记数据库     | `appDataDir/starter.sqlite3`，由 Rust `rusqlite` 持有连接               |
+| 应用日志       | `appLogDir`，轮换规则见 [排障手册](./troubleshooting.md#先看日志)       |
+| 浏览器缓存     | WebView / 浏览器的 localStorage，仅存非敏感偏好                         |
+| 用户凭据       | 当前未接入；需要时使用系统钥匙串，不存明文 JSON / SQLite / localStorage |
 
-**绝对不要**把数据写到 exe 所在目录。Windows 下装在 `Program Files` 时是只读的，
-开发机上能跑、装完就崩，这类问题排查成本极高。
+SQLite 用 `PRAGMA user_version` 标记数据库 schema，迁移在事务中完成；遇到未来数据库版本拒绝修改。笔记查询参数化，更新检查 `expectedVersion`，冲突要求重新加载；不向前端暴露任意 SQL、数据库路径或文件系统权限。
 
-获取路径：
+笔记草稿仅保留在当前 WebView 内存，支持跨路由返回；点击保存成功后才进入数据库。关闭窗口、退出进程或更新重启前需先保存；浏览器 `beforeunload` 提示不能覆盖 Tauri 原生关闭、托盘退出等路径，当前没有跨原生退出的草稿保存协调协议。
 
-```rust
-let dir = app.path().app_data_dir()?; // 需要 tauri::Manager
-```
+数据目录由 Tauri 路径 API 决定，不写入 exe 所在目录。重置偏好不删除笔记、日志、窗口存档或 WebView 数据。测试 feature 使用独立用户目录，见 [E2E 隔离](./testing.md#真实桌面-e2e)。
+
+## 恢复、诊断与更新
+
+App 外层错误边界处理根渲染失败；路由内的恢复边界保留外壳和导航，可重试当前页面。加载、保存和删除失败应保留输入及已有数据，并提供明确下一步。
+
+诊断报告包含应用 / Tauri / 平台信息、窗口、设置 revision、数据库版本、桌面状态和有限日志。记录前端异常有速率限制，预览日志会脱敏；复制或反馈前仍需人工复核，不把完整设置、笔记或环境变量作为诊断内容。
+
+更新由 Rust 持有检查结果和安装句柄，前端订阅状态 / 进度。默认 GitHub 地址来自品牌配置，公钥为空时禁用且不请求网络。配置、签名顺序及部署覆盖见 [自动更新](./build-release.md#自动更新)。更新不能用前端任意 URL 绕开固定策略，也不允许跳过签名验证。
 
 ## 安全边界
 
-1. **能力白名单**：`src-tauri/capabilities/default.json` 限制 Tauri 核心与插件调用；自定义命令默认向本地前端开放，按窗口限制需另启应用 ACL。
-2. **CSP**：生产 CSP 已内建，收紧规则见 [安全规范](./security.md#csp)。开发模式下页面由 Vite dev server（外部 URL）提供，Tauri 不注入 CSP，因此 HMR 不受限；`devCsp: null` 的语义是「开发构建回退到生产 CSP」，不是「开发模式没有 CSP」。
-3. **不做动态代码执行**：不 `eval`，不加载远端 JS。
-4. **外链隔离**：所有 http 链接由系统浏览器打开，不在 WebView 里导航。
+核心与插件权限在 [`capabilities/default.json`](../src-tauri/capabilities/default.json) 中分配；自定义命令的应用 ACL 与插件 capability 是不同机制，详见 [能力最小化](./security.md#能力最小化)。当前主 / 次窗口均为可信本地界面，不在其 WebView 中加载第三方网页。
 
-## 目录职责速查
-
-```
-src/
-  routes.tsx        路由与导航的唯一数据源
-  layouts/          路由页的整体布局
-  pages/            路由级页面，默认导出
-  components/
-    ui/             shadcn 原子组件（不改导出名）
-    <domain>/       跨页面复用的业务组件
-  hooks/            可复用的 React 逻辑，use-xxx.ts
-  providers/        跨页面 React Context（外观偏好、i18n）
-  i18n/             语言注册表、类型化词典、纯翻译函数
-  lib/              纯 TS：IPC 封装、工具、校验
-  styles/           内置的 shadcn 基础样式（上游逐字复制，勿手改）
-src-tauri/
-  src/lib.rs        组装：插件注册、命令注册、启动兜底
-  src/main.rs       二进制入口，只调 lib.rs
-  src/commands.rs   前端可调用的命令实现
-  capabilities/     Tauri 核心与插件能力白名单
-  tauri.conf.json   窗口、打包、标识符
-```
-
-`lib.rs` 只做组装。命令的实现写在 `commands.rs`，命令多了拆成 `commands/` 目录按领域分文件——
-让「加命令去哪个文件」这个问题有明确答案，而不是把入口文件养成第二个业务层。
-
-## 已知取舍
-
-这些是有意为之，不是遗漏。改动前请先读 [ADR](./adr/README.md)。
-
-| 取舍                               | 得到什么               | 失去什么                                        |
-| ---------------------------------- | ---------------------- | ----------------------------------------------- |
-| 用系统 WebView 而不是自带 Chromium | 无需随包携带浏览器引擎 | 三端渲染细节与系统 WebView 版本有差异           |
-| HashRouter 而不是 BrowserRouter    | 自定义协议下刷新不 404 | URL 里带 `#`，不好看                            |
-| 不建 `features/` 层                | 目录浅，找文件快       | 单领域文件超过 10 个时要重构                    |
-| 不预装状态管理库                   | 起步轻，没有多余概念   | 跨页状态变多时需要补                            |
-| 使用类型检查的中英文词典与注册表   | 零额外依赖，即时切换   | 复杂复数、日期等本地化需另行扩展                |
-| 剪贴板不用官方插件                 | 少一个 Rust 依赖       | 个别 WebView 组合下可能失败，已做 textarea 回退 |
-| `invoke` 泛型不做运行时校验        | 简单、零开销           | 后端返回结构变了前端不会立刻报错                |
+生产 CSP 限制脚本和网络来源，外链统一交给系统浏览器。数据库、设置、更新和自启动由限定服务负责；新增页面不因此获得通用文件、Shell 或 SQL 能力。
 
 ## 参考与扩展
 
-以下参考核对了仓库说明和实际源码，只借鉴职责划分与交互方式。当前功能以本仓库的实现和测试为准，表中的扩展条件不代表已经接入对应能力。
+参考核对了说明与具体源码，仅借鉴职责和交互，不复制素材或整套权限：
 
-| 参考                                                                                                                                                                                                                                                                               | 可取之处                                                     | 本项目的扩展边界                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| pehcst：[语言注册](https://github.com/pehcst/tauri-template-react/blob/9fb91958a6624e4708f961ff8b1ea7f531f50ae0/src/i18n/locales.ts)、[初始语言与持久化](https://github.com/pehcst/tauri-template-react/blob/9fb91958a6624e4708f961ff8b1ea7f531f50ae0/src/i18n/LocaleProvider.tsx) | 类型检查词典键、用户偏好优先、系统语言回退、存储失败仍可切换 | 当前只维护中英文；出现复杂复数、ICU 或远程词典需求时再评估专用 i18n 库                                 |
-| mihasm：[语义皮肤](https://github.com/mihasm/tauri-desktop-template/blob/378cb803ae8ce211c24bf7e28a08d0c7ac4b07c4/src/styles/themes.css)、[命令与快捷键表](https://github.com/mihasm/tauri-desktop-template/blob/378cb803ae8ce211c24bf7e28a08d0c7ac4b07c4/src/lib/shortcuts.ts)    | 用 token 划分背景层次，统一 Cmd / Ctrl 的命令表示            | 快捷操作变多时再建统一注册表；需自行补齐输入框、输入法和快捷键冲突处理，不因应用内操作引入全局热键权限 |
-| somus：[独立生成 IPC 绑定](https://github.com/somus/create-tauri-react-app/blob/117a2a3d38e7fe1b4344cbf5ef9bc8817e956c57/src-tauri/src/bin/generate_bindings.rs)                                                                                                                   | 从 Rust 命令生成类型，以联合类型区分成功与失败               | 命令和返回结构变多后再引入生成器及 CI 校验；生成类型仍不能替代边界入参校验                             |
-
-语言偏好与 SVG 皮肤使用现有前端能力，`greet` 复用已有 IPC；这些改动不需要新增文件存储、系统通知、自动更新或后台全局热键插件。多窗口共享设置、真实更新服务等需求成立后，再按 [安全规范](./security.md#能力最小化) 评估依赖和权限；不整体复制其他模板的插件清单或素材。
+| 参考源码                                                                                                                                                                                                                                                                                       | 可取之处与当前边界                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [pehcst 语言注册表](https://github.com/pehcst/tauri-template-react/blob/9fb91958a6624e4708f961ff8b1ea7f531f50ae0/src/i18n/locales.ts)                                                                                                                                                          | 类型化 locale 与用户偏好优先；目前只维护中英，复杂 ICU / 远程词典仍需按需求评估        |
+| [mihasm 命令快捷键](https://github.com/mihasm/tauri-desktop-template/blob/378cb803ae8ce211c24bf7e28a08d0c7ac4b07c4/src/lib/shortcuts.ts)                                                                                                                                                       | 集中命令描述；本项目另外处理输入框、IME 和路由可用性，不引入后台全局热键权限           |
+| [somus 绑定导出入口](https://github.com/somus/create-tauri-react-app/blob/117a2a3d38e7fe1b4344cbf5ef9bc8817e956c57/src-tauri/src/bin/generate_bindings.rs)                                                                                                                                     | Rust 生成 IPC；本项目已有独立导出与 CI 漂移检查，运行时边界仍由 Rust 校验              |
+| [dannysmith 命令注册表](https://github.com/dannysmith/tauri-template/blob/437a18b9b63924833857f299217a5270f009d120/src/lib/commands/registry.ts) / [TASK 诊断](https://github.com/ItsCodejac/tauri-app-starter-kit/blob/e4ca6e67eba8517011905ad531c9a3f4712cb5f9/src-tauri/src/diagnostics.rs) | 统一入口与可复制诊断；当前诊断以本项目实际字段和脱敏规则为准，不承诺其他模板宣传的能力 |

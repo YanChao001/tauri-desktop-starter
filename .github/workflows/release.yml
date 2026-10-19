@@ -12,9 +12,9 @@ permissions:
   # SignPath action 需要读本次 run 的 artifact
   actions: read
 
-# 同一个 tag 只允许一个发布任务在跑，避免重复上传 asset
+# tag 与手动触发也可能指向同一版本，按仓库串行发布，避免交叉覆盖资产。
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -55,6 +55,8 @@ jobs:
             args: ""
 
     runs-on: ${{ matrix.platform }}
+    outputs:
+      updater-enabled: ${{ steps.updater.outputs.enabled }}
 
     steps:
       - uses: actions/checkout@v7
@@ -133,6 +135,12 @@ jobs:
             echo "已注入自动更新签名密钥"
           fi
 
+      - name: 检查自动更新配置并准备 v2 打包配置
+        id: updater
+        env:
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/release-lib.mjs prepare
+
       # PFX 链路只用于仍有效、允许导出的证书（例如内部信任签名）。
       # 公共代码签名按服务商硬件 / 托管方案配置 bundle.windows.signCommand，
       # 接入方式见 docs/build-release.md。
@@ -195,7 +203,10 @@ jobs:
           releaseBody: "构建产物见下方 Assets。变更内容请查看本 tag 与上一版本之间的提交记录。"
           releaseDraft: true
           prerelease: ${{ steps.version.outputs.prerelease }}
-          args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }}
+          # 各平台先验证自己的签名，最后由单一 job 汇总，避免矩阵并发覆盖 latest.json。
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: ${{ steps.updater.outputs.enabled == 'true' }}
+          args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }} ${{ steps.updater.outputs.args }}
 
       - name: 校验 Windows 签名
         if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
@@ -222,6 +233,22 @@ jobs:
             }
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
+
+      - name: 验证更新包签名、公钥与签名版本
+        id: updater-metadata
+        if: steps.updater.outputs.enabled == 'true'
+        env:
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          ARTIFACT_TARGET: ${{ matrix.target }}
+        run: node scripts/release-lib.mjs collect
+
+      - name: 保存本次平台的已验证更新元数据
+        if: steps.updater.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: updater-metadata-${{ matrix.target }}
+          path: ${{ steps.updater-metadata.outputs.metadata-file }}
+          if-no-files-found: error
 
       - name: 归档本次分发产物
         id: collect
@@ -253,6 +280,33 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           overwrite: true
+
+  publish-updater:
+    name: 汇总全部平台的自动更新清单
+    needs: build
+    if: needs.build.outputs.updater-enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: updater-metadata-*
+          path: updater-metadata
+          merge-multiple: true
+      - name: 校验四目标、已上传资产并生成 latest.json
+        id: manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATER_METADATA_DIR: updater-metadata
+        run: node scripts/release-lib.mjs merge
+      - uses: actions/upload-artifact@v7
+        with:
+          name: updater-latest-json
+          path: ${{ steps.manifest.outputs.manifest-file }}
+          if-no-files-found: error
 
   # 可选：SignPath Foundation（开源免费签名）。未配置仓库变量时整个 job 跳过，
   # 不影响现有发布流程。申请与配置步骤见 docs/build-release.md 的「路线 A」。

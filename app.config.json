@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "Tauri Desktop Starter",
+  "shortName": "Tauri Starter",
+  "packageName": "tauri-desktop-starter",
+  "identifier": "com.starter.desktop",
+  "description": "A complete desktop application starter",
+  "author": "Tauri Desktop Starter contributors",
+  "repositoryUrl": "https://github.com/YanChao001/tauri-desktop-starter",
+  "docsUrl": "https://v2.tauri.app/",
+  "defaultMode": "demo",
+  "updates": {
+    "endpoint": "https://github.com/YanChao001/tauri-desktop-starter/releases/latest/download/latest.json",
+    "publicKey": ""
+  }
+}

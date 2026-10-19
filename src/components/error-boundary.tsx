@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { getLocale, isLanguage } from "@/i18n/registry";
 import { createTranslator } from "@/i18n/translate";
 import { loadSettings } from "@/providers/settings";
+import { reportClientError } from "@/lib/report-error";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -32,6 +33,7 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    reportClientError(error, info.componentStack ?? undefined);
     console.error("界面渲染失败", error, info.componentStack);
   }
 

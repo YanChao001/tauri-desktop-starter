@@ -1,16 +1,32 @@
 import { StrictMode } from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { onWindowResized, isWindowMaximized } from "@/lib/tauri";
+import { CommandsProvider } from "@/providers/commands";
+import {
+  onWindowResized,
+  isWindowMaximized,
+  closeWindow,
+  quitApp,
+} from "@/lib/tauri";
 import { TitleBar } from "./title-bar";
+
+vi.mock("@/routes", () => ({ APP_ROUTES: [] }));
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   isWindowMaximized: vi.fn().mockResolvedValue(false),
   onWindowResized: vi.fn(),
   closeWindow: vi.fn(),
+  quitApp: vi.fn(),
   minimizeWindow: vi.fn(),
   openExternal: vi.fn(),
   toggleMaximizeWindow: vi.fn(),
@@ -34,7 +50,9 @@ function renderTitleBar() {
     <StrictMode>
       <MemoryRouter>
         <TooltipProvider>
-          <TitleBar />
+          <CommandsProvider>
+            <TitleBar />
+          </CommandsProvider>
         </TooltipProvider>
       </MemoryRouter>
     </StrictMode>,
@@ -89,5 +107,21 @@ describe("TitleBar 窗口订阅", () => {
     expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
     await act(async () => pending.forEach((resolve) => resolve(false)));
     expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
+  });
+
+  it("keeps close-window separate from explicit application quit", async () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    vi.mocked(isWindowMaximized).mockResolvedValue(false);
+    renderTitleBar();
+    fireEvent.click(screen.getByRole("button", { name: "title.close" }));
+    expect(closeWindow).toHaveBeenCalledOnce();
+    expect(quitApp).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("button", { name: "title.file" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "title.quit" }),
+    );
+    expect(quitApp).toHaveBeenCalledOnce();
   });
 });

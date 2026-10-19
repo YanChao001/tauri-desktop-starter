@@ -89,6 +89,8 @@ pnpm app:portable --skip-build # 复用已有构建；确认源码与版本后�
 
 - 目标机器需要 WebView2 运行时（Win11 自带；老 Win10 缺失时按说明安装）。
 - 窗口位置、日志仍写入当前用户的 AppData，不随 exe 移动；要做"绿色版"需自行改路径。
+- 设置与 SQLite 同样按用户存储；关闭窗口或更新前先保存笔记草稿，便携目录不包含未保存内容。
+- 当前 Windows 默认更新入口指向 NSIS。便携版内安装更新会启动安装器并转为安装版，不会原地替换便携 exe；要保留免安装形态，请手动下载新版本 portable。
 - 未签名的 exe 可能触发 SmartScreen，对外分发应按下文配置代码签名；签名也不保证立即获得信誉。
 - `--no-bundle` 不经过打包器，**不会**自动签名；需要签名的便携版请对 exe 单独执行 `signtool`。
 - Linux 的 AppImage 本身就是便携格式；macOS 用 `.app` 拖拽安装，无需另做便携包。
@@ -120,6 +122,12 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
 - 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在 `CUSTOM BRANDING` 标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
   - 新增安装语言时，要为自定义文案补齐对应语言的 `LangString`，并实际编译检查，不能假设自定义键会自动回落到内置翻译。
 - **升级 Tauri 后**：对照同版本官方 NSIS 模板合并更新，保留 `CUSTOM BRANDING` 各段的配色、页面宏引用与语言字符串，并复核 WebView2 临时路径、执行引号和文件关联修复是否已被上游覆盖。不要整份沿用旧模板。自定义 MSI 模板同理，对应 `wix.template`。
+
+### 自启动与卸载
+
+Windows 自启动按当前用户在 HKCU 下以应用 identifier 写入 Run 项，读取实际 StartupApproved 状态并严格引用当前 exe。NSIS currentUser 卸载器会清理本应用的 Run / StartupApproved 项。
+
+MSI 卸载可能由另一账户或以 per-machine 方式执行，默认模板无法可靠删除每个原用户创建的 HKCU 值；MSI 用户应在卸载前通过应用关闭开机启动。macOS / Linux 使用官方自启动插件，仍需在对应系统验收安装、启用 / 禁用与卸载；E2E 不改系统自启动设置。
 
 ## 代码签名
 
@@ -260,81 +268,56 @@ Tauri 会自动完成签名、公证与打包。
 
 ## 自动更新
 
-### 接入步骤
+模板已注册 Rust updater / process 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，无需再执行 `tauri add updater`。默认源为当前模板的 GitHub Releases 地址，`app.config.json > updates.publicKey` 为空时显示未配置，不请求网络；派生项目须同时修改仓库地址和更新端点。
+
+### 配置公钥与发布签名
+
+1. 在仓库外生成并保管更新密钥，私钥离线备份，公钥可提交：
 
 ```bash
-pnpm tauri add updater
+pnpm tauri signer generate -w ~/.tauri/my-app.key
 ```
 
-1. 生成签名密钥对（私钥安全保存并离线备份；CI 用 Secrets 注入，不能提交仓库）：
-
-```bash
-pnpm tauri signer generate -w ~/.tauri/myapp.key
-```
-
-2. 公钥写进 `tauri.conf.json`：
+2. 修改品牌配置；端点必须对应本项目的 GitHub 仓库，CI 会校验：
 
 ```json
 {
-  "plugins": {
-    "updater": {
-      "pubkey": "<公钥内容>",
-      "endpoints": [
-        "https://example.com/updates/{{target}}/{{arch}}/{{current_version}}"
-      ]
-    }
+  "updates": {
+    "endpoint": "https://github.com/<owner>/<repo>/releases/latest/download/latest.json",
+    "publicKey": "<签名公钥内容>"
   }
 }
 ```
 
-3. 构建时设置环境变量：
+3. GitHub Secrets 配置 `TAURI_SIGNING_PRIVATE_KEY`，有密码时再配置 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。公钥与私钥必须配对；两者都缺失时生成普通安装包，只配置一边会使 CI 失败。
 
-```bash
-export TAURI_SIGNING_PRIVATE_KEY="<私钥内容>"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="<私钥密码>"
-```
+4. 正常打 tag 发布。工作流用临时配置启用 `bundle.createUpdaterArtifacts: true`，生成 Tauri v2 更新产物；本地默认构建仍不额外产出更新签名。每个平台收集后，用独立 Rust 验证器核对最终文件字节、公钥、`.sig` 与签名绑定的版本，随后上传平台元数据。
 
-4. `bundle.createUpdaterArtifacts` 设为 `true`，构建会额外产出更新包与 `.sig`；发布流水线中的 `tauri-action` 再汇总生成 `latest.json`，本地 `tauri build` 不生成该清单。
+5. 构建完成后由单独 job 合并四个目标的元数据，核对 draft Release 中的实际资产并上传唯一的 `latest.json`，避免矩阵任务互相覆盖。检查并发布 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
 
-5. 前端调用检查更新：
+发布内部接口在 [`release-lib.mjs`](../scripts/release-lib.mjs)（`prepare / collect / merge`）；版本 / 签名验证入口在 [`verify-updater.rs`](../src-tauri/src/bin/verify-updater.rs)。签名覆盖版本号，手工签名也需使用匹配的 `--app-version`，不能把旧签名用于不同版本的清单。
 
-```ts
-import { check } from "@tauri-apps/plugin-updater";
+### 运行时策略与安装行为
 
-const update = await check();
-if (update) {
-  await update.downloadAndInstall();
-}
-```
+默认策略从 `app.config.json` 编译进入应用。受控部署可在 `appConfigDir/deployment.json` 写同样的 `{ "updates": { "endpoint": "...", "publicKey": "..." } }` 覆盖；此文件只放端点和公钥，不能放私钥。运行时要求 HTTPS、无 URL 凭据和 fragment，拒绝 HTTP 重定向降级，并启用签名版本一致性检查。
 
-`check()` 返回更新对象或 `null`，没有 `available` 字段。参见 [Tauri 2 更新插件文档](https://v2.tauri.app/plugin/updater/)。插件导入和调用应封装在 `src/lib/tauri.ts`，页面调用封装函数。
+检查结果、下载 / 安装句柄与进度由 Rust 管理，各窗口通过事件同步；重复操作返回明确状态。安装前确认会提示保存所有窗口的内容，笔记草稿没有跨原生退出的自动保存协议。
 
-### 更新服务端
+**Windows 安装可能结束当前进程、启动安装器并由安装器重新打开应用。** 不能承诺安装后总是留在界面等待用户重启。其他平台若安装后应用仍在运行，可通过界面重启入口加载新版。
 
-最省事的方式是把构建产物和 `latest.json` 一起发到 GitHub Releases，
-然后把 `endpoints` 指向 `https://github.com/<org>/<repo>/releases/latest/download/latest.json`。
+更新仅支持 Tauri v2 原生安装包 / 应用归档，Rust 依赖关闭旧 ZIP 兼容路径。Windows 默认更新入口优先 NSIS，另有 NSIS / MSI 明确平台入口；macOS 使用 `.app.tar.gz`，Linux 默认入口优先 AppImage，并提供 DEB / RPM 类型入口，防止已安装的包收到错误格式。DEB / RPM 安装可能调用系统提权界面。不要给 v1 兼容 ZIP 接入相同通道。
 
-自建服务端只需要一个静态文件服务，返回如下结构：
+### 更新服务端与签名顺序
 
-```json
-{
-  "version": "1.2.0",
-  "notes": "修复了窗口位置丢失的问题",
-  "pub_date": "2026-10-19T10:00:00Z",
-  "platforms": {
-    "windows-x86_64": {
-      "signature": "<.sig 文件内容>",
-      "url": "https://example.com/downloads/app_1.2.0_x64-setup.exe"
-    }
-  }
-}
-```
+当前默认使用 GitHub Releases 的静态 `latest.json`；若改用其他服务器，保持 Tauri 的版本、平台 URL 与签名格式，并自行调整本项目的发布端点校验。格式参考 [Tauri updater 文档](https://v2.tauri.app/plugin/updater/)。
 
-签名校验失败时更新会被拒绝——这是设计如此，不要试图绕过。
+更新签名必须覆盖**最终交付字节**。PFX 在打包阶段完成 Authenticode 签名，可与当前更新流程配合；SignPath 后签名会改变包字节，当前 workflow 明确拒绝与 updater 组合。需要该组合时，须先实现后签名完成后的更新重签、版本绑定验证与清单生成，再开放配置。
+
+代码签名与更新签名用途不同：Authenticode / Developer ID 解决系统发布者与安装信任，更新公钥验证客户端收到的包和版本；不能互相替代，不能跳过验签处理安装失败。
 
 ## CI 多平台构建
 
-`.github/workflows/ci.yml` 只做校验（格式、lint、类型、测试、编译）。
+`.github/workflows/ci.yml` 执行格式、lint、类型、单元测试、Rust 编译与独立的三端真实桌面 E2E job。
 出正式包由 `.github/workflows/release.yml` 负责，打 tag 触发。
 
 发布流程先由 `validate` job 执行冻结安装和 `pnpm verify`，通过后才进入各平台构建；PFX 签名验证按配置检查实际启用的 NSIS / MSI 产物，缺失或签名无效会失败。
@@ -361,7 +344,7 @@ CI 只收集 `tauri-action` 明确返回的文件，不按相邻文件猜测签�
 | `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`                 | 未接线：Azure Artifact Signing，需安装 CLI、注入变量并配置 `signCommand` |
 | `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS 签名                                                               |
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`                               | macOS 公证                                                               |
-| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 自动更新签名（接入 updater 后生效）                                      |
+| `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`            | 更新签名；与品牌配置公钥配对后由发布流程启用                             |
 
 当前 `release.yml` 内置了 **PFX**、macOS 与可选的 SignPath 链路；SignPath 需要配置门户与仓库参数，Azure 需要额外安装 CLI 并注入三个环境变量。
 
@@ -385,7 +368,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 - [ ] 在目标平台的干净机器上安装并验证启动、窗口操作、外链与 IPC
 - [ ] 需要签名的 Windows 分发渠道已检查签名状态与发布者；SignPath 仅覆盖 NSIS 外层
 - [ ] 发布 macOS 包时已完成签名、公证，并用 `spctl -a -vvv -t install <app>` 验证
-- [ ] 若接入自动更新：验证旧版本能够收到并成功安装新版本
+- [ ] 启用自动更新时，验证旧版本能够收到并成功安装新版本；安装前保存各窗口内容
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
 - [ ] `release/*` 已通过 PR 合入 `main` 和 `develop`，在 `main` 对应合并提交打 tag `vX.Y.Z`
 - [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布

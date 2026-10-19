@@ -1,0 +1,42 @@
+import type { Translate } from "@/i18n/translate";
+import type { MessageKey } from "@/i18n/zh-CN";
+import { isRecord } from "./settings-model";
+const ERROR_KEYS: Record<string, MessageKey> = {
+  INVALID_ARGUMENT: "errors.VALIDATION",
+  NAME_REQUIRED: "errors.VALIDATION",
+  INPUT_TOO_LONG: "errors.INPUT_TOO_LONG",
+  STORAGE_IO: "errors.IO",
+  STORAGE_CORRUPT: "errors.IO",
+  DATABASE_ERROR: "errors.DATABASE",
+  PLATFORM_UNAVAILABLE: "errors.UNSUPPORTED",
+  AUTOSTART_ERROR: "errors.AUTOSTART_ERROR",
+  UPDATE_BUSY: "errors.UPDATE_BUSY",
+  UPDATE_CHECK_FAILED: "errors.UPDATE",
+  UPDATE_DOWNLOAD_FAILED: "errors.UPDATE",
+  UPDATE_INSTALL_FAILED: "errors.UPDATE",
+  WINDOW_ERROR: "errors.WINDOW_ERROR",
+  VALIDATION: "errors.VALIDATION",
+  CONFLICT: "errors.CONFLICT",
+  SETTINGS_CONFLICT: "errors.SETTINGS_CONFLICT",
+  NOT_FOUND: "errors.NOT_FOUND",
+  DATABASE: "errors.DATABASE",
+  IO: "errors.IO",
+  UPDATE_NOT_CONFIGURED: "errors.UPDATE_NOT_CONFIGURED",
+  UPDATE: "errors.UPDATE",
+  UNSUPPORTED: "errors.UNSUPPORTED",
+  INTERNAL: "errors.INTERNAL",
+};
+export function errorMessage(error: unknown): string {
+  if (isRecord(error) && typeof error.message === "string")
+    return error.message;
+  return String(error);
+}
+export function nativeErrorText(error: unknown, t: Translate): string {
+  const key =
+    isRecord(error) && typeof error.code === "string"
+      ? ERROR_KEYS[error.code]
+      : undefined;
+  return key
+    ? t(key)
+    : t("common.operationFailed", { error: errorMessage(error) });
+}

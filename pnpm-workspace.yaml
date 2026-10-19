@@ -1,0 +1,14 @@
+allowBuilds:
+  esbuild: true
+  edgedriver: false
+  geckodriver: false
+
+# Keep WDIO 9 tooling current while upstream updates its dependency ranges:
+# patched glob/serializer/diff, Mocha without braces,
+# and browser tooling without the unpatched extract-zip dependency.
+overrides:
+  "glob@>=10.2.0 <10.5.0": 10.5.0
+  "@wdio/mocha-framework>mocha": 11.8.0
+  "mocha>serialize-javascript": 7.1.2
+  "mocha>diff": 8.0.3
+  "@wdio/utils>@puppeteer/browsers": 3.2.5

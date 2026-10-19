@@ -1,8 +1,22 @@
 ﻿import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { I18nProvider } from "@/providers/i18n";
 import { DEFAULT_SETTINGS, SettingsProvider } from "@/providers/settings";
 import Settings from "./settings";
+import { SETTINGS_VERSION } from "@/lib/settings-model";
+
+function SettingsView() {
+  return (
+    <MemoryRouter>
+      <SettingsProvider>
+        <I18nProvider>
+          <Settings />
+        </I18nProvider>
+      </SettingsProvider>
+    </MemoryRouter>
+  );
+}
 
 vi.mock("next-themes", () => ({
   useTheme: () => ({ theme: "system", setTheme: vi.fn() }),
@@ -29,13 +43,7 @@ describe("设置页", () => {
   });
 
   it("提供语言切换入口并将新语言写入文档和存档", () => {
-    render(
-      <SettingsProvider>
-        <I18nProvider>
-          <Settings />
-        </I18nProvider>
-      </SettingsProvider>,
-    );
+    render(<SettingsView />);
     fireEvent.keyDown(screen.getByRole("combobox", { name: "语言" }), {
       key: "Enter",
     });
@@ -67,29 +75,21 @@ describe("设置页", () => {
         backgroundIntensity: "strong",
       }),
     );
-    render(
-      <SettingsProvider>
-        <I18nProvider>
-          <Settings />
-        </I18nProvider>
-      </SettingsProvider>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
+    render(<SettingsView />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset preferences" }));
     expect(document.documentElement.lang).toBe("en");
     expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
     expect(
       JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
-    ).toEqual({ ...DEFAULT_SETTINGS, language: "en" });
+    ).toEqual({
+      schemaVersion: SETTINGS_VERSION,
+      ...DEFAULT_SETTINGS,
+      language: "en",
+    });
   });
 
   it("皮肤与强度即时生效、持久化，并在纯色皮肤下禁用强度", () => {
-    const view = () => (
-      <SettingsProvider>
-        <I18nProvider>
-          <Settings />
-        </I18nProvider>
-      </SettingsProvider>
-    );
+    const view = () => <SettingsView />;
     const { unmount } = render(view());
     expect(screen.getByRole("radio", { name: "轻盈" })).toBeDisabled();
     fireEvent.click(screen.getByRole("radio", { name: "樱花来信" }));

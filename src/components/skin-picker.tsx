@@ -106,6 +106,8 @@ export function SkinPicker() {
         </fieldset>
 
         <fieldset
+          id="settings-backgroundIntensity"
+          tabIndex={-1}
           className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"
           disabled={settings.background === "plain"}
         >

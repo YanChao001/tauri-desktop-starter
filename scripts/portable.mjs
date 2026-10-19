@@ -43,8 +43,10 @@ async function main() {
 双击 EXE 运行。目标机器需要 Windows 10 / 11 与 Microsoft Edge WebView2 Runtime。
 缺少运行时时请先安装：https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
-窗口状态写入 %APPDATA%\\${plan.config.identifier}，日志与 WebView 数据写入 %LOCALAPPDATA%\\${plan.config.identifier}。
+偏好、窗口状态与 SQLite 笔记写入 %APPDATA%\\${plan.config.identifier}，日志与 WebView 数据写入 %LOCALAPPDATA%\\${plan.config.identifier}。
 数据不随 EXE 移动。本程序无需安装，但不是将全部用户数据保存在同目录的绿色版。
+笔记须点击“保存”后才会持久化；退出前请先保存编辑内容。自启动和后台运行默认关闭，可在“桌面集成”中开启。
+配置更新签名后，应用内安装更新会启动 NSIS 安装器，转为安装版，不会原地替换便携 EXE；若需保持免安装形态，请手动下载新版便携包。
 
 此脚本不会进行 Authenticode 签名。对外分发前需单独配置签名并验证运行环境。
 manifest.json 记录版本、目标平台和文件 SHA-256，可用于检查分发文件完整性。

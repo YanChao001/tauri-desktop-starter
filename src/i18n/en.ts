@@ -1,13 +1,16 @@
 import type { Messages } from "./zh-CN";
+import { enFeatures } from "./en-features";
+import { APP_CONFIG } from "@/config/app";
 
 /** 与默认语言保持相同词条；缺词或拼错键会在类型检查中报错。 */
 export const en = {
+  ...enFeatures,
   "nav.overview": "Overview",
   "nav.components": "Components",
   "nav.motion": "Motion",
   "nav.bridge": "Frontend ↔ Rust",
   "nav.settings": "Settings",
-  "app.name": "Tauri Starter",
+  "app.name": APP_CONFIG.shortName,
   "app.tagline": "Desktop app starter",
   "app.native": "Native window",
   "app.preview": "Browser preview",
@@ -41,8 +44,8 @@ export const en = {
   "common.copyFailed": "Copy failed, select the text manually",
   "common.openFailed":
     "Unable to open the link. Copy the address into your browser.",
-  "common.reset": "Reset appearance",
-  "common.resetDone": "Appearance reset",
+  "common.reset": "Reset preferences",
+  "common.resetDone": "Preferences reset",
   "common.sampleData": "Sample data",
   "common.cancel": "Cancel",
   "common.close": "Close",
@@ -237,7 +240,7 @@ export const en = {
   "settings.links": "Links",
   "settings.linksHint": "Opens in your default browser",
   "settings.resetHint":
-    "Restores the theme and interface preferences, keeping your language and business data",
+    "Restores appearance, layout and background preferences, keeping language, notes and system startup settings",
   "bridge.title": "Frontend ↔ Rust",
   "bridge.subtitle":
     "The frontend calls Rust via invoke and gets typed results back. This is the entry point for every system capability.",

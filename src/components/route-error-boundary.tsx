@@ -1,0 +1,49 @@
+import { Component, type ErrorInfo, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import type { Translate } from "@/i18n/translate";
+import { reportClientError } from "@/lib/report-error";
+import { useI18n } from "@/providers/i18n";
+
+class PageBoundary extends Component<
+  { children: ReactNode; t: Translate; onHome: () => void },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error : new Error(String(error)) };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    reportClientError(error, info.componentStack ?? undefined);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const { t, onHome } = this.props;
+    return (
+      <section role="alert" className="rounded-xl border bg-card p-6">
+        <h2 className="text-base font-medium">{t("common.renderError")}</h2>
+        <p className="mt-2 break-words font-mono text-xs text-muted-foreground">
+          {this.state.error.message}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={onHome}>{t("common.backHome")}</Button>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            {t("common.reload")}
+          </Button>
+        </div>
+      </section>
+    );
+  }
+}
+
+/** Page failures keep the shell, navigation and command palette available. */
+export function RouteErrorBoundary({ children }: { children: ReactNode }) {
+  const { key } = useLocation();
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  return (
+    <PageBoundary key={key} t={t} onHome={() => navigate("/")}>
+      {children}
+    </PageBoundary>
+  );
+}

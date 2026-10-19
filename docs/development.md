@@ -19,18 +19,68 @@ macOS 需要 Xcode Command Line Tools；Linux 需要 `libwebkit2gtk-4.1-dev` 等
 
 ```bash
 pnpm install --frozen-lockfile
+rustup toolchain install
+pnpm run doctor
 pnpm app:dev
 ```
 
-第一次 `app:dev` 会编译全部 Rust 依赖，5–10 分钟属于正常。之后改前端是秒级热更新。
+第一次 `app:dev` 会编译 Rust 依赖，耗时取决于机器、缓存和网络；后续复用编译缓存，前端修改由 Vite 热更新。
 
 源码入口与两种运行模式见 [README · 从源码运行](../README.md#从源码运行)。`pnpm dev` 适合浏览器预览界面；`pnpm app:dev` 才会启动 Rust 和原生窗口。
+
+## 项目初始化
+
+应用身份集中在 [`app.config.json`](../app.config.json)，前端入口是 [`src/config/app.ts`](../src/config/app.ts)。准备一份品牌 JSON，使用完整字段或仅填写需要覆盖的字段；`updates` 也按字段合并：
+
+```json
+{
+  "name": "Acme Desk",
+  "shortName": "Acme",
+  "packageName": "acme-desk",
+  "identifier": "io.acme.desk",
+  "description": "Acme desktop application",
+  "author": "Acme",
+  "repositoryUrl": "https://github.com/acme/desk",
+  "docsUrl": "https://example.com/docs",
+  "updates": {
+    "endpoint": "https://github.com/acme/desk/releases/latest/download/latest.json",
+    "publicKey": ""
+  }
+}
+```
+
+```bash
+pnpm init:project --config ../my-app.json --dry-run
+pnpm init:project --config ../my-app.json
+```
+
+`--dry-run` 展示差异且不写文件；`--minimal` 将默认模式设为精简，源码演示仍保留。默认新模板为 demo；已有配置不指定模式时保留当前值，需要切回可在 JSON 写 `"defaultMode": "demo"`。
+
+脚本先检查所有 JSON、完整 Cargo TOML / lock、四处版本、原生入口与路径，再暂存和提交变更：品牌、npm / Cargo 包与库、Cargo `default-run` / lock、主程序与辅助导出入口、Tauri 主 / 平台标题、测试标识符及 HTML 标题。失败时恢复原文件；若文件被并发编辑，保留用户编辑和 `.init-*.bak` 原备份并报告恢复冲突，核对后再手动处理。
+
+包名使用小写 kebab-case，标识符使用唯一的至少三段反向域名；应用名须能作为 Windows 文件名。未知字段、含凭据的 URL、版本漂移或不支持的入口会在写入前拒绝。修改仓库地址不会自动猜测更新服务，`updates.endpoint` 应同时按实际部署填写；空公钥禁用更新请求。
+
+另行处理品牌图标、安装器位图、LICENSE 归属、安全私密报告渠道、代码签名与更新公钥；初始化不读取或修改签名私钥。图标可用 `pnpm tauri icon ./logo.png` 生成，安装器尺寸见 [构建与发布](./build-release.md#安装器外观)。版本仍用 `pnpm version:set`，然后运行 `pnpm verify`、Rust 检查与目标平台安装测试。
+
+## 环境诊断
+
+```bash
+node scripts/doctor.mjs
+node scripts/doctor.mjs --json
+```
+
+无需先安装 npm 依赖。诊断检查 Node engines、精确 pnpm / Rust 工具链、Git、依赖安装状态和当前平台组件：Windows 的 MSVC / SDK / WebView2，macOS 的 Xcode Command Line Tools，Linux 的 WebKitGTK / AppIndicator / SVG 开发库与图形会话。只读探测，不自动下载工具；缺少必要组件退出码为 1，警告与错误分别显示。它不替代真实编译、签名或安装验收。
 
 ## 常用命令
 
 | 命令                     | 作用                                                | 什么时候用                   |
 | ------------------------ | --------------------------------------------------- | ---------------------------- |
 | `pnpm app:dev`           | 启动完整桌面应用（含 Rust）                         | 日常开发，需要系统能力时     |
+| `pnpm run doctor`        | 实际检查工具与平台环境                              | 首次启动、环境异常           |
+| `pnpm init:project`      | 同步品牌、应用身份与精简默认模式                    | 派生新项目                   |
+| `pnpm bindings:generate` | 从 Rust 导出 TypeScript IPC 绑定                    | 修改命令或 DTO 后            |
+| `pnpm bindings:check`    | 检查生成绑定未漂移                                  | 提交原生改动前               |
+| `pnpm test:e2e`          | 隔离构建并运行真实桌面进程测试                      | 改启动、窗口或 IPC 主链路后  |
 | `pnpm dev`               | 只起 Vite（localhost:1420）                         | 纯调样式，不想等 Rust 编译   |
 | `pnpm app:build`         | 构建安装包并收集到版本化 `artifacts/`               | 出测试包 / 发布              |
 | `pnpm app:portable`      | 收集 Windows exe 与说明到版本化 `artifacts/`        | 内测分发、免安装场景         |
@@ -93,8 +143,12 @@ const base = import.meta.env.VITE_API_BASE;
 - `println!` / `eprintln!` 在 `app:dev` 的终端里能看到（debug 构建会附带控制台）。
 - 项目已接入 `tauri-plugin-log`，用 `log::info!` / `log::error!` 记录上下文；日志位置见 [排障手册](./troubleshooting.md#先看日志)，不要重复注册插件。
 
-- VS Code 里用 `CodeLLDB` 或 `rust-analyzer` 的「Debug」可以直接给 Rust 打断点，
-  需要额外配置 `launch.json`，指向 `src-tauri/target/debug/tauri-desktop-starter.exe`。
+仓库已包含 [launch.json](../.vscode/launch.json) 与 [tasks.json](../.vscode/tasks.json)。安装推荐的 CodeLLDB，按 F5 选择：
+
+- `Desktop: Rust + WebView`：先启动 Vite 后用 Cargo 构建并在 LLDB 下运行原生主程序，可在 Rust 文件设断点；二进制由 Cargo 元数据选择，不硬编码品牌文件名。
+- `Frontend: Chrome`：先启动 Vite，再启动浏览器调试会话，支持 TS / TSX 断点；此模式无原生能力。
+
+后台任务等待 Vite 的 1420 就绪提示后才启动调试；已有服务占用端口时先确认归属并停止自己的开发任务。Cargo 调试绕过 Tauri CLI 的专属构建流程，依赖平台配置或安装器行为时仍使用 `pnpm app:dev` / 正式构建验证。F5 不会自动重启正在调试的 Rust 进程，改 Rust 后重新开始调试。
 
 ### 定位"白屏"
 
@@ -190,6 +244,7 @@ Rust 侧额外注意：编译时间也是成本，一个依赖可能让 CI 多�
 项目自带 `.vscode/extensions.json`，打开 VS Code 会提示安装：
 
 - **rust-analyzer**：Rust 补全与跳转，必装
+- **CodeLLDB**：F5 调试 Rust / WebView 主程序
 - **Tauri**：`tauri.conf.json` 的 schema 校验与命令入口
 - **ESLint**：实时标出问题
 - **Prettier**：保存时自动格式化

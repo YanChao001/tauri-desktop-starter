@@ -1,147 +1,88 @@
 # 测试规范
 
-## 现状
-
-前端已接入 Vitest（jsdom + Testing Library），Rust 用内置的 `cargo test`，CI 两边都会跑。
-
-模板带有回归用例，覆盖路由匹配、错误边界、剪贴板降级链路、浏览器预览守卫、外链拦截、窗口显示、外观设置与主题切换。
-**这是骨架，不是覆盖率目标。** 写业务时按下面的分层往上加。
+本项目用 Vitest / Testing Library 检查前端，用 Node 内置测试器检查工程脚本，用 Rust 测试检查原生服务，并以真实 WebView E2E 验证跨进程主链路。
 
 ## 测试分层
 
-| 层               | 工具                       | 覆盖什么                          | 优先级         |
-| ---------------- | -------------------------- | --------------------------------- | -------------- |
-| Rust 单元测试    | `cargo test`               | 命令函数、纯逻辑、数据转换        | 高             |
-| 前端单元测试     | Vitest                     | `lib/` 下的工具函数、校验、格式化 | 高             |
-| 组件测试         | Vitest + Testing Library   | 关键交互（表单校验、状态切换）    | 中             |
-| 构建脚本测试     | Node 内置测试器            | 版本解析、同步与打包边界          | 高             |
-| 端到端（未接入） | tauri-driver + WebdriverIO | 启动、窗口、IPC 主链路            | 按发布风险选择 |
+| 层         | 工具                             | 关注点                                                                   |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------ |
+| 前端纯逻辑 | Vitest                           | 设置迁移、并发同步、命令 / 快捷键、翻译和错误归一化                      |
+| 组件       | Testing Library + jsdom          | 路由恢复、保存 / 重试、输入保留、键盘操作和无障碍                        |
+| 工程脚本   | `node --test`                    | 版本、归档、路径边界、初始化事务 / 并发保护、诊断误判                    |
+| Rust       | `cargo test`                     | 入参边界、错误码、原子存储、revision、SQLite 迁移 / 冲突、更新策略与脱敏 |
+| IPC 契约   | tauri-specta 导出 + 少量调用断言 | 生成绑定未漂移、命令名 / 参数名 / DTO 一致                               |
+| 真实桌面   | WebdriverIO + 内嵌 WebDriver     | 启动显示、原生 IPC、语言、窗口和进程重启后的设置                         |
 
-**不要追求覆盖率数字。** 判断标准是：这段代码出错时，用户会不会感知到？
+按风险验证用户能感知的行为，不为覆盖率数字测试 getter、静态样式或实现细节。修复缺陷时优先增加可复现的回归。
 
-## 什么必须测
-
-- 所有 `src-tauri` 里的 `#[tauri::command]`：入参边界、错误分支、返回值结构
-- `src/lib/` 里被多处调用的函数
-- 涉及金额、日期、文件路径的转换逻辑
-- 修 bug 时先补一个能复现的测试，再改代码
-
-纯展示组件、shadcn 生成的原子组件与样式通常由人工检查；关键无障碍行为或历史缺陷可按风险补回归测试。
-
-## 前端测试怎么跑
-
-配置已经就位，不用再做接入：
-
-| 文件                | 作用                                           |
-| ------------------- | ---------------------------------------------- |
-| `vitest.config.ts`  | jsdom 环境；alias 复用 `vite.config.ts` 的导出 |
-| `src/test/setup.ts` | 注册 jest-dom 的 DOM 断言                      |
-
-测试文件与被测代码同目录，命名 `*.test.ts(x)`：
-
-```
-src/routes.test.ts
-src/components/error-boundary.test.tsx
-src/hooks/use-external-links.test.tsx
-```
+## 前端与脚本
 
 ```bash
-pnpm test           # 跑一遍，CI 用这个
-pnpm test:watch     # 监听模式，边写边跑
-pnpm test:coverage  # 覆盖率报告
-pnpm test:scripts   # 版本、便携包与清理脚本的回归测试（Node 内置测试器）
+pnpm test
+pnpm test:watch
+pnpm test:coverage
+pnpm test:scripts
+pnpm verify
 ```
 
-覆盖率只统计 `src/`，已排除 `components/ui/`（shadcn 原子组件）和测试自身，具体范围以 [`vitest.config.ts`](../vitest.config.ts) 为准。
-**不要为了数字去测 getter。**
+测试与源码同目录，命名 `*.test.ts(x)`；jsdom 初始化和覆盖率范围见 [`vitest.config.ts`](../vitest.config.ts) 与 [`src/test/setup.ts`](../src/test/setup.ts)。普通单元测试不加载 `e2e/`。覆盖率当前不设置百分比门槛。
 
-## Mock Tauri API
+组件测试优先 mock `@/lib/tauri` 的业务能力，避免绑定插件内部实现。只在原生门面的少量契约测试中 mock `@tauri-apps/api/core`，确认真正的命令名、参数和结构化错误；真实 E2E 不使用这些 mock。
 
-组件测试跑在 jsdom 里，没有 Rust 进程，必须 mock。**优先 mock 自己封装的能力**，
-测试就不会绑死 Tauri 的内部实现：
+设置测试应覆盖旧版本迁移、未来版本拒写、首次加载期间编辑、在途保存、跨窗口旧事件、CAS 冲突、失败后重试和 StrictMode 生命周期。异步测试等待状态或持久化完成，不以固定延迟替代断言。
 
-```ts
-import { vi } from "vitest";
-
-vi.mock("@/lib/tauri", () => ({
-  isTauri: () => true,
-  invokeGreet: vi.fn().mockResolvedValue("你好，测试！"),
-}));
-```
-
-断言调用参数：
-
-```ts
-import { invokeGreet } from "@/lib/tauri";
-
-expect(vi.mocked(invokeGreet)).toHaveBeenCalledWith("测试", "zh");
-```
-
-只有一件事值得直接 mock `@tauri-apps/api/core`——验证命令名、参数名有没有写错。
-那是「IPC 契约」层面的测试，数量应该很少：
-
-```ts
-import { invoke } from "@tauri-apps/api/core";
-
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-
-expect(vi.mocked(invoke)).toHaveBeenCalledWith("greet", {
-  name: "测试",
-  language: "zh",
-});
-```
-
-**这也是为什么要统一走 `lib/tauri.ts`**：常规测试只需要 mock 一个地方。
-ESLint 的边界规则对 `*.test.*` / `*.spec.*` 开了例外，第二种写法不会被拦。
+脚本测试在独立临时目录创建数据，清理前确认绝对路径位于本次创建的目录中。初始化测试包含全文件校验、写入失败回滚、并发修改保留、目录链接拒绝与重复运行无差异；不得改真实项目身份或用户数据。
 
 ## Rust 测试
-
-命令函数就是普通函数，直接测。`src-tauri/src/commands.rs` 里有现成的写法：
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn greet_returns_greeting() {
-        assert_eq!(greet("世界", None).unwrap(), "你好，世界！这条消息来自 Rust。");
-    }
-
-    #[test]
-    fn greet_rejects_blank_name() {
-        assert!(greet("", None).is_err());
-        assert!(greet("   ", Some("en")).is_err());
-    }
-}
-```
-
-关键点：`#[tauri::command]` 标注的函数可以直接调用，不需要构造窗口或 App 实例。
-只有参数里带 `AppHandle`、`State` 的命令才需要 `tauri::test::mock_builder()` 搭环境。
 
 ```bash
 pnpm build
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml --locked
+pnpm bindings:check
 ```
 
-以上命令从仓库根目录运行。先构建前端，确保 `generate_context!` 需要的 `dist` 存在。涉及文件系统的测试应在临时目录中创建独立子目录并清理，避免并行用例互相污染或写入用户数据目录。
+从仓库根运行。先准备 `dist/`，供 `generate_context!` 读取。新增原生 feature 时，也要编译并检查相应 feature；正式和 E2E 构建不能相互替代。
 
-## 端到端（可选）
+无 `AppHandle` / `State` 的命令可直接测试。存储、数据库和更新策略优先在服务层注入临时路径与数据，避免为了纯逻辑启动图形界面。数据库测试应使用临时库，验证事务迁移、参数边界、未来 schema 保护与版本冲突。
 
-`tauri-driver` 只支持 Windows 与 Linux，macOS 不支持。接入成本较高，
-建议只在主链路（启动 → 加载数据 → 关键操作 → 退出）上做一两条，多了维护不动。
+IPC 改动后运行 `pnpm bindings:generate` 并提交生成文件；`bindings:check` 重新导出比较，Windows Rust CI 会阻止漂移。生成文件中的类型断言不提供运行时校验，Rust 边界测试仍然必需。
+
+## 真实桌面 E2E
 
 ```bash
-cargo install tauri-driver --locked
+pnpm test:e2e
+# 或分两步，适合复用刚生成的同一测试二进制
+pnpm e2e:build
+pnpm test:e2e --skip-build
 ```
 
-覆盖率报告用于查找未覆盖的风险分支，当前 CI 不设置百分比门槛；Rust 覆盖率工具尚未接入。
+[`e2e/build.mjs`](../e2e/build.mjs) 使用当前 Rust host、独立 `src-tauri/target/e2e/` 缓存、debug / no-bundle 构建，以及 `e2e` Cargo feature 和 [测试配置](../src-tauri/tauri.e2e.conf.json)。测试程序不会归档到正式 `installers/` / `portable/`。
+
+[`e2e/run.mjs`](../e2e/run.mjs) 创建临时数据目录和动态端口，依次运行两次独立 WDIO / 应用进程。第一阶段通过界面与真实 IPC 验证成功 / 结构化失败、中英文、最大化 / 还原 / 最小化、SQLite CRUD / 过期版本拒绝、次窗口去重和双向设置事件，以及 SVG 皮肤与强度；退出前等待完整原生快照保存。第二阶段重新启动应用，验证语言、皮肤、强度、原生设置与已保存笔记仍在。
+
+隔离规则：
+
+- 标识符使用品牌标识符的 `.e2e` 后缀，与正式单实例隔离。
+- `STARTER_TEST_DATA_DIR` 只在 `e2e` feature 生效；配置、SQLite、日志和窗口存档在各平台均位于临时根目录，两阶段共享后再清理。
+- Windows / Linux 的各 WebView 数据目录也在临时根内。macOS 的 WKWebView 不支持该目录选项，测试主 / 次窗口使用 incognito 非持久存储，重启断言仍验证原生设置与 SQLite；不依靠 WK 缓存保留偏好。平台限制见 [dataDirectory](https://v2.tauri.app/reference/config/#datadirectory) 与 [incognito](https://v2.tauri.app/reference/config/#incognito)。
+- 测试构建禁止读写系统自启动项；正式构建不包含 WebDriver 插件。
+- 测试通过 W3C execute 调用真实 Tauri IPC，没有浏览器 mock、签名跳过或任意系统目录读写。
+- runner 只管理本次直接创建的应用 / WDIO 子树；超时、中断或异常都会先清理受控子树，再清理本次临时数据。失败截图、原生日志和重启后的窗口截图保留在 `artifacts/e2e/`。
+
+`--skip-build` 只检查已有测试二进制的路径与哈希；源码或配置修改后应重新构建。测试 feature、标识符和数据路径保护不可用于正式分发构建。
+
+runner 直接启动内嵌 WebDriver 的测试程序，等待 `/status` 就绪，再让 WDIO 通过动态 localhost 端口连接 W3C WebDriver。没有接入 tauri-service 的自动焦点 / mock 层，不需要额外 Rust mock 插件、生产前端 bootstrap、tauri-driver 或 EdgeDriver；窗口切换由测试显式控制。内嵌驱动支持 Windows、Linux、macOS，平台细节见 [WebdriverIO 内嵌 provider](https://webdriver.io/docs/desktop-testing/tauri/platform-support)。升级驱动和 WDIO 时应同时运行真实主链路，不能只依靠依赖可安装或类型检查通过。
+
+Linux CI 额外安装 WebKitGTK、Xvfb、DBus 与 Openbox，以提供真正的窗口管理；macOS 保留系统红绿灯，窗口操作通过原生 API 验证。不能用 jsdom 通过或单个平台成功代替其他平台的真实结果。
 
 ## CI 里跑什么
 
-`.github/workflows/ci.yml` 的 `frontend` job 执行：版本一致性、脚本测试、格式检查、ESLint、类型检查（覆盖源码与 vite/vitest 配置文件）、单元测试、前端构建。
-`rust` job 在 Windows、Ubuntu、macOS 三个平台执行 `cargo clippy` 与 `cargo test`，`cargo fmt` 只在 Windows 跑一次。
+[`ci.yml`](../.github/workflows/ci.yml) 分开执行：
 
-端到端测试当前**没有**进 CI。接入时单开 job，明确目标平台、超时和失败日志；作为发布或合并门槛的关键链路不能静默忽略失败。
+- `frontend`：冻结安装、版本 / 脚本测试、格式、lint、类型、前端测试和构建。
+- `rust`：三端 Clippy / Rust 测试；Windows 另跑格式和生成绑定检查。
+- `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行两阶段 E2E；失败上传截图 / 日志。
+
+CI 配置覆盖的目标平台，不等于当前开发机全部实测过。发布时仍需在目标平台检查安装 / 卸载、签名、自启动、托盘和真实版本升级，尤其不能用测试构建代替正式安装包验收。

@@ -14,16 +14,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/providers/i18n";
 import { invokeGreet, isTauri } from "@/lib/tauri";
+import { nativeErrorText } from "@/lib/native-error";
 import type { Language } from "@/i18n/registry";
 
 const RUST_SNIPPET = `// src-tauri/src/commands.rs
 #[tauri::command]
-pub fn greet(name: &str, language: Option<&str>) -> Result<String, String> {
+#[specta::specta]
+pub fn greet(name: &str, language: Option<&str>) -> NativeResult<String> {
+    bounded_text(name, 800, "Name")?;
+    if name.chars().count() > 200 {
+        return Err(NativeError::new(ErrorCode::InputTooLong, "Name exceeds 200 characters"));
+    }
     let name = name.trim();
     let english = language == Some("en");
     if name.is_empty() {
-        return Err(if english { "Name cannot be empty" }
-                   else { "名称不能为空" }.into());
+        return Err(NativeError::new(ErrorCode::NameRequired,
+            if english { "Name cannot be empty" } else { "名称不能为空" }));
     }
     Ok(if english {
         format!("Hello, {name}! This message comes from Rust.")
@@ -32,12 +38,14 @@ pub fn greet(name: &str, language: Option<&str>) -> Result<String, String> {
     })
 }`;
 
-const TS_SNIPPET = `// lib/tauri.ts
+const TS_SNIPPET = `// pnpm bindings:generate exports Rust DTOs and commands
+// lib/tauri.ts — all renderer IPC uses this adapter
 export async function invokeGreet(
   name: string, language: Language = "zh",
 ): Promise<string> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name, language });
+  const result = await commands.greet(name, language);
+  if (result.status === "error") throw new NativeBridgeError(result.error);
+  return result.data;
 }
 
 // pages/bridge.tsx
@@ -83,7 +91,7 @@ export default function Bridge() {
       toast.success(t("bridge.success"));
     } catch (error) {
       if (!mounted.current || currentLanguage.current !== language) return;
-      const message = t("bridge.failed", { error: String(error) });
+      const message = t("bridge.failed", { error: nativeErrorText(error, t) });
       setResult({ message, language });
       toast.error(message);
     } finally {
@@ -131,6 +139,7 @@ export default function Bridge() {
               </Label>
               <Input
                 id="name"
+                maxLength={200}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={t("bridge.namePlaceholder")}

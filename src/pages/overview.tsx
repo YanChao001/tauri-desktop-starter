@@ -24,6 +24,8 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/providers/i18n";
+import { useSettings } from "@/providers/settings";
+import { APP_CONFIG } from "@/config/app";
 
 const STACK = [
   "Tauri 2",
@@ -150,6 +152,47 @@ async function copyCommand(command: string, message: string, failure: string) {
 
 export default function Overview() {
   const { t } = useI18n();
+  const { settings } = useSettings();
+
+  if (settings.appMode === "minimal")
+    return (
+      <div className="space-y-6">
+        <section className="rounded-2xl border bg-card/75 p-8">
+          <SparklesIcon className="mb-4 size-8 text-primary" />
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {t("home.title", { name: APP_CONFIG.name })}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t("home.description")}
+          </p>
+        </section>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            { to: "/desktop", label: "home.desktop" },
+            { to: "/database", label: "home.database" },
+            { to: "/settings", label: "home.settings" },
+          ].map((item) => (
+            <Card key={item.to}>
+              <CardContent className="pt-5">
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="h-auto w-full justify-between"
+                >
+                  <Link to={item.to}>
+                    {t(
+                      item.label as
+                        "home.desktop" | "home.database" | "home.settings",
+                    )}
+                    <ArrowRightIcon className="size-4" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
 
   return (
     <div className="space-y-6">
@@ -191,6 +234,11 @@ export default function Overview() {
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="col-span-full">
+          <Badge variant="outline" className="font-normal">
+            {t("common.sampleData")}
+          </Badge>
+        </div>
         {STATS.map((stat) => (
           <Card key={stat.key} size="sm" className="gap-2">
             <CardHeader className="gap-1">

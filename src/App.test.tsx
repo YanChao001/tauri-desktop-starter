@@ -6,6 +6,11 @@ import App from "./App";
 
 vi.mock("@/hooks/use-external-links", () => ({ useExternalLinks: vi.fn() }));
 vi.mock("@/hooks/use-reveal-window", () => ({ useRevealWindow: vi.fn() }));
+vi.mock("@/providers/commands", () => ({
+  CommandsProvider: ({ children }: { children: ReactNode }) => children,
+}));
+vi.mock("@/components/command-palette", () => ({ CommandPalette: () => null }));
+vi.mock("@/components/desktop-effects", () => ({ DesktopEffects: () => null }));
 vi.mock("@/layouts/app-shell", () => ({
   AppShell: () => <Outlet />,
 }));

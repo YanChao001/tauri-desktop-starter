@@ -2,6 +2,8 @@
 
 按现象查，每条都给出原因和可执行的解法。
 
+环境或首次启动失败时先运行 `node scripts/doctor.mjs`，按实际工具 / 平台检测结果修复。它不需要 npm 依赖，说明见 [环境诊断](./development.md#环境诊断)。
+
 ## 先看日志
 
 release 构建没有控制台，日志落在系统日志目录下的 `app.log`：
@@ -19,7 +21,7 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
 > 日志文件是 UTF-8 无 BOM。Windows PowerShell 5.1 默认按 GBK 读，中文会显示成乱码：
 > 用 `Get-Content app.log -Encoding UTF8`，或者直接用 VS Code / 记事本打开。
 
-报问题时附上这个文件，比描述「它就是打不开」有用得多。
+应用能启动时，可先在「诊断」页面查看环境与脱敏日志预览，再复制报告。原始日志和诊断报告都应在反馈前人工检查，移除业务数据或未覆盖的敏感信息。
 
 ## 窗口不出现 / 白屏
 
@@ -36,9 +38,9 @@ release 构建没有控制台，日志落在系统日志目录下的 `app.log`�
 
 ## 双击图标没反应
 
-**可能原因**：已有实例未能恢复窗口，或新进程在初始化阶段退出。本模板没有托盘功能，重复启动的回调会还原、显示并聚焦主窗口。
+**可能原因**：已有实例隐藏到托盘、未能恢复窗口，或新进程在初始化阶段退出。启用后台运行且托盘可用时，关窗会隐藏；托盘「显示窗口」和重复启动都会恢复主窗口，托盘 / 菜单「退出」明确结束应用。
 
-**处理**：先查看任务管理器和日志，确认进程归属后关闭旧实例再试；同时检查 `single_instance` 回调和后续插件初始化错误。
+**处理**：先检查托盘和诊断 / 日志；确认后台运行偏好、托盘可用状态、`single_instance` 回调与插件初始化错误。已有次窗口时恢复主窗口也会复用或重建正确标签的窗口。
 
 ## WebView2 缺失（Win10 老机器）
 
@@ -101,13 +103,15 @@ Stop-Process -Id <pid>
 
 ## invoke 报 command not found
 
-**原因**：Rust 侧函数没注册，或前端命令名拼错（大小写敏感）。
+**原因**：Rust 侧函数未在 `bindings.rs` 注册、旧二进制仍在运行，或生成绑定未同步。
 
 ```rust
-.invoke_handler(tauri::generate_handler![commands::greet, commands::read_config])
+// src-tauri/src/bindings.rs 的命令清单内
+commands::greet,
+commands::read_config,
 ```
 
-命令名就是函数名，前端 `invoke("read_config")` 必须完全一致。
+运行 `pnpm bindings:generate`，通过 `lib/tauri.ts` 调用生成的命令，再重新编译 / 启动原生程序；`pnpm bindings:check` 验证已提交文件未漂移。不要在页面新增字符串命令规避门面。
 
 ## invoke 报 not allowed / permission denied
 
@@ -206,9 +210,28 @@ Remove-Item Env:CARGO_BUILD_JOBS
 
 **原因**：签名校验失败，或 `latest.json` 里的平台标识与实际不符。
 
-- 确认构建时设置了 `TAURI_SIGNING_PRIVATE_KEY`，且与 `tauri.conf.json` 的 `pubkey` 配对。
+- 确认构建时设置了 `TAURI_SIGNING_PRIVATE_KEY`，且与 `app.config.json` 或部署覆盖 `deployment.json` 中的 `updates.publicKey` 配对。
 - 检查 `platforms` 的 key 是否为 `windows-x86_64` 这类准确标识。
+- 不支持旧版兼容 ZIP 更新；发布流程使用 v2 原生包，签名后不得再修改安装包。元数据版本必须与签名覆盖的版本一致。
 - 默认更新器只接受更高版本，Windows 安装器还有独立的降级限制；回滚策略见 [构建与发布](./build-release.md#回滚)。
+
+## 设置保存失败或版本不兼容
+
+「保存失败」保留未提交输入，先用界面的重试；多窗口冲突会读取新 revision并合并本地字段，持续冲突时保留现场，不直接删除整个数据目录。配置目录中的 `settings.json` 可能有损坏备份，先保留备份再排查权限、磁盘和原子替换失败。
+
+检测到未来设置 schema 时禁止旧版本写回，优先换回能够读取该存档的新版本；明确执行「重置偏好」才允许恢复默认。重置保留语言，不删除笔记或修改系统自启动。迁移与数据范围见 [架构说明](./architecture.md#状态管理与设置迁移)。
+
+## SQLite 保存冲突或数据库打不开
+
+笔记更新使用 `expectedVersion`；其他窗口已保存时会拒绝旧版本，刷新后核对内容再保存。数据库位于应用数据目录的 `starter.sqlite3`，不要通过删除数据库处理普通编辑冲突。
+
+未来 `PRAGMA user_version` 会被旧程序拒绝，不能强行调低版本号；保留数据库、使用对应新版本并检查日志。迁移、事务与原生错误码均由 Rust 服务负责，页面不会获得通用 SQL 或文件访问权限。
+
+## E2E 无法连接或窗口操作超时
+
+使用 `pnpm test:e2e`，不要直接把正式 exe 交给驱动。测试构建必须包含 `e2e` feature、独立 `.e2e` 标识和测试 overlay；runner 等内嵌服务 `/status` 就绪后才连接动态端口。源码 / 配置改动后重新 `pnpm e2e:build`，不要继续复用旧收据。
+
+先查看 `artifacts/e2e/` 的截图和日志。Linux 需要 Xvfb、DBus和窗口管理器，macOS 使用内嵌 provider；具体环境与命令见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。只管理本次测试进程和临时目录，勿用清理真实用户数据解决测试隔离问题。
 
 ## 还是没解决
 

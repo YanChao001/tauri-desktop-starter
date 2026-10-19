@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.starter.desktop.e2e",
+  "productName": "Tauri Starter E2E",
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "e2e-driver",
+          "windows": ["main", "secondary"],
+          "permissions": [
+            "wdio-webdriver:default",
+            "core:window:allow-is-visible",
+            "core:window:allow-hide",
+            "core:window:allow-is-minimized",
+            "core:window:allow-unminimize"
+          ]
+        }
+      ]
+    }
+  },
+  "bundle": { "active": false }
+}
