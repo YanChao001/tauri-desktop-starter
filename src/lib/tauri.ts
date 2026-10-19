@@ -38,6 +38,45 @@ export async function revealWindow(): Promise<void> {
   }
 }
 
+/** 最小化主窗口。 */
+export async function minimizeWindow(): Promise<void> {
+  if (!isTauri()) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().minimize();
+}
+
+/** 在最大化与还原之间切换，返回切换后的状态。 */
+export async function toggleMaximizeWindow(): Promise<boolean> {
+  if (!isTauri()) return false;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const window_ = getCurrentWindow();
+  await window_.toggleMaximize();
+  return window_.isMaximized();
+}
+
+/** 关闭主窗口。 */
+export async function closeWindow(): Promise<void> {
+  if (!isTauri()) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().close();
+}
+
+/** 读取主窗口是否最大化。 */
+export async function isWindowMaximized(): Promise<boolean> {
+  if (!isTauri()) return false;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().isMaximized();
+}
+
+/** 订阅窗口尺寸变化，返回取消订阅函数。 */
+export async function onWindowResized(
+  handler: () => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().onResized(handler);
+}
+
 /**
  * 调用 Rust 侧的 greet 命令。
  *

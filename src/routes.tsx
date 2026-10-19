@@ -1,13 +1,24 @@
-import type { ComponentType } from "react";
+import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import {
+  BlocksIcon,
   LayoutDashboardIcon,
   SettingsIcon,
+  SparklesIcon,
   TerminalIcon,
   type LucideIcon,
 } from "lucide-react";
-import Bridge from "@/pages/bridge";
-import Overview from "@/pages/overview";
-import Settings from "@/pages/settings";
+import type { DictKey } from "@/providers/i18n";
+
+/**
+ * 页面按路由懒加载：首屏只解析当前页，组件演示页那堆控件不会拖慢启动。
+ */
+const Overview = lazy(() => import("@/pages/overview"));
+const Components = lazy(() => import("@/pages/components"));
+const Motion = lazy(() => import("@/pages/motion"));
+const Bridge = lazy(() => import("@/pages/bridge"));
+const Settings = lazy(() => import("@/pages/settings"));
+
+type PageComponent = ComponentType | LazyExoticComponent<ComponentType>;
 
 /**
  * 路由与侧边导航的唯一数据源。
@@ -16,10 +27,10 @@ import Settings from "@/pages/settings";
 export type AppRoute = {
   /** 路由路径，首页是 "/" */
   path: string;
-  /** 侧边栏与顶栏显示的名称 */
-  label: string;
+  /** 导航与页面标题的 i18n key */
+  labelKey: DictKey;
   icon: LucideIcon;
-  component: ComponentType;
+  component: PageComponent;
   /**
    * 作为父路由的默认页，只有首页该为 true。
    * 它和 `exact` 是两件事：前者决定路由结构，后者只影响导航高亮。
@@ -32,27 +43,39 @@ export type AppRoute = {
 export const APP_ROUTES: AppRoute[] = [
   {
     path: "/",
-    label: "概览",
+    labelKey: "nav.overview",
     icon: LayoutDashboardIcon,
     component: Overview,
     index: true,
     exact: true,
   },
   {
+    path: "/components",
+    labelKey: "nav.components",
+    icon: BlocksIcon,
+    component: Components,
+  },
+  {
+    path: "/motion",
+    labelKey: "nav.motion",
+    icon: SparklesIcon,
+    component: Motion,
+  },
+  {
     path: "/bridge",
-    label: "前端 ↔ Rust",
+    labelKey: "nav.bridge",
     icon: TerminalIcon,
     component: Bridge,
   },
   {
     path: "/settings",
-    label: "设置",
+    labelKey: "nav.settings",
     icon: SettingsIcon,
     component: Settings,
   },
 ];
 
-/** 按当前路径找对应路由，用于顶栏标题与导航高亮。 */
+/** 按当前路径找对应路由，用于面包屑与导航高亮。 */
 export function matchRoute(pathname: string): AppRoute {
   const matched = APP_ROUTES.find((route) =>
     route.exact

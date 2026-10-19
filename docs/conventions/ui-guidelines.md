@@ -7,9 +7,34 @@
 
 - 组件库：shadcn/ui（`radix-nova` 风格），配置在 `components.json`
 - 基础样式：`src/styles/shadcn.css`（内置自上游，勿手改；升级方式见文件头注释）
-- 字体：Geist Variable（随包内置，仅拉丁字符，中文回退系统字体）
+- 字体：默认 Geist Variable；设置页可切到系统字体 / 衬线 / 等宽
 - 圆角：`--radius` 变量派生，组件里用 `rounded-md` / `rounded-lg`，不要写 `rounded-[7px]`
-- 主题：`next-themes` + `.dark` class，颜色全部走 CSS 变量
+- 主题：`next-themes` + `.dark` class；颜色全部走 CSS 变量
+
+## 外观设置
+
+外观由 `<html>` 上的 data 属性驱动，组件只写语义 token，不判断当前设置：
+
+| 属性              | 取值                                                      | 作用                                                         |
+| ----------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| `data-accent`     | neutral / indigo / blue / emerald / amber / rose / violet | 覆盖 `--primary`、`--ring`、`--chart-1`、`--sidebar-primary` |
+| `data-radius`     | sharp / soft / round                                      | 改写 `--radius`                                              |
+| `data-font`       | geist / system / serif / mono                             | 改写 `--font-sans`                                           |
+| `data-font-size`  | sm / md / lg                                              | 根字号 14 / 16 / 17px                                        |
+| `data-background` | plain / gradient / grid / dots                            | body 背景纹理                                                |
+| `data-motion`     | full / reduced                                            | 全局压缩动画与过渡                                           |
+
+**加一个外观项的顺序**：`providers/settings.tsx` 加类型、默认值、校验 →
+`applySettings` 写 data 属性 → `index.css` 写对应规则 → 设置页加控件。
+不要在业务组件里读 `useSettings()` 来决定颜色。
+
+## 标题栏
+
+- 高度 40px（`h-10`），自绘：左侧应用名与菜单，右侧主题切换与窗口按钮。
+- 拖拽区域用 `data-tauri-drag-region`，只加在空白容器上；按钮与菜单不要加。
+- 窗口按钮只在 Tauri 原生窗口显示；浏览器预览显示「浏览器预览」小标签。
+- macOS 保留系统红绿灯（`tauri.macos.conf.json`），标题栏左侧留 `pl-[78px]` 并隐藏自绘按钮。
+- 平台判断统一走 `lib/platform.ts`，不要在组件里解析 UA。
 
 ## 颜色：只用语义 token
 
@@ -40,9 +65,10 @@
 
 | 区域         | 值      | 类名                      |
 | ------------ | ------- | ------------------------- |
+| 标题栏高度   | 40px    | `h-10`                    |
+| 页面标题栏   | 44px    | `h-11`                    |
 | 侧边栏宽度   | 224px   | `w-56`                    |
-| 顶栏高度     | 56px    | `h-14`                    |
-| 内容最大宽度 | 896px   | `max-w-4xl`               |
+| 内容最大宽度 | 1024px  | `max-w-5xl`               |
 | 内容区内边距 | 24px    | `px-6 py-6`               |
 | 卡片之间     | 12px    | `gap-3`                   |
 | 页面区块之间 | 20–24px | `space-y-5` / `space-y-6` |
@@ -113,6 +139,9 @@
 - 交互反馈 150ms 左右，页面切换不超过 300ms。
 - 只动 `transform` 与 `opacity`，不要动 `width`/`height`/`top`（会触发重排）。
 - `prefers-reduced-motion` 下应能降级，至少做到不阻塞操作。
+- 主题切换用 View Transitions 的圆形裁剪（`hooks/use-theme-switch.ts`）；
+  关闭动效时直接切换，不播放动画。
+- 列表入场用 `animate-fade-up` + 每项 40ms 延迟，不要给每个元素写一套 keyframes。
 
 ## 中文排版
 

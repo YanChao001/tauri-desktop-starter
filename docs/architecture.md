@@ -42,16 +42,17 @@ routes.tsx ── 路由与导航的唯一数据源
      ▼
 layouts/ ──> pages/ ──> components/
      │           │            │
-     └───────────┴────────────┴──> hooks/ ──> lib/ ──> @tauri-apps/api
+     └───────────┴────────────┴──> hooks/ ──> providers/ ──> lib/ ──> @tauri-apps/api
 ```
 
 | 层            | 职责                                      | 不该做的事                          |
 | ------------- | ----------------------------------------- | ----------------------------------- |
 | `routes.tsx`  | 路由路径、标题、图标、页面组件            | 不放业务逻辑                        |
-| `layouts/`    | 应用外壳（侧边栏、顶栏、内容区）          | 不写页面内容                        |
+| `layouts/`    | 应用外壳（标题栏、侧边栏、内容区）        | 不写页面内容                        |
 | `pages/`      | 路由级编排、组合组件                      | 不写复杂业务逻辑，不直接调 `invoke` |
 | `components/` | 可复用的展示与交互单元                    | 不感知路由，不直接读全局状态        |
 | `hooks/`      | 可复用的 React 逻辑（副作用、订阅、状态） | 不含 JSX，不承载业务规则            |
+| `providers/`  | 跨页面的 React Context（外观偏好、i18n）  | 不放业务数据，不渲染页面结构        |
 | `lib/`        | 纯 TS：IPC 封装、格式化、校验             | 不含 JSX，不 import React           |
 
 **唯一例外**：`components/ui/` 是第三方生成的原子组件，不受上述约束。
@@ -73,6 +74,28 @@ layouts/ ──> pages/ ──> components/
 这条规则**由 ESLint 强制**，不是靠自觉：`eslint.config.js` 里同时配了
 `no-restricted-imports`（静态 import）和 `no-restricted-syntax`（动态 `import()`）。
 后者必不可少——本工程的 Tauri 调用全是动态引入，只配前者等于没配。
+
+### 界面偏好与多语言
+
+`providers/` 是唯一允许放全局 React Context 的层：
+
+- `providers/settings.tsx`：外观偏好（主题色、圆角、字体、字号、背景、动效、语言、菜单栏），
+  写入 `localStorage`，并把值映射到 `<html>` 的 `data-*`；样式全部由 `index.css` 接管。
+  加设置项的顺序是「类型 → 默认值 → `applySettings` → CSS → 设置页」。
+- `providers/i18n.tsx`：`[中文, English]` 字典 + `t(key, vars)`，不引入 i18next。
+  新增文案必须两种语言都写，缺失时 TypeScript 会报错。
+- `hooks/use-theme-switch.ts`：统一主题切换入口，View Transitions 的圆形扩散也在这里。
+
+### 窗口外壳
+
+窗口去掉了原生边框（`decorations: false`），标题栏由 `components/title-bar.tsx` 绘制：
+拖拽区域用 `data-tauri-drag-region`，按钮调用 `lib/tauri.ts` 封装的窗口命令。
+
+macOS 例外：`src-tauri/tauri.macos.conf.json` 把窗口改回 `decorations: true` +
+`titleBarStyle: "Overlay"`，保留系统红绿灯；前端检测到 macOS 时会隐藏自绘按钮并让出左侧空间。
+
+**注意**：平台配置按 JSON Merge Patch 合并，`app.windows` 数组是整体替换。
+改窗口字段时 `tauri.conf.json` 与 `tauri.macos.conf.json` 必须同步，否则 macOS 会丢字段。
 
 ## 业务代码放哪
 
@@ -177,13 +200,14 @@ const unlisten = await listen<number>("download-progress", (e) =>
 
 按这个顺序升级，不要一上来就上库：
 
-| 场景                                   | 方案                      | 现在有吗         |
-| -------------------------------------- | ------------------------- | ---------------- |
-| 单个组件内部                           | `useState` / `useReducer` | 有               |
-| 兄弟组件共享                           | 状态提升到共同父级        | 有               |
-| 跨页面 UI 状态（侧边栏折叠、当前项目） | Zustand                   | 未安装，需要时装 |
-| 来自数据库/接口、需要缓存与失效        | TanStack Query            | 未安装           |
-| 表单 + 校验                            | react-hook-form + zod     | 未安装           |
+| 场景                                 | 方案                                    | 现在有吗         |
+| ------------------------------------ | --------------------------------------- | ---------------- |
+| 单个组件内部                         | `useState` / `useReducer`               | 有               |
+| 兄弟组件共享                         | 状态提升到共同父级                      | 有               |
+| 跨页面 UI 偏好（主题、字体、语言）   | `providers/settings.tsx` + localStorage | 有               |
+| 跨页面业务状态（当前项目、协作状态） | Zustand                                 | 未安装，需要时装 |
+| 来自数据库/接口、需要缓存与失效      | TanStack Query                          | 未安装           |
+| 表单 + 校验                          | react-hook-form + zod                   | 未安装           |
 
 判断标准：**能靠组件树解决的就别引入全局状态**。全局状态每多一个，调试成本就多一分。
 
@@ -223,6 +247,7 @@ src/
     ui/             shadcn 原子组件（不改导出名）
     <domain>/       跨页面复用的业务组件
   hooks/            可复用的 React 逻辑，use-xxx.ts
+  providers/        跨页面 React Context（外观偏好、i18n）
   lib/              纯 TS：IPC 封装、工具、校验
   styles/           内置的 shadcn 基础样式（上游逐字复制，勿手改）
 src-tauri/
