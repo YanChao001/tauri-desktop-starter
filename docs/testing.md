@@ -4,7 +4,7 @@
 
 前端已接入 Vitest（jsdom + Testing Library），Rust 用内置的 `cargo test`，CI 两边都会跑。
 
-模板只带了 7 个用例，覆盖两个最容易悄悄坏掉的地方：路由匹配、错误边界。
+模板带了 16 个用例，覆盖四处最容易悄悄坏掉的地方：路由匹配、错误边界、剪贴板降级链路、浏览器预览守卫。
 **这是骨架，不是覆盖率目标。** 写业务时按下面的分层往上加。
 
 ## 测试分层
@@ -139,7 +139,7 @@ cargo install tauri-driver --locked
 
 ## CI 里跑什么
 
-`.github/workflows/ci.yml` 目前执行：格式检查、ESLint、类型检查、前端构建、`cargo fmt`、`cargo clippy`、`cargo test`。
+`.github/workflows/ci.yml` 的 `frontend` job 执行：格式检查、ESLint、类型检查（覆盖源码与 vite/vitest 配置文件）、单元测试、前端构建。
+`rust` job 在 Windows、Ubuntu、macOS 三个平台执行 `cargo clippy` 与 `cargo test`，`cargo fmt` 只在 Windows 跑一次。
 
-接入测试后，把 `pnpm test` 加进 `frontend` job；端到端测试单开一个 job 并设为允许失败，
-避免偶发超时卡住合并。
+端到端测试单开一个 job 并设为允许失败，避免偶发超时卡住合并。

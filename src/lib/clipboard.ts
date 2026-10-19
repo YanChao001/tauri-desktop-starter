@@ -8,8 +8,13 @@
  */
 export async function copyText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // 某些 WebView 组合下 API 存在但调用会抛（安全上下文判定差异），
+      // 不能在这里把错误抛给调用方，落到下面的降级路径
+    }
   }
 
   const textarea = document.createElement("textarea");

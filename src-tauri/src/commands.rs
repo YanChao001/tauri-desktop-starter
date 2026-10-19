@@ -12,6 +12,7 @@
 /// 返回 `Result` 是刻意的：Tauri 会把 `Err` 原样 reject 到前端。
 /// 模板想示范的约定是「校验在边界完成，错误由调用方展示」，
 /// 而不是把校验散落在页面里。
+/// 错误需要分叉处理时，升级为 `serde::Serialize` 的 enum，见 architecture.md。
 #[tauri::command]
 pub fn greet(name: &str) -> Result<String, String> {
     let name = name.trim();
