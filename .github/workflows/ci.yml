@@ -17,9 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 版本由 package.json 的 packageManager 字段决定，不在这里写死
       - uses: pnpm/action-setup@v4
-        with:
-          version: 12
 
       - uses: actions/setup-node@v4
         with:
@@ -45,15 +44,26 @@ jobs:
         run: pnpm build
 
   rust:
-    name: Rust 校验
-    runs-on: windows-latest
+    name: Rust 校验（${{ matrix.platform }}）
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
+      fail-fast: false
+      matrix:
+        # 平台差异（cfg 分支、系统库、链接器）必须在三端都过一遍编译，
+        # 否则 macOS/Linux 的问题要到 release 流水线才第一次暴露
+        platform: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装 Linux 系统依赖
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
       # tauri::generate_context! 会在编译期读取前端产物，必须先构建 dist
       - uses: pnpm/action-setup@v4
-        with:
-          version: 12
 
       - uses: actions/setup-node@v4
         with:
@@ -65,15 +75,19 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
+      # 版本与 rust-toolchain.toml 保持一致，升级时两处一起改
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.99.1"
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
+      # 格式与平台无关，跑一次就够
       - name: 格式检查
+        if: matrix.platform == 'windows-latest'
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 

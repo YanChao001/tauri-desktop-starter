@@ -1,0 +1,36 @@
+name: Dependency Audit
+
+# 每周一自动审计一次，紧跟 dependabot 的升级 PR（也是周一）。
+# 有已知漏洞时任务变红；修复靠升级依赖，无法升级时按 security.md 记录原因与缓解措施。
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+jobs:
+  pnpm-audit:
+    name: npm 依赖审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 只读锁文件，不需要安装依赖。发现漏洞时退出码非零
+      - name: pnpm audit
+        run: pnpm audit
+
+  cargo-audit:
+    name: Rust 依赖审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 只读 Cargo.lock，基于 RustSec 数据库比对
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
