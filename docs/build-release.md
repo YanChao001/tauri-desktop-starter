@@ -17,13 +17,13 @@
 pnpm version:set 1.2.0
 ```
 
-脚本先读取并校验所有版本文件，再同时更新上面四处；Cargo 包名与 npm 包名不同也会正确定位自身锁文件条目。`pnpm version:check` 检查四处版本一致，CI 和发布流程都会执行。
+脚本先读取并校验所有版本文件，用项目锁定的 Prettier 与仓库配置格式化 JSON，再通过共享文件事务暂存、检测并发修改并替换四处内容；失败时回滚本轮写入，遇到并发编辑则保留用户内容与原备份并报告冲突。Cargo 包名与 npm 包名不同也会正确定位自身锁文件条目。`pnpm version:check` 检查四处版本一致，CI 和发布流程都会执行。
 
 当前包含 MSI，版本须满足 major ≤ 255、minor ≤ 255、patch ≤ 65535。预发布标识或构建元数据若用于 MSI 第四段，必须为 ≤ 65535 的整数；使用 `beta.1` 等文本时，需要显式配置 `bundle.windows.wix.version` 或仅构建 NSIS。非法版本在写入前就会被拒绝。
 
 版本校验依据项目配置执行；若选择仅构建 NSIS 来使用文本预发布，需先在配置中移除 MSI 目标，仅传 `--bundles nsis` 不会改变版本校验依据。
 
-> 版本号是**用户可见的契约**：自动更新靠它判断新旧，降级安装会被拒绝。已经发布过的版本号不要复用。
+自动更新通过版本号判断新旧，安装器也可能限制降级。已经发布的版本号不要复用；回滚方式见 [回滚](#回滚)。
 
 ## 构建
 
@@ -39,6 +39,9 @@ pnpm app:build
 | Windows | `msi/*.msi`                        | 适合企业分发                       |
 | macOS   | `dmg/*.dmg`、`macos/*.app`         |                                    |
 | Linux   | `deb/*.deb`、`appimage/*.AppImage` |                                    |
+| Linux   | `rpm/*.rpm`                        | RPM 系发行版分发                   |
+
+当前配置 `bundle.targets: "all"`，Linux 同时包含 DEB、RPM 与 AppImage；默认格式依据当前锁定 [Tauri CLI 的平台目标定义](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle/settings.rs#L1068-L1096)，升级 CLI 后复核。
 
 只出某一个格式：
 
@@ -47,6 +50,8 @@ pnpm app:build --bundles nsis
 ```
 
 Vite 的 `dist/` 与 Cargo 默认 `src-tauri/target/` 是编译中间产物与缓存；直接运行 `pnpm tauri build` 保留 Tauri 原始输出，不执行项目脚本的分发收集。需要交付时使用 `pnpm app:build` 或 `pnpm app:portable`，只清理交付目录使用 `pnpm clean:artifacts`。
+
+浏览器在线演示使用同一份 React 源码，单独构建到 `dist-web/` 并由 GitHub Pages 托管；构建、预览和部署见 [开发指南](./development.md#浏览器演示构建与部署)。原生能力与桌面安装包仍按本文的目标平台流程验证和发布。
 
 分发目录按项目版本与 Rust target triple 隔离；每次只更新当前版本 / target 下对应的 `installers/` 或 `portable/`，保留其他版本、target 和另一类产物。自定义 Cargo 编译目录不会改变 `artifacts/` 的统一位置。
 
@@ -87,7 +92,7 @@ pnpm app:portable --skip-build # 复用已有构建；确认源码与版本后�
 
 产物包含 exe、`使用说明.txt` 与 `manifest.json`，压缩后即可分发。适用前提与限制：
 
-- 目标机器需要 WebView2 运行时（Win11 自带；老 Win10 缺失时按说明安装）。
+- 目标机器需要 WebView2 运行时；缺失时按便携目录内说明安装。
 - 窗口位置、日志仍写入当前用户的 AppData，不随 exe 移动；要做"绿色版"需自行改路径。
 - 设置与 SQLite 同样按用户存储；关闭窗口或更新前先保存笔记草稿，便携目录不包含未保存内容。
 - 当前 Windows 默认更新入口指向 NSIS。便携版内安装更新会启动安装器并转为安装版，不会原地替换便携 exe；要保留免安装形态，请手动下载新版本 portable。
@@ -106,7 +111,7 @@ pnpm branding:check     # 只检查是否与源文件一致，不改正式输出
 
 `app-icon.svg` 是共用标志，前端和 favicon 直接使用它；四份 `installer-*.svg` 引用同一标志，再增加各自画布的装饰与留白。图形不依赖系统字体、嵌入位图或网络图片。品牌名称、版本与中英文安装文案由配置和原生文字控件显示，图片中不写死这些内容。
 
-[`scripts/branding.mjs`](../scripts/branding.mjs) 调用 resvg 渲染安装器 SVG、编码 24 位 BMP，并使用项目锁定的 Tauri CLI 生成完整的系统图标尺寸。ICO 与 ICNS 的层顺序经过规范化，避免重复生成产生无意义差异。无需 Python、Pillow 或手动逐张导出。
+[`scripts/branding.mjs`](../scripts/branding.mjs) 调用 resvg 按三倍分辨率直接渲染安装器 SVG、编码 24 位 BMP，并使用项目锁定的 Tauri CLI 生成完整的系统图标尺寸。ICO 与 ICNS 的层顺序经过规范化，避免重复生成产生无意义差异。无需 Python、Pillow 或手动逐张导出。
 
 | SVG 源                                        | 使用位置                             | 生成产物                                               |
 | --------------------------------------------- | ------------------------------------ | ------------------------------------------------------ |
@@ -118,23 +123,25 @@ pnpm branding:check     # 只检查是否与源文件一致，不改正式输出
 
 `src-tauri/icons/` 和 `src-tauri/installer/` 是平台要求的输出位置，保留 Tauri 的常规目录。设计源只有上表这些 SVG，派生图片需提交，勿手工修改；`pnpm verify` 和 CI 会检查是否同步。切换品牌时先修改 `app.config.json` 并运行初始化，再修改共用 SVG 并重新生成资源。
 
+Windows 应用图标在 Rust 构建时嵌入 exe，`src-tauri/build.rs` 监听 `icons/` 触发资源重编译；安装器外层图标单独由 NSIS 配置读取。最终验收需同时检查安装器、安装后的 exe 和快捷方式，不能只看源 ICO 或安装器外观。NSIS 显式使用已安装 exe 的图标索引 0，并在安装后刷新 Shell 图标缓存；旧图标排查见 [排障手册](./troubleshooting.md#安装后仍显示旧图标)。
+
 SVG 能统一修改来源，也适合前端直接使用；Windows 系统图标必须保留 ICO，macOS 使用 ICNS，Linux 使用 PNG，NSIS / WiX 的对应插画控件仍需 BMP，不能仅改后缀或在这些控件里直接放 SVG。必要图标尺寸不删减；最终安装包体积受图形细节和压缩方式影响，并不保证每种派生格式都更小。格式要求见 [Tauri 图标说明](https://v2.tauri.app/develop/icons/) 和 [NSIS Modern UI](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)。
 
 NSIS 与 MSI 的生成文件路径配置在 `tauri.conf.json > bundle.windows`：
 
-| 打包器 | 配置项                 | 尺寸    | 用途                  |
-| ------ | ---------------------- | ------- | --------------------- |
-| NSIS   | `nsis.headerImage`     | 150×57  | 内页页眉              |
-| NSIS   | `nsis.sidebarImage`    | 164×314 | 欢迎页 / 完成页侧栏   |
-| NSIS   | `nsis.installerIcon`   | .ico    | 安装器图标            |
-| NSIS   | `nsis.uninstallerIcon` | .ico    | 卸载器图标            |
-| WiX    | `wix.bannerPath`       | 493×58  | 内页顶部横幅          |
-| WiX    | `wix.dialogImagePath`  | 493×312 | 欢迎 / 完成对话框背景 |
+| 打包器 | 配置项                 | 设计尺寸   | BMP 像素尺寸 | 用途                  |
+| ------ | ---------------------- | ---------- | ------------ | --------------------- |
+| NSIS   | `nsis.headerImage`     | 150×57     | 450×171      | 内页页眉              |
+| NSIS   | `nsis.sidebarImage`    | 164×314    | 492×942      | 欢迎页 / 完成页侧栏   |
+| NSIS   | `nsis.installerIcon`   | ICO 多尺寸 | —            | 安装器图标            |
+| NSIS   | `nsis.uninstallerIcon` | ICO 多尺寸 | —            | 卸载器图标            |
+| WiX    | `wix.bannerPath`       | 493×58     | 1479×174     | 内页顶部横幅          |
+| WiX    | `wix.dialogImagePath`  | 493×312    | 1479×936     | 欢迎 / 完成对话框背景 |
 
 要点：
 
 - 位图用 24 位 BMP（不要带 alpha），配色与主界面一致（neutral + indigo 强调色）。
-- NSIS 在 125% / 150% 缩放下会整体放大小图，图里不要放小字，否则会发虚。
+- NSIS 页眉、欢迎页和完成页按控件的实际像素尺寸，用 GDI `HALFTONE` 缩放三倍分辨率原图，避免默认缩放产生锯齿或放大低分辨率图像。MUI 继续负责对话框布局与侧栏图片释放；加载失败时保留其默认图片。修改后需检查实际安装界面，包括高 DPI 显示器；图中仍不放小字。
 - **WiX 会在位图之上叠加自己的文字控件**（`WixUI_InstallDir`，dlu→px 为 4/3），画图必须避开：
   - banner（493×58）：标题文字 x 20–287 / y 8–28，描述文字 x 33–406 / y 31–51 ⇒ 图形放右侧（x > 290）或底部条带（y > 52）。
   - dialog（493×312）：标题与描述文字都在右侧 x 180–473 / y 27–187 ⇒ 主视觉放左侧（x < 180）或底部（y > 190）。
@@ -142,10 +149,10 @@ NSIS 与 MSI 的生成文件路径配置在 `tauri.conf.json > bundle.windows`�
 - 所有位图通过 `pnpm branding:generate` 生成；重新 `pnpm app:build` 才会更新安装包内的资源。
 - 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
 - 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
-- 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在 `CUSTOM BRANDING` 标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
+- 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在“品牌定制”标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
   - 页眉标志在右侧，为标题和说明留出空间；中英文分别使用 Windows 自带的 Microsoft YaHei UI / Segoe UI。标题与正文分级，保留原生步骤、键盘导航及 DPI 缩放。
   - 新增安装语言时，要为自定义文案补齐对应语言的 `LangString`，并实际编译检查，不能假设自定义键会自动回落到内置翻译。
-- **升级 Tauri 后**：对照同版本官方 NSIS 模板合并更新，保留 `CUSTOM BRANDING` 各段的配色、页面宏引用与语言字符串，并复核 WebView2 临时路径、执行引号和文件关联修复是否已被上游覆盖。不要整份沿用旧模板。自定义 MSI 模板同理，对应 `wix.template`。
+- **升级 Tauri 后**：对照同版本官方 NSIS 模板合并更新，保留“品牌定制”各段的配色、页面宏引用、高清位图加载和语言字符串，并复核 WebView2 临时路径、执行引号和文件关联修复是否已被上游覆盖。不要整份沿用旧模板。自定义 MSI 模板同理，对应 `wix.template`。
 
 ### 自启动与卸载
 
@@ -157,7 +164,7 @@ MSI 卸载可能由另一账户或以 per-machine 方式执行，默认模板无
 
 ### Windows
 
-Windows Authenticode 签名标识发布者并验证文件完整性，不能保证立即消除 SmartScreen 告警。公共信任证书的私钥保护要求、服务地区与价格会变化，购买或配置前以服务商当前政策为准；Tauri 的旧 PFX 教程仅适用于允许导出私钥的旧证书，新签发 OV / EV 应使用签发方支持的硬件或托管流程。参见 [Tauri Windows 签名指南](https://v2.tauri.app/distribute/sign/windows/)。
+Windows Authenticode 签名标识发布者并验证文件完整性，不能保证消除 SmartScreen 告警。证书要求、服务资格与工具参数会变化，实施前核对 [Tauri Windows 签名指南](https://v2.tauri.app/distribute/sign/windows/) 和服务商当前文档。
 
 本仓库提供的接入点：
 
@@ -167,7 +174,7 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 | Azure Artifact Signing 或证书商 HSM | 未安装 CLI，也未注入 Azure 变量 | 修改 workflow，安装工具，配置 `signCommand` 与凭据 |
 | 可导出的 PFX 证书                   | 导入与验证步骤已实现            | 确认证书仍有效且用途符合分发范围，配置 Secrets     |
 
-#### 路线 A：SignPath Foundation（开源免费）
+#### SignPath Foundation
 
 仓库侧已经接好，剩下的是 SignPath 的申请与参数配置。
 
@@ -175,7 +182,7 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 
 - 项目公开、使用 OSI 许可（本项目 MIT）、**已经发布过至少一个版本**；
 - SignPath 与 GitHub 账号都启用 MFA；
-- 仓库里有签名策略页：[code-signing-policy.md](./code-signing-policy.md)（README 已链接）。
+- 仓库首页和下载入口公开[代码签名策略](./code-signing-policy.md)。
 
 **申请**：
 
@@ -202,6 +209,7 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 
 **发版**：打 tag 后，`release.yml` 的 `build` job 产出 draft Release，并将未签名的 NSIS 包直接上传为本次运行的 artifact；随后 `sign-windows` job 使用该 artifact 的 ID
 提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。这样签名来源直接关联到本次构建。SignPath 与 PFX 签名应二选一。
+上传签名文件前会再次核对目标 Release 的 tag 与 draft 状态，拒绝覆盖已公开版本。
 未配置 `SIGNPATH_ORGANIZATION_ID` 时该 job 直接跳过，现有发布流程不受影响。
 
 **限制**：
@@ -211,37 +219,11 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 - 当前配置只签 NSIS 安装包外层，安装后的应用 exe 与 MSI 不会被该 job 签名；需要调整嵌套签名范围时，必须同时修改 artifact 配置、产物收集和验证步骤。
 - 当前 SignPath 流程不能直接与 `createUpdaterArtifacts` 组合：打包后重签会改变安装包字节，使先前生成的更新签名失效。流水线会拒绝该组合；接入自动更新时，须将更新签名生成移到 Authenticode 签名之后。
 
-#### 路线 B：Azure Artifact Signing（原名 Trusted Signing）
+#### 其他硬件或托管签名
 
-微软的托管签名服务，私钥由托管服务保护；当前仓库尚未接入。实施步骤以 [Tauri 签名指南](https://v2.tauri.app/distribute/sign/windows/) 和 [微软前置条件](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart#prerequisites) 为准：
+Azure Artifact Signing、USB Token 和证书商 HSM 尚未接入本仓库。选择后需按服务商文档安装工具、配置身份与授权，并通过 Tauri 的 `bundle.windows.signCommand` 接入；不要把这些方案的凭据仅填入 Secrets 后就视为已启用。当前仓库接线状态见上表。
 
-1. 在 Azure 创建 Artifact Signing 账户与证书配置文件（Certificate Profile）；
-2. 创建 App Registration，在证书配置文件范围向它授予 **Artifact Signing Certificate Profile Signer** 角色（见 [微软角色说明](https://learn.microsoft.com/en-us/azure/artifact-signing/tutorial-assign-roles)）；
-3. 安装 CLI：`cargo install artifact-signing-cli`（需要 .NET 8 与较新的 Windows SDK）；
-4. 在 `tauri.conf.json` 配置签名命令：
-
-```json
-{
-  "bundle": {
-    "windows": {
-      "signCommand": "artifact-signing-cli -e https://wus2.codesigning.azure.net -a <账户名> -c <证书配置文件> -d <产品名> %1"
-    }
-  }
-}
-```
-
-5. CI 注入三个环境变量：`AZURE_TENANT_ID`、`AZURE_CLIENT_ID`、`AZURE_CLIENT_SECRET`。
-
-`%1` 是 Tauri 传入的待签名文件路径；`-d` 的值会出现在 UAC 提示里，填产品名而不是随机串。
-官方参考：<https://v2.tauri.app/distribute/sign/windows/>。
-
-#### 路线 C：OV / EV 证书 + USB Token
-
-需要自己的发布者名称、又不满足 Azure 地区/资质要求时选这条：
-
-- 新证书私钥在 USB Token 或 CA 云 HSM 里，**不能导出 PFX**；
-- CI 二选一：自托管 runner 插着 Token 跑；或购买 CA 的云签名服务（SSL.com eSigner、DigiCert KeyLocker、GlobalSign），用 `signCommand` 调它的 CLI；
-- EV 自 2024 年起**不再即时绕过 SmartScreen**，和 OV 一样按下载量积累信誉，不必为「秒过」多花钱。
+具体步骤见 [Tauri Windows 签名指南](https://v2.tauri.app/distribute/sign/windows/)；服务资格与私钥保护方式以签发方或服务商政策为准。
 
 #### 可导出 PFX 流程
 
@@ -264,10 +246,9 @@ Get-ChildItem Cert:\CurrentUser\My | Select-Object Subject, Thumbprint
 > 签名发生在**打包阶段**：`tauri build --no-bundle`（便携版）不会触发签名。
 > 需要签名的便携 exe 请单独执行 `signtool sign /sha1 <指纹> /fd sha256 <exe>`。
 
-#### 先不签名可以吗
+#### 未签名分发
 
 可以生成未签名的模板或内测包；Windows 用户可能遇到信誉提示，实际运行行为还受系统与组织策略限制。
-不要为此买 EV：2024 年后 EV 也不再即时消除警告。
 
 ### macOS
 
@@ -288,11 +269,11 @@ Tauri 会自动完成签名、公证与打包。
 
 ### Linux
 
-一般不做签名。走 AppImage 分发时建议同时提供 `.deb`，并在 README 里给出校验和。
+当前发布流程未为 Linux 配置独立的发行包签名。分发时提供文件校验值；软件源或其他渠道有额外签名要求时，按该渠道配置。自动更新签名仍按下节执行。
 
 ## 自动更新
 
-模板已注册 Rust updater / process 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，无需再执行 `tauri add updater`。默认源为当前模板的 GitHub Releases 地址，`app.config.json > updates.publicKey` 为空时显示未配置，不请求网络；派生项目须同时修改仓库地址和更新端点。
+模板已注册 Rust updater 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，重启由 Rust `AppHandle::restart` 执行。默认源为当前模板的 GitHub Releases 地址，`app.config.json > updates.publicKey` 为空时显示未配置，不请求网络；派生项目须同时修改仓库地址和更新端点。
 
 ### 配置公钥与发布签名
 
@@ -317,7 +298,9 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 4. 正常打 tag 发布。工作流用临时配置启用 `bundle.createUpdaterArtifacts: true`，生成 Tauri v2 更新产物；本地默认构建仍不额外产出更新签名。每个平台收集后，用独立 Rust 验证器核对最终文件字节、公钥、`.sig` 与签名绑定的版本，随后上传平台元数据。
 
-5. 构建完成后由单独 job 合并四个目标的元数据，核对 draft Release 中的实际资产并上传唯一的 `latest.json`，避免矩阵任务互相覆盖。检查并发布 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+5. 构建完成后由单独 job 合并四个目标的元数据，核对 draft Release 中的实际资产并上传唯一的 `latest.json`，避免矩阵任务互相覆盖。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+
+默认 `/releases/latest/` 通道只分发正式版；GitHub 不将 draft 或 prerelease 设为 latest，见 [GitHub Release 规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。预发布包仍可单独下载；需要测试更新通道时，另行设计端点、版本比较与发布校验，不能假定给 tag 加 `beta` 就会进入默认更新通道。
 
 发布内部接口在 [`release-lib.mjs`](../scripts/release-lib.mjs)（`prepare / collect / merge`）；版本 / 签名验证入口在 [`verify-updater.rs`](../src-tauri/src/bin/verify-updater.rs)。签名覆盖版本号，手工签名也需使用匹配的 `--app-version`，不能把旧签名用于不同版本的清单。
 
@@ -348,11 +331,11 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 构建矩阵覆盖：
 
-| 平台            | 产物           |
-| --------------- | -------------- |
-| Windows x64     | nsis / msi     |
-| macOS arm64+x64 | dmg / app      |
-| Linux x64       | deb / appimage |
+| 平台            | 产物                 |
+| --------------- | -------------------- |
+| Windows x64     | nsis / msi           |
+| macOS arm64+x64 | dmg / app            |
+| Linux x64       | deb / rpm / appimage |
 
 产物以 **draft Release** 上传，人工确认后再发布。
 
@@ -372,7 +355,7 @@ CI 只收集 `tauri-action` 明确返回的文件，不按相邻文件猜测签�
 
 当前 `release.yml` 内置了 **PFX**、macOS 与可选的 SignPath 链路；SignPath 需要配置门户与仓库参数，Azure 需要额外安装 CLI 并注入三个环境变量。
 
-证书和私钥永远不进仓库——进了就当作已泄露，必须吊销重签。
+证书和私钥不进仓库；泄露后按凭据类型撤销、轮换并评估已发布产物，更新私钥还需制定现有客户端的迁移方案。
 
 Linux 构建需要先装系统依赖：
 
@@ -383,20 +366,29 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 
 ## 发布检查清单
 
-发布前逐项确认，任何一项没过就不发：
+由发布负责人在 Release 或发布 issue 留下实际版本、commit、平台、产物哈希和检查证据，并指定发布后的支持与恢复责任人。下列检查按适用目标执行，不适用的项目说明理由；阻断项失败或目标平台未验收时，不把该目标标记为可交付。
 
 - [ ] 已从 `develop` 创建 `release/x.y.z`，检查本次提交范围
 - [ ] `pnpm version:set x.y.z` 已执行，四处版本号一致
-- [ ] `git log v上一版..HEAD --oneline` 过一遍，确认没有漏进版本的提交，也没有不该进的
+- [ ] 通过 `git log v上一版..HEAD --oneline` 审查提交范围，确认无遗漏或无关变更
 - [ ] `pnpm verify` 和目标平台 Rust 检查通过，发布分支 CI 全绿
-- [ ] 在目标平台的干净机器上安装并验证启动、窗口操作、外链与 IPC
+- [ ] 在目标平台的干净机器上完成 [安装版与启动验收](./testing.md#安装版与启动验收)，验证图标、冷 / 热启动、初始化期间重复启动、窗口操作、外链与 IPC，保留实测结果
 - [ ] 需要签名的 Windows 分发渠道已检查签名状态与发布者；SignPath 仅覆盖 NSIS 外层
 - [ ] 发布 macOS 包时已完成签名、公证，并用 `spctl -a -vvv -t install <app>` 验证
 - [ ] 启用自动更新时，验证旧版本能够收到并成功安装新版本；安装前保存各窗口内容
+- [ ] 涉及数据格式变更时，按 [数据与恢复验证](./testing.md#数据与恢复验证) 记录支持升级的历史版本、迁移失败状态及恢复演练结果
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
 - [ ] `release/*` 已通过 PR 合入 `main` 和 `develop`，在 `main` 对应合并提交打 tag `vX.Y.Z`
 - [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布
 - [ ] 发布公告与更新说明同步给使用方
+
+## 发布后观察
+
+发布负责人核对公开下载与更新源实际可用、资产哈希和签名与验收包一致，并在目标平台走通下载 / 更新入口。根据支持渠道收到的启动、白屏、数据、安装升级反馈判断是否暂停分发；记录观察范围和结果，不把“没有收到反馈”等同于没有故障。
+
+当前模板只有本地日志与诊断，没有遥测上传、自动告警、远程关闭开关或分阶段放量系统。维护者应提供真实支持渠道，需要用户日志时说明采集范围并脱敏。引入监控或更新通道时，另行设计隐私、支持版本和发布控制，不能在文档中承诺尚未实施的能力。
+
+发现阻断故障后，先确定受影响版本与数据状态，停止继续推荐问题包；修改更新源只能影响后续请求，不能撤销已下载的安装器或恢复用户数据。保留原始产物与哈希供定位，记录处理决定，再按下述路径发布修复。故障与行动项记录规则见 [故障反馈](./engineering-at-scale.md#性能发布与故障反馈)。
 
 ## 回滚
 
@@ -404,3 +396,5 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
   仅将 `latest.json` 指向较旧版本不会触发默认更新；自动降级需要预先在 Rust 更新器中自定义版本比较，并处理 Windows 安装器的降级限制，否则让用户手动重装。
 - **代码级**：`git revert` 对应合并节点后重新发版，不要强推 tag。
 - **数据级**：涉及数据库结构变更的版本，必须提前设计向前兼容的迁移，不做"降级删表"。
+
+涉及迁移或恢复机制的发布，提前用隔离的旧版本数据实测：升级后重开、注入迁移失败、再使用修复版本恢复读取，并验证记录内容。确需恢复备份时，说明备份来源、恢复范围、操作入口和可能丢失的数据；当前模板没有产品级备份恢复界面。数据库已升级时不得默认让用户直接安装旧二进制，未来版本保护不保证旧程序能读新数据。演练结果与恢复负责人留在发布记录；没有实际验证的恢复路径不能写成已具备能力。

@@ -8,10 +8,10 @@
 | pnpm                      | [`package.json`](../package.json) 的 `packageManager`              | 使用该精确版本，保留 pnpm 锁文件  |
 | Rust                      | [`rust-toolchain.toml`](../rust-toolchain.toml)                    | 固定工具链，含 rustfmt / clippy   |
 | Visual Studio Build Tools | 含「使用 C++ 的桌面开发」工作负载                                  | 提供 MSVC 链接器，仅 Windows 需要 |
-| Windows SDK               | 10.0.19041 以上                                                    | 链接系统库                        |
-| WebView2 Runtime          | 任意近期版本                                                       | Win11 自带，Win10 多数已装        |
+| Windows SDK               | 兼容当前 Windows / Rust MSVC 工具链的版本                          | 链接系统库                        |
+| WebView2 Runtime          | 支持目标 Windows 版本的 Evergreen Runtime                          | 未安装时需按平台说明准备          |
 
-macOS 需要 Xcode Command Line Tools；Linux 需要 `libwebkit2gtk-4.1-dev` 等依赖，详见 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)。
+macOS 需要 Xcode Command Line Tools；Linux 需要 WebKitGTK、编译工具和对应发行版的开发库。各平台的安装步骤以 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/) 为准，CI 中的软件包列表只对应其 runner 环境。
 
 先安装 Node.js、与 `packageManager` 一致的 pnpm 和 rustup。仓库内运行 Rust 命令时，rustup 会按 `rust-toolchain.toml` 自动安装工具链与组件；CI 也读取该文件。升级版本后需验证三端构建。
 
@@ -26,7 +26,7 @@ pnpm app:dev
 
 第一次 `app:dev` 会编译 Rust 依赖，耗时取决于机器、缓存和网络；后续复用编译缓存，前端修改由 Vite 热更新。
 
-源码入口与两种运行模式见 [README · 从源码运行](../README.md#从源码运行)。`pnpm dev` 适合浏览器预览界面；`pnpm app:dev` 才会启动 Rust 和原生窗口。
+源码入口与两种运行环境见 [README · 从源码运行](../README.md#从源码运行)。`pnpm dev` 与在线演示共用桌面应用的 React 页面；`pnpm app:dev` 同时启动 Rust 和原生窗口。只开发或构建浏览器界面时，安装前端依赖即可，无需编译 Rust。
 
 ## 项目初始化
 
@@ -56,11 +56,13 @@ pnpm init:project --config ../my-app.json
 
 `--dry-run` 展示差异且不写文件；`--minimal` 将默认模式设为精简，源码演示仍保留。默认新模板为 demo；已有配置不指定模式时保留当前值，需要切回可在 JSON 写 `"defaultMode": "demo"`。
 
-脚本先检查所有 JSON、完整 Cargo TOML / lock、四处版本、原生入口与路径，再暂存和提交变更：品牌、npm / Cargo 包与库、Cargo `default-run` / lock、主程序与辅助导出入口、Tauri 主 / 平台标题、测试标识符及 HTML 标题。失败时恢复原文件；若文件被并发编辑，保留用户编辑和 `.init-*.bak` 原备份并报告恢复冲突，核对后再手动处理。
+脚本先检查所有 JSON、完整 Cargo TOML / lock、四处版本、原生入口与路径，再暂存和提交变更：品牌、npm / Cargo 包与库、Cargo `default-run` / lock、主程序与辅助导出入口、Tauri 主 / 平台标题、测试标识符及 HTML 标题。失败时恢复原文件；若文件被并发编辑，保留用户编辑和 `.update-*.bak` 原备份并报告恢复冲突，核对后再手动处理。
 
 包名使用小写 kebab-case，标识符使用唯一的至少三段反向域名；应用名须能作为 Windows 文件名。未知字段、含凭据的 URL、版本漂移或不支持的入口会在写入前拒绝。修改仓库地址不会自动猜测更新服务，`updates.endpoint` 应同时按实际部署填写；空公钥禁用更新请求。
 
-另行处理 LICENSE 归属、安全私密报告渠道、代码签名与更新公钥；初始化不读取或修改签名私钥。品牌图标和安装器主视觉统一修改 `resources/branding/*.svg`，运行 `pnpm branding:generate` 生成平台格式，再用 `pnpm branding:check` 检查一致性，尺寸和映射见 [构建与发布](./build-release.md#安装器外观)。版本仍用 `pnpm version:set`，然后运行 `pnpm verify`、Rust 检查与目标平台安装测试。
+另行处理 LICENSE 归属、安全私密报告渠道、代码签名与更新公钥；初始化不读取或修改签名私钥。启用 SignPath 时还需更新 `.signpath/artifact-configuration.xml` 的产品名称限制和 [签名策略](./code-signing-policy.md) 中的维护者、范围，并同步门户配置。
+
+品牌图标和安装器主视觉统一修改 `resources/branding/*.svg`，运行 `pnpm branding:generate` 生成平台格式，再用 `pnpm branding:check` 检查一致性，尺寸和映射见 [构建与发布](./build-release.md#安装器外观)。版本仍用 `pnpm version:set`，然后运行 `pnpm verify`、Rust 检查与目标平台安装测试。
 
 ## 环境诊断
 
@@ -73,37 +75,39 @@ node scripts/doctor.mjs --json
 
 ## 常用命令
 
-| 命令                     | 作用                                                | 什么时候用                   |
-| ------------------------ | --------------------------------------------------- | ---------------------------- |
-| `pnpm app:dev`           | 启动完整桌面应用（含 Rust）                         | 日常开发，需要系统能力时     |
-| `pnpm run doctor`        | 实际检查工具与平台环境                              | 首次启动、环境异常           |
-| `pnpm init:project`      | 同步品牌、应用身份与精简默认模式                    | 派生新项目                   |
-| `pnpm bindings:generate` | 从 Rust 导出 TypeScript IPC 绑定                    | 修改命令或 DTO 后            |
-| `pnpm bindings:check`    | 检查生成绑定未漂移                                  | 提交原生改动前               |
-| `pnpm test:e2e`          | 隔离构建并运行真实桌面进程测试                      | 改启动、窗口或 IPC 主链路后  |
-| `pnpm dev`               | 只起 Vite（localhost:1420）                         | 纯调样式，不想等 Rust 编译   |
-| `pnpm app:build`         | 构建安装包并收集到版本化 `artifacts/`               | 出测试包 / 发布              |
-| `pnpm app:portable`      | 收集 Windows exe 与说明到版本化 `artifacts/`        | 内测分发、免安装场景         |
-| `pnpm build`             | 只构建前端 `dist/`                                  | 前端验证或原生构建前置       |
-| `pnpm preview`           | 通过本地 HTTP 服务预览 `dist/`                      | 检查前端构建结果，无原生能力 |
-| `pnpm verify`            | 格式、lint、类型、前端/脚本测试、版本检查、前端构建 | 提交前跑一次；Rust 另查      |
-| `pnpm test`              | 跑一遍单元测试                                      | 改完逻辑                     |
-| `pnpm test:watch`        | 测试监听模式                                        | 边写边测                     |
-| `pnpm test:coverage`     | 生成覆盖率报告                                      | 想知道哪里没测到             |
-| `pnpm test:scripts`      | Node 构建与版本脚本回归测试                         | 修改脚本后                   |
-| `pnpm typecheck`         | 类型检查，不产物                                    | 排查类型错误                 |
-| `pnpm lint`              | ESLint                                              | 排查越界与未使用变量         |
-| `pnpm lint:fix`          | ESLint 自动修复                                     | 批量修小问题                 |
-| `pnpm format`            | Prettier 格式化                                     | 提交前                       |
-| `pnpm clean:artifacts`   | 只删 `artifacts/`，保留 Rust 编译缓存               | 清理最终分发文件             |
-| `pnpm clean`             | 清理默认构建产物与缓存，见下节                      | 磁盘吃紧、构建状态异常       |
-| `pnpm clean:all`         | 连同 `node_modules` 一起删                          | 准备把工程复制给别人         |
-| `pnpm version:set x.y.z` | 同步四处版本号                                      | 发布时                       |
-| `pnpm version:check`     | 检查配置、清单与锁文件的版本一致性                  | 修改版本或发布前             |
+| 命令                                       | 作用                                                | 什么时候用                   |
+| ------------------------------------------ | --------------------------------------------------- | ---------------------------- |
+| `pnpm app:dev`                             | 启动完整桌面应用（含 Rust）                         | 日常开发，需要系统能力时     |
+| `pnpm run doctor`                          | 实际检查工具与平台环境                              | 首次启动、环境异常           |
+| `pnpm init:project`                        | 同步品牌、应用身份与精简默认模式                    | 派生新项目                   |
+| `pnpm bindings:generate`                   | 从 Rust 导出 TypeScript IPC 绑定                    | 修改命令或 DTO 后            |
+| `pnpm bindings:check`                      | 检查生成绑定未漂移                                  | 提交原生改动前               |
+| `pnpm test:e2e`                            | 隔离构建并运行真实桌面进程测试                      | 改启动、窗口或 IPC 主链路后  |
+| `pnpm dev`                                 | 只起 Vite（localhost:1420）                         | 纯调样式，不想等 Rust 编译   |
+| `pnpm app:build`                           | 构建安装包并收集到版本化 `artifacts/`               | 出测试包 / 发布              |
+| `pnpm app:portable`                        | 收集 Windows exe 与说明到版本化 `artifacts/`        | 内测分发、免安装场景         |
+| `pnpm build`                               | 只构建前端 `dist/`                                  | 前端验证或原生构建前置       |
+| `pnpm preview`                             | 通过本地 HTTP 服务预览 `dist/`                      | 检查前端构建结果，无原生能力 |
+| `pnpm build:web`                           | 构建浏览器演示到 `dist-web/`                        | 在线演示发布                 |
+| `pnpm exec vite preview --outDir dist-web` | 通过本地 HTTP 服务预览浏览器演示                    | 检查演示构建与路由           |
+| `pnpm verify`                              | 格式、lint、类型、前端/脚本测试、版本检查、前端构建 | 提交前跑一次；Rust 另查      |
+| `pnpm test`                                | 执行单元测试                                        | 逻辑变更后                   |
+| `pnpm test:watch`                          | 测试监听模式                                        | 边写边测                     |
+| `pnpm test:coverage`                       | 生成覆盖率报告                                      | 想知道哪里没测到             |
+| `pnpm test:scripts`                        | Node 构建与版本脚本回归测试                         | 修改脚本后                   |
+| `pnpm typecheck`                           | 类型检查，不产物                                    | 排查类型错误                 |
+| `pnpm lint`                                | ESLint                                              | 排查越界与未使用变量         |
+| `pnpm lint:fix`                            | ESLint 自动修复                                     | 批量修小问题                 |
+| `pnpm format`                              | Prettier 格式化                                     | 提交前                       |
+| `pnpm clean:artifacts`                     | 只删 `artifacts/`，保留 Rust 编译缓存               | 清理最终分发文件             |
+| `pnpm clean`                               | 清理默认构建产物与缓存，见下节                      | 磁盘吃紧、构建状态异常       |
+| `pnpm clean:all`                           | 连同 `node_modules` 一起删                          | 准备把工程复制给别人         |
+| `pnpm version:set x.y.z`                   | 同步四处版本号                                      | 发布时                       |
+| `pnpm version:check`                       | 检查配置、清单与锁文件的版本一致性                  | 修改版本或发布前             |
 
 ## 清理构建产物
 
-`pnpm clean:artifacts` 只删除最终分发目录 `artifacts/`，不会清除 `dist/` 或 Rust 编译缓存。`pnpm clean` 删除 `artifacts/`、`dist/`、`coverage/`、默认 `src-tauri/target/` 及旧版遗留的 `dist-portable/`；`pnpm clean:all` 还会删除 `node_modules/`。
+`pnpm clean:artifacts` 只删除最终分发目录 `artifacts/`，保留 `dist/`、`dist-web/` 和 Rust 编译缓存。`pnpm clean` 删除 `artifacts/`、`dist/`、`dist-web/`、`coverage/`、默认 `src-tauri/target/` 及旧版遗留的 `dist-portable/`；`pnpm clean:all` 还会删除 `node_modules/`。
 
 清理后构建可以重建输出，但删除 Rust 缓存会使下次完整编译更慢。`CARGO_TARGET_DIR` 或 Cargo `target-dir` 指向的自定义目录不在固定清理范围内，由设置者管理。分发目录布局见 [README · 构建产物](../README.md#构建产物)。
 
@@ -126,7 +130,7 @@ const base = import.meta.env.VITE_API_BASE;
 
 - 前端能读到的变量会被**打进 bundle**，任何人解包都能看到，不要放密钥。
 - 需要保密的值由 Rust 或服务端使用，只向界面返回操作结果；不要通过命令把密钥返回前端。桌面应用随包携带的凭据仍可被提取，用户令牌应按 [本地数据规范](./security.md#本地数据) 保存。
-- 新增的 `VITE_` 变量要在 `src/vite-env.d.ts` 里补类型，否则是 `any`。
+- 新增的 `VITE_` 变量要在 `src/vite-env.d.ts` 里声明类型，并在使用处校验必填值和格式；类型声明不能保证部署时实际提供了变量。
 - 仓库里只提交 `.env.example`，写清需要哪些变量和用途，不写真实值。
 
 ## 调试
@@ -135,8 +139,7 @@ const base = import.meta.env.VITE_API_BASE;
 
 - 开发模式下使用 WebView 的开发者工具；Windows 为 WebView2，macOS / Linux 为各自的 WebKit 工具，入口与快捷键随平台不同。
 - 调试 React 组件树可在 `pnpm dev` 的普通浏览器预览中使用 React DevTools；浏览器扩展不会自动安装到 Tauri WebView。
-- 也可以直接 `pnpm dev`，在浏览器里调样式和交互，**但 `invoke` 会失败**——
-  `lib/tauri.ts` 里的 `isTauri()` 判断会拦住并给出提示。
+- 浏览器预览使用 `pnpm dev`；原生能力页展示运行说明，`lib/tauri.ts` 的环境检查会拒绝实际原生调用。
 
 ### Rust
 
@@ -152,13 +155,7 @@ const base = import.meta.env.VITE_API_BASE;
 
 ### 定位"白屏"
 
-按这个顺序排查，能覆盖九成情况：
-
-1. `pnpm dev` 打开 `localhost:1420`，看前端是否报错（最常见是运行时报错）。
-2. 打开 DevTools 看 Console 与 Network。
-3. 检查窗口是否被显示：`tauri.conf.json` 里 `visible: false`，前端 `useRevealWindow` 负责 `show()`，
-   Rust 侧有 3 秒兜底。如果 3 秒后窗口才出现，说明前端渲染链路有问题。
-4. 看 Rust 终端有没有 panic。
+按 [排障手册 · 窗口不出现 / 白屏](./troubleshooting.md#窗口不出现--白屏) 检查浏览器渲染、首帧显示、原生日志和资源加载。
 
 ## 热更新边界
 
@@ -183,9 +180,9 @@ Get-Process -Id <pid>
 Stop-Process -Id <pid>
 ```
 
-确实要换端口的话，**两处都要改**：`vite.config.ts` 的 `server.port` 和 `tauri.conf.json` 的 `build.devUrl`。
+更换端口时同步 `vite.config.ts` 的 `server.port`、`tauri.conf.json` 的 `build.devUrl`，以及 `.vscode/` 中的浏览器 URL 和任务就绪匹配规则；然后重启开发服务与调试任务。
 
-## 网络慢 / 拉不动依赖
+## 依赖下载失败或缓慢
 
 需要镜像时，先确认镜像来源可信，再配置到用户级设置，不要修改已提交的锁文件来源：
 
@@ -204,9 +201,9 @@ pnpm config set --global registry https://registry.npmmirror.com
 
 如果打包时卡在下载 NSIS / WiX 工具链，见 [排障手册](./troubleshooting.md#打包时卡在下载-nsis)。
 
-## 编译太慢
+## 编译耗时优化
 
-Rust 首次编译慢是常态。长期开发建议上 `sccache`：
+Rust 首次编译会构建依赖。重复构建较慢时，先确认是否命中缓存；需要共享编译缓存时可评估 `sccache`：
 
 ```bash
 cargo install sccache
@@ -231,13 +228,13 @@ pnpm install --frozen-lockfile
 
 ## 新增依赖的评审标准
 
-不是不能加，但要能回答三个问题：
+新增前说明以下三项：
 
 1. **体积**：前端依赖会不会显著增加 bundle？比较 `pnpm build` 前后的分块体积，较大的依赖考虑按需引入。
-2. **维护状态**：最近一次发布是否在一年内？有没有明确的维护者？
-3. **许可证**：MIT / Apache-2.0 / BSD 可以直接用；GPL / AGPL 需要法务确认；商业授权组件要走采购。
+2. **维护状态**：是否仍维护、能否兼容当前工具链、已知问题如何处理？成熟库不以发布频率单独判断。
+3. **许可证**：记录许可证、分发方式及需要履行的义务；有疑问时由项目负责人与相关专业人员确认，不能仅凭许可证名称认定可直接分发。
 
-Rust 侧额外注意：编译时间也是成本，一个依赖可能让 CI 多跑两分钟。
+Rust 依赖还需评估编译时间和目标平台兼容性。
 
 ## IDE 配置
 
@@ -252,4 +249,21 @@ Rust 侧额外注意：编译时间也是成本，一个依赖可能让 CI 多�
 
 仓库已包含 [`.vscode/settings.json`](../.vscode/settings.json)，配置保存格式化、Rust 专用 formatter 与搜索排除项；无需再复制一份设置。
 
-VS Code 资源管理器默认隐藏 `dist/` 与 `src-tauri/target/`，保留 `artifacts/` 可见，便于直接找到最终分发文件；隐藏设置不改变实际构建路径。
+VS Code 资源管理器默认隐藏 `dist/`、`dist-web/` 与 `src-tauri/target/`，搜索和文件监听也排除这些生成目录；Vite 的开发监听同步排除浏览器演示输出。`artifacts/` 保持可见，便于查找最终分发文件；隐藏设置不改变实际构建路径。
+
+## 浏览器演示构建与部署
+
+在线演示直接构建根 `index.html` 与 `src/`，共用页面、样式、路由、词典和矢量资源。展厅、交互场景、动效实验室、导航和外观设置在浏览器中运行；原生能力页面提供功能说明与导览，系统调用仍受 `lib/tauri.ts` 的环境检查约束。浏览器偏好写入当前站点的 localStorage，桌面设置与笔记继续由 Rust 原生存储维护。
+
+```bash
+pnpm build:web
+pnpm exec vite preview --outDir dist-web
+```
+
+`build:web` 运行类型检查，并以 Vite 的 `web-demo` 模式构建；[`vite.config.ts`](../vite.config.ts) 将资源基路径设为相对路径，输出到 `dist-web/`。桌面构建继续使用 `dist/`，两个输出分别维护。通过 HTTP 服务预览构建结果，不直接打开生成的 HTML。
+
+HashRouter 将页面路径保留在 `#` 后，静态服务只需提供首页与构建资源，适用于 `/tauri-desktop-starter/` 等项目子路径。部署后检查首页、`#/components` 等页面的直接访问与刷新，以及语言、主题、设置保存、动效暂停、窄屏布局和原生能力说明。
+
+[`pages.yml`](../.github/workflows/pages.yml) 安装锁定依赖、执行 `pnpm build:web` 并将 `dist-web/` 发布到 [GitHub Pages 在线演示](https://yanchao001.github.io/tauri-desktop-starter/)，与桌面安装包发布分别执行。仓库 Pages 来源须选择 GitHub Actions，`github-pages` 环境允许的部署分支应与工作流一致；实际触发条件以工作流为准。
+
+派生项目需同步仓库 About 与 README 的演示地址，并将 `app.config.json` 的 `docsUrl` 指向真实工程文档入口。界面和能力变化在同一份源码中维护，发布演示前同时复核浏览器边界与桌面行为。

@@ -1,24 +1,32 @@
-## 改了什么
+## 变更内容
 
 <!-- 一段话说清这个 PR 做了什么 -->
 
-## 为什么
+## 变更原因
 
 <!-- 解决什么问题；关联 issue：Closes #123 -->
 
-## 怎么验证
+## 验证结果
 
-- [ ] 本地 `pnpm app:dev` 手动走通了改动路径
-- [ ] `pnpm verify` 通过（格式 / lint / 类型 / 测试 / 构建）
-- [ ] 涉及 Rust：在 `src-tauri/` 下运行 `cargo fmt --all -- --check`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo test --locked` 通过
+<!-- 按改动风险选择检查，记录命令和结果；不适用或未执行的检查请说明。 -->
 
-## 影响面
+- [ ] `pnpm verify` 通过（格式 / 品牌资源 / lint / 类型 / 测试 / 版本 / 构建）
+- [ ] 涉及 UI 或桌面行为：在 `pnpm app:dev` 中走通改动路径
+- [ ] 涉及 Rust / IPC / 桌面主链路：按 [测试规范](../docs/testing.md) 完成对应检查
 
-- [ ] 修改了 `src-tauri/capabilities/default.json`（权限变更，需要在下方说明理由）
-- [ ] 修改了 `src-tauri/tauri.conf.json`（窗口 / 打包 / 标识符）
-- [ ] 修改了 `Cargo.toml` 或新增依赖（需说明体积与许可证影响）
+## 影响范围
+
+<!-- 跨模块或高影响变更按 docs/engineering-at-scale.md 的设计门槛附提案 / ADR，并说明受影响调用方、负责人和未验证范围。普通改动直接写在本 PR，不必新建设计文档。 -->
+
+- [ ] 修改了 `src-tauri/capabilities/` 或应用 ACL（权限变更，需说明理由）
+- [ ] 修改了 `src-tauri/tauri*.conf.json`（窗口 / 打包 / 标识符）
+- [ ] 修改了 npm / Cargo 依赖（需说明体积、维护状态与许可证影响）
 - [ ] 涉及数据结构或迁移
+- [ ] 涉及跨模块公开入口、IPC / 事件契约（说明调用方和兼容影响）
+- [ ] 涉及启动、后台任务或关键路径性能（提供同环境基线与结果）
 - [ ] 修改了对外行为（需要同步 `docs/` 里对应的说明）
+
+<!-- 数据迁移 / 更新发布：记录支持升级的版本、失败后的数据状态和恢复验证结果。性能或平台未测时明确写“未测”，不要以 CI 配置代替实测。 -->
 
 ## 截图
 
@@ -31,6 +39,6 @@ UI 改动必填，亮色与暗色各一张。
 ## 自查
 
 - [ ] 普通 feature/fix 分支已 rebase 到最新 `origin/develop`；release/hotfix 按发布流程同步，未改写共享历史
-- [ ] 提交信息符合 Conventional Commits
+- [ ] 提交信息符合 Conventional Commits，主题与正文使用中文
 - [ ] 改动范围与 PR 描述符合 [Git 协作规范](../docs/conventions/git-workflow.md)
 - [ ] 相关文档已同步更新

@@ -25,7 +25,7 @@ labels: ["bug"]
 | ------------- | ------------------------------------------------------- |
 | 操作系统      | <!-- Windows 11 23H2 / macOS 14.5 / Ubuntu 24.04 -->    |
 | 应用版本      | <!-- 设置页可见，或 package.json -->                    |
-| 是否打包版本  | <!-- 是：安装包安装的；否：pnpm app:dev -->             |
+| 运行方式      | <!-- 安装版 / portable / pnpm app:dev / 浏览器预览 -->  |
 | WebView2 版本 | <!-- pnpm tauri info 的 WebView2 项；非开发者可留空 --> |
 | Node / Rust   | <!-- node -v / rustc -V -->                             |
 
