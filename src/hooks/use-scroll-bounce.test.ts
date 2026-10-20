@@ -332,6 +332,18 @@ describe("内容区域边界回弹", () => {
     },
   );
 
+  it("仅裁剪装饰内容的卡片不吞掉外层边界反馈", () => {
+    const { content, result } = mount();
+    const clipped = geometry(document.createElement("div"), {
+      height: 100,
+      content: 500,
+    });
+    clipped.style.overflowY = "hidden";
+    content.append(clipped);
+    wheel(clipped, -120);
+    expect(result.current.get()).toBeGreaterThan(5);
+  });
+
   it.each([
     "<textarea></textarea>",
     '<input type="number">',

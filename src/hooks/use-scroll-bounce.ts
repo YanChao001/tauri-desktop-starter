@@ -31,7 +31,7 @@ function isReserved(event: Event, container: HTMLElement) {
       return true;
     const style = getComputedStyle(element);
     if (
-      /^(auto|scroll|hidden)$/.test(style.overflowY) &&
+      /^(auto|scroll)$/.test(style.overflowY) &&
       (element.scrollHeight > element.clientHeight + 1 ||
         /^(contain|none)$/.test(style.overscrollBehaviorY))
     )
