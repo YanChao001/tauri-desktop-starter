@@ -336,7 +336,8 @@ html[data-background="plain"] {
 }
 .app-main {
   background: transparent;
-  overscroll-behavior: contain;
+  /* 右侧自行提供边界回弹，避免与平台原生效果叠加。 */
+  overscroll-behavior: none;
 }
 .app-main [data-slot="card"] {
   background-color: color-mix(
