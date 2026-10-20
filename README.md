@@ -1,6 +1,6 @@
 # Tauri Desktop Starter
 
-[在线演示](https://yanchao001.github.io/tauri-desktop-starter/) · [English](./README.en.md) · [文档索引](./docs/README.md) · [发行记录](https://github.com/YanChao001/tauri-desktop-starter/releases)
+[在线演示](https://yanchao001.github.io/tauri-desktop-starter/) · [English](./README.en.md) · [文档索引](./docs/README.md) · [发行记录](https://github.com/YanChao001/tauri-desktop-starter/releases) · [Code signing policy](./docs/code-signing-policy.md)
 
 Tauri 2 + React 19 + TypeScript 的开源桌面应用基座，默认保留完整、可操作的演示，供派生项目按需裁剪。包含文件编辑与后台任务、SQLite 分页与备份恢复、复杂表格 / 表单、网络与系统集成，以及中英文、主题、动效和签名更新链路。更新公钥与正式代码签名由应用维护者配置。
 

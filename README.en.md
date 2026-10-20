@@ -1,6 +1,6 @@
 # Tauri Desktop Starter
 
-[中文](./README.md) · [Live demo](https://yanchao001.github.io/tauri-desktop-starter/) · [Documentation](./docs/README.md) · [Releases](https://github.com/YanChao001/tauri-desktop-starter/releases)
+[中文](./README.md) · [Live demo](https://yanchao001.github.io/tauri-desktop-starter/) · [Documentation](./docs/README.md) · [Releases](https://github.com/YanChao001/tauri-desktop-starter/releases) · [Code signing policy](./docs/code-signing-policy.md)
 
 An open source Tauri 2, React 19 and TypeScript desktop starter with a complete, interactive demo. Keep the examples while exploring, then remove modules your product does not need. **Minimal mode changes visibility; it does not remove code, dependencies or permissions.**
 

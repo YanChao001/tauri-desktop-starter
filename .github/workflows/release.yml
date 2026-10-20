@@ -204,7 +204,10 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "v__VERSION__"
-          releaseBody: "安装包与分发文件见下方 Assets。使用说明见仓库 README。"
+          releaseBody: |
+            安装包与分发文件见下方 Assets。使用说明见仓库 README。
+
+            [Code signing policy](https://github.com/${{ github.repository }}/blob/v__VERSION__/docs/code-signing-policy.md)：签名范围、服务状态与隐私说明。签名结果以下载文件的实际验证为准。
           releaseDraft: true
           prerelease: ${{ steps.version.outputs.prerelease }}
           # 各平台先验证自己的签名，最后由单一 job 汇总，避免矩阵并发覆盖 latest.json。
@@ -356,7 +359,7 @@ jobs:
 
       - name: 提交 SignPath 签名请求
         id: signpath
-        uses: signpath/github-action-submit-signing-request@v2
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
