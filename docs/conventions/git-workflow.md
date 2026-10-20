@@ -1,0 +1,324 @@
+# Git 协作规范
+
+本文规定分支、提交、评审和发布的协作方式，使特性边界、集成时间与提交范围可以追踪。
+
+## 分支模型
+
+采用精简版 GitFlow：两条长期分支 + 四种短期分支。
+
+```mermaid
+gitGraph
+  commit id: "init"
+  branch develop
+  commit id: "feat: 基建"
+  branch feature/12-window-state
+  commit id: "feat(window): 记住窗口位置"
+  commit id: "test(window): 补充用例"
+  checkout develop
+  merge feature/12-window-state
+  branch release/1.1.0
+  commit id: "chore: 版本 1.1.0"
+  checkout main
+  merge release/1.1.0 tag: "v1.1.0"
+  checkout develop
+  merge release/1.1.0
+```
+
+| 分支                     | 用途                                 | 从哪来    | 合到哪             | 生命周期   |
+| ------------------------ | ------------------------------------ | --------- | ------------------ | ---------- |
+| `main`                   | 生产代码，每次合并都对应一个发布标签 | —         | —                  | 永久       |
+| `develop`                | 集成分支，日常开发的合并目标         | `main`    | —                  | 永久       |
+| `feature/<issue>-<slug>` | 新功能                               | `develop` | `develop`          | 合并后删除 |
+| `fix/<issue>-<slug>`     | 普通缺陷修复                         | `develop` | `develop`          | 合并后删除 |
+| `release/<x.y.z>`        | 发布准备，只修 bug、只改版本号       | `develop` | `main` + `develop` | 发布后删除 |
+| `hotfix/<x.y.z>`         | 线上紧急修复                         | `main`    | `main` + `develop` | 发布后删除 |
+
+**分支命名**：全小写，单词用连字符；功能 / 普通修复分支有 issue 时带上编号，发布 / 紧急修复分支使用版本号。
+
+```text
+feature/42-command-palette
+fix/57-window-flash
+release/1.2.0
+hotfix/1.1.1
+```
+
+## 日常开发流程
+
+```bash
+# 1. 更新本地集成分支
+git switch develop
+git pull --ff-only
+
+# 2. 切特性分支
+git switch -c feature/42-command-palette
+
+# 3. 开发过程中定期同步（不要用 merge）
+git fetch origin
+git rebase origin/develop
+
+# 4. 按改动运行相关检查；此处以命令逻辑变更为例，完整说明见 docs/testing.md
+pnpm exec vitest related --run src/providers/commands.tsx
+
+# 5. 推送（首次）
+git push -u origin feature/42-command-palette
+
+# 6. 合并前再 rebase 一次，然后强推自己的分支
+git fetch origin
+git rebase origin/develop
+git push --force-with-lease
+
+# 7. 开 PR → CI 通过 → 完成适用评审 → 合并（用 --no-ff，见下文）
+```
+
+## rebase 规则（必须遵守）
+
+| 场景                      | 做法                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| 拉取远端更新              | 保护分支用 `git pull --ff-only`；自己的特性分支可用 `git pull --rebase`            |
+| 同步 `develop` 到特性分支 | `git rebase origin/develop`，**不允许** `git merge develop`                        |
+| 普通特性分支合并前        | 必须 rebase 到最新 `origin/develop`，且本地自检通过                                |
+| 冲突                      | 本地解决 → `git add <file>` → `git rebase --continue`；放弃用 `git rebase --abort` |
+| 已推送的分支被 rebase     | `git push --force-with-lease`，**禁止** `--force`                                  |
+| `develop` / `main`        | 保护分支：只能通过 PR 合并，不 rebase、不 force push、不直接 push                  |
+| `release/*` / `hotfix/*`  | 由发布负责人推送，不改写共享历史；仅修复与必要的版本、发布配置调整                 |
+
+特性分支使用 rebase，避免引入额外的集成合并节点，便于按提交审查自己的改动；PR 的文件差异仍由合并基点决定，不能把 merge 一概理解为会把他人的修改列入 PR。
+
+**普通功能 / 修复分支的 PR 内部提交要做整理：** 合并前用 `git rebase -i origin/develop` 把 `fix typo`、`再改一下` 这类提交合并或改写，留下能独立读懂、能独立回滚的原子提交。发布与紧急修复分支遵循上表的不改写共享历史规则。
+
+### rebase 和 GitFlow 的 --no-ff 冲突吗
+
+不冲突，因为两者作用于不同层面：
+
+- **rebase** 作用于特性分支**内部**：去掉从 develop 带进来的合并噪音，让分支自己的提交是线性的。
+- **--no-ff** 作用于**合并动作**：在 `develop` 上留下一个明确的合并节点。
+
+最终效果：`develop` 上每个特性有一个合并点，点开这个点，里面是一条干净的线性提交链。
+
+### 为什么不用 squash merge
+
+- 原子提交能保留，`git bisect` 定位问题时粒度更细。
+- 大特性可以分多次 review，每次看一个提交。
+- 代价是 `develop` 上提交数较多，靠 `--no-ff` 的合并点来分组。
+
+如果团队更习惯 squash，要**整体切换**并记录到 `docs/adr/`，不要一部分人 merge、一部分人 squash。
+
+## 提交信息规范
+
+采用 Conventional Commits；类型和模块标识保留英文，主题与正文使用中文。API、路径、命令和外部产品名称保留原标识。
+
+```text
+<type>(<scope>): <subject>
+
+<body 可选，说明动机与影响>
+
+<footer 可选，BREAKING CHANGE / Refs #42>
+```
+
+| type       | 用途                     |
+| ---------- | ------------------------ |
+| `feat`     | 新功能                   |
+| `fix`      | 缺陷修复                 |
+| `refactor` | 重构，不改变外部行为     |
+| `perf`     | 性能优化                 |
+| `style`    | 格式调整，不影响逻辑     |
+| `docs`     | 文档                     |
+| `test`     | 测试                     |
+| `build`    | 构建脚本、依赖、打包配置 |
+| `ci`       | CI 配置                  |
+| `chore`    | 杂项，如版本号、忽略文件 |
+| `revert`   | 回滚某次提交             |
+
+**scope** 用模块名，不要用文件名：`ui`、`tauri`、`ipc`、`window`、`docs`、`deps`。
+
+```text
+feat(window): 支持记住窗口尺寸与位置
+fix(tauri): 修复重复启动时窗口不聚焦
+refactor(ipc): 把 invoke 调用收敛到 lib/tauri.ts
+build(deps): 升级 tauri 到 2.12.4
+docs: 补充发布流程中的签名说明
+```
+
+要求：
+
+- subject 不超过 50 字，动词开头，结尾不加句号。
+- 正文按需要说明问题、改动原因、行为影响及验证结果，避免中英文交替描述同一工程事实。工具自动生成的合并记录与外部依赖元数据保留其标准格式。
+- 一次提交围绕一个明确问题；必要的格式整理和文档同步随对应改动提交，避免夹带无关重排。
+- 破坏性变更在 footer 写 `BREAKING CHANGE: 说明`，并在 PR 标题加 `!`，如 `feat(ipc)!: 重命名 invoke 封装`。
+
+## 本地不装 git hook
+
+模板未引入 husky / lint-staged。本地按 [日常验证范围](../testing.md#日常验证范围) 执行相关检查，不强制每次提交运行 `pnpm verify`；CI 执行完整校验，是否阻止合并由仓库管理员配置的必需检查与分支保护决定。
+
+## 合并方式
+
+| 合并路径                        | 命令                              | 说明                                              |
+| ------------------------------- | --------------------------------- | ------------------------------------------------- |
+| `feature/*` → `develop`         | `git merge --no-ff feature/xxx`   | 保留合并节点，便于整块回滚                        |
+| `release/*` → `main`            | `git merge --no-ff release/x.y.z` | 同上，并在合并后打 tag                            |
+| `release/*` → `develop`         | 同上                              | 把发布期间的修复带回集成分支                      |
+| `hotfix/*` → `main` / `develop` | 同上                              | 两处都要合，漏了 develop 会导致下个版本回退该修复 |
+
+合并前需 CI 通过、无冲突并完成适用评审；普通特性分支同步最新 `develop`，发布和紧急修复分支不改写共享历史，两处合入后再删除远端分支。合并目标继续推进时需重新确认差异和 CI，rebase 不保证后续永远无冲突。
+
+团队协作和外部贡献默认至少由 1 位非作者批准。单维护者自己的变更保留 PR、自审记录和 CI 结果；GitHub 不支持作者批准自己的 PR，应按实际维护者数量设置分支规则。仓库已启用的保护要求仍须满足，不以文档代替审批或临时绕过保护。
+
+## PR 规范
+
+**标题**：遵循提交信息规范；合并时确认合并提交能说明该 PR 的用途，标题是否自动沿用取决于平台合并设置。
+
+**描述**（见 [PR 模板](../../.github/pull_request_template.md)）必须包含：
+
+1. 变更内容（一段话说明最终行为）
+2. 变更原因（问题背景与关联 issue）
+3. 验证结果（执行的测试与手动检查）
+4. 影响范围（打包、权限、数据结构及其他边界变化）
+
+达到 [设计评审门槛](../engineering-at-scale.md#设计评审与-adr-门槛) 的改动附提案或 ADR，并注明受影响模块及适用评审；数据兼容、恢复和性能验证如实给出证据与未验证范围，不在 PR 模板中另定义一套设计流程。
+
+**关于规模**：
+
+- PR 围绕一个问题；能独立评审与验证的改动再拆分，不以固定行数作为门槛。
+- 视觉变化按需附截图；涉及主题颜色时提供明暗主题结果。交互和动效变化说明复现步骤与观察结果，必要时附录屏；无视觉变化不要求截图。
+- 涉及 `capabilities/default.json`、`tauri.conf.json`、`Cargo.toml` 的改动，要在描述里单独标出。
+- 作者跟进并解决评审意见；评审人通常在 1 个工作日内给出首次反馈，无法按期处理时说明安排。
+
+## 代码评审重点
+
+按以下优先级检查：
+
+1. **正确性**：边界条件、错误处理、异步竞态。
+2. **边界**：`pages/` 是否绕过原生门面调用 `invoke`，`lib/` 是否包含界面实现。
+3. **安全**：入参校验、路径访问边界与最小权限。
+4. **一致性**：命名与样式 token 是否符合规范。
+
+可自动处理的格式与静态规则由 Prettier 和 ESLint 检查，人工评审关注行为、边界和工程取舍。
+
+## 首次推送
+
+复制模板并创建自己的 GitHub 仓库后，若本地还没有远端，先把下例的 `<org>/<repo>` 替换为真实仓库路径再执行：
+
+```bash
+git remote add origin git@github.com:<org>/<repo>.git
+git switch main
+git branch develop
+git push -u origin main
+git push -u origin develop
+```
+
+上例假设 `main` 已存在、`develop` 尚未创建；已有集成分支时跳过创建。不要把模板原仓库的历史标签作为新产品的版本一起推送。推完到仓库设置里把默认分支改成 `develop`，再按下表配置保护。
+
+## 仓库设置（一次性）
+
+分支规范通过服务端保护规则落实，新建仓库后由管理员完成以下设置：
+
+| 设置         | 值                                               |
+| ------------ | ------------------------------------------------ |
+| 默认分支     | `develop`                                        |
+| 保护分支     | `main`、`develop`                                |
+| 合并前要求   | `质量门禁` 通过；按上文维护者规模配置非作者评审  |
+| 允许强推     | 关闭                                             |
+| 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致）     |
+| 合并后       | 特性分支可删除；发布与紧急修复分支两处合入后删除 |
+
+GitHub 路径：Settings → Branches → Add branch protection rule。
+
+分支保护、默认分支、允许的合并方式都是服务端设置，本地仓库无法携带；创建派生仓库时由管理员配置，换开发机器无需重设现有仓库规则。
+
+## 自动化工作流
+
+| 工作流                                          | 触发条件                                     | 行为                                                                 |
+| ----------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| [持续集成](../../.github/workflows/ci.yml)      | 向 `main` / `develop` 提交 PR 或推送         | 前端、浏览器、三端 Rust 和桌面 E2E 全部成功后，`质量门禁` 才通过     |
+| [在线演示](../../.github/workflows/pages.yml)   | `develop` 的相关源码推送，或在该分支手动运行 | 构建并验证浏览器产物，通过 GitHub Actions 部署 Pages，无需产物分支   |
+| [版本发布](../../.github/workflows/release.yml) | 推送 `v*` 标签，或手动运行                   | 验证代码已进入 `main` 及版本一致，构建各平台安装包并创建草稿 Release |
+| [依赖更新](../../.github/dependabot.yml)        | 配置的更新周期                               | 向 `develop` 提交依赖更新 PR，沿用相同检查和评审                     |
+| [依赖审计](../../.github/workflows/audit.yml)   | 每周一或手动运行                             | 检查 npm 与 Rust 锁文件中的已知漏洞                                  |
+
+初始化时 `main` 与 `develop` 指向同一个首版提交，后续按分支模型开发。发布、签名与安装验收见 [构建与发布](../build-release.md)。
+
+## 冲突处理
+
+```bash
+git fetch origin
+git rebase origin/develop
+# 冲突文件会标记出来
+# 编辑解决后：
+git add <file>
+git rebase --continue
+
+# 想整个放弃重来：
+git rebase --abort
+```
+
+原则：
+
+- 冲突解决后重新执行适用检查，确认 rebase 后的最终行为与预期一致。
+- 锁文件冲突先合并清单，再基于已有锁文件重新解析并审查差异，见 [锁文件冲突处理](../troubleshooting.md#pnpm-锁文件冲突)；不要借解决冲突全量升级依赖。
+- 无法确定冲突双方语义时，与原提交者确认处理方案。
+
+## 发布流程
+
+以下以发布 `1.2.0` 为例，分支、版本与 tag 均替换为本次实际值；上一个版本的 tag 必须已存在，首次发布直接审查 `git log HEAD --oneline`。
+
+```bash
+# 1. 从 develop 切发布分支
+git switch develop
+git pull --ff-only
+git switch -c release/1.2.0
+
+# 2. 同步版本号（见 scripts/version.mjs 的 set 子命令）
+pnpm version:set 1.2.0
+
+# 3. 审查发布提交范围；把 v1.1.1 换成上个真实版本的 tag
+git log v1.1.1..HEAD --oneline
+
+# 4. 此分支仅做修复与必要的版本、发布调整，不引入新功能
+
+# 5. 推送发布分支，分别向 main、develop 开 PR（保留 merge commit）
+git push -u origin release/1.2.0
+# 等两个 PR 的 CI 和审批通过后合并；main / develop 保持保护，不直接 push
+
+# 6. 两个 PR 合并后，在 main 的发布合并提交上打标签
+git switch main
+git pull --ff-only
+git tag -a v1.2.0 -m "v1.2.0"
+git push origin v1.2.0
+
+# 7. 删除发布分支
+git fetch origin
+git branch -d release/1.2.0
+git push origin --delete release/1.2.0
+```
+
+发布检查清单见 [构建与发布](../build-release.md#发布检查清单)。
+
+## 紧急修复
+
+```bash
+git switch main
+git pull --ff-only
+git switch -c hotfix/1.1.1
+# 修 bug，自检，提交
+git push -u origin hotfix/1.1.1
+# 分别向 main 与 develop 开 PR，CI 和审批通过后合并两处
+
+# main PR 合并后，在对应合并提交打标签
+git switch main
+git pull --ff-only
+git tag -a v1.1.1 -m "v1.1.1"
+git push origin v1.1.1
+```
+
+判断标准：**只有线上故障才走 hotfix**。还没发布的 bug 一律回 develop 走正常流程。
+
+## 明确禁止
+
+- 直接 push 到 `develop` 或 `main`
+- 在 `develop` / `main` 上 rebase 或 force push
+- 用 `git merge develop` 同步特性分支
+- 用 `git push --force`（只能用 `--force-with-lease`）
+- 提交 `node_modules`、`dist`、`src-tauri/target`
+- 提交任何密钥、证书、`.env`
+- 在同一 PR 混入与目标无关的重构或功能；为完成目标所必需的重构需说明关系
+- 把 `release/*` 只合到 `main` 不合回 `develop`

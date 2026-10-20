@@ -1,0 +1,19 @@
+# 统一换行符：仓库内一律 LF，检出到 Windows 时由 git 按需转换
+* text=auto eol=lf
+
+# 二进制文件不做任何转换，也不参与 diff
+*.png binary
+*.bmp binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.woff2 binary
+
+# Windows 脚本保留 CRLF，否则 cmd/powershell 解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 锁文件在 diff 中折叠展示
+pnpm-lock.yaml linguist-generated=true
+src-tauri/Cargo.lock linguist-generated=true

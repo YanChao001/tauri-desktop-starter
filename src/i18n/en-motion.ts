@@ -1,0 +1,82 @@
+import type { MotionMessages } from "./zh-motion";
+export const enMotion = {
+  "lab.eyebrow": "INTERACTIVE PLAYGROUND · 01",
+  "lab.title": "A little life, in every interaction.",
+  "lab.subtitle":
+    "Shape the spring, explore the space, and play with light. Four experiments to make your own.",
+  "lab.scenes": "Choose a motion experiment",
+  "lab.spring": "Spring physics",
+  "lab.layout": "Shared space",
+  "lab.tilt": "Light & touch",
+  "lab.paths": "Stellar paths",
+  "lab.springTitle": "An orb with a personality",
+  "lab.springHint":
+    "Send it to the other side, then tune the controls to feel a different kind of bounce.",
+  "lab.layoutTitle": "Let the focus flow",
+  "lab.layoutHint":
+    "Choose a card. The highlight and its content share a continuous sense of space.",
+  "lab.tiltTitle": "Hold a little light",
+  "lab.tiltHint":
+    "Move your pointer or touch the card. You can also focus it, explore with arrow keys, and flip with Enter.",
+  "lab.pathsTitle": "Draw your own corner of the cosmos",
+  "lab.pathsHint":
+    "Watch the paths appear. Change their pace, add stardust, or unleash a stellar burst.",
+  "lab.pause": "Pause",
+  "lab.resume": "Resume",
+  "lab.replay": "Replay",
+  "lab.live": "In motion",
+  "lab.paused": "Paused",
+  "lab.reduced": "Still experience",
+  "lab.reducedHint":
+    "Your system or app requests reduced motion. Every interaction remains available.",
+  "lab.controls": "Find your feel",
+  "lab.stiffness": "Stiffness",
+  "lab.damping": "Damping",
+  "lab.mass": "Mass",
+  "lab.throw": "Send to the other side",
+  "lab.left": "Send left",
+  "lab.right": "Send right",
+  "lab.presets": "Try a personality",
+  "lab.velvet": "Velvet",
+  "lab.playful": "Playful",
+  "lab.precise": "Precise",
+  "lab.response": "Spring response",
+  "lab.bouncy": "A playful bounce",
+  "lab.balanced": "A gentle landing",
+  "lab.heavy": "A slower approach",
+  "lab.springNote":
+    "Stiffness adds acceleration, damping settles the bounce, and mass changes inertia.",
+  "lab.atelier": "Create",
+  "lab.journal": "Journal",
+  "lab.discover": "Discover",
+  "lab.atelierDetail": "Give the next idea room to become something.",
+  "lab.journalDetail": "Keep the small bright moments close.",
+  "lab.discoverDetail": "Follow your curiosity somewhere new.",
+  "lab.layoutChoice": "Choose the focused card",
+  "lab.layoutNote":
+    "A card keeps its place in the story as it opens to reveal more.",
+  "lab.layoutSpeed": "Transition feel",
+  "lab.smooth": "Unhurried",
+  "lab.snappy": "Responsive",
+  "lab.tiltStrength": "Tilt strength",
+  "lab.tiltCard":
+    "Interactive light card. Arrow keys tilt, Enter flips, and Escape resets.",
+  "lab.cardFront": "Turn curiosity into something real.",
+  "lab.cardBack": "Even the smallest interaction deserves a little care.",
+  "lab.cardEdition": "A PASS FOR POSSIBILITY",
+  "lab.cardSignature": "Limitless ideas · Start anywhere",
+  "lab.flip": "Flip card",
+  "lab.resetTilt": "Return to center",
+  "lab.tiltNote":
+    "Explore by touch, pointer, or keyboard. Move away and the light gently settles.",
+  "lab.duration": "Drawing time",
+  "lab.density": "Stardust count",
+  "lab.loop": "Loop the drawing",
+  "lab.burst": "Stellar burst",
+  "lab.burstOff": "Gather the light",
+  "lab.pathNote":
+    "Paths draw themselves while stardust follows its orbit. Pause to hold the moment.",
+  "lab.insight": "FIELD NOTES",
+  "lab.footer":
+    "Motion is feedback, and an invitation. Find the moment that feels right.",
+} satisfies MotionMessages;

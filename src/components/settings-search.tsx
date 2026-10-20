@@ -1,0 +1,90 @@
+import { useEffect, useId, useMemo, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
+import { SearchIcon } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  focusSetting,
+  searchSettings,
+  SETTINGS_SEARCH_ENTRIES,
+} from "@/commands/settings-search";
+import { useI18n } from "@/providers/i18n";
+
+export function SettingsSearch() {
+  const { t } = useI18n();
+  const [query, setQuery] = useState("");
+  const [params] = useSearchParams();
+  const { key: locationKey } = useLocation();
+  const results = useMemo(() => searchSettings(query, t), [query, t]);
+  const id = useId();
+  const requested = params.get("focus");
+  useEffect(() => {
+    const entry = SETTINGS_SEARCH_ENTRIES.find((item) => item.id === requested);
+    if (entry) focusSetting(entry.anchor);
+  }, [requested, locationKey]);
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <SearchIcon
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label={t("settings.search")}
+          aria-describedby={query.trim() ? id : undefined}
+          placeholder={t("settings.searchPlaceholder")}
+          className="h-10 pl-9"
+          onKeyDown={(event) => {
+            if (
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
+            )
+              return;
+            if (event.key === "Enter" && results[0]) {
+              event.preventDefault();
+              focusSetting(results[0].anchor);
+            }
+            if (event.key === "Escape") setQuery("");
+          }}
+        />
+      </div>
+      {query.trim() ? (
+        <div className="rounded-lg border bg-popover p-2">
+          <p
+            id={id}
+            role="status"
+            className="px-2 py-1 text-xs text-muted-foreground"
+          >
+            {results.length
+              ? t("settings.searchResults", { count: results.length })
+              : t("settings.searchEmpty")}
+          </p>
+          <ul className="max-h-60 overflow-y-auto">
+            {results.map((entry) => (
+              <li key={entry.id}>
+                <Button
+                  variant="ghost"
+                  className="h-auto w-full justify-start whitespace-normal px-2 py-2 text-left"
+                  onClick={() => focusSetting(entry.anchor)}
+                >
+                  <span className="flex flex-col gap-0.5">
+                    <span>{t(entry.labelKey)}</span>
+                    {entry.descriptionKey ? (
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {t(entry.descriptionKey)}
+                      </span>
+                    ) : null}
+                  </span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}

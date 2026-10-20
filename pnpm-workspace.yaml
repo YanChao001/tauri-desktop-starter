@@ -1,0 +1,14 @@
+allowBuilds:
+  esbuild: true
+  edgedriver: false
+  geckodriver: false
+
+# 上游更新依赖范围前，覆盖 WDIO 9 工具链的相关依赖：
+# 使用已修复的 glob / serializer / diff，移除 Mocha 的 braces 依赖，
+# 并避免浏览器工具链引入未修复的 extract-zip。
+overrides:
+  "glob@>=10.2.0 <10.5.0": 10.5.0
+  "@wdio/mocha-framework>mocha": 11.8.0
+  "mocha>serialize-javascript": 7.1.2
+  "mocha>diff": 8.0.3
+  "@wdio/utils>@puppeteer/browsers": 3.2.5

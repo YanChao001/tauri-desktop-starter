@@ -1,0 +1,83 @@
+use tauri_specta::{Builder, collect_commands};
+
+use crate::commands;
+use crate::{data_commands, lifecycle, recovery, system_commands, workbench_commands};
+
+pub fn builder() -> Builder<tauri::Wry> {
+    Builder::new()
+        .commands(collect_commands![
+            commands::greet,
+            commands::load_settings_snapshot,
+            commands::save_settings_snapshot,
+            commands::list_notes,
+            commands::create_note,
+            commands::update_note,
+            commands::delete_note,
+            commands::open_secondary_window,
+            commands::complete_frontend_startup,
+            commands::get_window_geometry,
+            commands::set_window_size,
+            commands::reset_window_geometry,
+            commands::get_desktop_status,
+            commands::get_autostart_enabled,
+            commands::set_autostart_enabled,
+            commands::record_frontend_error,
+            commands::get_diagnostics_report,
+            commands::check_for_update,
+            commands::get_update_snapshot,
+            commands::download_and_install_update,
+            commands::relaunch_app,
+            commands::quit_app,
+            lifecycle::set_window_work_state,
+            lifecycle::respond_lifecycle,
+            data_commands::query_notes,
+            data_commands::get_note,
+            data_commands::change_notes,
+            data_commands::load_note_draft,
+            data_commands::save_note_draft,
+            data_commands::create_data_backup,
+            data_commands::list_data_backups,
+            data_commands::preview_data_backup,
+            data_commands::restore_data_backup,
+            data_commands::export_data_backup,
+            data_commands::import_data_backup,
+            data_commands::pick_data_backup,
+            data_commands::save_data_backup,
+            workbench_commands::pick_workbench_files,
+            workbench_commands::pick_workbench_directory,
+            workbench_commands::load_workbench_document,
+            workbench_commands::save_workbench_document,
+            workbench_commands::save_workbench_as,
+            workbench_commands::recent_workbench_files,
+            workbench_commands::reveal_workbench_file,
+            workbench_commands::start_workbench_task,
+            workbench_commands::workbench_task_snapshot,
+            workbench_commands::cancel_workbench_task,
+            workbench_commands::retry_workbench_task,
+            workbench_commands::export_workbench_task,
+            system_commands::activation_snapshot,
+            system_commands::get_workspace,
+            system_commands::save_workspace_route,
+            system_commands::open_notes_window,
+            system_commands::restore_workspace,
+            system_commands::activate_main,
+            system_commands::set_demo_credential,
+            system_commands::get_demo_credential,
+            system_commands::delete_demo_credential,
+            system_commands::run_demo_sidecar,
+            recovery::recovery_status,
+            recovery::list_recovery_backups,
+            recovery::pick_recovery_backup,
+            recovery::preview_recovery_backup,
+            recovery::restore_recovery_backup,
+            recovery::stage_recovery,
+        ])
+        .typ::<crate::updater::UpdateProgress>()
+        .typ::<crate::lifecycle::LifecycleRequest>()
+        .typ::<crate::workbench::WorkbenchDrop>()
+}
+
+pub fn export(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    builder().export(specta_typescript::Typescript::default(), path)?;
+    Ok(())
+}

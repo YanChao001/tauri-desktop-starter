@@ -1,0 +1,45 @@
+name: 依赖审计
+
+# 每周一自动审计，与 Dependabot 升级 PR 的周期保持一致
+# 发现已知漏洞时检查失败；无法升级时按 security.md 记录原因与缓解措施
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pnpm-audit:
+    name: npm 依赖审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # 只读锁文件，不需要安装依赖。发现漏洞时退出码非零
+      - name: 审计 npm 依赖
+        run: pnpm audit
+
+  cargo-audit:
+    name: Rust 依赖审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Rust 工具链
+        run: rustup toolchain install
+
+      # 直接使用 cargo-audit 的退出码，发现漏洞时让 job 失败。
+      # audit-check action 默认查仓库根目录，且报告 issue/check 需要额外写权限。
+      - name: 安装 cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: 审计 Rust 依赖
+        run: cargo audit --file src-tauri/Cargo.lock

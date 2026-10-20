@@ -1,0 +1,216 @@
+name: 持续集成
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: 前端校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 版本由 package.json 的 packageManager 字段统一维护
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 验证品牌资源与 SVG 源一致
+        run: pnpm branding:check
+
+      - name: 版本一致性与发布脚本回归
+        run: |
+          node scripts/version.mjs check
+          node --test scripts/*.test.mjs e2e/*.test.mjs
+
+      - name: 格式检查
+        run: pnpm format:check
+
+      - name: ESLint 静态检查
+        run: pnpm lint
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 单元测试
+        run: pnpm test
+
+      - name: 构建前端
+        # 类型已单独检查，构建阶段不重复执行 tsc。
+        run: pnpm exec vite build
+
+      - name: 构建浏览器演示
+        run: pnpm exec vite build --mode web-demo
+
+  browser-smoke:
+    name: 浏览器生产构建冒烟与无障碍
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:web
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm exec playwright test
+      - name: 保留浏览器截图、性能采样与失败 trace
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-smoke
+          path: artifacts/browser
+          if-no-files-found: ignore
+
+  rust:
+    name: Rust 校验（${{ matrix.platform }}）
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      # 保留其他平台的执行结果，分别定位平台问题
+      fail-fast: false
+      matrix:
+        # 在三端编译验证 cfg 分支、系统库和链接器差异
+        # 避免平台问题延迟到发布阶段才暴露
+        platform: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Linux 系统依赖
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # tauri::generate_context! 会在编译期读取前端产物，必须先构建 dist
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装前端依赖并构建
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vite build
+
+      # 读取 rust-toolchain.toml，工具链与组件只维护一处。
+      - name: 安装 Rust 工具链
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 验证 Rust 生成的 IPC 类型
+        if: matrix.platform == 'windows-latest'
+        run: pnpm bindings:check
+
+      # 格式规则与平台无关，仅在一个平台执行
+      - name: 格式检查
+        if: matrix.platform == 'windows-latest'
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Clippy 静态检查
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: 单元测试
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  desktop-e2e:
+    name: 真实桌面 E2E（${{ matrix.platform }}）
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Linux 桌面依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖与 Rust 工具链
+        run: |
+          pnpm install --frozen-lockfile
+          rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target/e2e
+          key: e2e
+          # 保留已成功编译的依赖缓存，桌面断言失败后仍可复用。
+          cache-on-failure: true
+
+      # 仅 feature=e2e 带内嵌 WebDriver，使用 .e2e 标识及临时用户数据。
+      - name: 构建测试专用桌面应用
+        run: pnpm e2e:build
+
+      - name: 桌面 E2E（Windows / macOS）
+        if: runner.os != 'Linux'
+        run: pnpm test:e2e --skip-build
+
+      - name: 桌面 E2E（Linux）
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --skip-build'
+
+      - name: 保留失败截图与测试日志
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-e2e-${{ runner.os }}
+          path: artifacts/e2e
+          if-no-files-found: ignore
+
+  quality-gate:
+    name: 质量门禁
+    if: always()
+    needs: [frontend, browser-smoke, rust, desktop-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 确认所有检查通过
+        env:
+          JOB_RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          IFS=',' read -r -a results <<< "$JOB_RESULTS"
+          for result in "${results[@]}"; do
+            if [[ "$result" != "success" ]]; then
+              echo "存在失败、取消或跳过的检查：$JOB_RESULTS"
+              exit 1
+            fi
+          done

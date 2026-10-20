@@ -1,0 +1,86 @@
+[package]
+name = "tauri-desktop-starter"
+version = "0.1.0"
+description = "A complete desktop application starter"
+authors = ["Tauri Desktop Starter contributors"]
+license = "MIT"
+edition = "2024"
+default-run = "tauri-desktop-starter"
+
+# 配置字段说明：https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# 库名保留 _lib 后缀，避免在 Windows 上与可执行程序名称冲突
+# 背景：https://github.com/rust-lang/cargo/issues/8519
+name = "tauri_desktop_starter_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-http = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-window-state = "2"
+# 正式构建默认不显示控制台，文件日志用于定位运行问题
+tauri-plugin-log = "2"
+log = "0.4"
+# 原生命令、持久化快照和生成的 IPC 契约共享 serde 数据模型。
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tempfile = "3"
+url = "2"
+regex = "1"
+base64 = "0.22"
+minisign-verify = "0.3"
+walkdir = "2"
+sha2 = "0.10"
+keyring = "4.2"
+tokio = { version = "1", features = ["sync", "time"] }
+
+# 单实例只在桌面端有意义，移动端不编译这个 crate
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
+
+[features]
+default = []
+e2e = ["dep:tauri-plugin-wdio-webdriver"]
+bindings = []
+
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+tauri-plugin-autostart = "2"
+
+[[bin]]
+name = "export-bindings"
+path = "src/bin/export-bindings.rs"
+required-features = ["bindings"]
+
+[[bin]]
+name = "verify-updater"
+path = "src/bin/verify-updater.rs"
+required-features = ["bindings"]
+
+# 体积优化配置说明：https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

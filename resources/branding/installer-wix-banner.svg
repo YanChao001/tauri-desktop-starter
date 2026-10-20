@@ -1,0 +1,11 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="493"
+  height="58"
+  viewBox="0 0 493 58"
+  fill="none"
+>
+  <path fill="#FFFFFF" d="M0 0h493v58H0z" />
+  <path d="M0 57.5h493" stroke="#E7EAF7" />
+  <image href="app-icon.svg" x="443" y="5" width="46" height="46" />
+</svg>

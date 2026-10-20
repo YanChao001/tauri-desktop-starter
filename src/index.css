@@ -1,0 +1,564 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./styles/shadcn.css";
+@import "@fontsource-variable/geist";
+@import "./styles/showcase.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--app-font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --app-chrome-height: 40px;
+  --app-font-sans: "Geist Variable", sans-serif;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    height: 100%;
+    overflow-x: clip;
+    scroll-padding-top: var(--app-chrome-height);
+    /* 保留原生边界回弹，同时禁止下拉刷新与横向历史导航。 */
+    overscroll-behavior: none contain;
+  }
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ============================================================
+ * 可切换的外观设置
+ * 全部由 <html> 上的 data-* 驱动，组件不需要知道当前设置。
+ * ========================================================== */
+
+/* 主题色：neutral 用基础变量，其余覆盖 primary / ring / sidebar / chart */
+html[data-accent="indigo"] {
+  --primary: oklch(0.51 0.23 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.51 0.23 277 / 60%);
+  --sidebar-primary: oklch(0.51 0.23 277);
+  --chart-1: oklch(0.51 0.23 277);
+}
+html.dark[data-accent="indigo"] {
+  --primary: oklch(0.64 0.2 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.64 0.2 277 / 60%);
+  --sidebar-primary: oklch(0.64 0.2 277);
+  --chart-1: oklch(0.64 0.2 277);
+}
+
+html[data-accent="blue"] {
+  --primary: oklch(0.55 0.19 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.55 0.19 250 / 60%);
+  --sidebar-primary: oklch(0.55 0.19 250);
+  --chart-1: oklch(0.55 0.19 250);
+}
+html.dark[data-accent="blue"] {
+  --primary: oklch(0.67 0.16 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.67 0.16 250 / 60%);
+  --sidebar-primary: oklch(0.67 0.16 250);
+  --chart-1: oklch(0.67 0.16 250);
+}
+
+html[data-accent="emerald"] {
+  --primary: oklch(0.55 0.14 160);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.55 0.14 160 / 60%);
+  --sidebar-primary: oklch(0.55 0.14 160);
+  --chart-1: oklch(0.55 0.14 160);
+}
+html.dark[data-accent="emerald"] {
+  --primary: oklch(0.69 0.13 160);
+  --primary-foreground: oklch(0.205 0 0);
+  --ring: oklch(0.69 0.13 160 / 60%);
+  --sidebar-primary: oklch(0.69 0.13 160);
+  --chart-1: oklch(0.69 0.13 160);
+}
+
+html[data-accent="amber"] {
+  --primary: oklch(0.76 0.16 80);
+  --primary-foreground: oklch(0.205 0 0);
+  --ring: oklch(0.76 0.16 80 / 60%);
+  --sidebar-primary: oklch(0.76 0.16 80);
+  --chart-1: oklch(0.76 0.16 80);
+}
+html.dark[data-accent="amber"] {
+  --primary: oklch(0.8 0.15 80);
+  --primary-foreground: oklch(0.205 0 0);
+  --ring: oklch(0.8 0.15 80 / 60%);
+  --sidebar-primary: oklch(0.8 0.15 80);
+  --chart-1: oklch(0.8 0.15 80);
+}
+
+html[data-accent="rose"] {
+  --primary: oklch(0.56 0.22 12);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.56 0.22 12 / 60%);
+  --sidebar-primary: oklch(0.56 0.22 12);
+  --chart-1: oklch(0.56 0.22 12);
+}
+html.dark[data-accent="rose"] {
+  --primary: oklch(0.67 0.19 12);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.67 0.19 12 / 60%);
+  --sidebar-primary: oklch(0.67 0.19 12);
+  --chart-1: oklch(0.67 0.19 12);
+}
+
+html[data-accent="violet"] {
+  --primary: oklch(0.53 0.24 300);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.53 0.24 300 / 60%);
+  --sidebar-primary: oklch(0.53 0.24 300);
+  --chart-1: oklch(0.53 0.24 300);
+}
+html.dark[data-accent="violet"] {
+  --primary: oklch(0.66 0.21 300);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.66 0.21 300 / 60%);
+  --sidebar-primary: oklch(0.66 0.21 300);
+  --chart-1: oklch(0.66 0.21 300);
+}
+
+/* 圆角 */
+html[data-radius="sharp"] {
+  --radius: 0.25rem;
+}
+html[data-radius="round"] {
+  --radius: 1rem;
+}
+
+/* 字体 */
+html[data-font="system"] {
+  --app-font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+}
+html[data-font="serif"] {
+  --app-font-sans:
+    "Noto Serif SC", "Songti SC", Georgia, "Times New Roman", serif;
+}
+html[data-font="mono"] {
+  --app-font-sans:
+    ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+}
+
+/* 字号 */
+html[data-font-size="sm"] {
+  font-size: 14px;
+}
+html[data-font-size="lg"] {
+  font-size: 17px;
+}
+
+/* 插画只铺在窗口底层；阅读表面与装饰分别调节，避免降低文字对比度。 */
+:root {
+  --skin-strength: 1;
+  --skin-glow-opacity: 0.16;
+  --skin-fill-opacity: 0.46;
+  --skin-line-opacity: 0.3;
+  --skin-chrome-opacity: 52%;
+  --skin-sidebar-opacity: 42%;
+  --skin-card-opacity: 78%;
+}
+
+.dark {
+  --skin-glow-opacity: 0.2;
+  --skin-fill-opacity: 0.34;
+  --skin-line-opacity: 0.38;
+  --skin-chrome-opacity: 58%;
+  --skin-sidebar-opacity: 46%;
+  --skin-card-opacity: 82%;
+}
+
+html[data-background-intensity="subtle"] {
+  --skin-strength: 0.6;
+}
+html[data-background-intensity="strong"] {
+  --skin-strength: 1.4;
+}
+html[data-background="plain"] {
+  --skin-chrome-opacity: 100%;
+  --skin-sidebar-opacity: 100%;
+  --skin-card-opacity: 100%;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+}
+/* 固定元素直接以视口定位，不随文档的原生边界回弹移动。 */
+.app-chrome {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+}
+.window-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: var(--background);
+}
+.app-title-bar {
+  position: relative;
+  z-index: 1;
+}
+.app-title-bar {
+  background-color: color-mix(
+    in oklch,
+    var(--background) var(--skin-chrome-opacity),
+    transparent
+  );
+  backdrop-filter: none;
+}
+.app-sidebar {
+  position: fixed;
+  inset: var(--app-chrome-height) auto 0 0;
+  z-index: 10;
+  background-color: color-mix(
+    in oklch,
+    var(--sidebar) var(--skin-sidebar-opacity),
+    transparent
+  );
+}
+.app-main {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  margin-inline-start: var(--app-sidebar-width);
+  padding-top: var(--app-chrome-height);
+  background: transparent;
+}
+.app-main [data-slot="card"] {
+  background-color: color-mix(
+    in oklch,
+    var(--card) var(--skin-card-opacity),
+    transparent
+  );
+}
+.app-main
+  :where(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"]
+  ) {
+  background-color: var(--background);
+}
+
+.pattern-artwork {
+  --skin-color: color-mix(in oklch, var(--primary) 48%, #a3b4da);
+  --skin-secondary: color-mix(in oklch, var(--primary) 30%, #c3cfee);
+  --skin-ink: color-mix(in oklch, var(--primary) 38%, #8393bd);
+  --skin-highlight: color-mix(in oklch, var(--primary) 12%, #cba760);
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: var(--background);
+}
+.pattern-artwork[data-pattern="sakura"] {
+  --skin-color: color-mix(in oklch, var(--primary) 18%, #e7afc7);
+  --skin-secondary: color-mix(in oklch, var(--primary) 10%, #efb7cd);
+  --skin-ink: color-mix(in oklch, var(--primary) 20%, #b08192);
+  --skin-highlight: #d0ab76;
+}
+.pattern-artwork[data-pattern="moonlit"] {
+  --skin-color: color-mix(in oklch, var(--primary) 35%, #8da0d3);
+  --skin-secondary: color-mix(in oklch, var(--primary) 35%, #a2accd);
+  --skin-ink: color-mix(in oklch, var(--primary) 35%, #6d7aa6);
+  --skin-highlight: #dccca3;
+}
+.pattern-artwork[data-pattern="botanical"] {
+  --skin-color: color-mix(in oklch, var(--primary) 18%, #a9b69a);
+  --skin-secondary: color-mix(in oklch, var(--primary) 18%, #a6b998);
+  --skin-ink: color-mix(in oklch, var(--primary) 25%, #81917b);
+  --skin-highlight: #b8a585;
+}
+.pattern-artwork[data-pattern="cloudscape"] {
+  --skin-color: color-mix(in oklch, var(--primary) 22%, #afc8e5);
+  --skin-secondary: color-mix(in oklch, var(--background) 65%, #bfd2e8);
+  --skin-ink: color-mix(in oklch, var(--primary) 22%, #8aa6c8);
+  --skin-highlight: #e5c98d;
+}
+.skin-glow {
+  opacity: calc(var(--skin-glow-opacity) * var(--skin-strength));
+}
+.skin-fill {
+  opacity: calc(var(--skin-fill-opacity) * var(--skin-strength));
+}
+.skin-lines {
+  opacity: calc(var(--skin-line-opacity) * var(--skin-strength));
+}
+.pattern-artwork--preview {
+  --skin-strength: 1;
+  --skin-glow-opacity: 0.3;
+  --skin-fill-opacity: 0.8;
+  --skin-line-opacity: 0.7;
+  border-radius: inherit;
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  .window-background,
+  .pattern-artwork--preview {
+    display: none;
+  }
+  .app-title-bar,
+  .app-sidebar,
+  .app-main [data-slot="card"] {
+    background-color: var(--background);
+  }
+}
+
+/* 精简动效 */
+html[data-motion="reduced"] {
+  overscroll-behavior-y: none;
+}
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    overscroll-behavior-y: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* 主题切换的圆形扩散：让新视图盖在旧视图上 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* 桌面端滚动条细一点，别抢内容 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--foreground) 28%, transparent);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 侧栏过渡不延迟指针拖动时的尺寸更新 */
+.app-sidebar {
+  transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.app-main {
+  transition: margin-inline-start 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.app-shell:has(.app-sidebar[data-resizing="true"]) .app-main {
+  transition: none;
+}
+.app-sidebar-label {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms ease,
+    transform 200ms ease;
+}
+.app-sidebar[data-collapsed="true"] .app-sidebar-label {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+.app-sidebar[data-resizing="true"],
+.app-sidebar[data-motion="reduced"],
+.app-sidebar[data-motion="reduced"] .app-sidebar-label {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .app-sidebar-label {
+    transition: none !important;
+  }
+}
+
+/* JSON 通过 React 文本节点渲染，配色跟随应用主题 */
+.code-block {
+  --code-property: #4338ca;
+  --code-string: #047857;
+  --code-number: #b45309;
+  --code-boolean: #6d28d9;
+  --code-null: #be123c;
+}
+.dark .code-block {
+  --code-property: #a5b4fc;
+  --code-string: #6ee7b7;
+  --code-number: #fcd34d;
+  --code-boolean: #c4b5fd;
+  --code-null: #fda4af;
+}
+.code-token--property {
+  color: var(--code-property);
+}
+.code-token--string {
+  color: var(--code-string);
+}
+.code-token--number {
+  color: var(--code-number);
+}
+.code-token--boolean {
+  color: var(--code-boolean);
+}
+.code-token--null {
+  color: var(--code-null);
+}
+.code-token--punctuation {
+  color: var(--muted-foreground);
+}
+@media (forced-colors: active) {
+  .code-token {
+    color: inherit;
+  }
+}
