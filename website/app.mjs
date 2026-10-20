@@ -96,13 +96,13 @@ const captures = [
     source: "settings-desktop.png",
     title: ["窗口与设置", "Window & settings"],
     alt: [
-      "原生应用的设置页面，展示窗口宽高、屏幕限制、应用尺寸与恢复设置入口",
-      "The native settings page with window width and height, screen limits, size controls, and reset preferences",
+      "原生应用的设置页面，展示常用窗口尺寸预设、启动位置与恢复设置入口",
+      "The native settings page with common window size presets, startup placement, and reset preferences",
     ],
     tag: ["个性化设置", "PERSONALIZATION"],
     description: [
-      "窗口宽高可以按屏幕范围设置，以逻辑像素适配不同 DPI。恢复设置同时恢复窗口默认大小；主题、皮肤与布局在本地原子保存，支持迁移、跨窗口同步与失败重试。",
-      "Set window dimensions within the screen's limits, using logical pixels across DPI settings. Reset preferences also restores the default window size. Themes, skins, and layout use atomic local saves, with migrations, cross-window sync, and retries.",
+      "从常用尺寸预设中选择窗口大小，标准尺寸自动适应当前屏幕。启动位置可记住上次位置或居中，下次开窗生效。恢复设置同时恢复默认大小；主题、皮肤与布局支持本地保存、迁移、跨窗口同步与失败重试。",
+      "Choose a common window size preset, with the standard size fitted to the current screen. Remember the previous position or center newly opened windows. Reset preferences also restores the default size. Themes, skins, and layout support local saves, migrations, cross-window sync, and retries.",
     ],
   },
 ];
