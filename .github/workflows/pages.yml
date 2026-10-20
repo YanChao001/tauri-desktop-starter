@@ -2,7 +2,7 @@ name: 在线演示
 
 on:
   push:
-    branches: [develop, gh-pages]
+    branches: [develop]
     paths:
       - src/**
       - resources/branding/app-icon.svg

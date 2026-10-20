@@ -264,6 +264,6 @@ pnpm exec vite preview --outDir dist-web
 
 HashRouter 将页面路径保留在 `#` 后，静态服务只需提供首页与构建资源，适用于 `/tauri-desktop-starter/` 等项目子路径。部署后检查首页、`#/components` 等页面的直接访问与刷新，以及语言、主题、设置保存、动效暂停、窄屏布局和原生能力说明。
 
-[`pages.yml`](../.github/workflows/pages.yml) 安装锁定依赖、执行 `pnpm build:web` 并将 `dist-web/` 发布到 [GitHub Pages 在线演示](https://yanchao001.github.io/tauri-desktop-starter/)，与桌面安装包发布分别执行。仓库 Pages 来源须选择 GitHub Actions，`github-pages` 环境允许的部署分支应与工作流一致；实际触发条件以工作流为准。
+[`pages.yml`](../.github/workflows/pages.yml) 安装锁定依赖、执行 `pnpm build:web` 并将 `dist-web/` 发布到 [GitHub Pages 在线演示](https://yanchao001.github.io/tauri-desktop-starter/)，与桌面安装包发布分别执行。推送到 `develop` 且命中工作流路径时自动部署，也可从该分支手动触发。仓库 Pages 来源须选择 GitHub Actions，`github-pages` 环境须允许 `develop` 部署。
 
 派生项目需同步仓库 About 与 README 的演示地址，并将 `app.config.json` 的 `docsUrl` 指向真实工程文档入口。界面和能力变化在同一份源码中维护，发布演示前同时复核浏览器边界与桌面行为。
