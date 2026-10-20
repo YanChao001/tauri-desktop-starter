@@ -30,6 +30,7 @@ html[data-motion="reduced"] .app-route-enter {
 
 .app-sidebar-navigation {
   padding: 0 0.5rem 0.75rem;
+  overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
 }

@@ -123,6 +123,14 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* 窗口外壳保持固定，滚动由内容区和侧栏各自承接。 */
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -294,6 +302,8 @@ html[data-background="plain"] {
 .app-shell {
   position: relative;
   isolation: isolate;
+  /* 外壳不参与程序化滚动，聚焦内容也不能挤走标题栏与侧栏。 */
+  overflow: clip;
 }
 .window-background {
   position: fixed;
@@ -326,6 +336,7 @@ html[data-background="plain"] {
 }
 .app-main {
   background: transparent;
+  overscroll-behavior: contain;
 }
 .app-main [data-slot="card"] {
   background-color: color-mix(

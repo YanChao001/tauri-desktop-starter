@@ -40,7 +40,7 @@ export function AppShell() {
   return (
     <div
       className={cn(
-        "app-shell flex h-screen flex-col overflow-hidden text-foreground",
+        "app-shell flex h-screen flex-col text-foreground",
         !isTauri() && "app-shell-browser",
       )}
     >
