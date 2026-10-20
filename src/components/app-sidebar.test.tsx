@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomeIcon } from "lucide-react";
@@ -55,7 +61,10 @@ describe("persisted application sidebar", () => {
     localStorage.clear();
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ language: "zh" }));
   });
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
   it("preserves navigation layout classes through the Radix tooltip slot", () => {
     renderSidebar();
     const link = screen.getByRole("link", { name: "概览" });
@@ -88,6 +97,7 @@ describe("persisted application sidebar", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
     expect(screen.getByRole("link", { name: "概览" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "概览" })).toHaveClass("px-3");
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "展开侧栏" })).toHaveAttribute(
       "aria-expanded",
@@ -100,5 +110,76 @@ describe("persisted application sidebar", () => {
       "aria-valuenow",
       "256",
     );
+  });
+
+  it("marks active pointer resizing for immediate width updates and clears it after release", () => {
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId: number;
+        constructor(type: string, init: PointerEventInit = {}) {
+          super(type, init);
+          this.pointerId = init.pointerId ?? 0;
+        }
+      },
+    );
+    renderSidebar();
+    const sidebar = screen.getByRole("complementary");
+    const separator = screen.getByRole("separator");
+    separator.setPointerCapture = vi.fn();
+    separator.hasPointerCapture = vi.fn(() => true);
+    separator.releasePointerCapture = vi.fn();
+    fireEvent.pointerDown(separator, { button: 0, pointerId: 2, clientX: 224 });
+    expect(sidebar).toHaveAttribute("data-resizing", "true");
+    fireEvent.pointerMove(separator, { pointerId: 2, clientX: 264 });
+    expect(sidebar).toHaveStyle({ width: "264px" });
+    fireEvent.pointerUp(separator, { pointerId: 2 });
+    expect(sidebar).toHaveAttribute("data-resizing", "false");
+    expect(separator.releasePointerCapture).toHaveBeenCalledWith(2);
+  });
+
+  it("keeps text in place for fading and exposes reduced-motion preference", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ language: "zh", motion: "reduced" }),
+    );
+    renderSidebar();
+    const sidebar = screen.getByRole("complementary");
+    const label = screen
+      .getByRole("link", { name: "概览" })
+      .querySelector("span");
+    expect(sidebar).toHaveAttribute("data-motion", "reduced");
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
+    expect(
+      screen.getByRole("link", { name: "概览" }).querySelector("span"),
+    ).toBe(label);
+    expect(label).not.toHaveClass("sr-only");
+    expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  });
+
+  it("clears the immediate-resize state when collapsing removes the drag handle", async () => {
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId: number;
+        constructor(type: string, init: PointerEventInit = {}) {
+          super(type, init);
+          this.pointerId = init.pointerId ?? 0;
+        }
+      },
+    );
+    renderSidebar();
+    const sidebar = screen.getByRole("complementary");
+    const separator = screen.getByRole("separator");
+    separator.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(separator, { button: 0, pointerId: 2, clientX: 224 });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" })),
+    );
+    expect(sidebar).toHaveAttribute("data-resizing", "false");
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "展开侧栏" })),
+    );
+    expect(sidebar).toHaveAttribute("data-resizing", "false");
   });
 });

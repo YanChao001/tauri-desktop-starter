@@ -15,6 +15,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { APP_CONFIG } from "@/config/app";
+import appIcon from "../../resources/branding/app-icon.svg";
 import { CommandMenuItem } from "@/components/command-menu-item";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitch } from "@/components/language-switch";
@@ -112,12 +113,15 @@ export function TitleBar() {
           mac && "pl-[78px]",
         )}
       >
-        <div className="flex size-6 items-center justify-center rounded-md bg-primary text-[10px] font-semibold text-primary-foreground">
-          {APP_CONFIG.shortName.slice(0, 2).toUpperCase()}
-        </div>
-        <span className="hidden max-w-40 truncate text-xs font-medium sm:inline">
-          {APP_CONFIG.name}
-        </span>
+        <img
+          src={appIcon}
+          alt={APP_CONFIG.name}
+          width={24}
+          height={24}
+          draggable={false}
+          data-tauri-drag-region
+          className="size-6 shrink-0"
+        />
 
         {settings.menuBar ? (
           <nav className="ml-1 flex items-center" aria-label={APP_CONFIG.name}>

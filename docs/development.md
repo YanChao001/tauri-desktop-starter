@@ -60,7 +60,7 @@ pnpm init:project --config ../my-app.json
 
 包名使用小写 kebab-case，标识符使用唯一的至少三段反向域名；应用名须能作为 Windows 文件名。未知字段、含凭据的 URL、版本漂移或不支持的入口会在写入前拒绝。修改仓库地址不会自动猜测更新服务，`updates.endpoint` 应同时按实际部署填写；空公钥禁用更新请求。
 
-另行处理品牌图标、安装器位图、LICENSE 归属、安全私密报告渠道、代码签名与更新公钥；初始化不读取或修改签名私钥。图标可用 `pnpm tauri icon ./logo.png` 生成，安装器尺寸见 [构建与发布](./build-release.md#安装器外观)。版本仍用 `pnpm version:set`，然后运行 `pnpm verify`、Rust 检查与目标平台安装测试。
+另行处理 LICENSE 归属、安全私密报告渠道、代码签名与更新公钥；初始化不读取或修改签名私钥。品牌图标和安装器主视觉统一修改 `resources/branding/*.svg`，运行 `pnpm branding:generate` 生成平台格式，再用 `pnpm branding:check` 检查一致性，尺寸和映射见 [构建与发布](./build-release.md#安装器外观)。版本仍用 `pnpm version:set`，然后运行 `pnpm verify`、Rust 检查与目标平台安装测试。
 
 ## 环境诊断
 

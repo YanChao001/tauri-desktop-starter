@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -68,7 +69,11 @@ describe("diagnostics actions", () => {
     const copy = deferred<void>();
     vi.mocked(copyText).mockReturnValueOnce(copy.promise);
     const view = render(<Diagnostics />);
-    await screen.findByText(/"settingsRevision": 4/);
+    await waitFor(() =>
+      expect(screen.getByTestId("diagnostics-report")).toHaveTextContent(
+        '"settingsRevision": 4',
+      ),
+    );
     const button = screen.getByRole("button", { name: "Copy diagnostics" });
     act(() => {
       fireEvent.click(button);
@@ -98,7 +103,11 @@ describe("diagnostics actions", () => {
       screen.getByRole("button", { name: "Copy diagnostics" }),
     ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await screen.findByText(/"settingsRevision": 4/);
+    await waitFor(() =>
+      expect(screen.getByTestId("diagnostics-report")).toHaveTextContent(
+        '"settingsRevision": 4',
+      ),
+    );
     expect(
       screen.getByRole("button", { name: "Copy diagnostics" }),
     ).toBeEnabled();
@@ -107,7 +116,11 @@ describe("diagnostics actions", () => {
     const copy = deferred<void>();
     vi.mocked(copyText).mockReturnValueOnce(copy.promise);
     const view = render(<Diagnostics />);
-    await screen.findByText(/"settingsRevision": 4/);
+    await waitFor(() =>
+      expect(screen.getByTestId("diagnostics-report")).toHaveTextContent(
+        '"settingsRevision": 4',
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
     view.unmount();
     await act(async () => copy.reject(new Error("closed")));

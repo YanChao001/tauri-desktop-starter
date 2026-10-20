@@ -80,10 +80,13 @@ Var OldMainBinaryName
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
 ; ---- CUSTOM BRANDING ----
-; 欢迎页 / 完成页的底色与文字色，与 src/index.css 的浅色主题保持一致。
-; 只影响这两页；安装过程页仍使用系统主题。
+; 与 resources/branding 的折页 / 星辉插画共用明亮底色与蓝紫强调色。
+; 保留原生向导、DPI 缩放、键盘导航与系统按钮，只定制视觉和排版。
 !define MUI_BGCOLOR "0xFFFFFF"
-!define MUI_TEXTCOLOR "0x171717"
+!define MUI_TEXTCOLOR "0x24304B"
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADER_TRANSPARENT_TEXT
+!define MUI_INSTFILESPAGE_COLORS "334155 F8FAFC"
 ; ---- /CUSTOM BRANDING ----
 OutFile "${OUTFILE}"
 
@@ -176,9 +179,24 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 ; ---- CUSTOM BRANDING ----
 !define MUI_WELCOMEPAGE_TITLE "$(StarterWelcomeTitle)"
 !define MUI_WELCOMEPAGE_TEXT "$(StarterWelcomeText)"
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW StarterWelcomeShow
 ; ---- /CUSTOM BRANDING ----
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
+
+; Keep MUI's DPI-aware dialog-unit placement; replace its default title font
+; before showing the page, using the same font variable as the page macro.
+Function StarterWelcomeShow
+  System::Call 'gdi32::DeleteObject(p $mui.WelcomePage.Title.Font)'
+  CreateFont $mui.WelcomePage.Title.Font "$(^Font)" "18" "700"
+  SendMessage $mui.WelcomePage.Title ${WM_SETFONT} $mui.WelcomePage.Title.Font 1
+  ; nsDialogs labels do not inherit the main dialog's per-language font.
+  Push $0
+  SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $0
+  SendMessage $mui.WelcomePage.Text ${WM_SETFONT} $0 1
+  Pop $0
+  SetCtlColors $mui.WelcomePage.Text "566078" "FFFFFF"
+FunctionEnd
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
@@ -426,6 +444,7 @@ Var AppStartMenuFolder
 ; ---- CUSTOM BRANDING ----
 !define MUI_FINISHPAGE_TITLE "$(StarterFinishTitle)"
 !define MUI_FINISHPAGE_TEXT "$(StarterFinishText)"
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW StarterFinishShow
 ; ---- /CUSTOM BRANDING ----
 ; Don't auto jump to finish page after installation page,
 ; because the installation page has useful info that can be used debug any issues with the installer.
@@ -439,6 +458,19 @@ Var AppStartMenuFolder
 !define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_FINISH
+
+Function StarterFinishShow
+  System::Call 'gdi32::DeleteObject(p $mui.FinishPage.Title.Font)'
+  CreateFont $mui.FinishPage.Title.Font "$(^Font)" "18" "700"
+  SendMessage $mui.FinishPage.Title ${WM_SETFONT} $mui.FinishPage.Title.Font 1
+  Push $0
+  SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $0
+  SendMessage $mui.FinishPage.Text ${WM_SETFONT} $0 1
+  SendMessage $mui.FinishPage.Run ${WM_SETFONT} $0 1
+  SendMessage $mui.FinishPage.ShowReadme ${WM_SETFONT} $0 1
+  Pop $0
+  SetCtlColors $mui.FinishPage.Text "566078" "FFFFFF"
+FunctionEnd
 
 Function RunMainBinary
   nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
@@ -502,17 +534,19 @@ FunctionEnd
 ; 页面宏引用独立的 LangString，避免覆盖 NSIS 内置翻译及重复定义警告。
 ; 新增安装语言时，同时补齐这四个字符串。
 !ifdef LANG_SIMPCHINESE
-  LangString StarterWelcomeTitle ${LANG_SIMPCHINESE} "欢迎安装 ${PRODUCTNAME}"
-  LangString StarterWelcomeText ${LANG_SIMPCHINESE} "本向导将引导你完成 ${PRODUCTNAME} ${VERSION} 的安装，约需一分钟。$\r$\n$\r$\n安装完成后可在「设置 → 应用」中卸载。$\r$\n$\r$\n$_CLICK"
+  SetFont /LANG=${LANG_SIMPCHINESE} "Microsoft YaHei UI" 9
+  LangString StarterWelcomeTitle ${LANG_SIMPCHINESE} "开始安装"
+  LangString StarterWelcomeText ${LANG_SIMPCHINESE} "${PRODUCTNAME}$\r$\n版本 ${VERSION}$\r$\n$\r$\n接下来选择安装位置，即可将应用添加到这台电脑。$\r$\n$\r$\n$_CLICK"
   LangString StarterFinishTitle ${LANG_SIMPCHINESE} "安装完成"
-  LangString StarterFinishText ${LANG_SIMPCHINESE} "${PRODUCTNAME} 已成功安装。$\r$\n$\r$\n点击 [完成] 退出向导；需要的话勾选下方选项立即运行。"
+  LangString StarterFinishText ${LANG_SIMPCHINESE} "${PRODUCTNAME} 已准备就绪。$\r$\n$\r$\n你可以立即运行，也可以稍后再启动。选择下方选项后，点击 [完成] 关闭向导。"
 !endif
 
 !ifdef LANG_ENGLISH
-  LangString StarterWelcomeTitle ${LANG_ENGLISH} "Welcome to ${PRODUCTNAME}"
-  LangString StarterWelcomeText ${LANG_ENGLISH} "This wizard will install ${PRODUCTNAME} ${VERSION}. It takes about a minute.$\r$\n$\r$\nYou can uninstall it later from Settings > Apps.$\r$\n$\r$\n$_CLICK"
+  SetFont /LANG=${LANG_ENGLISH} "Segoe UI" 9
+  LangString StarterWelcomeTitle ${LANG_ENGLISH} "Ready to install"
+  LangString StarterWelcomeText ${LANG_ENGLISH} "${PRODUCTNAME}$\r$\nVersion ${VERSION}$\r$\n$\r$\nChoose where to install the app on this computer.$\r$\n$\r$\n$_CLICK"
   LangString StarterFinishTitle ${LANG_ENGLISH} "Installation complete"
-  LangString StarterFinishText ${LANG_ENGLISH} "${PRODUCTNAME} has been installed successfully.$\r$\n$\r$\nClick Finish to exit, or select the option below to launch it now."
+  LangString StarterFinishText ${LANG_ENGLISH} "${PRODUCTNAME} is ready.$\r$\n$\r$\nLaunch it now or come back later. Choose the options below, then click Finish to close this wizard."
 !endif
 ; ---- /CUSTOM BRANDING ----
 

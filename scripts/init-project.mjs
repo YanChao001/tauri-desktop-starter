@@ -23,7 +23,7 @@ try {
       config = args[++index];
     else if (["--help", "-h"].includes(args[index])) {
       console.log(
-        "用法: pnpm init:project [--config <品牌JSON文件>] [--minimal] [--dry-run]\n默认保留演示；--minimal 设置精简模式。版本请用 pnpm version:set，图标请用 pnpm tauri icon 单独生成。签名私钥不会被读取或修改。",
+        "用法: pnpm init:project [--config <品牌JSON文件>] [--minimal] [--dry-run]\n默认保留演示；--minimal 设置精简模式。版本请用 pnpm version:set；图标和安装器主视觉修改 resources/branding/*.svg 后运行 pnpm branding:generate。签名私钥不会被读取或修改。",
       );
       process.exit(0);
     } else throw new Error(`未知或缺值参数：${args[index]}`);

@@ -94,6 +94,90 @@ describe("Real Tauri desktop", () => {
     await invoke("plugin:window|set_focus", { label: "main" });
   });
 
+  it("recovers an oversized off-screen window into an available work area", async () => {
+    const original = await browser.execute(async () => {
+      const win = window.__TAURI__.window.getCurrentWindow();
+      const maximized = await win.isMaximized();
+      if (maximized) await win.toggleMaximize();
+      return {
+        size: await win.innerSize(),
+        position: await win.outerPosition(),
+        maximized,
+      };
+    });
+    try {
+      await browser.execute(async () => {
+        const win = window.__TAURI__.window.getCurrentWindow();
+        const { PhysicalSize, PhysicalPosition } = window.__TAURI__.dpi;
+        await win.setSize(new PhysicalSize(5000, 3500));
+        await win.setPosition(new PhysicalPosition(50000, 50000));
+      });
+      await browser.waitUntil(
+        async () =>
+          browser.execute(async () => {
+            const { getCurrentWindow, availableMonitors } =
+              window.__TAURI__.window;
+            const win = getCurrentWindow();
+            const size = await win.outerSize();
+            const position = await win.outerPosition();
+            const monitors = await availableMonitors();
+            return (
+              size.width > 0 &&
+              size.height > 0 &&
+              monitors.some(
+                ({ workArea }) =>
+                  position.x >= workArea.position.x - 2 &&
+                  position.y >= workArea.position.y - 2 &&
+                  position.x + size.width <=
+                    workArea.position.x + workArea.size.width + 2 &&
+                  position.y + size.height <=
+                    workArea.position.y + workArea.size.height + 2,
+              )
+            );
+          }),
+        {
+          timeout: 10000,
+          timeoutMsg: "Window did not recover into a monitor work area",
+        },
+      );
+    } finally {
+      await browser.execute(async (saved) => {
+        const win = window.__TAURI__.window.getCurrentWindow();
+        const { PhysicalSize, PhysicalPosition } = window.__TAURI__.dpi;
+        await win.setSize(
+          new PhysicalSize(saved.size.width, saved.size.height),
+        );
+        await win.setPosition(
+          new PhysicalPosition(saved.position.x, saved.position.y),
+        );
+        if (saved.maximized && !(await win.isMaximized()))
+          await win.toggleMaximize();
+      }, original);
+    }
+  });
+
+  it("renders diagnostic JSON as highlighted inert text", async () => {
+    await navigate("/diagnostics");
+    await browser.waitUntil(async () =>
+      (await $("[data-testid=diagnostics-report]").getText()).includes(
+        "appVersion",
+      ),
+    );
+    const report = await $("[data-testid=diagnostics-report]").getText();
+    assert.equal(typeof JSON.parse(report).appVersion, "string");
+    const colors = await browser.execute(() => {
+      const block = document.querySelector("[data-testid=diagnostics-report]");
+      const key = block.querySelector("[data-token=property]");
+      return {
+        keys: block.querySelectorAll("[data-token=property]").length,
+        key: key && getComputedStyle(key).color,
+        plain: getComputedStyle(block).color,
+      };
+    });
+    assert.ok(colors.keys > 0);
+    assert.notEqual(colors.key, colors.plain);
+  });
+
   it("executes SQLite CRUD and rejects stale note updates before keeping a restart fixture", async () => {
     const created = await invoke("create_note", {
       input: { title: "E2E persisted note", body: "Initial body" },

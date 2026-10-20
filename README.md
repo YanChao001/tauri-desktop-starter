@@ -58,10 +58,13 @@ pnpm verify
 
 图标与安装器位图、安全报告渠道、许可证归属、签名和更新公钥需另外配置。初始化不会生成或修改签名私钥；版本使用 `pnpm version:set`。详细字段和边界见 [项目初始化](./docs/development.md#项目初始化)。发布后应保持应用 `identifier` 稳定，它关联安装升级与用户数据目录。
 
+视觉资源只维护 `resources/branding/` 下的 SVG，执行 `pnpm branding:generate` 即可派生完整的 ICO / ICNS / PNG / BMP；`pnpm branding:check` 和 CI 检查资源是否同步。标题栏与 favicon 直接共用 SVG，系统图标和安装器使用平台格式，详见 [品牌资源与安装器](./docs/build-release.md#安装器外观)。
+
 ## 目录结构
 
 ```text
 app.config.json              品牌与部署默认值
+resources/branding/          共用标志和安装器插画的 SVG 源
 src/
   config/                    品牌入口
   routes.tsx                 页面、导航与命令可用性的路由来源

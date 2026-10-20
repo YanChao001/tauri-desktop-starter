@@ -16,6 +16,7 @@ import { useNativeResource } from "@/hooks/use-native-resource";
 import { getDiagnosticsReport } from "@/lib/tauri";
 import { copyText } from "@/lib/clipboard";
 import { nativeErrorText } from "@/lib/native-error";
+import { CodeBlock } from "@/components/code-block";
 export default function Diagnostics() {
   const { t } = useI18n();
   const latest = useLatestTranslator();
@@ -73,12 +74,13 @@ export default function Diagnostics() {
           <CardDescription>{t("diagnostics.logs")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <pre
+          <CodeBlock
             data-testid="diagnostics-report"
-            className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-4 font-mono text-xs leading-relaxed"
-          >
-            {data ? JSON.stringify(data, null, 2) : t("common.loading")}
-          </pre>
+            aria-label={t("diagnostics.preview")}
+            className="max-h-[32rem] whitespace-pre-wrap break-words"
+            code={data ? JSON.stringify(data, null, 2) : t("common.loading")}
+            language={data ? "json" : "text"}
+          />
         </CardContent>
       </Card>
     </NativePage>

@@ -17,6 +17,7 @@ mod error;
 mod storage;
 pub mod update_signature;
 mod updater;
+mod window_geometry;
 
 use std::time::Duration;
 
@@ -95,6 +96,7 @@ pub fn run() {
         // 插件默认会恢复旧的 decorations，并在窗口 ready 时直接 show()
         // （没有存档时也会），因此这两项不能参与状态恢复。
         .plugin(window_state.build())
+        .plugin(window_geometry::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init());

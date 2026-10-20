@@ -1,0 +1,42 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="164"
+  height="314"
+  viewBox="0 0 164 314"
+  fill="none"
+>
+  <defs>
+    <linearGradient
+      id="background"
+      x1="0"
+      y1="0"
+      x2="164"
+      y2="314"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#EFF1FF" />
+      <stop offset=".58" stop-color="#F7F5FF" />
+      <stop offset="1" stop-color="#E8EEFF" />
+    </linearGradient>
+    <linearGradient
+      id="ribbon"
+      x1="8"
+      y1="215"
+      x2="170"
+      y2="288"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#6C7CE6" />
+      <stop offset="1" stop-color="#9E8AE2" />
+    </linearGradient>
+  </defs>
+  <path fill="url(#background)" d="M0 0h164v314H0z" />
+  <path d="m-44 242 164-83 74 130-164 83-74-130Z" fill="#D3DCFC" />
+  <path d="m-31 269 154-90 58 103-154 90-58-103Z" fill="url(#ribbon)" />
+  <path d="m35 231 88-52 58 103-97-44-49-7Z" fill="#B9B9F1" />
+  <path d="m-31 269 66-38 49 7-22 49-93-18Z" fill="#C7D2FF" />
+  <path d="m84 238 97 44-119 5 22-49Z" fill="#E3E6FF" />
+  <path d="m27 44 3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z" fill="#A6AFE5" />
+  <path d="m136 142 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#A499D8" />
+  <image href="app-icon.svg" x="31" y="83" width="102" height="102" />
+</svg>

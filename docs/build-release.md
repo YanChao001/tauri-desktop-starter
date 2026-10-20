@@ -97,7 +97,30 @@ pnpm app:portable --skip-build # 复用已有构建；确认源码与版本后�
 
 ### 安装器外观
 
-NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tauri.conf.json > bundle.windows`：
+应用图标、标题栏图标、网页 favicon 与安装器插画统一由 [`resources/branding/`](../resources/branding/) 的 SVG 源维护。修改 SVG 后执行：
+
+```bash
+pnpm branding:generate  # 生成全部平台图标和安装器图片
+pnpm branding:check     # 只检查是否与源文件一致，不改正式输出
+```
+
+`app-icon.svg` 是共用标志，前端和 favicon 直接使用它；四份 `installer-*.svg` 引用同一标志，再增加各自画布的装饰与留白。图形不依赖系统字体、嵌入位图或网络图片。品牌名称、版本与中英文安装文案由配置和原生文字控件显示，图片中不写死这些内容。
+
+[`scripts/branding.mjs`](../scripts/branding.mjs) 调用 resvg 渲染安装器 SVG、编码 24 位 BMP，并使用项目锁定的 Tauri CLI 生成完整的系统图标尺寸。ICO 与 ICNS 的层顺序经过规范化，避免重复生成产生无意义差异。无需 Python、Pillow 或手动逐张导出。
+
+| SVG 源                                        | 使用位置                             | 生成产物                                               |
+| --------------------------------------------- | ------------------------------------ | ------------------------------------------------------ |
+| `resources/branding/app-icon.svg`             | 标题栏、favicon、系统应用 / 托盘图标 | `src-tauri/icons/` 下的 ICO、ICNS、PNG；前端直接用 SVG |
+| `resources/branding/installer-header.svg`     | NSIS 安装 / 卸载页眉                 | `src-tauri/installer/header.bmp`                       |
+| `resources/branding/installer-sidebar.svg`    | NSIS 欢迎 / 完成页                   | `src-tauri/installer/sidebar.bmp`                      |
+| `resources/branding/installer-wix-banner.svg` | MSI 内页页眉                         | `src-tauri/installer/wix-banner.bmp`                   |
+| `resources/branding/installer-wix-dialog.svg` | MSI 欢迎 / 完成页                    | `src-tauri/installer/wix-dialog.bmp`                   |
+
+`src-tauri/icons/` 和 `src-tauri/installer/` 是平台要求的输出位置，保留 Tauri 的常规目录。设计源只有上表这些 SVG，派生图片需提交，勿手工修改；`pnpm verify` 和 CI 会检查是否同步。切换品牌时先修改 `app.config.json` 并运行初始化，再修改共用 SVG 并重新生成资源。
+
+SVG 能统一修改来源，也适合前端直接使用；Windows 系统图标必须保留 ICO，macOS 使用 ICNS，Linux 使用 PNG，NSIS / WiX 的对应插画控件仍需 BMP，不能仅改后缀或在这些控件里直接放 SVG。必要图标尺寸不删减；最终安装包体积受图形细节和压缩方式影响，并不保证每种派生格式都更小。格式要求见 [Tauri 图标说明](https://v2.tauri.app/develop/icons/) 和 [NSIS Modern UI](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)。
+
+NSIS 与 MSI 的生成文件路径配置在 `tauri.conf.json > bundle.windows`：
 
 | 打包器 | 配置项                 | 尺寸    | 用途                  |
 | ------ | ---------------------- | ------- | --------------------- |
@@ -116,10 +139,11 @@ NSIS 与 MSI 的界面元素都在 `src-tauri/installer/`，路径配置在 `tau
   - banner（493×58）：标题文字 x 20–287 / y 8–28，描述文字 x 33–406 / y 31–51 ⇒ 图形放右侧（x > 290）或底部条带（y > 52）。
   - dialog（493×312）：标题与描述文字都在右侧 x 180–473 / y 27–187 ⇒ 主视觉放左侧（x < 180）或底部（y > 190）。
   - 压到文字就是"图标错位"。MSI 实测布局可从 WiX 工具集 `WixUIExtension.dll` 内嵌 objects XML 提取。
-- 两张 WiX 位图由 `scripts/gen-installer-bitmaps.py` 生成（依赖 `pip install pillow`），改样式后重跑脚本并重新 `pnpm app:build`。
+- 所有位图通过 `pnpm branding:generate` 生成；重新 `pnpm app:build` 才会更新安装包内的资源。
 - 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
 - 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
 - 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在 `CUSTOM BRANDING` 标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
+  - 页眉标志在右侧，为标题和说明留出空间；中英文分别使用 Windows 自带的 Microsoft YaHei UI / Segoe UI。标题与正文分级，保留原生步骤、键盘导航及 DPI 缩放。
   - 新增安装语言时，要为自定义文案补齐对应语言的 `LangString`，并实际编译检查，不能假设自定义键会自动回落到内置翻译。
 - **升级 Tauri 后**：对照同版本官方 NSIS 模板合并更新，保留 `CUSTOM BRANDING` 各段的配色、页面宏引用与语言字符串，并复核 WebView2 临时路径、执行引号和文件关联修复是否已被上游覆盖。不要整份沿用旧模板。自定义 MSI 模板同理，对应 `wix.template`。
 

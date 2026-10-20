@@ -18,6 +18,7 @@
 | 加界面、调样式                       | [界面规范](./conventions/ui-guidelines.md)                                                              |
 | 写测试、运行真实桌面与重启验收       | [测试规范](./testing.md)                                                                                |
 | 打包、签名、发版、做自动更新         | [构建与发布](./build-release.md)                                                                        |
+| 修改 SVG 并生成应用图标、安装器图片  | [品牌资源与安装器](./build-release.md#安装器外观)                                                       |
 | 申请 SignPath 免费签名、查签名范围   | [代码签名策略](./code-signing-policy.md)                                                                |
 | 加权限、配 CSP、处理敏感数据         | [安全规范](./security.md)                                                                               |
 | 遇到报错                             | [排障手册](./troubleshooting.md)                                                                        |

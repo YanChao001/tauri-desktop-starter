@@ -11,6 +11,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CommandsProvider } from "@/providers/commands";
+import { APP_CONFIG } from "@/config/app";
+import appIcon from "../../resources/branding/app-icon.svg";
 import {
   onWindowResized,
   isWindowMaximized,
@@ -123,5 +125,16 @@ describe("TitleBar 窗口订阅", () => {
       await screen.findByRole("menuitem", { name: "title.quit" }),
     );
     expect(quitApp).toHaveBeenCalledOnce();
+  });
+
+  it("shows the shared brand icon without repeating the application name as title text", () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    vi.mocked(isWindowMaximized).mockResolvedValue(false);
+    renderTitleBar();
+    const icon = screen.getByRole("img", { name: APP_CONFIG.name });
+    expect(icon).toHaveAttribute("src", appIcon);
+    expect(icon).toHaveAttribute("width", "24");
+    expect(screen.queryByText(APP_CONFIG.name)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "title.file" })).toBeVisible();
   });
 });

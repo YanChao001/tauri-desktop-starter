@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { APP_CONFIG } from "@/config/app";
@@ -8,7 +8,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri";
 import { useCommands } from "@/providers/commands";
 import { useI18n } from "@/providers/i18n";
@@ -29,6 +28,13 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   const { settings, update } = useSettings();
   const { execute } = useCommands();
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
+  const [resizing, setResizing] = useState(false);
+  const resizeHandle = useCallback((node: HTMLDivElement | null) => {
+    if (!node) {
+      drag.current = null;
+      setResizing(false);
+    }
+  }, []);
   const collapsed = settings.sidebarCollapsed;
   const width = settings.sidebarWidth;
   const resize = (value: number) =>
@@ -38,21 +44,20 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
       id="app-sidebar"
       aria-label={t("layout.sidebar")}
       data-collapsed={collapsed}
+      data-resizing={resizing}
+      data-motion={settings.motion}
       style={{ width: collapsed ? 56 : width }}
       className="app-sidebar relative flex shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground"
     >
-      <div
-        className={cn(
-          "flex h-12 items-center gap-2 px-2",
-          collapsed ? "justify-center" : "justify-between pl-4",
-        )}
-      >
-        {!collapsed ? (
-          <span className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            {APP_CONFIG.name}
-          </span>
-        ) : null}
+      <div className="relative flex h-12 shrink-0 items-center px-4">
+        <span
+          aria-hidden={collapsed}
+          className="app-sidebar-label min-w-0 flex-1 truncate pr-10 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+        >
+          {APP_CONFIG.name}
+        </span>
         <Button
+          className="absolute right-3.5"
           variant="ghost"
           size="icon-sm"
           aria-label={t(
@@ -75,13 +80,10 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
               <NavLink
                 to={path}
                 end={exact}
-                className={cn(
-                  "flex h-9 items-center gap-2.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground",
-                  collapsed ? "justify-center px-0" : "px-2.5",
-                )}
+                className="flex h-9 items-center gap-2.5 overflow-hidden rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground"
               >
                 <Icon className="size-4 shrink-0" aria-hidden="true" />
-                <span className={cn("truncate", collapsed && "sr-only")}>
+                <span className="app-sidebar-label min-w-0 flex-1 truncate">
                   {t(labelKey)}
                 </span>
               </NavLink>
@@ -92,14 +94,18 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
           </Tooltip>
         ))}
       </nav>
-      {!collapsed ? (
-        <div className="space-y-1 border-t border-sidebar-border px-4 py-3 text-xs text-muted-foreground">
+      <div
+        aria-hidden={collapsed}
+        className="app-sidebar-footer shrink-0 border-t border-sidebar-border text-xs text-muted-foreground"
+      >
+        <div className="min-h-0 space-y-1 overflow-hidden">
           {settings.appMode === "demo" ? <p>Tauri 2 · React 19</p> : null}
           <p>{isTauri() ? t("app.native") : t("app.preview")}</p>
         </div>
-      ) : null}
+      </div>
       {!collapsed ? (
         <div
+          ref={resizeHandle}
           role="separator"
           tabIndex={0}
           aria-orientation="vertical"
@@ -135,7 +141,17 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
             if (event.button !== 0) return;
             event.preventDefault();
             event.currentTarget.focus({ preventScroll: true });
-            drag.current = { id: event.pointerId, x: event.clientX, width };
+            const renderedWidth =
+              event.currentTarget.parentElement?.getBoundingClientRect().width;
+            drag.current = {
+              id: event.pointerId,
+              x: event.clientX,
+              width:
+                renderedWidth && renderedWidth >= SIDEBAR_MIN_WIDTH
+                  ? renderedWidth
+                  : width,
+            };
+            setResizing(true);
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
@@ -145,14 +161,17 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
           }}
           onPointerUp={(event) => {
             drag.current = null;
+            setResizing(false);
             if (event.currentTarget.hasPointerCapture(event.pointerId))
               event.currentTarget.releasePointerCapture(event.pointerId);
           }}
           onLostPointerCapture={() => {
             drag.current = null;
+            setResizing(false);
           }}
           onPointerCancel={() => {
             drag.current = null;
+            setResizing(false);
           }}
         />
       ) : null}
