@@ -29,6 +29,8 @@ export default function App() {
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
+          // main.tsx applies the theme before mounting; this CSR app needs no SSR script.
+          scriptProps={{ type: "text/plain" }}
         >
           <DemoMotion>
             <TooltipProvider delayDuration={200}>
