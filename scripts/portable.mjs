@@ -1,128 +1,73 @@
 #!/usr/bin/env node
-/**
- * 便携版打包：产出一个免安装、可直接双击运行的单文件 exe。
- *
- * 为什么不是 `--bundles portable`：Tauri 的 Windows 打包目标只有 msi / nsis，
- * 没有官方 portable 目标。但前端产物在编译期已经嵌进二进制，
- * `tauri build --no-bundle` 得到的 exe 本身就是单文件程序，复制走就能运行。
- *
- * 用法：
- *   pnpm app:portable              # 构建并收集
- *   pnpm app:portable --skip-build # 复用已有 release 产物，只做收集
- */
-import { execSync } from "node:child_process";
+/** 构建便携版，或用有效收据复用先前编译；分发到 artifacts/<版本>/<target>/portable。 */
+import { relative, resolve } from "node:path";
+import { artifactDirectory, publishArtifacts } from "./artifact-lib.mjs";
+import { buildApplication, prepareBuild } from "./build-lib.mjs";
 import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+  loadPortableBuild,
+  portableFileName,
+  recordPortableBuild,
+} from "./portable-lib.mjs";
 
-const ROOT = resolve(import.meta.dirname, "..");
-const OUT_DIR = join(ROOT, "dist-portable");
-const SKIP_BUILD = process.argv.includes("--skip-build");
-
-if (process.platform !== "win32") {
-  console.error("便携包脚本只处理 Windows。");
-  console.error(
-    "Linux 请直接出 AppImage（本身就是便携格式），macOS 用 .app 拖拽安装。",
-  );
-  process.exit(1);
-}
-
-function readPackageName() {
-  const toml = readFileSync(join(ROOT, "src-tauri/Cargo.toml"), "utf8");
-  const start = toml.indexOf("[package]");
-  if (start === -1) throw new Error("Cargo.toml 里没有找到 [package]");
-  const rest = toml.slice(start + "[package]".length);
-  const nextSection = rest.search(/^\[/m);
-  const section = nextSection === -1 ? rest : rest.slice(0, nextSection);
-  const match = section.match(/^name\s*=\s*"([^"]+)"/m);
-  if (!match) throw new Error("Cargo.toml 的 [package] 里没有找到 name");
-  return match[1];
-}
-
-const conf = JSON.parse(
-  readFileSync(join(ROOT, "src-tauri/tauri.conf.json"), "utf8"),
-);
-const productName = conf.productName;
-const identifier = conf.identifier;
-const version = conf.version;
-const binaryName = conf.mainBinaryName ?? readPackageName();
-
-const builtExe = join(
-  ROOT,
-  "src-tauri",
-  "target",
-  "release",
-  `${binaryName}.exe`,
-);
-const portableExe = join(OUT_DIR, `${productName}.exe`);
-
-/**
- * 从 GUI、IDE 任务或 CI 里启动时，PATH 往往没有 rustup 的 ~/.cargo/bin，
- * Tauri CLI 会报 "cargo metadata: program not found"。这里兜底补上。
- */
-function buildEnv() {
-  const env = { ...process.env };
-  const cargoBin = join(homedir(), ".cargo", "bin");
-  if (existsSync(join(cargoBin, "cargo.exe"))) {
-    env.PATH = `${cargoBin};${env.PATH ?? ""}`;
+async function main() {
+  if (process.platform !== "win32")
+    throw new Error(
+      "便携包脚本只处理 Windows；Linux 请分发 AppImage，macOS 请分发 .app / DMG。",
+    );
+  const root = resolve(import.meta.dirname, "..");
+  const raw = process.argv.slice(2);
+  if (raw.includes("--help") || raw.includes("-h")) {
+    console.log(
+      "用法: pnpm app:portable [--skip-build] [--target <triple>] [--config <JSON>] [--features <features>] [--ci]",
+    );
+    return;
   }
-  return env;
-}
+  const skipBuild = raw.includes("--skip-build");
+  const args = raw.filter((arg) => arg !== "--skip-build");
+  if (args.some((arg) => /^(?:--bundles|-b)(?:=|$)/.test(arg)))
+    throw new Error("便携版不生成安装器；--bundles 请使用 pnpm app:build。");
+  const plan = prepareBuild(root, [...args, "--no-bundle"]);
+  if (plan.platform !== "windows")
+    throw new Error("便携版只支持 Windows 编译目标");
+  const productName = plan.config.productName ?? plan.package.name;
+  const executableName = portableFileName(productName);
+  artifactDirectory(root, plan.version, plan.target, "portable");
+  const built = skipBuild
+    ? loadPortableBuild(plan)
+    : await buildApplication(plan);
+  if (!built.target.includes("-windows-"))
+    throw new Error("便携构建记录不属于 Windows 目标平台");
+  if (!skipBuild) recordPortableBuild(plan, built);
+  const readme = `${productName} 便携版 v${plan.version}
 
-if (!SKIP_BUILD) {
-  // --no-bundle：跳过 msi/nsis 打包，只保留编译产物。
-  // 顺带的好处是不依赖 WiX / NSIS 工具链，离线也能出包。
-  execSync("pnpm tauri build --no-bundle", {
-    cwd: ROOT,
-    stdio: "inherit",
-    env: buildEnv(),
-  });
-}
+双击 EXE 运行。目标机器需要 Windows 10 / 11 与 Microsoft Edge WebView2 Runtime。
+缺少运行时时请先安装：https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
-if (!existsSync(builtExe)) {
-  console.error(`找不到编译产物：${builtExe}`);
-  console.error("先跑一次 pnpm app:portable（不要加 --skip-build）。");
-  process.exit(1);
-}
+偏好、窗口状态与 SQLite 笔记写入 %APPDATA%\\${plan.config.identifier}，日志与 WebView 数据写入 %LOCALAPPDATA%\\${plan.config.identifier}。
+数据不随 EXE 移动。本程序无需安装，但不是将全部用户数据保存在同目录的绿色版。
+笔记须点击“保存”后才会持久化；退出前请先保存编辑内容。自启动和后台运行默认关闭，可在“桌面集成”中开启。
+配置更新签名后，应用内安装更新会启动 NSIS 安装器，转为安装版，不会原地替换便携 EXE；若需保持免安装形态，请手动下载新版便携包。
 
-rmSync(OUT_DIR, { recursive: true, force: true });
-mkdirSync(OUT_DIR, { recursive: true });
-copyFileSync(builtExe, portableExe);
-
-const readme = `${productName} 便携版 v${version}
-${"=".repeat(40)}
-
-这是免安装版本：满足运行要求后，双击 exe 即可运行，不需要管理员权限。
-
-运行要求
-- Windows 10 / 11
-- Microsoft Edge WebView2 Runtime
-  Win11 自带；较老的 Win10 若缺失，请先手动安装：
-  https://go.microsoft.com/fwlink/p/?LinkId=2124703
-
-数据存放位置
-- 窗口状态写入 %APPDATA%\\${identifier}
-- 日志与 WebView 数据写入 %LOCALAPPDATA%\\${identifier}
-  数据不随 exe 移动。如果要求"数据跟着 U 盘走"，把窗口状态与日志路径
-  改成 exe 同级目录（注意：放在 Program Files 时该目录不可写）。
-
-分发建议
-- 可直接压缩成 zip 分发，解压即用。
-- 未签名的 exe 首次运行可能触发 SmartScreen「未知发布者」，属预期行为；
-  对外分发请按 docs/build-release.md 配置代码签名。
+此脚本不会进行 Authenticode 签名。对外分发前需单独配置签名并验证运行环境。
+manifest.json 记录版本、目标平台和文件 SHA-256，可用于检查分发文件完整性。
 `;
+  const output = publishArtifacts(root, {
+    version: plan.version,
+    target: built.target,
+    kind: "portable",
+    entries: [
+      { source: built.executable, path: executableName },
+      { contents: readme, path: "使用说明.txt" },
+    ],
+  });
+  console.log(`便携版已生成：${relative(root, output)}`);
+}
 
-writeFileSync(join(OUT_DIR, "使用说明.txt"), readme, "utf8");
-
-const sizeMb = (statSync(portableExe).size / 1024 / 1024).toFixed(1);
-console.log(`\n便携版已生成：dist-portable/${productName}.exe（${sizeMb} MB）`);
-console.log("目录内容：exe + 使用说明.txt，可直接压缩分发。");
-console.log("注意：目标机器需要 WebView2 运行时；数据仍写入 AppData。");
+try {
+  await main();
+} catch (error) {
+  console.error(`便携包生成失败：${error.message}`);
+  if (["EPERM", "EBUSY", "EACCES"].includes(error.code))
+    console.error("请关闭占用发布文件的程序，并检查目录写入权限后重试。");
+  process.exitCode = 1;
+}

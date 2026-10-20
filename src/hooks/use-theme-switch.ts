@@ -1,6 +1,8 @@
 import { flushSync } from "react-dom";
 import { useTheme } from "next-themes";
 import { useSettings } from "@/providers/settings";
+import { useCallback } from "react";
+import { THEMES, type AppTheme } from "@/lib/settings-model";
 
 type ViewTransitionHandle = { ready: Promise<void> };
 type ViewTransitionDocument = Document & {
@@ -37,7 +39,7 @@ function switchThemeWithReveal(
   );
 
   const transition = doc.startViewTransition(() => {
-    // 主题是 React state，必须同步提交，View Transition 才能截到新帧
+    // 主题属于 React 状态，必须同步提交，View Transition 才能捕获新帧
     flushSync(applyTheme);
   });
 
@@ -66,8 +68,16 @@ function switchThemeWithReveal(
  * 统一的主题切换入口：圆形扩散动画由设置里的动效开关决定。
  */
 export function useThemeSwitch() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const { settings } = useSettings();
+  const { setTheme: applyTheme, resolvedTheme } = useTheme();
+  const { settings, update } = useSettings();
+  const setTheme = useCallback(
+    (value: string) => {
+      if (!THEMES.includes(value as AppTheme)) return;
+      update({ theme: value as AppTheme });
+      applyTheme(value);
+    },
+    [update, applyTheme],
+  );
 
   function toggle(event: { clientX: number; clientY: number }) {
     const next = resolvedTheme === "dark" ? "light" : "dark";
@@ -78,5 +88,5 @@ export function useThemeSwitch() {
     );
   }
 
-  return { theme, setTheme, resolvedTheme, toggle };
+  return { theme: settings.theme, setTheme, resolvedTheme, toggle };
 }

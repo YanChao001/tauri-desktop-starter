@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./styles/shadcn.css";
 @import "@fontsource-variable/geist";
+@import "./styles/showcase.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -135,14 +136,6 @@
  * 全部由 <html> 上的 data-* 驱动，组件不需要知道当前设置。
  * ========================================================== */
 
-:root {
-  --pattern: oklch(0.145 0 0 / 4%);
-}
-
-.dark {
-  --pattern: oklch(0.985 0 0 / 6%);
-}
-
 /* 主题色：neutral 用基础变量，其余覆盖 primary / ring / sidebar / chart */
 html[data-accent="indigo"] {
   --primary: oklch(0.51 0.23 277);
@@ -266,30 +259,152 @@ html[data-font-size="lg"] {
   font-size: 17px;
 }
 
-/* 背景皮肤 */
-html[data-background="gradient"] body {
-  background-image:
-    radial-gradient(
-      70rem 40rem at 10% -12%,
-      color-mix(in oklch, var(--primary) 16%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      55rem 38rem at 100% 0%,
-      color-mix(in oklch, var(--primary) 9%, transparent),
-      transparent 68%
-    );
-  background-attachment: fixed;
+/* 插画只铺在窗口底层；阅读表面与装饰分别调节，避免降低文字对比度。 */
+:root {
+  --skin-strength: 1;
+  --skin-glow-opacity: 0.16;
+  --skin-fill-opacity: 0.46;
+  --skin-line-opacity: 0.3;
+  --skin-chrome-opacity: 52%;
+  --skin-sidebar-opacity: 42%;
+  --skin-card-opacity: 78%;
 }
-html[data-background="grid"] body {
-  background-image:
-    linear-gradient(to right, var(--pattern) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--pattern) 1px, transparent 1px);
-  background-size: 28px 28px;
+
+.dark {
+  --skin-glow-opacity: 0.2;
+  --skin-fill-opacity: 0.34;
+  --skin-line-opacity: 0.38;
+  --skin-chrome-opacity: 58%;
+  --skin-sidebar-opacity: 46%;
+  --skin-card-opacity: 82%;
 }
-html[data-background="dots"] body {
-  background-image: radial-gradient(var(--pattern) 1.2px, transparent 1.2px);
-  background-size: 18px 18px;
+
+html[data-background-intensity="subtle"] {
+  --skin-strength: 0.6;
+}
+html[data-background-intensity="strong"] {
+  --skin-strength: 1.4;
+}
+html[data-background="plain"] {
+  --skin-chrome-opacity: 100%;
+  --skin-sidebar-opacity: 100%;
+  --skin-card-opacity: 100%;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+.window-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: var(--background);
+}
+.app-workspace,
+.app-title-bar {
+  position: relative;
+  z-index: 1;
+}
+.app-title-bar {
+  background-color: color-mix(
+    in oklch,
+    var(--background) var(--skin-chrome-opacity),
+    transparent
+  );
+  backdrop-filter: none;
+}
+.app-sidebar {
+  background-color: color-mix(
+    in oklch,
+    var(--sidebar) var(--skin-sidebar-opacity),
+    transparent
+  );
+}
+.app-main {
+  background: transparent;
+}
+.app-main [data-slot="card"] {
+  background-color: color-mix(
+    in oklch,
+    var(--card) var(--skin-card-opacity),
+    transparent
+  );
+}
+.app-main
+  :where(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"]
+  ) {
+  background-color: var(--background);
+}
+
+.pattern-artwork {
+  --skin-color: color-mix(in oklch, var(--primary) 48%, #a3b4da);
+  --skin-secondary: color-mix(in oklch, var(--primary) 30%, #c3cfee);
+  --skin-ink: color-mix(in oklch, var(--primary) 38%, #8393bd);
+  --skin-highlight: color-mix(in oklch, var(--primary) 12%, #cba760);
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: var(--background);
+}
+.pattern-artwork[data-pattern="sakura"] {
+  --skin-color: color-mix(in oklch, var(--primary) 18%, #e7afc7);
+  --skin-secondary: color-mix(in oklch, var(--primary) 10%, #efb7cd);
+  --skin-ink: color-mix(in oklch, var(--primary) 20%, #b08192);
+  --skin-highlight: #d0ab76;
+}
+.pattern-artwork[data-pattern="moonlit"] {
+  --skin-color: color-mix(in oklch, var(--primary) 35%, #8da0d3);
+  --skin-secondary: color-mix(in oklch, var(--primary) 35%, #a2accd);
+  --skin-ink: color-mix(in oklch, var(--primary) 35%, #6d7aa6);
+  --skin-highlight: #dccca3;
+}
+.pattern-artwork[data-pattern="botanical"] {
+  --skin-color: color-mix(in oklch, var(--primary) 18%, #a9b69a);
+  --skin-secondary: color-mix(in oklch, var(--primary) 18%, #a6b998);
+  --skin-ink: color-mix(in oklch, var(--primary) 25%, #81917b);
+  --skin-highlight: #b8a585;
+}
+.pattern-artwork[data-pattern="cloudscape"] {
+  --skin-color: color-mix(in oklch, var(--primary) 22%, #afc8e5);
+  --skin-secondary: color-mix(in oklch, var(--background) 65%, #bfd2e8);
+  --skin-ink: color-mix(in oklch, var(--primary) 22%, #8aa6c8);
+  --skin-highlight: #e5c98d;
+}
+.skin-glow {
+  opacity: calc(var(--skin-glow-opacity) * var(--skin-strength));
+}
+.skin-fill {
+  opacity: calc(var(--skin-fill-opacity) * var(--skin-strength));
+}
+.skin-lines {
+  opacity: calc(var(--skin-line-opacity) * var(--skin-strength));
+}
+.pattern-artwork--preview {
+  --skin-strength: 1;
+  --skin-glow-opacity: 0.3;
+  --skin-fill-opacity: 0.8;
+  --skin-line-opacity: 0.7;
+  border-radius: inherit;
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  .window-background,
+  .pattern-artwork--preview {
+    display: none;
+  }
+  .app-title-bar,
+  .app-sidebar,
+  .app-main [data-slot="card"] {
+    background-color: var(--background);
+  }
 }
 
 /* 精简动效 */
@@ -326,53 +441,6 @@ html[data-motion="reduced"] *::after {
   z-index: 2;
 }
 
-/* 页面自带的少量关键帧，避免为演示引入动画库 */
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-@keyframes float-soft {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-.animate-fade-up {
-  animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.animate-marquee {
-  animation: marquee 18s linear infinite;
-}
-
-.animate-float-soft {
-  animation: float-soft 5s ease-in-out infinite;
-}
-
-.marquee-track:hover .animate-marquee {
-  animation-play-state: paused;
-}
-
 /* 桌面端滚动条细一点，别抢内容 */
 ::-webkit-scrollbar {
   width: 10px;
@@ -389,4 +457,70 @@ html[data-motion="reduced"] *::after {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 侧栏过渡不延迟指针拖动时的尺寸更新 */
+.app-sidebar {
+  transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.app-sidebar-label {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms ease,
+    transform 200ms ease;
+}
+.app-sidebar[data-collapsed="true"] .app-sidebar-label {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+.app-sidebar[data-resizing="true"],
+.app-sidebar[data-motion="reduced"],
+.app-sidebar[data-motion="reduced"] .app-sidebar-label {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .app-sidebar-label {
+    transition: none !important;
+  }
+}
+
+/* JSON 通过 React 文本节点渲染，配色跟随应用主题 */
+.code-block {
+  --code-property: #4338ca;
+  --code-string: #047857;
+  --code-number: #b45309;
+  --code-boolean: #6d28d9;
+  --code-null: #be123c;
+}
+.dark .code-block {
+  --code-property: #a5b4fc;
+  --code-string: #6ee7b7;
+  --code-number: #fcd34d;
+  --code-boolean: #c4b5fd;
+  --code-null: #fda4af;
+}
+.code-token--property {
+  color: var(--code-property);
+}
+.code-token--string {
+  color: var(--code-string);
+}
+.code-token--number {
+  color: var(--code-number);
+}
+.code-token--boolean {
+  color: var(--code-boolean);
+}
+.code-token--null {
+  color: var(--code-null);
+}
+.code-token--punctuation {
+  color: var(--muted-foreground);
+}
+@media (forced-colors: active) {
+  .code-token {
+    color: inherit;
+  }
 }

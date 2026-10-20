@@ -1,4 +1,4 @@
-# Logs
+# 日志
 logs
 *.log
 npm-debug.log*
@@ -9,8 +9,10 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-web
 dist-ssr
 dist-portable
+artifacts
 *.local
 
 # 测试覆盖率报告
@@ -27,10 +29,12 @@ coverage
 *.p12
 *.pfx
 
-# Editor directories and files
+# 编辑器目录和文件
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea
 .DS_Store
 *.suo

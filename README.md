@@ -1,248 +1,152 @@
 # Tauri Desktop Starter
 
-一个可以直接拿去开新项目的桌面应用基座：Tauri 2 + React 19 + TypeScript + Tailwind 4 + shadcn/ui。
-界面是完整的，桌面端该踩的坑已经处理掉，剩下的位置留给你写业务。
+[在线演示](https://yanchao001.github.io/tauri-desktop-starter/) · [文档索引](./docs/README.md) · [下载发行版](https://github.com/YanChao001/tauri-desktop-starter/releases/latest)
 
-## 技术栈
+Tauri 2 + React 19 + TypeScript 的桌面应用基座，包含可切换的演示 / 精简模式、命令面板、中英文、原创 SVG 皮肤，以及原生设置、SQLite、托盘、多窗口、诊断和签名更新链路。更新公钥与正式代码签名由应用维护者配置。
 
-| 层   | 选型                         | 说明                                          |
-| ---- | ---------------------------- | --------------------------------------------- |
-| 外壳 | Tauri 2                      | 用系统 WebView，不打包浏览器                  |
-| 前端 | React 19 + TypeScript 6      | 严格模式，无 `any`                            |
-| 构建 | Vite 8                       | 端口固定在 1420，供 Tauri 连接                |
-| 样式 | Tailwind CSS 4               | 通过 `@tailwindcss/vite` 接入，无 config 文件 |
-| 组件 | shadcn/ui（radix + nova）    | 组件源码在 `src/components/ui`，可直接改      |
-| 路由 | React Router 7（HashRouter） | 见下方说明                                    |
-| 主题 | next-themes + CSS 变量       | 浅色 / 深色 / 跟随系统，外观可配置            |
-| 图标 | lucide-react                 |                                               |
-| 提示 | sonner                       | `toast.success(...)`                          |
+桌面应用和在线演示共用同一份 React 源码。浏览器可直接操作展厅、交互场景、动效和外观设置；系统能力页面说明对应的桌面功能。
 
-## 文档
+<details>
+<summary>界面预览：亮色与暗色</summary>
 
-规范与工程文档都在 `docs/`，入口是 [文档索引](./docs/README.md)。
+| 亮色                                             | 暗色                                            |
+| ------------------------------------------------ | ----------------------------------------------- |
+| ![展厅亮色主题](./docs/assets/preview-light.png) | ![展厅暗色主题](./docs/assets/preview-dark.png) |
 
-| 主题                 | 文档                                                                     |
-| -------------------- | ------------------------------------------------------------------------ |
-| 架构与分层           | [docs/architecture.md](./docs/architecture.md)                           |
-| 开发、调试、镜像加速 | [docs/development.md](./docs/development.md)                             |
-| 命名与代码风格       | [docs/conventions/code-style.md](./docs/conventions/code-style.md)       |
-| Git 分支与协作流程   | [docs/conventions/git-workflow.md](./docs/conventions/git-workflow.md)   |
-| 界面与设计规范       | [docs/conventions/ui-guidelines.md](./docs/conventions/ui-guidelines.md) |
-| 测试策略             | [docs/testing.md](./docs/testing.md)                                     |
-| 构建、签名、发布     | [docs/build-release.md](./docs/build-release.md)                         |
-| 代码签名策略         | [docs/code-signing-policy.md](./docs/code-signing-policy.md)             |
-| 安全规范             | [docs/security.md](./docs/security.md)                                   |
-| 常见故障排查         | [docs/troubleshooting.md](./docs/troubleshooting.md)                     |
-| 技术选型决策         | [docs/adr/](./docs/adr/README.md)                                        |
-
-协作流程见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+</details>
 
 ## 快速开始
 
-前置：Node 22.22.2（见 `.nvmrc`；其他支持版本见 `package.json > engines`）、pnpm 12+（`packageManager` 字段已锁定）、Rust 1.99.1（`rustup` 自动安装，见 `rust-toolchain.toml`）、Windows 上还需要 MSVC Build Tools 与 WebView2 运行时。
+版本以 [`.nvmrc`](./.nvmrc)、[`package.json`](./package.json) 和 [`rust-toolchain.toml`](./rust-toolchain.toml) 为准。平台依赖见 [开发指南](./docs/development.md#环境要求)。
 
 ```bash
-pnpm install
-pnpm app:dev      # 开发模式，热更新
-pnpm app:build    # 产出安装包（msi / nsis）
-pnpm app:portable # 产出免安装便携版（Windows 单文件 exe）
-pnpm verify       # 提交前跑一次：格式 + lint + 类型 + 测试 + 构建
+pnpm install --frozen-lockfile
+rustup toolchain install
+pnpm run doctor
+pnpm app:dev
 ```
 
-`pnpm dev` 只起前端（浏览器里能看界面，但 `invoke` 不可用）。
-`pnpm test` 跑单元测试，`pnpm clean` 删除 `dist`、`dist-portable` 与整个 `src-tauri/target`（通常 1 GB 以上）。
+`node scripts/doctor.mjs` 可在依赖未安装时运行，检查工具版本和当前平台组件并给出修复提示，不会自动安装工具。
 
-## 界面能力
+## 从源码运行
 
-- **外观**：7 种主题色、3 档圆角、4 种字体、3 档字号、4 种背景、动效开关，即时生效并保存在本地
-- **语言**：中文 / English 即时切换，字典在 `src/providers/i18n.tsx`
-- **标题栏**：自绘窗口框，含文件 / 编辑 / 视图 / 帮助菜单、拖拽区域与窗口按钮；macOS 保留系统红绿灯
-- **主题切换**：View Transitions 圆形扩散，从点击位置铺满窗口；关闭动效时直接切换
-- **演示页**：概览、组件、动效、前端 ↔ Rust、设置。组件页覆盖按钮、表单、浮层、表格、骨架屏等常用控件
+- `pnpm app:dev`：启动完整桌面应用，前端热更新，Rust 修改后重新编译。
+- `pnpm dev`：浏览器访问 `http://localhost:1420`，可体验界面交互；原生能力页提供说明和导览，不执行系统操作。
+- `pnpm build` / `pnpm preview`：构建并预览前端，仍没有 Rust 进程。
+- `pnpm build:web`：将同一份前端构建到 `dist-web/`，用于在线演示；本地预览使用 `pnpm exec vite preview --outDir dist-web`，部署说明见 [开发指南](./docs/development.md#浏览器演示构建与部署)。
+
+前端入口是根目录 [`index.html`](./index.html) → [`src/main.tsx`](./src/main.tsx) → [`src/App.tsx`](./src/App.tsx)；原生入口是 [`src-tauri/src/main.rs`](./src-tauri/src/main.rs) → [`lib.rs`](./src-tauri/src/lib.rs)。编辑 `src/` 和 `src-tauri/src/`；`dist/index.html` 是生成文件，不应手改或双击作为应用入口。
+
+浏览器偏好保存在当前站点的 localStorage，与桌面原生存档分别维护。两种环境共用 HashRouter，在线演示可部署在 GitHub Pages 的项目子路径，并直接访问 `#/components` 等页面。
+
+VS Code 已包含前端与 Rust 的 F5 配置，见 [调试说明](./docs/development.md#调试)。
+
+## 已有能力
+
+| 领域       | 实现                                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 体验演示   | 创意展厅提供指针光影、暂停及外观预设；交互组件以创作、反馈、资料收藏组成场景；动效实验室展示弹簧、共享布局、倾斜与 SVG 路径  |
+| 外观       | 明暗 / 系统主题，主题色、圆角、字体、字号、动效；纯色和星光、樱花、月夜、枝叶、云景原创 SVG 插画，覆盖整个窗口并复用画廊预览 |
+| 语言       | 简体中文 / English；首次按系统偏好匹配，用户选择优先；标题栏与设置页共用语言注册表                                           |
+| 快捷操作   | 命令面板、菜单和快捷键共用命令注册表；设置搜索、侧栏折叠与键盘 / 拖拽调宽                                                    |
+| 恢复与存储 | 页面局部错误恢复；schema 2 设置迁移、原生原子写入、保存状态 / 重试、revision 冲突处理与跨窗口同步；浏览器使用 localStorage   |
+| 原生桌面   | 单实例恢复、主 / 次窗口、常用尺寸预设与尺寸记忆、启动时记住位置 / 居中、托盘及登录启动；macOS 保留系统红绿灯                 |
+| 数据示例   | Rust `rusqlite` 管理 SQLite 迁移与笔记 CRUD（显式保存），参数化查询及版本冲突处理                                            |
+| IPC        | Rust 命令生成 TypeScript 绑定，统一结构化错误，页面只调用 `src/lib/tauri.ts`                                                 |
+| 诊断与更新 | 环境 / 存储 / 运行状态报告、脱敏日志预览；GitHub Releases 更新源、检查 / 下载 / 安装 / 重启状态，配置公钥后启用验证          |
+| 验证与发布 | 前端 / 脚本 / Rust 测试、真实桌面 E2E、三端 CI、版本化分发目录和 SHA-256 清单                                                |
+
+纯色之外的皮肤使用程序化 SVG，没有内嵌位图或远端素材；高对比度模式会移除装饰。应用内中英文覆盖模板界面与自带 IPC 示例，安装器和系统组件有各自的语言设置。
+
+导航分为体验、桌面能力、系统三组。展厅风格先局部预览，点击应用才修改窗口偏好，并可撤销本轮换装；组件场景的数据只保留在当前页面，不发送邮件或写入笔记数据库。展厅与动效实验室提供暂停，持续演示按离屏、文档隐藏和减少动效偏好停止或降级，约定见 [界面规范](./docs/conventions/ui-guidelines.md#动效)。
+
+默认关闭最后一个窗口时退出应用；其他窗口仍打开时可继续使用。开启后台运行且托盘创建成功时，关窗隐藏到托盘。菜单「退出」始终退出。更新功能默认缺少公钥，显示未配置且不发起更新请求；Windows 安装更新可能结束当前进程并由安装器重新打开，安装前须保存各窗口内容。配置步骤见 [自动更新](./docs/build-release.md#自动更新)。
+
+## 创建派生项目
+
+品牌字段集中在 [`app.config.json`](./app.config.json)，前端从 [`src/config/app.ts`](./src/config/app.ts) 使用。准备一份 JSON，填写或覆盖应用名、简称、包名、唯一反向域名标识符、描述、作者、仓库与文档地址：
+
+```bash
+pnpm init:project --config ../my-app.json --dry-run
+pnpm init:project --config ../my-app.json
+# 需要精简初始界面时，在两条命令中都增加 --minimal
+pnpm verify
+```
+
+脚本预检配置、版本、入口和路径，再同步品牌与应用身份。失败时恢复本轮已替换的文件；遇到并发编辑则保留用户修改与原备份并报告冲突。`--dry-run` 不写文件；`--minimal` 设置精简默认模式，源码演示仍保留。
+
+图标与安装器位图、安全报告渠道、许可证归属、签名和更新公钥需另外配置。初始化不会生成或修改签名私钥；版本使用 `pnpm version:set`。详细字段和边界见 [项目初始化](./docs/development.md#项目初始化)。发布后应保持应用 `identifier` 稳定，它关联安装升级与用户数据目录。
+
+视觉资源只维护 `resources/branding/` 下的 SVG，执行 `pnpm branding:generate` 即可派生完整的 ICO / ICNS / PNG / BMP；`pnpm branding:check` 和 CI 检查资源是否同步。标题栏与 favicon 直接共用 SVG，系统图标和安装器使用平台格式，详见 [品牌资源与安装器](./docs/build-release.md#安装器外观)。
 
 ## 目录结构
 
-```
-.
-├── src/
-│   ├── routes.tsx           # 路由与侧边导航的唯一数据源（页面懒加载）
-│   ├── layouts/
-│   │   └── app-shell.tsx    # 标题栏 + 侧边栏 + 页面标题 + 内容区
-│   ├── pages/
-│   │   ├── overview.tsx     # 概览：指标、动态、工程状态
-│   │   ├── components.tsx   # 组件演示：按钮、表单、浮层、表格
-│   │   ├── motion.tsx       # 动效：主题扩散、错峰入场、骨架屏
-│   │   ├── bridge.tsx       # 前端 ↔ Rust 调用示例（含错误链路）
-│   │   └── settings.tsx     # 外观、语言、窗口、运行时信息
-│   ├── components/
-│   │   ├── ui/              # shadcn 组件，随用随加，可直接改源码
-│   │   ├── title-bar.tsx    # 自绘标题栏：菜单、拖拽、窗口按钮
-│   │   ├── error-boundary.tsx     # 渲染层兜底，崩溃不白屏
-│   │   └── theme-toggle.tsx
-│   ├── hooks/
-│   │   ├── use-external-links.ts  # 外链交给系统浏览器
-│   │   ├── use-reveal-window.ts   # 首帧后显示窗口
-│   │   └── use-theme-switch.ts    # 主题切换 + 圆形扩散
-│   ├── providers/
-│   │   ├── settings.tsx     # 外观偏好：类型、默认值、localStorage
-│   │   └── i18n.tsx         # 中英文字典与 t()
-│   ├── lib/
-│   │   ├── tauri.ts         # 唯一的系统能力出口：环境判断、外链、窗口、IPC
-│   │   ├── clipboard.ts     # 复制文本，含降级
-│   │   ├── platform.ts      # 平台判断（macOS / Windows / Linux）
-│   │   └── utils.ts         # cn()
-│   ├── App.tsx              # Provider + 路由
-│   ├── main.tsx
-│   ├── index.css            # Tailwind 入口、主题变量与外观 data-* 规则
-│   ├── styles/shadcn.css    # shadcn 基础样式，逐字复制自上游
-│   └── test/setup.ts        # 测试环境初始化
-├── src-tauri/
-│   ├── src/lib.rs           # 只做组装：插件、命令注册、启动兜底
-│   ├── src/commands.rs      # 前端可调用的命令实现
-│   ├── src/main.rs          # 二进制入口，调用 lib.rs
-│   ├── capabilities/        # Tauri 核心与插件能力白名单
-│   ├── installer/           # 安装器外观：NSIS 模板与位图
-│   ├── tauri.conf.json      # 窗口、打包、标识符、安装器外观
-│   ├── tauri.macos.conf.json # macOS 窗口覆盖：保留系统红绿灯
-│   └── Cargo.toml
-├── docs/                    # 全部工程文档，入口 docs/README.md
-│   ├── architecture.md
-│   ├── development.md
-│   ├── testing.md
-│   ├── build-release.md
-│   ├── security.md
-│   ├── troubleshooting.md
-│   ├── conventions/         # 代码风格、Git 协作、界面规范
-│   └── adr/                 # 架构决策记录
-├── scripts/
-│   ├── clean.mjs            # 清理 dist 与 Rust 编译缓存
-│   └── set-version.mjs      # 同步四处版本号
-├── vitest.config.ts         # 测试配置，alias 复用 vite.config.ts
-├── rust-toolchain.toml      # 固定 stable，自动装 rustfmt / clippy
-├── .github/                 # CI、发布流水线、依赖更新、PR 与 Issue 模板
-├── CONTRIBUTING.md
-├── SECURITY.md              # 安全邮箱为占位，新项目需替换
-├── LICENSE                  # MIT，版权方需按项目替换
-└── .env.example             # 环境变量示例，复制为 .env.local 使用
+```text
+app.config.json              品牌与部署默认值
+resources/branding/          共用标志和安装器插画的 SVG 源
+src/
+  config/                    品牌入口
+  routes.tsx                 页面、导航与命令可用性的路由来源
+  commands/                  命令描述、快捷键匹配、设置搜索索引
+  layouts/                   应用外壳
+  pages/                     创意展厅、交互场景、动效实验室及桌面功能页
+  components/                外壳、showcase/、motion-lab/；ui/ 为 shadcn 组件
+  hooks/                     主题切换、动效活动策略与原生资源生命周期
+  styles/                    共用页面层次与各场景样式
+  providers/                 设置、语言、命令 Context
+  i18n/                      中英文词典和 locale 注册表
+  lib/                       原生门面、生成绑定、设置模型与同步、工具
+src-tauri/
+  src/lib.rs                 插件、状态、命令与生命周期组装
+  src/commands.rs            IPC 边界
+  src/{storage,database,desktop,diagnostics,updater}.rs
+  src/bindings.rs            Rust 命令与类型导出注册
+  capabilities/              核心 / 插件权限
+  tauri*.conf.json           主、平台与 E2E 配置
+scripts/                     初始化、诊断、绑定、版本、构建、收集与清理
+e2e/                         隔离构建、跨进程恢复与真实桌面断言
+docs/                        工程文档，入口 docs/README.md
+.vscode/                     工作区设置、任务与 F5 调试入口
 ```
 
-## 已经处理好的几件事
+原生调用、状态与安全边界见 [架构说明](./docs/architecture.md)。已有 shadcn 组件在 `src/components/ui/`；添加组件使用 `pnpm dlx shadcn@latest add <name>`，升级时保留本地行为修复。
 
-这些不是"顺手加的"，每一个都对应一个真实会踩的坑：
-
-1. **启动不闪白屏** —— 窗口在 `tauri.conf.json` 里是 `visible: false`，前端首帧渲染后调用 `show()` 才出现（`useRevealWindow`）。Rust 侧另有 3 秒兜底线程，防止前端抛异常导致窗口永远不出现。
-2. **外链不劫持** —— 页面里所有 `http(s)` 链接被 `useExternalLinks` 拦截，交给系统浏览器打开。否则用户点个文档链接，应用就"变成"了浏览器且回不去。
-3. **单实例** —— `tauri-plugin-single-instance` 已注册（紧跟日志插件、先于其余插件），重复启动时聚焦已有窗口，而不是开第二个。
-4. **窗口位置记忆** —— `tauri-plugin-window-state` 自动保存/恢复窗口尺寸与位置。
-5. **HashRouter 而非 BrowserRouter** —— 生产环境前端跑在自定义协议下，BrowserRouter 刷新或深链会 404。
-6. **体积优化** —— `Cargo.toml` 的 release 档已开 `lto`、`codegen-units=1`、`opt-level="s"`、`strip`、`panic="abort"`。
-7. **能力白名单** —— `capabilities/default.json` 只放开了必要权限。加新插件后如果前端调用报 "not allowed"，就是这里没加。
-8. **渲染崩溃有兜底** —— `ErrorBoundary` 包在 `App` 外层。组件树抛错时显示错误文本和「重新加载」，而不是一个空白窗口——桌面应用里白屏时用户连控制台都打不开。
-9. **日志落盘** —— `tauri-plugin-log` 同时写 stdout 和系统日志目录（`app.log`）。release 构建没有控制台，用户报问题时这是唯一能拿到的线索。
-10. **生产 CSP 默认收紧** —— `tauri.conf.json` 的 `csp` 只放行自身资源与 IPC 通道。开发模式下前端由 Vite dev server 提供（外部 URL），Tauri 不向它注入 CSP，所以 HMR 不受影响；`devCsp` 为 `null` 时，开发构建会回退到生产 `csp`（Tauri 源码 `AppManager::csp()` 的行为），**不等于「开发模式没有 CSP」**。CSP 限制资源加载与网络连接；命令仍需独立校验入参。
-
-## 拿它开新项目
-
-按顺序改这几处，改完 `rm -rf node_modules dist src-tauri/target && pnpm install`：
-
-1. `package.json` → `name`
-2. `src-tauri/Cargo.toml` → `package.name`、`[lib] name`（下划线命名）、`description`、`authors`
-3. `src-tauri/src/main.rs` → 把 `tauri_desktop_starter_lib::run()` 换成新的 lib 名
-4. `src-tauri/tauri.conf.json` → `productName`、`identifier`、`app.windows[0].title`、`bundle.shortDescription`、`bundle.copyright`（安装器页脚）
-5. `index.html` → `<title>` 与 favicon（引用的是 `public/tauri.svg`）
-6. `src/layouts/app-shell.tsx` → 左上角品牌名（现在写的是 Tauri Starter）
-7. 图标：准备一张 1024×1024 PNG，执行 `pnpm tauri icon ./logo.png`；安装器外观图在 `src-tauri/installer/`，按现有尺寸替换（页眉 150×57、侧栏 164×314、WiX banner 493×58 / dialog 493×312），欢迎页/完成页文案在同目录 `installer.nsi` 的 `CUSTOM BRANDING` 段
-8. `LICENSE` → 版权方改成你的名字或公司（模板里是 `Tauri Desktop Starter contributors`）
-9. `SECURITY.md` → 把 `security@example.com` 换成真实的安全邮箱
-10. 全局收尾：`grep -ri starter` 过一遍，清理 docs 里残留的产物名与日志路径（`tauri-desktop-starter.exe`、`com.starter.desktop`）
-
-> `identifier` 要唯一（形如 `com.公司.产品`），升级安装和 WebView 数据目录都依赖它。一旦发布就不要再改。
-
-## 常见扩展
-
-**加 shadcn 组件**
+## 验证
 
 ```bash
-pnpm dlx shadcn@latest add dialog table form select
+pnpm verify          # 格式、lint、TS、前端 / 脚本测试、版本与前端构建
+pnpm build:web       # 验证可部署的浏览器演示构建
+pnpm bindings:check  # Rust IPC 导出与已提交的绑定一致
+pnpm test:e2e        # 构建隔离测试应用，运行真实桌面 E2E
 ```
 
-模板没有把 shadcn CLI 装进 `dependencies`：它只负责生成组件，用 `dlx` 临时执行就够。
-`radix-nova` 风格依赖的基础样式（`data-open` 等变体、`scroll-fade` 等工具类）已内置在
-`src/styles/shadcn.css`，逐字复制自 `shadcn@4.22.0`；升级风格时整体覆盖该文件即可。
-如果 CLI 在 `index.css` 里自动加回 `@import "shadcn/tailwind.css"`，删掉那一行。
+`pnpm verify` 不编译 Rust。修改原生端还需执行 [Rust 检查](./docs/testing.md#rust-测试)。E2E 通过测试 feature、独立 `.e2e` 标识和临时数据目录运行；独立应用进程覆盖启动、真实 IPC、中英文、窗口预设、多窗口同步、SQLite 冲突处理，以及设置、位置策略和笔记的重启恢复。三端运行环境和验证边界见 [测试规范](./docs/testing.md)。
 
-**加一个 Rust 命令**（三步，少一步就会报 "command not found"）
-
-```rust
-// 1. src-tauri/src/commands.rs
-use tauri::Manager;
-
-#[tauri::command]
-pub fn read_config(app: tauri::AppHandle) -> Result<String, String> {
-    // 数据目录随系统变化，不要用相对路径或 exe 所在目录
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    std::fs::read_to_string(dir.join("config.json")).map_err(|e| e.to_string())
-}
-```
-
-```rust
-// 2. src-tauri/src/lib.rs —— 登记到 handler
-.invoke_handler(tauri::generate_handler![commands::greet, commands::read_config])
-```
-
-```ts
-// 3. src/lib/tauri.ts —— 前端只通过这里调用
-export async function readConfig(): Promise<string> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("read_config");
-}
-```
-
-页面里直接 `await readConfig()`，不要自己 import `@tauri-apps/api`——ESLint 会拦。
-
-> `invoke` 的返回类型不会被运行时校验。后端结构变了，前端不会立刻报错，
-> 所以跨边界的返回值要当不可信数据处理。项目再大一些可以接 `tauri-specta` 自动生成类型绑定。
-
-**加官方插件**（文件系统、对话框、通知、剪贴板等）
-
-```bash
-pnpm tauri add dialog
-```
-
-会自动改 `Cargo.toml`、`lib.rs`、`capabilities/default.json` 和 `package.json`。
-
-**自动更新**：`pnpm tauri add updater`，然后配置签名公钥与 `bundle.createUpdaterArtifacts`，配合 GitHub Releases 使用。
+依赖审计与间接依赖告警见 [安全规范](./docs/security.md#依赖审计)。审计结论取决于当前锁文件和最新漏洞数据库，不能以历史扫描结果代替发布前检查。
 
 ## 构建产物
 
-`pnpm app:build` 之后在 `src-tauri/target/release/bundle/` 下：
+```bash
+pnpm app:build     # 安装包
+pnpm app:portable  # Windows 便携 exe 与使用说明
+```
 
-- Windows：`nsis/*.exe`（安装包）、`msi/*.msi`
-- macOS：`dmg/*.dmg`、`macos/*.app`
-- Linux：`deb/*.deb`、`appimage/*.AppImage`
+最终交付统一在 `artifacts/<version>/<target-triple>/`：
 
-本机（Windows x64，release 档）实测：
+```text
+artifacts/0.1.0/x86_64-pc-windows-msvc/
+  installers/       # nsis/、msi/ 等安装包与 manifest.json
+  portable/         # exe、使用说明.txt 与 manifest.json
+```
 
-| 产物                                   | 体积    |
-| -------------------------------------- | ------- |
-| 可执行文件 `tauri-desktop-starter.exe` | 3.5 MB  |
-| MSI 安装包                             | 2.38 MB |
-| NSIS 安装包                            | 1.41 MB |
+每次只替换当前版本 / target 下的整类 `installers/` 或 `portable/`，保留其他版本、平台和另一类产物。清单记录普通文件 SHA-256，目录包记录类型。Windows 提供 NSIS / MSI，macOS 提供 DMG / APP，Linux 提供 DEB / RPM / AppImage。
 
-> 安装包体积包含自定义安装器位图（NSIS 页眉/侧栏、WiX banner/dialog）；不需要品牌化时可以删掉对应配置，MSI 会小约 0.45 MB。
+`dist/` 保留桌面构建所用的前端输出；`dist-web/` 保存可部署的浏览器演示；`src-tauri/target/` 保留 Cargo 缓存和 Tauri 原始输出；旧 `dist-portable/` 仅兼容清理，不接收新产物。`pnpm clean:artifacts` 只清理 `artifacts/`，`pnpm clean` 清理默认构建目录，范围见 [清理说明](./docs/development.md#清理构建产物)。E2E 失败截图与日志位于 `artifacts/e2e/`。
 
-**便携版（免安装）**：`pnpm app:portable` 执行 `tauri build --no-bundle`，把单文件 exe 与一份使用说明收集到 `dist-portable/`（已在 .gitignore 中）。
+便携版仍依赖系统 WebView2，设置、数据库与日志写入当前用户目录；免安装不代表数据跟随 exe 移动。当前便携版内安装更新会转为安装版，保留免安装形态需手动下载新版 portable。`--no-bundle` 不会执行安装器签名。参数、签名、更新包与发布步骤见 [构建与发布](./docs/build-release.md)。
 
-**安装器外观**：NSIS 安装器已做基础品牌化——中文界面（`SimpChinese` / `English`）、页眉与侧栏位图、安装器图标，页脚取自 `bundle.copyright`。位图在 `src-tauri/installer/`，替换后重新打包即可；MSI 使用同目录下的 WiX banner / dialog 位图。
+## 文档与协作
 
-Tauri 的 Windows 打包目标只有 msi / nsis，没有官方 portable 目标；但前端资源在编译期已嵌进二进制，`--no-bundle` 产出的 exe 本身就是便携程序。两点限制：目标机器需要 WebView2 运行时（Win11 自带）；窗口位置与日志仍写 AppData，不随 exe 移动。
+现有结构适合作为桌面产品的工程起点。它已覆盖基座分层、类型化 IPC、测试和发布链路；展厅、交互场景与笔记示例不代表完整业务系统。多业务域和多人开发应按 [规模化开发指南](./docs/engineering-at-scale.md) 落实模块契约、负责人、兼容策略、性能预算和恢复验证。指南区分当前能力与需要产品团队实施的治理，不以文档齐全代替实际验证。
 
-首次 `pnpm app:build` 需要编译全部 Rust 依赖，约 7 分钟；之后改前端不动 Rust，几十秒即可。
-`src-tauri/target` 会占 1.5 GB 左右（编译缓存，已在 .gitignore 中）。
-
-## 说明
-
-- 项目本身不依赖 bun，bun 只在生成脚手架时用过。
-- 字体用的是 Geist Variable（随包内置），只覆盖拉丁字符，中文走系统字体。
-- 需要改主题色，改 `src/index.css` 里的 CSS 变量即可，组件不用动。
-- 许可：MIT，全文见 [LICENSE](./LICENSE)。复制成新项目后，记得把版权方换成自己的名字或公司。
+完整入口：[文档索引](./docs/README.md)。开发规范见 [代码风格](./docs/conventions/code-style.md)、[界面规范](./docs/conventions/ui-guidelines.md) 和 [Git 协作](./docs/conventions/git-workflow.md)；贡献流程见 [CONTRIBUTING.md](./CONTRIBUTING.md)，安全报告见 [SECURITY.md](./SECURITY.md)，签名范围与审批见 [代码签名策略](./docs/code-signing-policy.md)。

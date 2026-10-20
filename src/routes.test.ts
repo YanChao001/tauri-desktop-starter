@@ -1,29 +1,52 @@
 import { describe, expect, it } from "vitest";
+import { APP_ROUTES, NAVIGATION_GROUPS, matchRoute } from "./routes";
 
-import { APP_ROUTES, matchRoute } from "@/routes";
-
-describe("matchRoute", () => {
-  it("首页只匹配根路径，不会被其他路径抢走", () => {
-    expect(matchRoute("/").path).toBe("/");
-    expect(matchRoute("/bridge").path).toBe("/bridge");
+describe("application information architecture", () => {
+  it("keeps the same unique URLs and groups them in presentation order", () => {
+    expect(NAVIGATION_GROUPS.map(({ id }) => id)).toEqual([
+      "experience",
+      "capabilities",
+      "system",
+    ]);
+    expect(
+      NAVIGATION_GROUPS.map(({ id }) =>
+        APP_ROUTES.filter((route) => route.group === id).map(
+          ({ path }) => path,
+        ),
+      ),
+    ).toEqual([
+      ["/", "/components", "/motion"],
+      ["/desktop", "/database", "/bridge"],
+      ["/diagnostics", "/updates", "/settings"],
+    ]);
+    expect(new Set(APP_ROUTES.map(({ path }) => path)).size).toBe(9);
+    expect(
+      APP_ROUTES.filter(({ index }) => index).map(({ path }) => path),
+    ).toEqual(["/"]);
   });
 
-  it("子路径归属到最近的父级路由", () => {
-    expect(matchRoute("/settings/general").path).toBe("/settings");
+  it("preserves the demo-only policy without hiding desktop or system capabilities", () => {
+    expect(
+      APP_ROUTES.filter(({ demoOnly }) => demoOnly)
+        .map(({ path }) => path)
+        .sort(),
+    ).toEqual(["/bridge", "/components", "/motion"]);
+    expect(
+      APP_ROUTES.filter(({ demoOnly }) => !demoOnly).map(({ path }) => path),
+    ).toEqual([
+      "/",
+      "/desktop",
+      "/database",
+      "/diagnostics",
+      "/updates",
+      "/settings",
+    ]);
   });
 
-  it("未知路径回落到首页，顶栏不会空着", () => {
-    expect(matchRoute("/not-exist").path).toBe("/");
-  });
-});
-
-describe("APP_ROUTES", () => {
-  it("路径不重复", () => {
-    const paths = APP_ROUTES.map((route) => route.path);
-    expect(new Set(paths).size).toBe(paths.length);
-  });
-
-  it("只有一个 index 路由", () => {
-    expect(APP_ROUTES.filter((route) => route.index)).toHaveLength(1);
+  it("matches nested paths by segment and falls back for unknown paths", () => {
+    expect(matchRoute("/settings/appearance").path).toBe("/settings");
+    expect(matchRoute("/desktop").group).toBe("capabilities");
+    expect(matchRoute("/desktop-tools").path).toBe("/");
+    expect(matchRoute("/unknown").path).toBe("/");
   });
 });

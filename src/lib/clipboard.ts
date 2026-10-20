@@ -17,6 +17,23 @@ export async function copyText(text: string): Promise<void> {
     }
   }
 
+  const activeElement = document.activeElement;
+  const selection = window.getSelection();
+  const ranges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) =>
+        selection.getRangeAt(index).cloneRange(),
+      )
+    : [];
+  const input =
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement
+      ? activeElement
+      : null;
+  const inputSelection = input && {
+    start: input.selectionStart,
+    end: input.selectionEnd,
+    direction: input.selectionDirection,
+  };
   const textarea = document.createElement("textarea");
   textarea.value = text;
   textarea.setAttribute("readonly", "");
@@ -25,11 +42,26 @@ export async function copyText(text: string): Promise<void> {
   document.body.appendChild(textarea);
 
   try {
+    textarea.focus({ preventScroll: true });
     textarea.select();
     if (!document.execCommand("copy")) {
       throw new Error("当前环境不支持复制");
     }
   } finally {
-    document.body.removeChild(textarea);
+    textarea.remove();
+    if (activeElement instanceof HTMLElement && activeElement.isConnected) {
+      activeElement.focus({ preventScroll: true });
+      if (inputSelection?.start != null && inputSelection.end != null) {
+        input?.setSelectionRange(
+          inputSelection.start,
+          inputSelection.end,
+          inputSelection.direction ?? undefined,
+        );
+      }
+    }
+    if (selection && ranges.length > 0) {
+      selection.removeAllRanges();
+      ranges.forEach((range) => selection.addRange(range));
+    }
   }
 }

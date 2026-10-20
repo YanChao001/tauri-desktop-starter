@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口的 Tauri 核心与插件能力声明；自定义命令另由应用 ACL 控制",
-  "windows": ["main"],
+  "description": "主 / 次窗口的 Tauri 核心与插件能力声明；自定义命令另由应用 ACL 规则控制",
+  "windows": ["main", "secondary"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -12,8 +12,9 @@
     "core:window:allow-is-maximized",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
-    "opener:allow-open-url",
-    "opener:allow-default-urls",
-    "window-state:default"
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "http://*" }, { "url": "https://*" }]
+    }
   ]
 }

@@ -1,0 +1,129 @@
+/* 浏览器演示使用实际应用页面；这些布局规则不作用于原生窗口。 */
+.browser-demo-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+.browser-demo-identity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.65rem;
+}
+.browser-demo-identity strong {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.browser-demo-badge {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 0.15rem 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.65rem;
+}
+.browser-demo-identity p {
+  width: 100%;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+.browser-demo-links {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+.browser-demo-links a {
+  display: inline-flex;
+  min-height: 2.2rem;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+}
+.browser-demo-links a:last-child {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.browser-demo-links a:hover {
+  opacity: 0.8;
+}
+.browser-demo-links svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.browser-demo-links a:focus-visible,
+.browser-demo-navigation:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.browser-demo-navigation {
+  display: none;
+}
+.app-shell-browser {
+  height: 100dvh;
+}
+@media (max-width: 720px) {
+  .browser-demo-bar {
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    padding: 0.65rem 0.8rem;
+  }
+  .browser-demo-identity {
+    flex-basis: 100%;
+  }
+  .browser-demo-identity strong {
+    font-size: 0.75rem;
+  }
+  .browser-demo-links {
+    gap: 0.4rem;
+  }
+  .browser-demo-links a {
+    min-height: 2.1rem;
+    gap: 0.3rem;
+    padding-inline: 0.5rem;
+    font-size: 0.65rem;
+  }
+  .browser-demo-navigation {
+    display: block;
+    min-width: 0;
+    height: 2.1rem;
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding-inline: 0.5rem;
+    background: var(--background);
+    color: var(--foreground);
+    font: inherit;
+    font-size: 0.72rem;
+  }
+  .app-shell-browser
+    :is(.app-sidebar, .app-title-bar nav, .browser-preview-badge) {
+    display: none;
+  }
+  .app-shell-browser .app-page-content {
+    padding: 1rem 0.9rem 2rem;
+  }
+  .app-shell-browser .studio-native-preview {
+    padding: 1.1rem;
+  }
+  .app-shell-browser .studio-native-note {
+    align-items: flex-start;
+    text-align: center;
+  }
+  .app-shell-browser .settings-row {
+    flex-wrap: wrap;
+    gap: 0.7rem;
+  }
+}

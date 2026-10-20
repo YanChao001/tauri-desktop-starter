@@ -21,17 +21,17 @@ labels: ["bug"]
 
 ## 环境
 
-| 项            | 值                                                   |
-| ------------- | ---------------------------------------------------- |
-| 操作系统      | <!-- Windows 11 23H2 / macOS 14.5 / Ubuntu 24.04 --> |
-| 应用版本      | <!-- 设置页可见，或 package.json -->                 |
-| 是否打包版本  | <!-- 是：安装包安装的；否：pnpm app:dev -->          |
-| WebView2 版本 | <!-- Windows 下 edge://version 查看 -->              |
-| Node / Rust   | <!-- node -v / rustc -V -->                          |
+| 项            | 值                                                      |
+| ------------- | ------------------------------------------------------- |
+| 操作系统      | <!-- Windows 11 23H2 / macOS 14.5 / Ubuntu 24.04 -->    |
+| 应用版本      | <!-- 设置页可见，或 package.json -->                    |
+| 运行方式      | <!-- 安装版 / portable / pnpm app:dev / 浏览器预览 -->  |
+| WebView2 版本 | <!-- pnpm tauri info 的 WebView2 项；非开发者可留空 --> |
+| Node / Rust   | <!-- node -v / rustc -V -->                             |
 
 ## 日志
 
-<!-- 贴文本，不要截图。Windows 下 DevTools：右键 →「检查」 -->
+<!-- 贴日志文本并移除用户名、令牌等敏感信息。日志路径见 docs/troubleshooting.md；发布版默认不开放 DevTools。 -->
 
 ```
 

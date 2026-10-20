@@ -2,23 +2,27 @@
 /**
  * 清理构建产物。
  *
- * 只删这张固定列表里的目录，不接受命令行传入路径——
- * 一个能删任意路径的清理脚本，迟早会被写成 `rm -rf $1` 然后闯祸。
+ * 仅清理预定义目录，不接受任意路径，避免参数错误导致误删。
  */
-import { existsSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+import { removeProjectPath } from "./fs-utils.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
+const DISTRIBUTIONS = [["artifacts", "按版本归档的分发产物"]];
+
 const BUILD_OUTPUT = [
   ["dist", "前端构建产物"],
-  ["dist-portable", "便携版产物"],
+  ["dist-web", "浏览器演示构建产物"],
+  ...DISTRIBUTIONS,
+  ["dist-portable", "旧版便携产物（兼容清理）"],
+  ["coverage", "测试覆盖率报告"],
   ["src-tauri/target", "Rust 编译缓存（通常 1 GB 以上）"],
 ];
 
 const DEPENDENCIES = [["node_modules", "依赖目录"]];
 
-/** 文件被占用时给一句能照做的话，而不是甩一串堆栈。 */
+/** 文件被占用时，输出具体的处理建议。 */
 const HINTS = {
   EBUSY: "目录被占用，先关掉 dev server、预览窗口，或者正在扫描它的杀毒软件",
   EPERM: "没有权限，检查是否有进程以管理员身份占着这些文件",
@@ -27,22 +31,31 @@ const HINTS = {
 };
 
 const all = process.argv.includes("--all");
-const targets = all ? [...BUILD_OUTPUT, ...DEPENDENCIES] : BUILD_OUTPUT;
+const artifactsOnly = process.argv.includes("--artifacts");
+if (
+  (all && artifactsOnly) ||
+  process.argv.slice(2).some((arg) => arg !== "--all" && arg !== "--artifacts")
+) {
+  console.error("用法: pnpm clean [--all | --artifacts]；不接受自定义路径");
+  process.exit(1);
+}
+const targets = artifactsOnly
+  ? DISTRIBUTIONS
+  : all
+    ? [...BUILD_OUTPUT, ...DEPENDENCIES]
+    : BUILD_OUTPUT;
 
 let removed = 0;
 const failed = [];
 
 for (const [relative, label] of targets) {
-  const absolute = join(ROOT, relative);
-  if (!existsSync(absolute)) {
-    console.log(`跳过 ${relative}（不存在）`);
-    continue;
-  }
-
   try {
-    rmSync(absolute, { recursive: true, force: true });
-    console.log(`已删除 ${relative.padEnd(20)} ${label}`);
-    removed += 1;
+    if (removeProjectPath(ROOT, relative)) {
+      console.log(`已删除 ${relative.padEnd(20)} ${label}`);
+      removed += 1;
+    } else {
+      console.log(`跳过 ${relative}（不存在）`);
+    }
   } catch (error) {
     const code = error.code ?? "UNKNOWN";
     console.error(
@@ -59,6 +72,8 @@ if (failed.length > 0) {
   console.log("\n没有需要清理的内容。");
 } else if (all) {
   console.log("\n完成。依赖已删除，下一步执行 pnpm install。");
+} else if (artifactsOnly) {
+  console.log("\n完成。分发产物已清理，编译缓存与依赖已保留。");
 } else {
   console.log("\n完成。下次构建会自动重建。");
 }

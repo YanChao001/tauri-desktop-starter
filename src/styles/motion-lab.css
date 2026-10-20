@@ -1,0 +1,851 @@
+.motion-lab {
+  container: motion-lab / inline-size;
+  --lab-line: color-mix(in oklab, var(--border) 80%, var(--primary) 20%);
+  --lab-art: color-mix(
+    in oklab,
+    var(--primary) 20%,
+    var(--studio-violet, #7760dd)
+  );
+  --lab-soft: color-mix(in oklab, var(--lab-art) 5%, var(--background));
+  --lab-cyan: color-mix(
+    in oklab,
+    var(--primary) 15%,
+    var(--studio-cyan, #219caf)
+  );
+  color: var(--foreground);
+}
+.lab-heading {
+  margin-bottom: 22px;
+}
+.lab-heading > p {
+  margin: 0 0 9px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+.lab-heading h2 {
+  margin: 0 0 9px;
+  font-size: clamp(23px, 2.7vw, 32px);
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.045em;
+}
+.lab-heading > span {
+  display: block;
+  max-width: 660px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.lab-scene-tabs {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 3px;
+  padding: 4px;
+  margin-bottom: 15px;
+  border: 1px solid var(--lab-line);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--card) 70%, transparent);
+}
+.lab-scene-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 13px;
+  min-width: 0;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lab-scene-tabs button svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.lab-scene-tabs button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lab-scene-tabs button[aria-selected="true"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 2px 7px color-mix(in oklab, var(--primary) 15%, transparent);
+}
+.motion-lab button:focus-visible,
+.motion-lab input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+}
+.lab-console {
+  overflow: hidden;
+  border: 1px solid var(--lab-line);
+  border-radius: 19px;
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  box-shadow: 0 8px 36px color-mix(in oklab, var(--foreground) 3%, transparent);
+}
+.lab-console-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 21px 23px 19px;
+  border-bottom: 1px solid var(--lab-line);
+}
+.lab-console-heading h3 {
+  margin: 8px 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.lab-console-heading p {
+  max-width: 58ch;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.lab-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+.lab-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--lab-cyan);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--lab-cyan) 13%, transparent);
+}
+[data-paused="true"] .lab-status i,
+[data-reduced="true"] .lab-status i {
+  background: var(--muted-foreground);
+  box-shadow: none;
+}
+.lab-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+.lab-experiment {
+  display: grid;
+}
+.lab-stage {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  min-height: 350px;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse at 50% 45%,
+      color-mix(in oklab, var(--lab-art) 6%, transparent),
+      transparent 68%
+    ),
+    var(--lab-soft);
+}
+.lab-artwork {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: calc(100% - 32px);
+}
+.lab-stage-aura {
+  position: absolute;
+  inset: 20% 20% 15%;
+  border: 1px solid color-mix(in oklab, var(--lab-art) 6%, transparent);
+  border-radius: 50%;
+  transform: rotate(-16deg);
+}
+.lab-stage-aura::before {
+  content: "";
+  position: absolute;
+  inset: 20px -26px;
+  border: inherit;
+  border-radius: inherit;
+  transform: rotate(30deg);
+}
+.lab-stage-actions {
+  position: absolute;
+  bottom: 18px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.lab-axis {
+  stroke: var(--lab-art);
+  stroke-opacity: 0.1;
+  stroke-dasharray: 3 7;
+}
+.lab-pad {
+  fill: var(--lab-art);
+  fill-opacity: 0.08;
+  stroke: var(--lab-art);
+  stroke-opacity: 0.12;
+}
+.lab-orb-shadow {
+  fill: var(--lab-art);
+  opacity: 0.08;
+}
+.lab-tether {
+  stroke: var(--lab-cyan);
+  stroke-opacity: 0.45;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 5;
+}
+.lab-orb-rim {
+  fill: none;
+  stroke: var(--lab-art);
+  stroke-opacity: 0.12;
+}
+.lab-orbit-ring {
+  fill: none;
+  stroke: var(--lab-cyan);
+  stroke-opacity: 0.75;
+  stroke-width: 1.5;
+}
+.lab-orbit-spark {
+  fill: var(--lab-cyan);
+}
+.lab-axis-label {
+  fill: var(--muted-foreground);
+  font-size: 12px;
+  font-family: inherit;
+  opacity: 0.7;
+}
+.lab-control-panel {
+  min-width: 0;
+  padding: 22px 23px;
+  background: color-mix(in oklab, var(--card) 98%, transparent);
+  border-top: 1px solid var(--lab-line);
+}
+.lab-control-panel h3 {
+  font-size: 12px;
+  margin: 0 0 19px;
+  font-weight: 600;
+}
+.lab-controls-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 19px;
+}
+.lab-range {
+  display: block;
+  min-width: 0;
+}
+.lab-range > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 13px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.lab-range output {
+  flex-shrink: 0;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.lab-range input {
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.lab-presets {
+  margin-top: 24px;
+}
+.lab-presets > span {
+  display: block;
+  margin-bottom: 9px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.lab-presets > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.lab-presets button {
+  cursor: pointer;
+  border: 1px solid var(--lab-line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+.lab-presets button[aria-pressed="true"] {
+  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
+  background: var(--lab-soft);
+  color: var(--foreground);
+}
+.lab-response {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 19px;
+  padding: 11px 13px;
+  border: 1px solid var(--lab-line);
+  border-radius: 9px;
+  background: var(--lab-soft);
+}
+.lab-response > div {
+  flex-shrink: 0;
+}
+.lab-response span {
+  display: block;
+  font-size: 9px;
+  color: var(--muted-foreground);
+}
+.lab-response strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.lab-response svg {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  width: 100px;
+  max-height: 60px;
+}
+.lab-response-goal {
+  stroke: var(--lab-art);
+  stroke-opacity: 0.12;
+  stroke-dasharray: 3 5;
+}
+.lab-response-line {
+  fill: none;
+  stroke: var(--lab-art);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lab-notes {
+  margin-top: 23px;
+  padding-top: 17px;
+  border-top: 1px solid var(--lab-line);
+}
+.lab-notes > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+.lab-notes p {
+  margin: 7px 0 0;
+  font-size: 12px;
+  line-height: 1.85;
+  color: var(--muted-foreground);
+}
+.lab-layout-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 22px;
+  gap: 23px;
+}
+.lab-layout-tabs {
+  align-self: center;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--lab-line);
+  background: color-mix(in oklab, var(--background) 65%, transparent);
+}
+.lab-layout-tabs button {
+  position: relative;
+  padding: 7px 15px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.lab-layout-tabs button > span:last-child {
+  position: relative;
+  z-index: 1;
+}
+.lab-layout-tabs button[aria-pressed="true"] {
+  color: var(--foreground);
+}
+.lab-layout-selection {
+  position: absolute;
+  inset: 0;
+  background: var(--card);
+  border: 1px solid var(--lab-line);
+  border-radius: 7px;
+  box-shadow: 0 2px 4px color-mix(in oklab, var(--foreground) 5%, transparent);
+}
+.lab-space-cards {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+.lab-space-card {
+  --lab-tint: var(--lab-art);
+  position: relative;
+  min-width: 42px;
+  height: 240px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid color-mix(in oklab, var(--lab-tint) 18%, var(--border));
+  border-radius: 15px;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--lab-tint) 10%, var(--card)),
+    var(--card)
+  );
+  cursor: pointer;
+}
+.lab-card-violet {
+  --lab-tint: color-mix(in oklab, var(--lab-art) 60%, #9273e5);
+}
+.lab-card-rose {
+  --lab-tint: color-mix(in oklab, var(--lab-art) 40%, #d87d91);
+}
+.lab-card-cyan {
+  --lab-tint: var(--lab-cyan);
+}
+.lab-space-card[data-selected="true"] {
+  border-color: color-mix(in oklab, var(--lab-tint) 42%, var(--border));
+  box-shadow: 0 9px 20px color-mix(in oklab, var(--lab-tint) 9%, transparent);
+}
+.lab-space-symbol {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  flex-shrink: 0;
+  border: 1px solid var(--lab-line);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--card) 85%, transparent);
+  color: var(--lab-tint);
+}
+.lab-space-symbol svg {
+  width: 14px;
+  height: 14px;
+}
+.lab-space-art {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  top: 42px;
+  right: -36px;
+  transform: rotate(-25deg);
+}
+.lab-space-art i {
+  position: absolute;
+  inset: 15px;
+  border: 1px solid var(--lab-tint);
+  border-radius: 50%;
+  opacity: 0.3;
+}
+.lab-space-art i:nth-child(2) {
+  inset: 31px -3px;
+  transform: rotate(75deg);
+  border-radius: 30%;
+  opacity: 0.2;
+}
+.lab-space-art i:nth-child(3) {
+  inset: 43px;
+  border: 0;
+  background: var(--lab-tint);
+  opacity: 0.15;
+  border-radius: 22%;
+  transform: rotate(20deg);
+}
+.lab-space-copy {
+  display: block;
+  position: relative;
+  min-width: 0;
+  width: 100%;
+}
+.lab-space-copy strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-space-copy > span {
+  display: block;
+  max-width: 21ch;
+  margin-top: 9px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.lab-space-arrow {
+  position: absolute;
+  right: 15px;
+  top: 20px;
+  width: 14px;
+  height: 14px;
+  color: var(--lab-tint);
+}
+.lab-focus-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.lab-focus-options button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px;
+  min-width: 0;
+  border: 1px solid var(--lab-line);
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.lab-focus-options button[aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--lab-soft);
+}
+.lab-focus-options button > svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.lab-focus-options button > svg:last-child {
+  margin-left: auto;
+}
+.lab-tilt-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 380px;
+  perspective: 900px;
+}
+.lab-tilt-halo {
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--lab-art) 9%, transparent);
+  box-shadow:
+    0 0 0 25px color-mix(in oklab, var(--lab-art) 2%, transparent),
+    0 0 0 52px color-mix(in oklab, var(--lab-art) 2%, transparent);
+}
+.lab-tilt-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: min(340px, 78%);
+  aspect-ratio: 1.52;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid #ffffff30;
+  border-radius: 17px;
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+  touch-action: none;
+  transform-style: preserve-3d;
+  background:
+    radial-gradient(
+      ellipse at 92% 12%,
+      color-mix(in oklab, var(--lab-art) 75%, #8d82ff) 0%,
+      transparent 62%
+    ),
+    linear-gradient(135deg, #172238, #20394c);
+  box-shadow:
+    0 20px 35px #0b162c24,
+    inset 0 1px 0 #ffffff26;
+}
+.lab-card-glare {
+  position: absolute;
+  width: 120%;
+  height: 190%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    ellipse,
+    #ffffff38 0%,
+    #ffffff0a 38%,
+    transparent 65%
+  );
+  pointer-events: none;
+}
+.lab-card-edition {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  color: #ffffffe0;
+}
+.lab-card-edition svg {
+  width: 17px;
+  height: 17px;
+}
+.lab-hologram {
+  position: absolute;
+  top: 25px;
+  right: 36px;
+  width: 105px;
+  height: 105px;
+  transform: rotate(-20deg);
+  opacity: 0.7;
+}
+.lab-hologram i {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #a5e4f2a0;
+  border-radius: 50%;
+}
+.lab-hologram i:nth-child(2) {
+  inset: 13px -13px;
+  transform: rotate(60deg);
+  border-color: #c4bcffb0;
+}
+.lab-hologram i:nth-child(3) {
+  inset: 30px;
+  border: 0;
+  border-radius: 35%;
+  background: conic-gradient(
+    from 45deg,
+    #b2e8f360,
+    #bbafff80,
+    #ffffff20,
+    #b2e8f360
+  );
+}
+.lab-tilt-message {
+  position: relative;
+  z-index: 1;
+  display: block;
+  max-width: 100%;
+  text-wrap: balance;
+  padding: 24px 0 18px;
+  font-size: clamp(20px, 2.8vw, 27px);
+  line-height: 1.35;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+  text-shadow: 0 1px 8px #152c4540;
+}
+.lab-card-signature {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  color: #ffffffc0;
+}
+.lab-card-signature svg {
+  width: 13px;
+  height: 13px;
+}
+.lab-control-buttons {
+  display: grid;
+  gap: 7px;
+  margin-top: 24px;
+}
+.lab-loop {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 24px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lab-loop input {
+  accent-color: var(--primary);
+}
+.lab-path-background path {
+  fill: none;
+  stroke: var(--lab-art);
+  stroke-opacity: 0.075;
+  stroke-width: 1;
+}
+.lab-drawn-path {
+  fill: none;
+  stroke: var(--lab-art);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.lab-path-1 {
+  stroke: var(--lab-cyan);
+  opacity: 0.75;
+  stroke-width: 1;
+}
+.lab-path-2 {
+  stroke: color-mix(in oklab, var(--lab-art) 50%, #b19be6);
+  opacity: 0.6;
+  stroke-width: 1;
+}
+.lab-stardust {
+  fill: var(--lab-art);
+}
+.lab-path-core {
+  fill: color-mix(in oklab, var(--card) 90%, transparent);
+  stroke: var(--lab-art);
+  stroke-opacity: 0.12;
+}
+.lab-path-star {
+  fill: var(--lab-art);
+}
+.lab-footer {
+  padding: 15px 0 0;
+  margin: 0;
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.lab-reduced-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+.lab-reduced-note svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+@container motion-lab (min-width: 760px) {
+  .lab-experiment {
+    grid-template-columns: minmax(0, 1fr) 236px;
+  }
+  .lab-stage {
+    min-height: 420px;
+  }
+  .lab-control-panel {
+    border-top: 0;
+    border-left: 1px solid var(--lab-line);
+  }
+  .lab-controls-fields,
+  .lab-focus-options {
+    grid-template-columns: 1fr;
+  }
+  .lab-controls-fields {
+    gap: 23px;
+  }
+  .lab-response {
+    display: block;
+  }
+  .lab-response > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+  }
+  .lab-response strong {
+    margin-top: 0;
+  }
+  .lab-response svg {
+    width: 100%;
+    max-height: 68px;
+    margin-top: 4px;
+  }
+}
+@container motion-lab (max-width: 520px) {
+  .lab-scene-tabs {
+    width: 100%;
+  }
+  .lab-scene-tabs button {
+    flex: 1;
+    padding: 9px 5px;
+    gap: 5px;
+    font-size: 12px;
+  }
+  .lab-console-heading {
+    padding: 17px;
+  }
+  .lab-console-heading h3 {
+    font-size: 16px;
+  }
+  .lab-stage {
+    min-height: 310px;
+  }
+  .lab-layout-stage {
+    padding: 18px 13px;
+  }
+  .lab-space-cards {
+    gap: 7px;
+  }
+  .lab-space-card {
+    padding: 12px;
+    height: 210px;
+  }
+  .lab-space-copy strong {
+    font-size: 12px;
+  }
+  .lab-control-panel {
+    padding: 19px 17px;
+  }
+  .lab-controls-fields {
+    gap: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-lab *,
+  .motion-lab *::before,
+  .motion-lab *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (forced-colors: active) {
+  .lab-tilt-card {
+    color: CanvasText;
+    background: Canvas;
+    border-color: CanvasText;
+  }
+  .lab-card-edition,
+  .lab-card-signature {
+    color: CanvasText;
+  }
+  .lab-card-glare,
+  .lab-hologram {
+    display: none;
+  }
+  .lab-orb-rim,
+  .lab-drawn-path,
+  .lab-response-line {
+    stroke: CanvasText;
+  }
+}

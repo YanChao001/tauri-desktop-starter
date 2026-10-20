@@ -1,0 +1,109 @@
+//! 发布验证与自动更新运行时共用同一套 minisign 实现。
+use base64::Engine;
+use minisign_verify::{PublicKey, Signature};
+use serde::Deserialize;
+use std::{
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerificationInput {
+    public_key: String,
+    version: String,
+    files: Vec<SignedFile>,
+}
+#[derive(Deserialize)]
+struct SignedFile {
+    path: PathBuf,
+    signature: PathBuf,
+}
+
+fn decode(value: &str) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(String::from_utf8(
+        base64::engine::general_purpose::STANDARD.decode(value.trim())?,
+    )?)
+}
+
+fn verify_file(
+    key: &PublicKey,
+    artifact: &Path,
+    signature: &str,
+    version: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let signature = Signature::decode(&decode(signature)?)?;
+    let mut verifier = key.verify_stream(&signature)?;
+    let mut file = File::open(artifact)?;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        verifier.update(&buffer[..count]);
+    }
+    verifier.finalize()?;
+    // 仅在 minisign 全局签名验证通过后使用可信注释
+    let signed = signature
+        .trusted_comment()
+        .split('\t')
+        .find_map(|value| value.strip_prefix("version:"));
+    if signed != Some(version) {
+        return Err("Updater signature version does not match this release".into());
+    }
+    Ok(())
+}
+
+pub fn verify_manifest(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut bytes = Vec::new();
+    File::open(path)?
+        .take(1024 * 1024 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("Updater verification input is too large".into());
+    }
+    let input: VerificationInput = serde_json::from_slice(&bytes)?;
+    if input.files.is_empty() || input.files.len() > 32 {
+        return Err("Updater verification requires 1–32 artifacts".into());
+    }
+    let key = PublicKey::decode(&decode(&input.public_key)?)?;
+    for signed in &input.files {
+        let mut signature = String::new();
+        File::open(&signed.signature)?
+            .take(16 * 1024 + 1)
+            .read_to_string(&mut signature)?;
+        if signature.len() > 16 * 1024 {
+            return Err("Updater signature is too large".into());
+        }
+        verify_file(&key, &signed.path, &signature, &input.version)?;
+    }
+    println!(
+        "Verified {} updater artifact signatures and signed release version.",
+        input.files.len()
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 由 Tauri CLI 2.12.3 的 signer sign --app-version 1.2.3 生成
+    // 仅保留公钥与签名，临时私钥已删除
+    const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDExMjgyNEJFMDZDREQ3QjAKUldTdzE4MEd2aVFvRVJNSlV1SVZldmFLWHlhMjdWSW9Sb3Rkdm10WklRYmFLbUtnWmhwcmJXSUMK";
+    const SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdzE4MEd2aVFvRWVua3RMQmV1QmRSaFRiLy9MazVVQzl5VzhOVHRlSG9aZzgrNktVV1dZY1J2dG56SHlZUTEweWlqaW9oWTl3QmpBMEJIUW1MeVlubUorbnFTOTFIWkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyNDMxNzk2CWZpbGU6Zml4dHVyZS50eHQJdmVyc2lvbjoxLjIuMwo4bmVmSnIvajZnaVJTVGhEQ3JhMXp5cWlOeTVWbkVMTFJpQ3ZvREthSURXSGdCU01OczkwLzVzalpBL2xpbHkzKzd4MDJKc2ZCaDF0dVh2c0lSZ1dBZz09Cg==";
+
+    #[test]
+    fn real_tauri_signatures_bind_both_artifact_bytes_and_version() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("fixture.txt");
+        std::fs::write(&file, b"starter-update-signature-fixture\n").unwrap();
+        let key = PublicKey::decode(&decode(PUBLIC_KEY).unwrap()).unwrap();
+        assert!(verify_file(&key, &file, SIGNATURE, "1.2.3").is_ok());
+        assert!(verify_file(&key, &file, SIGNATURE, "1.2.4").is_err());
+        std::fs::write(&file, b"tampered update bytes\n").unwrap();
+        assert!(verify_file(&key, &file, SIGNATURE, "1.2.3").is_err());
+    }
+}

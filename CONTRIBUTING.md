@@ -1,58 +1,25 @@
 # 参与开发
 
-这份文件只给路径，具体规则都在 `docs/`，避免同一个规则在两处各说一遍、最后说法不一致。
+本文提供贡献入口。具体架构、开发命令与协作规则分别由 `docs/` 中对应文档维护。
 
-## 最短路径
+## 贡献流程
 
-```bash
-# 1. 环境：Node（以 .nvmrc 为准，当前 22.22.2）/ pnpm 12+ / Rust（以 rust-toolchain.toml 为准，当前 1.99.1）/ VS C++ 工具链
-#    详细要求见 docs/development.md
+1. 按 [开发指南](./docs/development.md#环境要求) 安装工具和依赖，运行 `pnpm app:dev`。源码入口与浏览器预览的区别见 [README](./README.md#从源码运行)。
+2. 阅读 [架构说明](./docs/architecture.md)，从 `develop` 创建功能或修复分支；命名、提交与同步方法见 [Git 协作规范](./docs/conventions/git-workflow.md#日常开发流程)。涉及跨模块、数据兼容、权限或发布恢复时，先按 [设计门槛](./docs/engineering-at-scale.md#设计评审与-adr-门槛) 说明方案并完成适用评审。
+3. 修改代码和对应文档。提交前运行 `pnpm verify`；涉及 Rust、IPC 或桌面主链路时，按 [测试规范](./docs/testing.md) 补充相应验证。
+4. 使用仓库 PR 模板说明问题、改动与验证结果，按 [PR 规范](./docs/conventions/git-workflow.md#pr-规范) 完成评审和合并。
 
-# 2. 拉起项目
-git clone <repo-url>
-cd tauri-desktop-starter
-pnpm install
-pnpm app:dev
+## 按改动查规范
 
-# 3. 开分支（从 develop 切，不要从 main）
-git switch develop && git pull --ff-only
-git switch -c feature/42-command-palette
+| 主题                              | 文档                                               |
+| --------------------------------- | -------------------------------------------------- |
+| 模块分层、IPC、设置与数据边界     | [架构说明](./docs/architecture.md)                 |
+| 多业务域、负责人、兼容与设计评审  | [规模化开发指南](./docs/engineering-at-scale.md)   |
+| 命名、组件、TS / Rust、抽象与注释 | [代码风格](./docs/conventions/code-style.md)       |
+| 页面、样式、动效与无障碍          | [界面规范](./docs/conventions/ui-guidelines.md)    |
+| 分支、提交、PR 与发布协作         | [Git 协作规范](./docs/conventions/git-workflow.md) |
+| 环境变量、新增依赖与本地调试      | [开发指南](./docs/development.md)                  |
+| 测试、真实桌面验证与 CI           | [测试规范](./docs/testing.md)                      |
+| 打包、签名与版本发布              | [构建与发布](./docs/build-release.md)              |
 
-# 4. 写代码，提交前跑前端检查；Rust 检查见 docs/testing.md
-pnpm verify
-
-# 5. 提交并首次推送
-git add -A
-git commit -m "feat(ui): 增加命令面板"
-git push -u origin feature/42-command-palette
-
-# 6. 合并前同步主干（rebase，不要 merge），然后强推自己的分支
-git fetch origin
-git rebase origin/develop
-git push --force-with-lease
-
-# 7. 开 PR → CI 绿 → 1 人 approve → --no-ff 合并
-```
-
-## 必读规范
-
-| 主题                    | 文档                                                 |
-| ----------------------- | ---------------------------------------------------- |
-| 架构分层与 IPC 边界     | [架构说明](./docs/architecture.md)                   |
-| 命名、组件写法、TS/Rust | [代码风格](./docs/conventions/code-style.md)         |
-| 分支模型、rebase、提交  | [Git 协作规范](./docs/conventions/git-workflow.md)   |
-| 颜色、间距、状态处理    | [界面规范](./docs/conventions/ui-guidelines.md)      |
-| 环境变量与本地配置      | [开发指南](./docs/development.md#环境变量)           |
-| 新增依赖的评估标准      | [开发指南](./docs/development.md#新增依赖的评审标准) |
-
-提交格式、PR 要求、review 关注点、合并方式都在 Git 协作规范里；PR 模板会自动带出清单。
-
-## 新人第一周
-
-| 天      | 做什么                                                                       |
-| ------- | ---------------------------------------------------------------------------- |
-| 第 1 天 | 跑通 `pnpm app:dev`，读 [架构说明](./docs/architecture.md)                   |
-| 第 2 天 | 照着 [界面规范](./docs/conventions/ui-guidelines.md#新增一个页面) 加一个页面 |
-| 第 3 天 | 写一个 Rust 命令并在前端调用，走通 IPC                                       |
-| 第 4 天 | 认领一个 `good first issue`，走完整 PR 流程                                  |
-| 第 5 天 | 读一遍 [构建与发布](./docs/build-release.md)，自己打一个包                   |
+安全问题通过 [SECURITY.md](./SECURITY.md) 所述私密渠道报告，不在公开 issue 或 PR 中披露细节。

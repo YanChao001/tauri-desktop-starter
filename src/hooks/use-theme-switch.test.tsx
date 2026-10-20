@@ -2,22 +2,33 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useThemeSwitch } from "./use-theme-switch";
 
-const { setTheme, motion } = vi.hoisted(() => ({
+const { setTheme, update, motion } = vi.hoisted(() => ({
   setTheme: vi.fn(),
-  motion: { value: "full" },
+  update: vi.fn(),
+  motion: { value: "full", theme: "light", resolved: "light" },
 }));
 
 vi.mock("next-themes", () => ({
-  useTheme: () => ({ theme: "light", resolvedTheme: "light", setTheme }),
+  useTheme: () => ({
+    theme: motion.theme,
+    resolvedTheme: motion.resolved,
+    setTheme,
+  }),
 }));
 vi.mock("@/providers/settings", () => ({
-  useSettings: () => ({ settings: { motion: motion.value } }),
+  useSettings: () => ({
+    settings: { motion: motion.value, theme: motion.theme },
+    update,
+  }),
 }));
 
 describe("useThemeSwitch", () => {
   beforeEach(() => {
     motion.value = "full";
+    motion.theme = "light";
+    motion.resolved = "light";
     setTheme.mockClear();
+    update.mockClear();
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: false }));
   });
 
@@ -81,5 +92,26 @@ describe("useThemeSwitch", () => {
     act(() => result.current.toggle({ clientX: 10, clientY: 20 }));
     expect(setTheme).toHaveBeenCalledWith("dark");
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it("persists supported theme choices and ignores invalid runtime values", () => {
+    motion.theme = "system";
+    const { result } = renderHook(() => useThemeSwitch());
+    expect(result.current.theme).toBe("system");
+    act(() => result.current.setTheme("dark"));
+    expect(update).toHaveBeenCalledExactlyOnceWith({ theme: "dark" });
+    expect(setTheme).toHaveBeenCalledExactlyOnceWith("dark");
+    act(() => result.current.setTheme("unknown"));
+    expect(update).toHaveBeenCalledOnce();
+    expect(setTheme).toHaveBeenCalledOnce();
+  });
+
+  it("toggles from the resolved system appearance and persists the result", () => {
+    motion.theme = "system";
+    motion.resolved = "dark";
+    const { result } = renderHook(() => useThemeSwitch());
+    act(() => result.current.toggle({ clientX: 10, clientY: 20 }));
+    expect(update).toHaveBeenCalledWith({ theme: "light" });
+    expect(setTheme).toHaveBeenCalledWith("light");
   });
 });

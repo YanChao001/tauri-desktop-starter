@@ -1,0 +1,126 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import {
+  NativeBridgeError,
+  createNote,
+  getDesktopStatus,
+  loadSettingsSnapshot,
+  onNotesChanged,
+  onSettingsChanged,
+  recordFrontendError,
+  saveSettingsSnapshot,
+  updateNote,
+} from "./tauri";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+
+describe("generated native bridge", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    vi.resetAllMocks();
+  });
+
+  it("turns stable Rust error DTOs into errors with code and retryability", async () => {
+    vi.mocked(invoke).mockRejectedValue({
+      code: "SETTINGS_CONFLICT",
+      message: "reload",
+      retryable: true,
+    });
+    await expect(loadSettingsSnapshot()).rejects.toBeInstanceOf(
+      NativeBridgeError,
+    );
+    await expect(loadSettingsSnapshot()).rejects.toMatchObject({
+      code: "SETTINGS_CONFLICT",
+      message: "reload",
+      retryable: true,
+    });
+  });
+
+  it("uses Rust-generated command payloads for notes and optimistic versions", async () => {
+    const note = {
+      id: 1,
+      title: "A",
+      body: "B",
+      updatedAt: "2026-01-01",
+      version: 1,
+    };
+    vi.mocked(invoke).mockResolvedValue(note);
+    await expect(createNote({ title: "A", body: "B" })).resolves.toEqual(note);
+    expect(invoke).toHaveBeenLastCalledWith("create_note", {
+      input: { title: "A", body: "B" },
+    });
+    await updateNote({ id: 1, title: "C", body: "D", expectedVersion: 1 });
+    expect(invoke).toHaveBeenLastCalledWith("update_note", {
+      input: { id: 1, title: "C", body: "D", expectedVersion: 1 },
+    });
+  });
+
+  it("persists a detached JSON settings document with the expected revision", async () => {
+    const document = {
+      schemaVersion: 2,
+      language: "en",
+      runInBackground: false,
+    };
+    const snapshot = { revision: 2, settings: document };
+    vi.mocked(invoke).mockResolvedValue(snapshot);
+    await expect(saveSettingsSnapshot(document, 1)).resolves.toEqual(snapshot);
+    expect(invoke).toHaveBeenLastCalledWith("save_settings_snapshot", {
+      settings: document,
+      expectedRevision: 1,
+    });
+    const sent = vi.mocked(invoke).mock.calls[0]?.[1] as { settings?: unknown };
+    expect(sent.settings).not.toBe(document);
+  });
+
+  it("subscribes to shared settings and notes events and returns cleanup", async () => {
+    const stop = vi.fn();
+    vi.mocked(listen).mockResolvedValue(stop);
+    const changed = vi.fn();
+    expect(await onSettingsChanged(changed)).toBe(stop);
+    const callback = vi.mocked(listen).mock.calls[0]?.[1];
+    expect(callback).toBeDefined();
+    callback?.({
+      event: "app://settings-changed",
+      id: 1,
+      payload: { revision: 3, settings: { language: "en" } },
+    });
+    expect(changed).toHaveBeenCalledWith({
+      revision: 3,
+      settings: { language: "en" },
+    });
+    await onNotesChanged(changed);
+    expect(listen).toHaveBeenLastCalledWith(
+      "app://notes-changed",
+      expect.any(Function),
+    );
+  });
+
+  it("bounds error logs without splitting Unicode characters", async () => {
+    vi.mocked(invoke).mockResolvedValue(null);
+    await recordFrontendError({ message: "🌸".repeat(1100), stack: "stack" });
+    expect(invoke).toHaveBeenLastCalledWith("record_frontend_error", {
+      error: {
+        message: "🌸".repeat(1000),
+        stack: "stack",
+        componentStack: null,
+      },
+    });
+  });
+
+  it("browser previews cannot claim native support or write native logs", async () => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    await expect(getDesktopStatus()).rejects.toMatchObject({
+      code: "PLATFORM_UNAVAILABLE",
+    });
+    await recordFrontendError({ message: "browser" });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});

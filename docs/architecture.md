@@ -1,282 +1,158 @@
 # 架构说明
 
-## 一句话
-
-Rust 负责"能做什么"，WebView 负责"长什么样"，两者只通过 `invoke` 与事件通信。
+本文说明当前运行入口、模块职责和数据边界。新增页面、命令或存储能力时，先复用已有入口；目录按实际职责拆分，不预建空的业务层。多人、多业务域场景的依赖方向、责任与设计门槛见 [规模化开发指南](./engineering-at-scale.md)，其中的演进示例不代表当前已实现。
 
 ## 运行时结构
 
 ```mermaid
 flowchart LR
-  subgraph web["WebView（渲染层）"]
-    UI["React 页面与组件"]
-    IPC["lib/tauri.ts<br/>唯一 IPC 出口"]
-    UI --> IPC
-  end
-
-  subgraph rust["Rust 主进程"]
-    CMD["命令处理层<br/>commands.rs"]
-    PLUGIN["官方插件<br/>log / opener / window-state / single-instance"]
-    SYS["系统能力<br/>文件、网络、数据库、硬件"]
-  end
-
-  IPC -- "invoke(command, args)" --> CMD
-  CMD -- "返回值 / 错误" --> IPC
-  CMD --> SYS
-  PLUGIN --> CMD
+  UI["React 页面与外壳"] --> Commands["命令注册表 / 设置 Provider"]
+  UI --> Facade["lib/tauri.ts 原生门面"]
+  UI --> Browser["浏览器交互 / localStorage 偏好"]
+  Commands --> Facade
+  Facade -->|桌面环境| Bindings["Rust 生成的 TypeScript IPC"]
+  Bindings --> Boundary["commands.rs 参数与错误边界"]
+  Boundary --> Services["storage / database / desktop / diagnostics / updater"]
+  Services --> Data["原子 JSON / SQLite / 系统能力"]
+  Services --> Events["设置、笔记、更新事件"]
+  Events --> Facade
 ```
 
-要点：
+前端由根 [`index.html`](../index.html) 加载 [`main.tsx`](../src/main.tsx)，挂载 App。App 组合设置、语言、主题、命令 Provider、全局 DemoMotion 与 HashRouter；AppShell 组合标题栏、分组侧栏、轻量位置提示与页面。原生由 [`main.rs`](../src-tauri/src/main.rs) 调用 [`lib.rs`](../src-tauri/src/lib.rs)，后者只组装插件、共享状态、命令和生命周期。
 
-- WebView 里跑的是标准的 Web 应用，没有 Node 环境，碰不到文件系统。
-- 所有系统能力必须先在 Rust 侧写成命令，再暴露给前端。
-- Tauri 核心与插件能力由 `src-tauri/capabilities/default.json` 分配；自定义命令另需应用 ACL 才受此限制，见 [安全规范](./security.md#能力最小化)。
+同一份 `src/` 支持桌面和浏览器两种运行环境。`pnpm app:dev` 启动 Rust 与 WebView，桌面构建通过 Tauri 自定义协议加载前端；`pnpm dev` 与在线演示在浏览器运行交互场景和外观设置，原生能力页面通过 NativePage 提供说明，实际系统调用仍由门面进行环境检查。
 
-## 前端分层
+两种环境共用 HashRouter，路由位于 URL 片段中，页面刷新不要求静态托管服务解析应用路由。`pnpm build:web` 使用相对资源路径生成 `dist-web/`，适用于 GitHub Pages 项目子路径；桌面前端仍输出到 `dist/`。构建、预览和部署方法见 [浏览器演示](./development.md#浏览器演示构建与部署)，源码入口与交付目录见 [README](../README.md#从源码运行)。
 
-依赖方向是单向的，反过来就是设计出了问题：
+## 模块职责
 
-```
-routes.tsx ── 路由与导航的唯一数据源
-     │
-     ▼
-layouts/ ──> pages/ ──> components/
-     │           │            │
-     └───────────┴────────────┴──> hooks/ ──> providers/ ──> lib/ ──> @tauri-apps/api
-```
+| 位置                                                          | 职责                                                     |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| `src/routes.tsx`                                              | 懒加载页面、路径、导航分组、文案及演示页面标记           |
+| `src/config/app.ts` / `app.config.json`                       | 品牌、默认演示 / 精简模式、部署更新默认值                |
+| `src/commands/` / `providers/commands.tsx`                    | 命令描述、上下文可用性、菜单 / 面板 / 快捷键共用执行入口 |
+| `src/components/`                                             | 交互与外壳；`ui/` 为 shadcn 原子组件                     |
+| `src/components/showcase/` / `motion-lab/`                    | 交互场景与动效实验，页面内数据与播放状态                 |
+| `src/hooks/use-demo-motion.ts` / `components/demo-motion.tsx` | 文档可见性、场景离屏、用户偏好与全局 MotionConfig        |
+| `src/styles/`                                                 | 共用页面层次、导航与独立场景样式                         |
+| `src/providers/settings.tsx`                                  | 设置状态、保存反馈与生命周期                             |
+| `src/lib/settings-model.ts` / `settings-sync.ts`              | schema 迁移、校验、局部字段合并、原生 revision 同步      |
+| `src/i18n/`                                                   | 类型化词典、语言注册表、系统匹配与翻译回退               |
+| `src/lib/tauri.ts`                                            | 系统能力的唯一前端门面；生成绑定是允许的底层例外         |
+| `src-tauri/src/commands.rs`                                   | IPC 参数边界与服务编排                                   |
+| `src-tauri/src/bindings.rs`                                   | 命令 / DTO 导出注册；Rust 是 IPC 契约来源                |
+| `src-tauri/src/blocking.rs`                                   | 将同步存储、数据库与系统探测适配到阻塞任务池             |
+| `storage.rs` / `database.rs`                                  | 原子设置存储与 SQLite 迁移、事务、并发版本               |
+| `desktop.rs` / `autostart.rs`                                 | 窗口复用、托盘、后台行为与平台自启动                     |
+| `window_geometry.rs`                                          | 按窗口保存逻辑尺寸，适配 DPI 与显示器工作区变化          |
+| `diagnostics.rs` / `updater.rs`                               | 诊断脱敏及更新策略、下载 / 安装状态                      |
+| `resources/branding/` / `scripts/branding.mjs`                | SVG 设计源与平台图标、安装器位图的可复现生成             |
+| `scripts/fs-utils.mjs`                                        | 初始化与版本设置共用的路径校验、文件暂存、冲突检测与回滚 |
 
-| 层            | 职责                                      | 不该做的事                          |
-| ------------- | ----------------------------------------- | ----------------------------------- |
-| `routes.tsx`  | 路由路径、标题、图标、页面组件            | 不放业务逻辑                        |
-| `layouts/`    | 应用外壳（标题栏、侧边栏、内容区）        | 不写页面内容                        |
-| `pages/`      | 路由级编排、组合组件                      | 不写复杂业务逻辑，不直接调 `invoke` |
-| `components/` | 可复用的展示与交互单元                    | 普通展示组件不感知路由或业务状态    |
-| `hooks/`      | 可复用的 React 逻辑（副作用、订阅、状态） | 不含 JSX，不承载业务规则            |
-| `providers/`  | 跨页面的 React Context（外观偏好、i18n）  | 不放业务数据，不渲染页面结构        |
-| `lib/`        | 纯 TS：IPC 封装、格式化、校验             | 不含 JSX，不 import React           |
+小领域继续放在现有页面、组件、Hook 和原生服务中；同一业务领域需要独立维护一组页面、数据与组件时，再按 [业务模块与依赖方向](./engineering-at-scale.md#业务模块与依赖方向) 引入 `features/<domain>/`。不要为消除几行相似代码增加空壳层。
 
-`components/ui/` 是第三方生成的原子组件，不受上述约束。应用外壳组件 `title-bar.tsx` 可以导航并读取设置，`theme-toggle.tsx` 可以读取主题与翻译；这类组件须置于对应 Provider 内。
+## 页面与演示边界
 
-`layouts/` 负责路由页的整体布局：`AppShell` 用 `useLocation`、渲染 `Outlet`，所以它在 `layouts/`。标题栏等外壳部件仍放在 `components/`。
+导航由 `APP_ROUTES.group` 和 `NAVIGATION_GROUPS` 生成，分组不改变原有 URL 或命令 ID：
 
-`components/error-boundary.tsx` 包在 `App` 外层（见 `main.tsx`）。这不是可选项：
-窗口启动时是隐藏的，组件树一崩，用户看到的是 Rust 兜底线程弹出的空白窗口，
-没有任何可反馈的信息。错误边界至少能把错误文本留在屏幕上。
+| 分组     | 页面                                                       |
+| -------- | ---------------------------------------------------------- |
+| 体验     | `/` 创意展厅、`/components` 交互场景、`/motion` 动效实验室 |
+| 桌面能力 | `/desktop`、`/database`、`/bridge` 原生通信                |
+| 系统     | `/diagnostics`、`/updates`、`/settings`                    |
 
-**硬规则**：`@tauri-apps/*` 只允许出现在 `src/lib/tauri.ts`。
-所有 IPC 调用收敛到这一个文件，带来三个好处：
+精简模式隐藏标记为 `demoOnly` 的导航和命令，首页呈现桌面功能、本地笔记与设置入口。外壳仅显示随内容滚动的位置提示；各页负责自己的标题与层次，不再重复展示固定页标题栏和版本号。侧栏底部复用命令面板入口。页面路径变化时重置主滚动区，不抢导航焦点；同页查询参数变化保留设置定位行为。
 
-1. 换实现（比如接入 `tauri-specta` 生成类型）只改一个文件。
-2. 写测试时可以整体 mock 掉。
-3. 一眼能看出这个应用到底用了哪些系统能力。
+创意展厅的 SVG 雕塑和三种风格属于交互预览。选择预设不会写设置，点击应用才通过现有设置 / 主题入口修改外观；撤销恢复本轮首次应用前的外观。组件页的创作预览、演示协作者、通知与资料收藏使用页面内状态，切换场景保留输入，离开或重载页面不承诺恢复。示例资料与应用内通知不代表账户、邮件或后台服务，持久笔记仍由原生 SQLite 页面管理。
 
-这条规则**由 ESLint 强制**，不是靠自觉：`eslint.config.js` 里同时配了
-`no-restricted-imports`（静态 import）和 `no-restricted-syntax`（动态 `import()`）。
-后者必不可少——本工程的 Tauri 调用全是动态引入，只配前者等于没配。
+动效实验室将弹簧、共享布局、指针倾斜和 SVG 路径拆为独立场景。`motion/react` 提供运动与布局能力；DemoMotion 统一减少动效策略，useDemoMotion 判断场景活动状态。CSS 持续动画及命令式播放仍需消费活动状态并在退出时清理，MotionConfig 不会自动暂停所有动画。具体约定见 [动效规范](./conventions/ui-guidelines.md#动效)。
 
-### 界面偏好与多语言
+设置页将窗口与布局放在同一工作区，版本和资源链接收进可折叠的关于区，保留设置搜索锚点与保存反馈。浏览器中的原生能力页通过 NativePage 说明实际能力与下一步入口，不渲染伪造的 IPC 成功结果。
 
-`providers/` 是唯一允许放全局 React Context 的层：
+## 命令与桌面交互
 
-- `providers/settings.tsx`：外观偏好（主题色、圆角、字体、字号、背景、动效、语言、菜单栏），
-  写入 `localStorage`，并把值映射到 `<html>` 的 `data-*`；样式全部由 `index.css` 接管。
-  加设置项的顺序是「类型 → 默认值 → `applySettings` → CSS → 设置页」。
-- `providers/i18n.tsx`：`[中文, English]` 字典 + `t(key, vars)`，不引入 i18next。
-  新增文案必须两种语言都写，缺失时 TypeScript 会报错。
-- `hooks/use-theme-switch.ts`：统一主题切换入口，View Transitions 的圆形扩散也在这里。
+菜单、命令面板和快捷键通过同一命令注册 / 执行入口调用。命令的可用性取决于当前路由、演示模式与原生环境；浏览器预览不会执行原生操作。快捷键匹配集中处理 Cmd / Ctrl、输入框、输入法组合输入、重复按键和冲突，避免各组件分别监听全局按键。
 
-### 窗口外壳
+设置搜索索引指向稳定的控件锚点，命令面板可导航并聚焦对应设置。侧栏折叠、宽度和模式进入同一设置模型；路由表中的 `demoOnly` 控制演示页可见性，精简模式不删除源码。
 
-窗口去掉了原生边框（`decorations: false`），标题栏由 `components/title-bar.tsx` 绘制：
-拖拽区域用 `data-tauri-drag-region`，按钮调用 `lib/tauri.ts` 封装的窗口命令。
+窗口标签固定为 `main` 和 `secondary`，再次打开次窗口会显示并聚焦已有实例。桌面状态在 Builder 上提前注册，单实例插件最先初始化；重复启动回调只合并唤醒请求并投递后台任务，不同步等待窗口创建或显示。两个窗口共用原生设置和数据库，而各自保留渲染状态。
 
-macOS 例外：`src-tauri/tauri.macos.conf.json` 把窗口改回 `decorations: true` +
-`titleBarStyle: "Overlay"`，保留系统红绿灯；前端检测到 macOS 时会隐藏自绘按钮并让出左侧空间。
+主窗口配置 `create: false`，由 setup 在设置、数据库和共享状态就绪后从阻塞任务池创建，避免 WebView 创建占住启动事件循环，也防止页面访问尚未注册的状态。窗口初始隐藏，前端两次动画帧回调后通过 `complete_frontend_startup` 握手显示；首帧完成前的重复唤醒不强制显示空白内容。Rust 在窗口创建成功后安排三秒显示兜底，关闭或销毁时取消，且不恢复用户已最小化的窗口。兜底显示不代表前端已正确渲染，启动阶段日志的含义见 [启动排障](./troubleshooting.md#启动慢或重复启动后卡死)。
 
-**注意**：平台配置按 JSON Merge Patch 合并，`app.windows` 数组是整体替换。
-改窗口字段时 `tauri.conf.json` 与 `tauri.macos.conf.json` 必须同步，否则 macOS 会丢字段。
+窗口状态插件恢复上次位置和显示状态，排除尺寸、装饰与可见性。尺寸由几何模块统一维护，平台配置决定装饰，首帧握手决定显示时机。持久偏好 `windowPosition` 控制新建窗口的初始位置：默认 `remember` 沿用位置恢复，`center` 请求启动居中；切换策略不移动当前窗口，重复激活已有窗口也不重新定位。macOS 用平台配置保留系统红绿灯；平台配置的 `app.windows` 数组整体替换，`create: false` 等生命周期字段需同步。
 
-## 业务代码放哪
+窗口状态插件之后运行几何适配插件，按窗口保存逻辑尺寸，并监听 DPI、窗口事件及显示器布局；在远程桌面或工作区变化后约束到可用范围。窗口就绪回调只记录初始策略与修正任务，不在持有插件锁的回调中同步改动几何，避免 Windows 消息重入导致死锁；几何存档写盘由后台 worker 处理。运行期间普通移动不持续吸附屏幕边缘，临时缩小保留首选尺寸，最大化 / 全屏 / 最小化时不主动修改位置。迁移限制与诊断步骤见 [排障手册](./troubleshooting.md#远程桌面断开后窗口过大或落在屏幕外)。
 
-模板只有展示页，没有业务。真写起来按这个顺序找位置，别一上来就加层：
+设置页提供常用窗口尺寸预设，以逻辑像素（DIP）标注宽高；选择后立即应用到当前窗口并记忆，超过窗口配置或当前工作区范围的预设不可选。手动拖动仍可产生其他尺寸，界面显示实际值，不强制匹配某个预设。最大化、最小化或全屏窗口应用尺寸前先还原。尺寸修改在主线程执行，命令在工作线程等待并完成原子写盘后才返回。`window-geometry.json` 是尺寸的权威存档，旧窗口状态中的物理尺寸仅用于首次迁移，避免双重恢复覆盖用户设定。
 
-| 你要写的东西           | 放哪                                                 |
-| ---------------------- | ---------------------------------------------------- |
-| 一个页面               | `pages/`                                             |
-| 只在这个页面用的子组件 | 和页面同目录，需要时把页面变成 `pages/xxx/index.tsx` |
-| 跨页面复用的组件       | `components/`                                        |
-| 一段带状态的复用逻辑   | `hooks/`                                             |
-| 纯函数、格式化、校验   | `lib/`                                               |
-| 需要 Rust 参与的能力   | `lib/tauri.ts` 加封装 + `src-tauri/src/commands.rs`  |
+新窗口创建时捕获最后已保存的启动位置策略和可用的最近正常位置。位置记录在进程启动时读取窗口状态存档，之后由正常移动更新内存，次窗口重建使用最新记录；初始位置来源在复核期间保持固定，按当前工作区约束，避免异步请求后的旧坐标覆盖恢复目标。居中以该位置选择显示器，优先取重叠面积最大的有效工作区，原显示器断开时取最近的有效工作区；保留记忆的逻辑尺寸，并扣除原生边框。创建返回后、首帧握手显示前和超时显示前共用初始布局入口，显示前准备，窗口可见后有限复核实际尺寸、外框与位置；确认完成或达到上限后结束初始定位，不阻塞显示或持续回中。启动居中先调整正常位置，再恢复原显示状态；异步还原未完成时保留原状态并放弃本次居中。后续拖动与再次唤醒不重复执行初始定位。
 
-**什么时候升级成 `features/<domain>/`**：同一个领域同时出现「页面 + 组件 + 请求封装」，
-且该领域文件超过 10 个时。提前建空目录只增加导航成本，不产生结构收益。
-
-### 命令变多以后
-
-`lib/tauri.ts` 现在是单文件。命令超过 5 个、或出现明显领域划分时，改成目录：
-
-```
-lib/tauri/
-  index.ts      对外门面，页面只从这里 import
-  env.ts        isTauri
-  invoke.ts     统一 invoke 封装（错误归一化）
-  app.ts        应用级命令
-  fs.ts         文件相关命令
-```
-
-对外路径仍是 `@/lib/tauri`，调用方不用改。
+默认正常关闭窗口；启用后台运行且托盘可用时，关闭请求改为隐藏。明确的「退出」调用 `quit_app` 结束应用。自启动由用户主动开关，测试构建禁止读写系统自启动项。
 
 ## 通信机制
 
-### 请求 / 响应（invoke）
+Rust `tauri-specta` 从命令与 DTO 生成 [`src/lib/generated/bindings.ts`](../src/lib/generated/bindings.ts)。开发者实现命令、添加 `#[specta::specta]` 并在 `bindings.rs` 注册，然后运行：
 
-前端调 Rust，等返回值。适合"取数据、执行动作"。
-
-```ts
-// lib/tauri.ts
-export async function invokeGreet(name: string): Promise<string> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name });
-}
+```bash
+pnpm bindings:generate
+pnpm bindings:check
 ```
 
-Rust 侧返回 `Result<String, String>`，`Err` 会原样 reject 到前端。
-模板刻意让 `greet` 对空名称返回错误，而不是在页面里兜底——
-**校验放在边界，错误由调用方展示**。照着这个写，错误链路天然是通的。
+页面和 Hook 只依赖 `lib/tauri.ts`；门面加载生成的 `commands` 并归一化成功 / 失败。不要手改生成文件、在页面拼命令字符串，或额外维护一套返回 DTO。
 
-命令变多、同一类错误需要不同的用户提示或重试策略时，把 `String` 升级为结构化错误，
-前端按类型分支，而不是解析错误字符串：
+命令返回 `NativeResult<T>`，错误统一包含 `code`、`message`、`retryable`。前端按稳定 code 决定文案和行为，不解析错误文本，也不对对象直接 `String(error)`。生成类型检查源码契约，不能替代 Rust 入参校验、数据大小限制与路径边界。
 
-```rust
-#[derive(Debug, serde::Serialize)]
-#[serde(tag = "kind")]
-pub enum CommandError {
-    Validation { message: String },
-    NotFound { message: String },
-    Io { message: String },
-}
+事件通过门面订阅：设置快照、笔记变更和更新进度各有明确语义。订阅异步返回取消函数；组件卸载、StrictMode 重建或注册晚到时都必须取消，不能把 Promise 当 cleanup。事件用于通知失效与刷新，写入结果仍以命令返回为准。
 
-#[tauri::command]
-pub fn read_config() -> Result<String, CommandError> {
-    // ...
-}
-```
+## 状态管理与设置迁移
 
-```ts
-try {
-  const config = await invoke<string>("read_config");
-  // 使用 config
-} catch (error: unknown) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "kind" in error &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    // 校验 error.kind 后决定提示文案与是否重试
-  }
-}
-```
+组件局部状态使用 React 状态；跨页偏好由 SettingsProvider 管理，命令上下文由 CommandsProvider 管理。当前没有引入 Zustand、TanStack Query 或通用表单状态库。
 
-演进时机：只有一种错误时保持 `String`，错误分叉前不加层。
+设置文档的版本由 [`settings-model.ts`](../src/lib/settings-model.ts) 维护，当前为 schema 2：
 
-注意：`invoke<T>` 的泛型**不做运行时校验**，它只是一个断言。跨进程边界的数据要当成不可信输入，必要时用 zod 校验。
+- 读取旧版无版本扁平存档和 schema 1 包装结构，迁移主题、外观与布局字段。
+- 未提供主题时兼容旧 `theme` 存储键；旧纹理背景映射到现有 SVG 插画。
+- 字段按白名单规范化；侧栏宽度限制在支持范围，未知字段不写回。
+- 未来 schema 显示不兼容错误并阻止自动覆盖；明确重置后才允许替换。
+- 首次语言按系统偏好匹配 zh / en，已保存选择优先；重置保留用户语言。
+- 启动位置策略 `windowPosition` 支持 `remember` / `center`；旧存档缺少该字段时使用 `remember`，保持 schema 2 的兼容读取。
 
-### 事件（emit / listen）
+恢复默认设置会重置偏好，以及所有已打开窗口和已记忆窗口的尺寸；默认尺寸取各窗口配置，并约束到可用工作区。启动位置策略恢复为 `remember`，保留当前窗口位置，屏外位置仍经过必要的可见性修正。尺寸恢复与偏好保存依次完成，分别具有独立持久化边界；任一步失败均保留确认框及错误，允许重试，不显示完成提示。
 
-Rust 主动通知前端，或窗口之间广播。适合"进度更新、后台任务完成、菜单点击"。
-当前工程未使用，需要时：
+原生设置是权威快照，存于配置目录的 `settings.json`，采用原子替换和 revision compare-and-swap。前端设置模型负责字段迁移与未来 schema 保护；Rust 校验 JSON 结构、大小、深度和原生使用的字段。SettingsSync 将未提交字段与在途修改分开合并，冲突后读取新快照并有限重试；保存失败保留用户修改，界面提供状态和重试。跨窗口事件只接受新的 revision，不能让旧事件覆盖新状态。
 
-```rust
-app.emit("download-progress", 42)?;
-```
-
-```ts
-import { listen } from "@tauri-apps/api/event";
-const unlisten = await listen<number>("download-progress", (e) =>
-  setProgress(e.payload),
-);
-```
-
-`useEffect` 里注册监听必须返回 `unlisten`，否则组件卸载后仍会响应。
-
-## 状态管理
-
-按这个顺序升级，不要一上来就上库：
-
-| 场景                                 | 方案                                    | 现在有吗         |
-| ------------------------------------ | --------------------------------------- | ---------------- |
-| 单个组件内部                         | `useState` / `useReducer`               | 有               |
-| 兄弟组件共享                         | 状态提升到共同父级                      | 有               |
-| 跨页面 UI 偏好（主题、字体、语言）   | `providers/settings.tsx` + localStorage | 有               |
-| 跨页面业务状态（当前项目、协作状态） | Zustand                                 | 未安装，需要时装 |
-| 来自数据库/接口、需要缓存与失效      | TanStack Query                          | 未安装           |
-| 表单 + 校验                          | react-hook-form + zod                   | 未安装           |
-
-判断标准：**能靠组件树解决的就别引入全局状态**。全局状态每多一个，调试成本就多一分。
+浏览器模式使用当前站点的 localStorage 保存偏好，交互场景的数据按各页面的生命周期维护；在线演示不具备原生 SQLite、系统窗口或更新安装能力。原生模式保留本地缓存用于初始渲染与旧设置迁移，成功保存仍以原生快照为准。主题也纳入同一模型，避免 next-themes 与多窗口分别保存出两份事实。
 
 ## 数据存储
 
-| 数据                            | 存哪                                  | 原因                                |
-| ------------------------------- | ------------------------------------- | ----------------------------------- |
-| UI 偏好（主题、语言、窗口布局） | `localStorage`                        | 不需要 Rust 参与，重启即恢复        |
-| 业务数据                        | SQLite（`tauri-plugin-sql`）          | 事务、索引、迁移，比 JSON 文件可靠  |
-| 导出文件、缓存、日志            | `appDataDir`                          | 安装目录（Program Files）没有写权限 |
-| 令牌、密钥                      | 系统钥匙串（按需接入 Rust `keyring`） | 不落明文，不写进 localStorage       |
+| 数据           | 位置与边界                                                                   |
+| -------------- | ---------------------------------------------------------------------------- |
+| 设置、窗口存档 | Tauri `appConfigDir`；损坏设置备份后恢复，前端对未来设置 schema 阻止自动写回 |
+| 笔记数据库     | `appDataDir/starter.sqlite3`，由 Rust `rusqlite` 持有连接                    |
+| 应用日志       | `appLogDir`，轮换规则见 [排障手册](./troubleshooting.md#先看日志)            |
+| 浏览器缓存     | WebView / 浏览器的 localStorage，仅存非敏感偏好                              |
+| 用户凭据       | 当前未接入；需要时使用系统钥匙串，不存明文 JSON / SQLite / localStorage      |
 
-**绝对不要**把数据写到 exe 所在目录。Windows 下装在 `Program Files` 时是只读的，
-开发机上能跑、装完就崩，这类问题排查成本极高。
+SQLite 用 `PRAGMA user_version` 标记数据库 schema，迁移在事务中完成；遇到未来数据库版本拒绝修改。笔记查询参数化，更新检查 `expectedVersion`，冲突要求重新加载；不向前端暴露任意 SQL、数据库路径或文件系统权限。
 
-获取路径：
+笔记草稿仅保留在当前 WebView 内存，支持跨路由返回；点击保存成功后才进入数据库。关闭窗口、退出进程或更新重启前需先保存；浏览器 `beforeunload` 提示不能覆盖 Tauri 原生关闭、托盘退出等路径，当前没有跨原生退出的草稿保存协调协议。
 
-```rust
-let dir = app.path().app_data_dir()?; // 需要 tauri::Manager
-```
+数据目录由 Tauri 路径 API 决定，不写入 exe 所在目录。恢复默认设置更新偏好与窗口尺寸存档，不删除笔记、日志或 WebView 数据。测试 feature 使用独立用户目录，见 [E2E 隔离](./testing.md#真实桌面-e2e)。
+
+## 恢复、诊断与更新
+
+App 外层错误边界处理根渲染失败；路由内的恢复边界保留外壳和导航，可重试当前页面。加载、保存和删除失败应保留输入及已有数据，并提供明确下一步。
+
+诊断报告包含应用 / Tauri / 平台信息、窗口、设置 revision、数据库版本、桌面状态和有限日志。记录前端异常有速率限制，预览日志会脱敏；复制或反馈前仍需人工复核，不把完整设置、笔记或环境变量作为诊断内容。
+
+更新由 Rust 持有检查结果和安装句柄，前端订阅状态 / 进度。默认 GitHub 地址来自品牌配置，公钥为空时禁用且不请求网络。配置、签名顺序及部署覆盖见 [自动更新](./build-release.md#自动更新)。更新不能用前端任意 URL 绕开固定策略，也不允许跳过签名验证。
 
 ## 安全边界
 
-1. **能力白名单**：`src-tauri/capabilities/default.json` 限制 Tauri 核心与插件调用；自定义命令默认向本地前端开放，按窗口限制需另启应用 ACL。
-2. **CSP**：生产 CSP 已内建，收紧规则见 [安全规范](./security.md#csp)。开发模式下页面由 Vite dev server（外部 URL）提供，Tauri 不注入 CSP，因此 HMR 不受限；`devCsp: null` 的语义是「开发构建回退到生产 CSP」，不是「开发模式没有 CSP」。
-3. **不做动态代码执行**：不 `eval`，不加载远端 JS。
-4. **外链隔离**：所有 http 链接由系统浏览器打开，不在 WebView 里导航。
+核心与插件权限在 [`capabilities/default.json`](../src-tauri/capabilities/default.json) 中分配；自定义命令的应用 ACL 与插件 capability 是不同机制，详见 [能力最小化](./security.md#能力最小化)。当前主 / 次窗口均为可信本地界面，不在其 WebView 中加载第三方网页。
 
-## 目录职责速查
+桌面构建的 CSP 限制脚本和网络来源，外链统一交给系统浏览器。数据库、设置、更新和自启动由限定服务负责；新增页面不因此获得通用文件、Shell 或 SQL 能力。浏览器演示遵循浏览器权限与同源存储边界，不包含可调用的 Rust 进程。
 
-```
-src/
-  routes.tsx        路由与导航的唯一数据源
-  layouts/          路由页的整体布局
-  pages/            路由级页面，默认导出
-  components/
-    ui/             shadcn 原子组件（不改导出名）
-    <domain>/       跨页面复用的业务组件
-  hooks/            可复用的 React 逻辑，use-xxx.ts
-  providers/        跨页面 React Context（外观偏好、i18n）
-  lib/              纯 TS：IPC 封装、工具、校验
-  styles/           内置的 shadcn 基础样式（上游逐字复制，勿手改）
-src-tauri/
-  src/lib.rs        组装：插件注册、命令注册、启动兜底
-  src/main.rs       二进制入口，只调 lib.rs
-  src/commands.rs   前端可调用的命令实现
-  capabilities/     Tauri 核心与插件能力白名单
-  tauri.conf.json   窗口、打包、标识符
-```
+## 扩展原则
 
-`lib.rs` 只做组装。命令的实现写在 `commands.rs`，命令多了拆成 `commands/` 目录按领域分文件——
-让「加命令去哪个文件」这个问题有明确答案，而不是把入口文件养成第二个业务层。
-
-## 已知取舍
-
-这些是有意为之，不是遗漏。改动前请先读 [ADR](./adr/README.md)。
-
-| 取舍                               | 得到什么               | 失去什么                                        |
-| ---------------------------------- | ---------------------- | ----------------------------------------------- |
-| 用系统 WebView 而不是自带 Chromium | 安装包 1.4MB、内存低   | 三端渲染细节有差异，Linux 的 WebKitGTK 偏旧     |
-| HashRouter 而不是 BrowserRouter    | 自定义协议下刷新不 404 | URL 里带 `#`，不好看                            |
-| 不建 `features/` 层                | 目录浅，找文件快       | 单领域文件超过 10 个时要重构                    |
-| 不预装状态管理库                   | 起步轻，没有多余概念   | 跨页状态变多时需要补                            |
-| 使用内置中英文字典                 | 零额外依赖，即时切换   | 复杂复数、日期等本地化需另行扩展                |
-| 剪贴板不用官方插件                 | 少一个 Rust 依赖       | 个别 WebView 组合下可能失败，已做 textarea 回退 |
-| `invoke` 泛型不做运行时校验        | 简单、零开销           | 后端返回结构变了前端不会立刻报错                |
+技术选型与协作决策见 [ADR](./adr/README.md)。扩展前先确认实际需要：新增语言复用 locale 注册表，新增操作复用命令注册表，新增原生能力复用生成绑定与门面。跨模块、数据兼容或发布行为的变更先完成 [设计影响分析](./engineering-at-scale.md#设计评审与-adr-门槛)。当前桌面配置不包含移动端交付，新增平台、远程内容或敏感数据存储都需要单独设计和验证。

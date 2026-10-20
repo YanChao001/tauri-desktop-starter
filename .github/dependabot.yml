@@ -1,7 +1,7 @@
 version: 2
 
-# 依赖更新走 PR，和人工改动同一套 CI 与 review 流程。
-# 不自动合并：桌面应用的依赖升级经常带出 WebView 兼容问题，必须过一次构建。
+# 依赖更新通过 PR，沿用人工变更的 CI 与评审流程
+# 依赖升级需验证构建及 WebView 兼容性，不自动合并
 updates:
   - package-ecosystem: "npm"
     directory: "/"

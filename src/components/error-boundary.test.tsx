@@ -9,14 +9,21 @@ function Boom(): ReactNode {
 }
 
 describe("ErrorBoundary", () => {
-  // React 捕获错误时会打 console.error，这里静音，避免测试输出被噪音淹没
+  // 预期渲染错误会触发 console.error，此处屏蔽对应输出
   beforeEach(() => {
+    delete document.documentElement.dataset.language;
+    window.localStorage.setItem(
+      "tauri-starter:settings",
+      JSON.stringify({ language: "zh" }),
+    );
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
-    // vitest 未开 globals，Testing Library 不会自动 cleanup
+    // Vitest 未启用全局函数，Testing Library 不会自动清理
     cleanup();
+    window.localStorage.clear();
+    delete document.documentElement.dataset.language;
     vi.restoreAllMocks();
   });
 
@@ -44,7 +51,39 @@ describe("ErrorBoundary", () => {
     ).toBeInTheDocument();
   });
 
-  it.each(["字符串异常", null])("捕获非 Error 异常 %s", (error) => {
+  it("provider 不可用时仍按已选英文显示错误入口", () => {
+    window.localStorage.setItem(
+      "tauri-starter:settings",
+      JSON.stringify({ language: "en" }),
+    );
+    render(
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    );
+    expect(
+      screen.getByText("The interface encountered an error"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reload" })).toBeVisible();
+  });
+
+  it("存档无法写入时优先使用当前已应用的内存语言", () => {
+    document.documentElement.dataset.language = "en";
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+    render(
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole("button", { name: "Reload" })).toBeVisible();
+  });
+
+  it.each([
+    ["字符串异常", "字符串异常"],
+    [null, "Unknown error"],
+  ])("捕获非 Error 异常 %s", (error, message) => {
     function ThrowValue(): ReactNode {
       throw error;
     }
@@ -54,6 +93,6 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
     expect(screen.getByText("界面出错了")).toBeInTheDocument();
-    expect(screen.getByText(String(error))).toBeInTheDocument();
+    expect(screen.getByText(message!)).toBeInTheDocument();
   });
 });

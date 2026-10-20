@@ -9,10 +9,26 @@
     "editor.formatOnSave": true
   },
   "files.eol": "\n",
+  "files.exclude": {
+    "**/dist": true,
+    "**/dist-web": true,
+    "**/src-tauri/target": true
+  },
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
+    "**/dist-web": true,
+    "**/dist-portable": true,
+    "**/artifacts": true,
     "**/src-tauri/target": true,
     "**/src-tauri/gen": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/dist-web/**": true,
+    "**/artifacts/**": true,
+    "**/src-tauri/target/**": true,
+    "**/src-tauri/gen/**": true
   }
 }

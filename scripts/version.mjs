@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { projectFile } from "./fs-utils.mjs";
 
-// SemVer 2.0: numeric identifiers cannot have leading zeroes; build metadata can.
+// SemVer 2.0 的数字标识不能有前导零，构建元数据不受此限制。
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
@@ -23,14 +23,34 @@ export function validateVersion(version, config) {
   if (includes("nsis") && core.some((part) => part > 65535n)) {
     throw new Error("NSIS 版本号各段不能大于 65535");
   }
-  if (includes("msi") && !bundle?.windows?.wix?.version) {
+  if (includes("msi")) {
+    const wixVersion = bundle?.windows?.wix?.version;
+    if (wixVersion !== undefined && wixVersion !== null) {
+      const wixParts =
+        typeof wixVersion === "string" &&
+        wixVersion.match(/^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$/);
+      if (
+        !wixParts ||
+        wixParts
+          .slice(1)
+          .some(
+            (part, index) =>
+              part !== undefined && BigInt(part) > (index < 2 ? 255n : 65535n),
+          )
+      ) {
+        throw new Error(
+          "bundle.windows.wix.version 必须是有效的 MSI 版本：major.minor.patch[.build]（255.255.65535[.65535]）",
+        );
+      }
+      return;
+    }
     if (core[0] > 255n || core[1] > 255n || core[2] > 65535n) {
       throw new Error(
         "MSI 版本号必须满足 major <= 255、minor <= 255、patch <= 65535",
       );
     }
-    // Tauri uses build metadata first, then the prerelease identifier, as MSI's
-    // optional fourth component. Textual prereleases need an explicit wix.version.
+    // Tauri 优先使用构建元数据，再使用预发布标识作为 MSI 可选的第四段。
+    // 文本预发布标识需要显式配置 wix.version。
     const fourth = match[5] ?? match[4];
     if (fourth && (!/^\d+$/.test(fourth) || BigInt(fourth) > 65535n)) {
       throw new Error(
@@ -49,7 +69,12 @@ function tomlValue(content, key, label) {
 }
 
 export function readVersionFiles(root) {
-  const read = (path) => readFileSync(join(root, path), "utf8");
+  const originals = new Map();
+  const read = (path) => {
+    const content = readFileSync(projectFile(root, path), "utf8");
+    originals.set(path, content);
+    return content;
+  };
   const packagePath = "package.json";
   const configPath = "src-tauri/tauri.conf.json";
   const manifestPath = "src-tauri/Cargo.toml";
@@ -73,31 +98,25 @@ export function readVersionFiles(root) {
       section: packageSection[0],
     },
   ];
-  let lock;
-  try {
-    lock = read(lockPath);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+  const lock = read(lockPath);
+  const sections = lock.matchAll(
+    /^\[\[package\]\][^\S\r\n]*\r?\n([\s\S]*?)(?=^\[\[|(?![\s\S]))/gm,
+  );
+  const ownPackages = [...sections].filter(
+    (section) =>
+      tomlValue(section[1], "name", lockPath) === packageName &&
+      !/^\s*source\s*=/m.test(section[1]),
+  );
+  if (ownPackages.length !== 1) {
+    throw new Error(`Cargo.lock 中必须恰好有一个本地包 ${packageName}`);
   }
-  if (lock !== undefined) {
-    const sections = lock.matchAll(
-      /^\[\[package\]\][^\S\r\n]*\r?\n([\s\S]*?)(?=^\[\[|(?![\s\S]))/gm,
-    );
-    const ownPackages = [...sections].filter(
-      (section) =>
-        tomlValue(section[1], "name", lockPath) === packageName &&
-        !/^\s*source\s*=/m.test(section[1]),
-    );
-    if (ownPackages.length !== 1) {
-      throw new Error(`Cargo.lock 中必须恰好有一个本地包 ${packageName}`);
-    }
-    files.push({
-      path: lockPath,
-      version: tomlValue(ownPackages[0][1], "version", lockPath),
-      content: lock,
-      section: ownPackages[0][0],
-    });
-  }
+  files.push({
+    path: lockPath,
+    version: tomlValue(ownPackages[0][1], "version", lockPath),
+    content: lock,
+    section: ownPackages[0][0],
+  });
+  for (const file of files) file.before = originals.get(file.path);
   return { config, files };
 }
 
@@ -119,7 +138,7 @@ export function checkVersions(root, tag) {
 }
 
 export function prepareVersionUpdates(root, next) {
-  // Parse every file and validate the Windows bundle version before writing any.
+  // 写入前先解析所有文件，并校验 Windows 安装包版本。
   const { config, files } = readVersionFiles(root);
   validateVersion(next, config);
   return files.map((file) => {
@@ -132,6 +151,11 @@ export function prepareVersionUpdates(root, next) {
             (_, prefix, suffix) => `${prefix}${next}${suffix}`,
           ),
         );
-    return { path: file.path, content, previous: file.version };
+    return {
+      path: file.path,
+      before: file.before,
+      content,
+      previous: file.version,
+    };
   });
 }

@@ -1,216 +1,209 @@
-import { useState } from "react";
 import {
-  GaugeIcon,
+  createRef,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import {
+  AtomIcon,
+  CheckIcon,
   LayersIcon,
-  MousePointerClickIcon,
-  RadioIcon,
+  OrbitIcon,
+  PauseIcon,
+  PlayIcon,
+  RotateCcwIcon,
   SparklesIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useThemeSwitch } from "@/hooks/use-theme-switch";
+import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
-import { useSettings } from "@/providers/settings";
-
-const STAGGER_ITEMS = Array.from({ length: 6 }, (_, index) => index + 1);
-const HOVER_CARDS = [1, 2, 3];
-
-export default function Motion() {
+import { SpringScene } from "@/components/motion-lab/spring-scene";
+import { LayoutScene } from "@/components/motion-lab/layout-scene";
+import { TiltScene } from "@/components/motion-lab/tilt-scene";
+import { PathScene } from "@/components/motion-lab/path-scene";
+import "@/styles/motion-lab.css";
+const SCENES = [
+  {
+    id: "spring",
+    label: "lab.spring",
+    title: "lab.springTitle",
+    hint: "lab.springHint",
+    icon: AtomIcon,
+  },
+  {
+    id: "layout",
+    label: "lab.layout",
+    title: "lab.layoutTitle",
+    hint: "lab.layoutHint",
+    icon: LayersIcon,
+  },
+  {
+    id: "tilt",
+    label: "lab.tilt",
+    title: "lab.tiltTitle",
+    hint: "lab.tiltHint",
+    icon: SparklesIcon,
+  },
+  {
+    id: "paths",
+    label: "lab.paths",
+    title: "lab.pathsTitle",
+    hint: "lab.pathsHint",
+    icon: OrbitIcon,
+  },
+] as const;
+type SceneId = (typeof SCENES)[number]["id"];
+export default function MotionLab() {
   const { t } = useI18n();
-  const { settings, update } = useSettings();
-  const { toggle } = useThemeSwitch();
-  const [progress, setProgress] = useState(40);
-  const motionOff = settings.motion === "reduced";
-
+  const [scene, setScene] = useState<SceneId>("spring");
+  const [paused, setPaused] = useState(false);
+  const [replay, setReplay] = useState(0);
+  const stages = useMemo(
+    () => ({
+      spring: createRef<HTMLDivElement>(),
+      layout: createRef<HTMLDivElement>(),
+      tilt: createRef<HTMLDivElement>(),
+      paths: createRef<HTMLDivElement>(),
+    }),
+    [],
+  );
+  const stageRef = stages[scene];
+  const { reduced, active, visible } = useDemoMotion(stageRef, !paused);
+  const selected = SCENES.find((item) => item.id === scene)!;
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const onTabKey = (event: KeyboardEvent, index: number) => {
+    let next: number;
+    if (event.key === "ArrowRight") next = (index + 1) % SCENES.length;
+    else if (event.key === "ArrowLeft")
+      next = (index + SCENES.length - 1) % SCENES.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = SCENES.length - 1;
+    else return;
+    event.preventDefault();
+    setScene(SCENES[next]!.id);
+    tabRefs.current[next]?.focus();
+  };
   return (
-    <div className="space-y-6">
-      <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold tracking-tight">
-          {t("motion.title")}
-        </h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {t("motion.subtitle")}
-        </p>
+    <div
+      className="motion-lab"
+      data-reduced={reduced}
+      data-paused={paused || !visible}
+    >
+      <header className="lab-heading">
+        <p>{t("lab.eyebrow")}</p>
+        <h2>{t("lab.title")}</h2>
+        <span>{t("lab.subtitle")}</span>
+      </header>
+      <div
+        className="lab-scene-tabs"
+        role="tablist"
+        aria-label={t("lab.scenes")}
+      >
+        {SCENES.map((item, index) => (
+          <button
+            key={item.id}
+            ref={(element) => {
+              tabRefs.current[index] = element;
+            }}
+            type="button"
+            role="tab"
+            id={`lab-tab-${item.id}`}
+            aria-controls={`lab-panel-${item.id}`}
+            aria-selected={scene === item.id}
+            tabIndex={scene === item.id ? 0 : -1}
+            onClick={() => setScene(item.id)}
+            onKeyDown={(event) => onTabKey(event, index)}
+          >
+            <item.icon />
+            <span>{t(item.label)}</span>
+          </button>
+        ))}
       </div>
-
-      {motionOff ? (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-          <SparklesIcon className="mt-0.5 size-4 text-amber-600 dark:text-amber-400" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium">{t("motion.motionOff")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("motion.motionOffHint")}
-            </p>
+      <section
+        className="lab-console"
+        role="tabpanel"
+        id={`lab-panel-${scene}`}
+        aria-labelledby={`lab-tab-${scene}`}
+      >
+        <div className="lab-console-heading">
+          <div>
+            <span className="lab-status">
+              <i />
+              {t(
+                reduced
+                  ? "lab.reduced"
+                  : paused || !visible
+                    ? "lab.paused"
+                    : "lab.live",
+              )}
+            </span>
+            <h3>{t(selected.title)}</h3>
+            <p>{t(selected.hint)}</p>
+          </div>
+          <div className="lab-toolbar">
             <Button
-              size="xs"
+              size="icon-sm"
               variant="outline"
-              className="mt-1"
-              onClick={() => {
-                update({ motion: "full" });
-                toast.success(t("settings.motionFull"));
-              }}
+              disabled={reduced}
+              aria-label={t(paused ? "lab.resume" : "lab.pause")}
+              aria-pressed={paused}
+              onClick={() => setPaused((value) => !value)}
             >
-              {t("settings.motionFull")}
+              {paused ? <PlayIcon /> : <PauseIcon />}
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              aria-label={t("lab.replay")}
+              onClick={() => setReplay((value) => value + 1)}
+            >
+              <RotateCcwIcon />
             </Button>
           </div>
         </div>
-      ) : null}
-
-      <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-sm">{t("motion.theme")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("motion.themeHint")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-primary/15 via-background to-background px-6 py-10">
-            <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-primary/20 blur-2xl" />
-            <div className="relative flex flex-col items-center gap-3 text-center">
-              <span className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                <MousePointerClickIcon className="size-5" />
-              </span>
-              <p className="text-sm text-muted-foreground">
-                {t("motion.themeHint")}
-              </p>
-              <Button onClick={(event) => toggle(event)}>
-                {t("motion.toggleTheme")}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">{t("motion.stagger")}</CardTitle>
-            <CardDescription className="text-xs">
-              {t("motion.staggerHint")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {STAGGER_ITEMS.map((item) => (
-              <div
-                key={item}
-                className="animate-fade-up flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2"
-                style={{ animationDelay: `${item * 40}ms` }}
-              >
-                <span className="flex size-6 items-center justify-center rounded-full bg-background text-[10px] font-medium">
-                  {item}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {t("motion.item", { index: item })}
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-3">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">{t("motion.hover")}</CardTitle>
-              <CardDescription className="text-xs">
-                {t("motion.hoverHint")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-3 gap-2">
-              {HOVER_CARDS.map((item) => (
-                <div
-                  key={item}
-                  className="flex h-20 cursor-default flex-col items-center justify-center gap-1.5 rounded-lg border bg-background transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10"
-                >
-                  <LayersIcon className="size-4 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">{t("motion.skeleton")}</CardTitle>
-              <CardDescription className="text-xs">
-                {t("motion.skeletonHint")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Skeleton className="size-8 rounded-full" />
-                <div className="flex-1 space-y-1.5">
-                  <Skeleton className="h-2.5 w-1/2" />
-                  <Skeleton className="h-2.5 w-1/3" />
-                </div>
-              </div>
-              <Skeleton className="h-16 w-full" />
-            </CardContent>
-          </Card>
+        <div className="lab-experiment">
+          {scene === "spring" && (
+            <SpringScene
+              active={active}
+              reduced={reduced}
+              replay={replay}
+              stageRef={stageRef}
+            />
+          )}
+          {scene === "layout" && (
+            <LayoutScene
+              active={active}
+              reduced={reduced}
+              replay={replay}
+              stageRef={stageRef}
+            />
+          )}
+          {scene === "tilt" && (
+            <TiltScene
+              active={active}
+              reduced={reduced}
+              replay={replay}
+              stageRef={stageRef}
+            />
+          )}
+          {scene === "paths" && (
+            <PathScene
+              active={active}
+              reduced={reduced}
+              replay={replay}
+              stageRef={stageRef}
+            />
+          )}
         </div>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">{t("motion.progress")}</CardTitle>
-            <CardDescription className="text-xs">
-              {t("motion.progressHint")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <GaugeIcon className="size-3.5" />
-                {progress}%
-              </span>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() =>
-                  setProgress((value) => (value >= 100 ? 20 : value + 20))
-                }
-              >
-                +20%
-              </Button>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </CardContent>
-        </Card>
-
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-sm">{t("motion.marquee")}</CardTitle>
-            <CardDescription className="text-xs">
-              {t("motion.marqueeHint")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="marquee-track overflow-hidden rounded-md border bg-muted/30 py-2">
-              <div className="animate-marquee flex w-max items-center gap-6 whitespace-nowrap px-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <RadioIcon className="size-3.5" />
-                  {t("motion.marqueeText")}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <RadioIcon className="size-3.5" />
-                  {t("motion.marqueeText")}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      </section>
+      {reduced && (
+        <p className="lab-reduced-note">
+          <CheckIcon />
+          {t("lab.reducedHint")}
+        </p>
+      )}
+      <p className="lab-footer">{t("lab.footer")}</p>
     </div>
   );
 }

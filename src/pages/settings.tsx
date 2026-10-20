@@ -1,4 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CheckIcon,
   ExternalLinkIcon,
@@ -6,11 +12,24 @@ import {
   MoonIcon,
   RotateCcwIcon,
   SunIcon,
+  ChevronDownIcon,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { LanguageSwitch } from "@/components/language-switch";
+import { SkinPicker } from "@/components/skin-picker";
+import { SettingsSearch } from "@/components/settings-search";
+import { SettingsPersistence } from "@/components/settings-persistence";
+import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -29,17 +48,28 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import {
   ACCENTS,
   useSettings,
   type Accent,
-  type Background,
   type Font,
   type FontSize,
   type Radius,
 } from "@/providers/settings";
-import { getAppInfo, isTauri, openExternal } from "@/lib/tauri";
+import {
+  getAppInfo,
+  getWindowGeometry,
+  isTauri,
+  onWindowMoved,
+  onWindowResized,
+  openExternal,
+  resetWindowGeometry,
+  setWindowSize,
+  type WindowGeometry,
+} from "@/lib/tauri";
+import { nativeErrorText } from "@/lib/native-error";
 import { cn } from "@/lib/utils";
 
 const THEMES = [
@@ -71,56 +101,23 @@ const LINKS = [
   { label: "Tailwind CSS", url: "https://tailwindcss.com/" },
 ];
 
-function BackgroundPreview({ kind }: { kind: Background }) {
-  if (kind === "gradient") {
-    return (
-      <div
-        className="h-10 rounded-md border"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 25% 20%, color-mix(in oklch, var(--primary) 40%, transparent), transparent 70%)",
-        }}
-      />
-    );
-  }
-  if (kind === "grid") {
-    return (
-      <div
-        className="h-10 rounded-md border"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, var(--pattern) 1px, transparent 1px), linear-gradient(to bottom, var(--pattern) 1px, transparent 1px)",
-          backgroundSize: "10px 10px",
-        }}
-      />
-    );
-  }
-  if (kind === "dots") {
-    return (
-      <div
-        className="h-10 rounded-md border"
-        style={{
-          backgroundImage:
-            "radial-gradient(var(--pattern) 1.2px, transparent 1.2px)",
-          backgroundSize: "8px 8px",
-        }}
-      />
-    );
-  }
-  return <div className="h-10 rounded-md border bg-muted/40" />;
-}
-
 function SettingRow({
+  id,
   label,
   hint,
   children,
 }: {
+  id?: string;
   label: string;
   hint?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 py-3">
+    <div
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      className="settings-row flex items-center justify-between gap-6 rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <div className="min-w-0 space-y-0.5">
         <p className="text-sm">{label}</p>
         {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
@@ -132,22 +129,192 @@ function SettingRow({
 
 export default function Settings() {
   const { t } = useI18n();
-  const { theme, setTheme } = useTheme();
+  const translateLatest = useLatestTranslator();
+  const { theme, setTheme } = useThemeSwitch();
   const { settings, update, reset } = useSettings();
   const [version, setVersion] = useState("—");
   const [tauriVersion, setTauriVersion] = useState("—");
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [windowGeometry, setGeometry] = useState<WindowGeometry | null>(null);
+  const [windowError, setWindowError] = useState<unknown>(null);
+  const [resetError, setResetError] = useState<unknown>(null);
+  const [pending, setPending] = useState(false);
+  const mounted = useRef(false);
+  const running = useRef(false);
+  const geometryGeneration = useRef(0);
+  const native = isTauri();
+  const invalidateGeometry = useCallback(() => {
+    geometryGeneration.current++;
+  }, []);
+
+  const refreshWindow = useCallback(async () => {
+    if (running.current) return;
+    const generation = ++geometryGeneration.current;
+    try {
+      const geometry = await getWindowGeometry();
+      if (!mounted.current || geometryGeneration.current !== generation) return;
+      setGeometry(geometry);
+      setWindowError(null);
+    } catch (error) {
+      if (mounted.current && geometryGeneration.current === generation)
+        setWindowError(error);
+    }
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    let stopped = false;
+    const unlisten: Array<() => void> = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (native) {
+      void refreshWindow();
+      const changed = () => {
+        if (stopped) return;
+        invalidateGeometry();
+        clearTimeout(timer);
+        timer = setTimeout(() => void refreshWindow(), 200);
+      };
+      void Promise.allSettled([
+        onWindowResized(changed),
+        onWindowMoved(changed),
+      ]).then((results) => {
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            if (stopped) result.value();
+            else unlisten.push(result.value);
+          } else if (!stopped) {
+            setWindowError(result.reason);
+          }
+        }
+      });
+    }
+    return () => {
+      mounted.current = false;
+      stopped = true;
+      invalidateGeometry();
+      clearTimeout(timer);
+      for (const stop of unlisten) stop();
+    };
+  }, [native, refreshWindow, invalidateGeometry]);
+
+  function acceptGeometry(geometry: WindowGeometry) {
+    geometryGeneration.current++;
+    setGeometry(geometry);
+    setWindowError(null);
+  }
+
+  async function applyWindowSize(width: number, height: number) {
+    if (
+      !native ||
+      running.current ||
+      !windowGeometry ||
+      width < windowGeometry.minWidth ||
+      width > windowGeometry.maxWidth ||
+      height < windowGeometry.minHeight ||
+      height > windowGeometry.maxHeight
+    )
+      return;
+    running.current = true;
+    geometryGeneration.current++;
+    setPending(true);
+    setWindowError(null);
+    try {
+      const geometry = await setWindowSize(width, height);
+      if (mounted.current) {
+        acceptGeometry(geometry);
+        toast.success(translateLatest("settings.windowSizeApplied"));
+      }
+    } catch (error) {
+      if (mounted.current) setWindowError(error);
+    } finally {
+      running.current = false;
+      if (mounted.current) setPending(false);
+    }
+  }
+
+  async function restorePreferences() {
+    if (running.current) return;
+    running.current = true;
+    geometryGeneration.current++;
+    setPending(true);
+    setResetError(null);
+    try {
+      const geometry = native ? await resetWindowGeometry(false) : null;
+      if (geometry && mounted.current) acceptGeometry(geometry);
+      await reset();
+      if (mounted.current) {
+        setConfirmReset(false);
+        toast.success(translateLatest("common.resetDone"));
+      }
+    } catch (error) {
+      if (mounted.current) setResetError(error);
+    } finally {
+      running.current = false;
+      if (mounted.current) setPending(false);
+    }
+  }
+
+  const standardWidth = windowGeometry
+    ? Math.max(
+        windowGeometry.minWidth,
+        Math.min(windowGeometry.maxWidth, windowGeometry.defaultWidth),
+      )
+    : null;
+  const standardHeight = windowGeometry
+    ? Math.max(
+        windowGeometry.minHeight,
+        Math.min(windowGeometry.maxHeight, windowGeometry.defaultHeight),
+      )
+    : null;
+  const fittedDefault =
+    windowGeometry !== null &&
+    (standardWidth !== windowGeometry.defaultWidth ||
+      standardHeight !== windowGeometry.defaultHeight);
+  const windowPresets = [
+    { id: "compact", label: "settings.windowCompact", width: 960, height: 640 },
+    {
+      id: "standard",
+      label: "settings.windowStandard",
+      width: standardWidth,
+      height: standardHeight,
+    },
+    {
+      id: "comfortable",
+      label: "settings.windowComfortable",
+      width: 1280,
+      height: 800,
+    },
+    {
+      id: "spacious",
+      label: "settings.windowSpacious",
+      width: 1440,
+      height: 900,
+    },
+  ] as const;
+  // 品牌默认尺寸与固定预设相同时，只保留标准选项。
+  const visiblePresets = windowPresets.filter(
+    (preset) =>
+      preset.id === "standard" ||
+      preset.width !== standardWidth ||
+      preset.height !== standardHeight,
+  );
 
   useEffect(() => {
     if (!isTauri()) return;
+    let cancelled = false;
     void (async () => {
       try {
         const info = await getAppInfo();
+        if (cancelled) return;
         setVersion(info.version);
         setTauriVersion(info.tauriVersion);
       } catch (error) {
         console.error("读取版本信息失败", error);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleOpenLink(url: string) {
@@ -155,20 +322,27 @@ export default function Settings() {
       await openExternal(url);
     } catch (error) {
       console.error("打开外链失败", error);
-      toast.error(t("common.openFailed"));
+      toast.error(translateLatest("common.openFailed"));
     }
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold tracking-tight">
-          {t("settings.title")}
-        </h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {t("settings.subtitle")}
-        </p>
+    <div className="studio-page settings-studio">
+      <div className="studio-intro">
+        <span className="studio-eyebrow">{t("studio.settingsEyebrow")}</span>
+        <h2>{t("settings.title")}</h2>
+        <p>{t("settings.subtitle")}</p>
       </div>
+
+      <SettingsSearch />
+      <SettingsPersistence />
+      <section
+        id="settings-skin"
+        tabIndex={-1}
+        className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <SkinPicker />
+      </section>
 
       <Card>
         <CardHeader>
@@ -178,7 +352,14 @@ export default function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
+          <SettingRow id="settings-language" label={t("common.language")}>
+            <LanguageSwitch />
+          </SettingRow>
+          <div
+            id="settings-theme"
+            tabIndex={-1}
+            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <Label className="text-xs">{t("settings.theme")}</Label>
             <div className="grid grid-cols-3 gap-2">
               {THEMES.map((item) => {
@@ -187,6 +368,7 @@ export default function Settings() {
                   <button
                     key={item.value}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => setTheme(item.value)}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-lg border px-3 py-3 text-xs transition-colors",
@@ -203,7 +385,11 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div
+            id="settings-accent"
+            tabIndex={-1}
+            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <div className="flex items-center justify-between">
               <Label className="text-xs">{t("settings.accent")}</Label>
               <span className="text-[11px] text-muted-foreground">
@@ -217,7 +403,9 @@ export default function Settings() {
                   <button
                     key={accent}
                     type="button"
-                    aria-label={accent}
+                    aria-label={t(`settings.color.${accent}`)}
+                    title={t(`settings.color.${accent}`)}
+                    aria-pressed={active}
                     onClick={() => update({ accent })}
                     className={cn(
                       "flex size-7 items-center justify-center rounded-full border transition-transform hover:scale-110",
@@ -237,9 +425,10 @@ export default function Settings() {
 
           <Separator />
 
-          <SettingRow label={t("settings.radius")}>
+          <SettingRow id="settings-radius" label={t("settings.radius")}>
             <ToggleGroup
               type="single"
+              aria-label={t("settings.radius")}
               size="sm"
               value={settings.radius}
               onValueChange={(value) => {
@@ -258,12 +447,16 @@ export default function Settings() {
             </ToggleGroup>
           </SettingRow>
 
-          <SettingRow label={t("settings.font")}>
+          <SettingRow id="settings-font" label={t("settings.font")}>
             <Select
               value={settings.font}
               onValueChange={(value) => update({ font: value as Font })}
             >
-              <SelectTrigger className="w-40" size="sm">
+              <SelectTrigger
+                className="w-40"
+                size="sm"
+                aria-label={t("settings.font")}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -276,9 +469,10 @@ export default function Settings() {
             </Select>
           </SettingRow>
 
-          <SettingRow label={t("settings.fontSize")}>
+          <SettingRow id="settings-fontSize" label={t("settings.fontSize")}>
             <ToggleGroup
               type="single"
+              aria-label={t("settings.fontSize")}
               size="sm"
               value={settings.fontSize}
               onValueChange={(value) => {
@@ -297,41 +491,14 @@ export default function Settings() {
             </ToggleGroup>
           </SettingRow>
 
-          <div className="space-y-2">
-            <Label className="text-xs">{t("settings.background")}</Label>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(
-                [
-                  ["plain", "settings.bgPlain"],
-                  ["gradient", "settings.bgGradient"],
-                  ["grid", "settings.bgGrid"],
-                  ["dots", "settings.bgDots"],
-                ] as const
-              ).map(([value, labelKey]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => update({ background: value })}
-                  className={cn(
-                    "space-y-1.5 rounded-lg border p-2 text-left transition-colors",
-                    settings.background === value
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-muted/40",
-                  )}
-                >
-                  <BackgroundPreview kind={value} />
-                  <span className="block text-[11px]">{t(labelKey)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <SettingRow
+            id="settings-motion"
             label={t("settings.motion")}
             hint={t("settings.motionHint")}
           >
             <ToggleGroup
               type="single"
+              aria-label={t("settings.motion")}
               size="sm"
               value={settings.motion}
               onValueChange={(value) => {
@@ -349,15 +516,15 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-layout" tabIndex={-1}>
         <CardHeader>
-          <CardTitle className="text-sm">{t("settings.window")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.customTitlebarHint")}
-          </CardDescription>
+          <CardTitle className="text-sm">
+            {t("studio.settingsWorkspace")}
+          </CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
           <SettingRow
+            id="settings-menuBar"
             label={t("settings.menuBar")}
             hint={t("settings.menuBarHint")}
           >
@@ -367,58 +534,235 @@ export default function Settings() {
               aria-label={t("settings.menuBar")}
             />
           </SettingRow>
-          <SettingRow label={t("settings.customTitlebar")}>
-            <Badge variant="secondary">{t("settings.enabled")}</Badge>
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.runtime")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.runtimeHint")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="divide-y">
-          <SettingRow label={t("settings.appVersion")}>
-            <span className="font-mono text-xs">{version}</span>
-          </SettingRow>
-          <SettingRow label={t("settings.tauriVersion")}>
-            <span className="font-mono text-xs">{tauriVersion}</span>
-          </SettingRow>
-          <SettingRow label={t("settings.environment")}>
-            <Badge variant="outline" className="font-normal">
-              {isTauri() ? t("app.native") : t("app.preview")}
-            </Badge>
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.links")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.linksHint")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          {LINKS.map((link) => (
-            <button
-              key={link.url}
-              type="button"
-              onClick={() => void handleOpenLink(link.url)}
-              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
+          <SettingRow
+            id="settings-appMode"
+            label={t("settings.appMode")}
+            hint={t("settings.appModeDescription")}
+          >
+            <ToggleGroup
+              type="single"
+              aria-label={t("settings.appMode")}
+              value={settings.appMode}
+              onValueChange={(value) => {
+                if (value === "demo" || value === "minimal")
+                  update({ appMode: value });
+              }}
             >
-              <span>{link.label}</span>
-              <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                {new URL(link.url).host}
-                <ExternalLinkIcon className="size-3" />
-              </span>
-            </button>
-          ))}
+              <ToggleGroupItem value="demo">
+                {t("settings.modeDemo")}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="minimal">
+                {t("settings.modeMinimal")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </SettingRow>
+          <SettingRow label={t("settings.sidebarCollapsed")}>
+            <Switch
+              aria-label={t("settings.sidebarCollapsed")}
+              checked={settings.sidebarCollapsed}
+              onCheckedChange={(value) => update({ sidebarCollapsed: value })}
+            />
+          </SettingRow>
+          <SettingRow label={t("settings.sidebarWidth")}>
+            <input
+              type="range"
+              min={180}
+              max={360}
+              step={4}
+              value={settings.sidebarWidth}
+              onChange={(event) =>
+                update({ sidebarWidth: Number(event.target.value) })
+              }
+              aria-label={t("settings.sidebarWidth")}
+              className="w-40 accent-primary"
+            />
+          </SettingRow>
         </CardContent>
       </Card>
+
+      <Card id="settings-window" tabIndex={-1}>
+        <CardHeader>
+          <CardTitle className="text-sm">{t("settings.windowSize")}</CardTitle>
+          <CardDescription className="text-xs">
+            {t(
+              native ? "settings.windowSizeHint" : "settings.windowBrowserHint",
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            role="group"
+            aria-label={t("settings.windowSize")}
+            className="grid grid-cols-2 gap-2 xl:grid-cols-4"
+          >
+            {visiblePresets.map((preset) => {
+              const unavailable =
+                windowGeometry !== null &&
+                preset.width !== null &&
+                preset.height !== null &&
+                (preset.width < windowGeometry.minWidth ||
+                  preset.width > windowGeometry.maxWidth ||
+                  preset.height < windowGeometry.minHeight ||
+                  preset.height > windowGeometry.maxHeight);
+              const active =
+                windowGeometry !== null &&
+                preset.width === windowGeometry.width &&
+                preset.height === windowGeometry.height;
+              const reasonId = `window-${preset.id}-unavailable`;
+              return (
+                <button
+                  key={preset.id}
+                  data-window-preset={preset.id}
+                  type="button"
+                  aria-label={t(preset.label)}
+                  aria-pressed={active}
+                  aria-describedby={unavailable ? reasonId : undefined}
+                  disabled={
+                    !native || pending || !windowGeometry || unavailable
+                  }
+                  onClick={() => {
+                    if (preset.width !== null && preset.height !== null)
+                      void applyWindowSize(preset.width, preset.height);
+                  }}
+                  className={cn(
+                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    active
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-muted/50",
+                  )}
+                >
+                  <span className="text-sm">{t(preset.label)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {preset.width !== null && preset.height !== null
+                      ? `${preset.width} × ${preset.height}`
+                      : t("settings.windowDefaultSize")}
+                  </span>
+                  {preset.id === "standard" && fittedDefault ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t("settings.windowSizeFitted")}
+                    </span>
+                  ) : null}
+                  {unavailable ? (
+                    <span
+                      id={reasonId}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t("settings.windowPresetUnavailable")}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {native && windowGeometry ? (
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {t("settings.windowCurrentSize", {
+                width: windowGeometry.width,
+                height: windowGeometry.height,
+              })}
+            </p>
+          ) : null}
+          {windowError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 text-sm text-destructive"
+            >
+              <span>{nativeErrorText(windowError, t)}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={() => void refreshWindow()}
+              >
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : null}
+          <Separator />
+          <div
+            id="settings-windowPosition"
+            tabIndex={-1}
+            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Label>{t("settings.windowPosition")}</Label>
+            <ToggleGroup
+              type="single"
+              aria-label={t("settings.windowPosition")}
+              disabled={pending}
+              value={settings.windowPosition}
+              onValueChange={(value) => {
+                if (value === "remember" || value === "center")
+                  update({ windowPosition: value });
+              }}
+            >
+              <ToggleGroupItem value="remember" data-window-position="remember">
+                {t("settings.windowPositionRemember")}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="center" data-window-position="center">
+                {t("settings.windowPositionCenter")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.windowPositionHint")}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <details className="studio-panel settings-about" id="settings-about">
+        <summary>
+          {t("studio.settingsAbout")}
+          <ChevronDownIcon size={16} />
+        </summary>
+        <div className="settings-about-content">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">{t("settings.runtime")}</CardTitle>
+              <CardDescription className="text-xs">
+                {t("settings.runtimeHint")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="divide-y">
+              <SettingRow label={t("settings.appVersion")}>
+                <span className="font-mono text-xs">{version}</span>
+              </SettingRow>
+              <SettingRow label={t("settings.tauriVersion")}>
+                <span className="font-mono text-xs">{tauriVersion}</span>
+              </SettingRow>
+              <SettingRow label={t("settings.environment")}>
+                <Badge variant="outline" className="font-normal">
+                  {isTauri() ? t("app.native") : t("app.preview")}
+                </Badge>
+              </SettingRow>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">{t("settings.links")}</CardTitle>
+              <CardDescription className="text-xs">
+                {t("settings.linksHint")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              {LINKS.map((link) => (
+                <button
+                  key={link.url}
+                  type="button"
+                  onClick={() => void handleOpenLink(link.url)}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
+                >
+                  <span>{link.label}</span>
+                  <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    {new URL(link.url).host}
+                    <ExternalLinkIcon className="size-3" />
+                  </span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </details>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed px-4 py-3">
         <div className="space-y-0.5">
@@ -430,16 +774,52 @@ export default function Settings() {
         <Button
           variant="outline"
           size="sm"
+          disabled={pending}
           onClick={() => {
-            reset();
-            setTheme("system");
-            toast.success(t("common.resetDone"));
+            setResetError(null);
+            setConfirmReset(true);
           }}
         >
           <RotateCcwIcon />
           {t("common.reset")}
         </Button>
       </div>
+      <Dialog
+        open={confirmReset}
+        onOpenChange={(open) => {
+          if (!pending) setConfirmReset(open);
+        }}
+      >
+        <DialogContent closeLabel={t("common.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("settings.resetConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("settings.resetConfirmDescription")}
+            </DialogDescription>
+          </DialogHeader>
+          {resetError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {nativeErrorText(resetError, t)}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => setConfirmReset(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => void restorePreferences()}
+            >
+              {t("common.reset")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

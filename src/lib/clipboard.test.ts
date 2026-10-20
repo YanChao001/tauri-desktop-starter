@@ -59,4 +59,25 @@ describe("copyText", () => {
     await expect(copyText("hello")).rejects.toThrow("不支持复制");
     expect(document.querySelector("textarea")).toBeNull();
   });
+
+  it.each([true, false])(
+    "降级复制成功状态 %s 后恢复输入框焦点和选择范围",
+    async (copied) => {
+      stubClipboard(undefined);
+      document.execCommand = vi.fn().mockReturnValue(copied);
+      const input = document.createElement("input");
+      input.value = "original selection";
+      document.body.append(input);
+      input.focus();
+      input.setSelectionRange(2, 8, "backward");
+
+      if (copied) await copyText("hello");
+      else await expect(copyText("hello")).rejects.toThrow("不支持复制");
+
+      expect(document.activeElement).toBe(input);
+      expect(input.selectionStart).toBe(2);
+      expect(input.selectionEnd).toBe(8);
+      expect(input.selectionDirection).toBe("backward");
+    },
+  );
 });

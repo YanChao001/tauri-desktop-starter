@@ -1,16 +1,34 @@
 import { StrictMode } from "react";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { onWindowResized, isWindowMaximized } from "@/lib/tauri";
+import { CommandsProvider } from "@/providers/commands";
+import { APP_CONFIG } from "@/config/app";
+import appIcon from "../../resources/branding/app-icon.svg";
+import {
+  onWindowResized,
+  isWindowMaximized,
+  closeWindow,
+  quitApp,
+} from "@/lib/tauri";
 import { TitleBar } from "./title-bar";
+
+vi.mock("@/routes", () => ({ APP_ROUTES: [] }));
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   isWindowMaximized: vi.fn().mockResolvedValue(false),
   onWindowResized: vi.fn(),
   closeWindow: vi.fn(),
+  quitApp: vi.fn(),
   minimizeWindow: vi.fn(),
   openExternal: vi.fn(),
   toggleMaximizeWindow: vi.fn(),
@@ -34,7 +52,9 @@ function renderTitleBar() {
     <StrictMode>
       <MemoryRouter>
         <TooltipProvider>
-          <TitleBar />
+          <CommandsProvider>
+            <TitleBar />
+          </CommandsProvider>
         </TooltipProvider>
       </MemoryRouter>
     </StrictMode>,
@@ -74,5 +94,47 @@ describe("TitleBar 窗口订阅", () => {
     const handler = vi.mocked(onWindowResized).mock.calls.at(-1)?.[0];
     await act(async () => handler?.());
     expect(warn).toHaveBeenCalledWith("读取窗口状态失败", expect.any(Error));
+  });
+
+  it("较慢的旧查询不会覆盖最近一次 resize 的窗口状态", async () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    const pending: Array<(value: boolean) => void> = [];
+    vi.mocked(isWindowMaximized).mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    renderTitleBar();
+    const handler = vi.mocked(onWindowResized).mock.calls.at(-1)?.[0];
+    act(() => handler?.());
+    await act(async () => pending.at(-1)?.(true));
+    expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
+    await act(async () => pending.forEach((resolve) => resolve(false)));
+    expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
+  });
+
+  it("keeps close-window separate from explicit application quit", async () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    vi.mocked(isWindowMaximized).mockResolvedValue(false);
+    renderTitleBar();
+    fireEvent.click(screen.getByRole("button", { name: "title.close" }));
+    expect(closeWindow).toHaveBeenCalledOnce();
+    expect(quitApp).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("button", { name: "title.file" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "title.quit" }),
+    );
+    expect(quitApp).toHaveBeenCalledOnce();
+  });
+
+  it("shows the shared brand icon without repeating the application name as title text", () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    vi.mocked(isWindowMaximized).mockResolvedValue(false);
+    renderTitleBar();
+    const icon = screen.getByRole("img", { name: APP_CONFIG.name });
+    expect(icon).toHaveAttribute("src", appIcon);
+    expect(icon).toHaveAttribute("width", "24");
+    expect(screen.queryByText(APP_CONFIG.name)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "title.file" })).toBeVisible();
   });
 });

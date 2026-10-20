@@ -1,4 +1,4 @@
-name: Release
+name: 版本发布
 
 # 打 tag 触发（v1.2.0），也可在 Actions 页面手动触发。
 # 产物默认作为 draft Release 上传，人工确认后再发布。
@@ -9,32 +9,54 @@ on:
 
 permissions:
   contents: write
-  # SignPath action 需要读本次 run 的 artifact
+  # SignPath 操作需要读取本次工作流运行的构建产物
   actions: read
 
-# 同一个 tag 只允许一个发布任务在跑，避免重复上传 asset
+# tag 与手动触发也可能指向同一版本，按仓库串行发布，避免交叉覆盖资产。
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: 校验发布代码
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+
   build:
     name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
+    needs: validate
     strategy:
-      # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
+      # 保留其他平台的执行结果，分别定位平台问题
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
+            target: x86_64-pc-windows-msvc
             args: ""
           - platform: macos-latest
+            target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin"
           - platform: macos-latest
+            target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
           - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
             args: ""
 
     runs-on: ${{ matrix.platform }}
+    outputs:
+      updater-enabled: ${{ steps.updater.outputs.enabled }}
 
     steps:
       - uses: actions/checkout@v7
@@ -49,14 +71,15 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          # 与 rust-toolchain.toml 一致；交叉编译 target 必须安装在实际使用的工具链上。
-          toolchain: "1.99.1"
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: 安装 Rust 工具链
+        run: rustup toolchain install
+
+      - name: 安装 macOS 编译目标
+        if: matrix.platform == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -112,9 +135,15 @@ jobs:
             echo "已注入自动更新签名密钥"
           fi
 
-      # 仅适用于 2023-06-01 前签发、仍可导出 PFX 的老证书。
-      # 新证书私钥必须在硬件（USB Token / 云 HSM）中，不能导出 PFX，
-      # 请改用 bundle.windows.signCommand（Azure Artifact Signing 等），见 docs/build-release.md。
+      - name: 检查自动更新配置并准备 v2 打包配置
+        id: updater
+        env:
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/release-lib.mjs prepare
+
+      # PFX 链路只用于仍有效、允许导出的证书（例如内部信任签名）。
+      # 公共代码签名按服务商硬件 / 托管方案配置 bundle.windows.signCommand，
+      # 接入方式见 docs/build-release.md。
       - name: 导入 Windows 代码签名证书
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -126,7 +155,9 @@ jobs:
           if ($env:SIGNPATH_ORGANIZATION_ID -and $env:WINDOWS_CERTIFICATE) {
             throw "SignPath 与 WINDOWS_CERTIFICATE 只能配置一种 Windows 签名方式"
           }
-          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $configJson = node scripts/build-lib.mjs windows
+          if ($LASTEXITCODE -ne 0) { throw "读取 Windows 生效配置失败" }
+          $config = $configJson | ConvertFrom-Json
           if ($env:SIGNPATH_ORGANIZATION_ID -and $config.bundle.createUpdaterArtifacts) {
             throw "SignPath 会改变安装包字节；启用 updater 时必须在 Authenticode 签名后重新生成 .sig 和 latest.json，当前签名 job 尚未支持此组合"
           }
@@ -163,6 +194,7 @@ jobs:
       #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD（自动更新签名）
       # 证书不能进仓库，只能放 secrets。
       - uses: tauri-apps/tauri-action@v1
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -171,14 +203,29 @@ jobs:
           releaseBody: "构建产物见下方 Assets。变更内容请查看本 tag 与上一版本之间的提交记录。"
           releaseDraft: true
           prerelease: ${{ steps.version.outputs.prerelease }}
-          args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }}
+          # 各平台先验证自己的签名，最后由单一 job 汇总，避免矩阵并发覆盖 latest.json。
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: ${{ steps.updater.outputs.enabled == 'true' }}
+          args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }} ${{ steps.updater.outputs.args }}
 
       - name: 校验 Windows 签名
         if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem "src-tauri/target/release/*.exe", "src-tauri/target/release/bundle/nsis/*.exe", "src-tauri/target/release/bundle/msi/*.msi" -ErrorAction Stop)
+          $release = "src-tauri/target/release"
+          $files = @(Get-ChildItem $release -Filter *.exe -File -ErrorAction Stop)
           if ($files.Count -eq 0) { throw "没有找到待验证的 Windows 产物" }
+          $configJson = node scripts/build-lib.mjs windows
+          if ($LASTEXITCODE -ne 0) { throw "读取 Windows 生效配置失败" }
+          $config = $configJson | ConvertFrom-Json
+          $targets = @($config.bundle.targets ?? "all")
+          foreach ($target in @("nsis", "msi")) {
+            if ($config.bundle.active -eq $false -or ($targets -notcontains "all" -and $targets -notcontains $target)) { continue }
+            $extension = if ($target -eq "nsis") { "*.exe" } else { "*.msi" }
+            $bundles = @(Get-ChildItem "$release/bundle/$target" -Filter $extension -File -ErrorAction Stop)
+            if ($bundles.Count -eq 0) { throw "没有找到 $target 安装包" }
+            $files += $bundles
+          }
           foreach ($file in $files) {
             $sig = Get-AuthenticodeSignature $file.FullName
             if ($sig.Status -ne "Valid") {
@@ -187,23 +234,86 @@ jobs:
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
 
+      - name: 验证更新包签名、公钥与签名版本
+        id: updater-metadata
+        if: steps.updater.outputs.enabled == 'true'
+        env:
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          ARTIFACT_TARGET: ${{ matrix.target }}
+        run: node scripts/release-lib.mjs collect
+
+      - name: 保存本次平台的已验证更新元数据
+        if: steps.updater.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: updater-metadata-${{ matrix.target }}
+          path: ${{ steps.updater-metadata.outputs.metadata-file }}
+          if-no-files-found: error
+
+      - name: 归档本次分发产物
+        id: collect
+        env:
+          TAURI_ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          ARTIFACT_TARGET: ${{ matrix.target }}
+        run: node scripts/collect-artifacts.mjs
+
+      - name: 保留 macOS 应用归档的文件权限
+        if: matrix.platform == 'macos-latest'
+        env:
+          ARTIFACT_DIR: ${{ steps.collect.outputs.artifact-dir }}
+        run: tar -czf "$ARTIFACT_DIR.tar.gz" -C "$ARTIFACT_DIR/.." installers
+
+      - name: 保存按版本归档的安装包
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-installers-${{ matrix.target }}
+          path: ${{ matrix.platform == 'macos-latest' && format('{0}.tar.gz', steps.collect.outputs.artifact-dir) || steps.collect.outputs.artifact-dir }}
+          if-no-files-found: error
+
       # 直接保存本次 Windows 构建，签名 job 不从可变的 Release 资产重新取包。
       - name: 保存未签名 Windows 安装包
         if: matrix.platform == 'windows-latest' && vars.SIGNPATH_ORGANIZATION_ID != ''
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-nsis
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: ${{ steps.collect.outputs.artifact-dir }}/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 1
           overwrite: true
 
+  publish-updater:
+    name: 汇总全部平台的自动更新清单
+    needs: build
+    if: needs.build.outputs.updater-enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: updater-metadata-*
+          path: updater-metadata
+          merge-multiple: true
+      - name: 校验四目标、已上传资产并生成 latest.json
+        id: manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATER_METADATA_DIR: updater-metadata
+        run: node scripts/release-lib.mjs merge
+      - uses: actions/upload-artifact@v7
+        with:
+          name: updater-latest-json
+          path: ${{ steps.manifest.outputs.manifest-file }}
+          if-no-files-found: error
+
   # 可选：SignPath Foundation（开源免费签名）。未配置仓库变量时整个 job 跳过，
   # 不影响现有发布流程。申请与配置步骤见 docs/build-release.md 的「路线 A」。
   # 与上面的 PFX 链路二选一：同时配置会在构建前报错。
-  # Variables: SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
+  # 仓库变量：SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
   #            SIGNPATH_SIGNING_POLICY_SLUG / SIGNPATH_ARTIFACT_CONFIGURATION_SLUG
-  # Secret:    SIGNPATH_API_TOKEN
+  # 仓库密钥：SIGNPATH_API_TOKEN
   sign-windows:
     name: 签名 Windows 安装包（未配置 SignPath 时跳过）
     needs: build
@@ -212,10 +322,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
       - name: 计算 tag 与版本号
         shell: pwsh
         run: |
-          $ref = "${{ github.ref }}"
+          $ref = $env:GITHUB_REF
           if ($ref -like "refs/tags/*") {
             $tag = $ref -replace "^refs/tags/", ""
           } else {
@@ -247,7 +361,7 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
-          # 每次签名都要在 SignPath 门户人工批准，留够时间
+          # 每次签名均需在 SignPath 门户批准，为人工处理保留等待时间
           wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed
           parameters: |
@@ -258,7 +372,9 @@ jobs:
         run: |
           $files = Get-ChildItem signed -Filter *.exe -Recurse -ErrorAction Stop
           if (-not $files) { throw "SignPath 没有返回签名产物" }
-          $productName = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).productName
+          $configJson = node scripts/build-lib.mjs windows
+          if ($LASTEXITCODE -ne 0) { throw "读取 Windows 生效配置失败" }
+          $productName = ($configJson | ConvertFrom-Json).productName
           $expectedName = "${productName}_$($env:VERSION)_x64-setup.exe"
           if (@($files).Count -ne 1 -or $files[0].Name -ne $expectedName) {
             throw "SignPath 返回的文件与本次构建不匹配，应为 $expectedName"
@@ -277,10 +393,43 @@ jobs:
             Write-Host "签名有效：$($file.Name) <- $($sig.SignerCertificate.Subject)"
           }
 
+      - name: 归档签名后的安装包
+        id: collect-signed
+        shell: pwsh
+        env:
+          ARTIFACT_TARGET: x86_64-pc-windows-msvc
+        run: |
+          $files = @(Get-ChildItem signed -Filter *-setup.exe -Recurse -File | ForEach-Object { $_.FullName })
+          $env:TAURI_ARTIFACT_PATHS = ConvertTo-Json -InputObject $files -Compress
+          node scripts/collect-artifacts.mjs --signed-nsis
+
+      - name: 保存签名后的安装包
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-installers-x86_64-pc-windows-msvc
+          path: ${{ steps.collect-signed.outputs.artifact-dir }}
+          if-no-files-found: error
+
       - name: 用签名产物覆盖 draft Release 资产
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $files = Get-ChildItem signed -Filter *.exe -Recurse | ForEach-Object { $_.FullName }
-          gh release upload $env:TAG @files --clobber
+          $releaseJson = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName
+          if ($LASTEXITCODE -ne 0) { throw "读取本次 Release 状态失败" }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.isDraft -or $release.tagName -ne $env:TAG) {
+            throw "签名产物只能替换本次版本的 draft Release 资产"
+          }
+          $uploadDir = Join-Path $env:RUNNER_TEMP "signed-release-assets"
+          New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
+          $uploads = @()
+          foreach ($file in Get-ChildItem signed -Filter *.exe -Recurse -File) {
+            # 与 tauri-action 的 ghAssetName 规则一致，保证覆盖同一个 Release 资产。
+            $assetName = $file.Name.Trim() -replace '[^a-zA-Z0-9_-]', '.' -replace '\.\.', '.'
+            $destination = Join-Path $uploadDir $assetName
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+            $uploads += $destination
+          }
+          gh release upload $env:TAG @uploads --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "上传签名后的安装包失败" }

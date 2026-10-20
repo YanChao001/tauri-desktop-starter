@@ -1,10 +1,13 @@
-name: CI
+name: 持续集成
 
 on:
   pull_request:
     branches: [develop, main]
   push:
     branches: [develop, main]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,16 +20,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 版本由 package.json 的 packageManager 字段决定，不在这里写死
+      # 版本由 package.json 的 packageManager 字段统一维护
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+
+      - name: 验证品牌资源与 SVG 源一致
+        run: pnpm branding:check
 
       - name: 版本一致性与发布脚本回归
         run: |
@@ -36,7 +42,7 @@ jobs:
       - name: 格式检查
         run: pnpm format:check
 
-      - name: ESLint
+      - name: ESLint 静态检查
         run: pnpm lint
 
       - name: 类型检查
@@ -48,15 +54,18 @@ jobs:
       - name: 构建前端
         run: pnpm build
 
+      - name: 构建浏览器演示
+        run: pnpm build:web
+
   rust:
     name: Rust 校验（${{ matrix.platform }}）
     runs-on: ${{ matrix.platform }}
     strategy:
-      # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
+      # 保留其他平台的执行结果，分别定位平台问题
       fail-fast: false
       matrix:
-        # 平台差异（cfg 分支、系统库、链接器）必须在三端都过一遍编译，
-        # 否则 macOS/Linux 的问题要到 release 流水线才第一次暴露
+        # 在三端编译验证 cfg 分支、系统库和链接器差异
+        # 避免平台问题延迟到发布阶段才暴露
         platform: [windows-latest, ubuntu-22.04, macos-latest]
     steps:
       - uses: actions/checkout@v7
@@ -72,7 +81,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: 安装前端依赖并构建
@@ -80,26 +89,86 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
-      # 版本与 rust-toolchain.toml 保持一致，升级时两处一起改
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.99.1"
-          components: rustfmt, clippy
+      # 读取 rust-toolchain.toml，工具链与组件只维护一处。
+      - name: 安装 Rust 工具链
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      # 格式与平台无关，跑一次就够
+      - name: 验证 Rust 生成的 IPC 类型
+        if: matrix.platform == 'windows-latest'
+        run: pnpm bindings:check
+
+      # 格式规则与平台无关，仅在一个平台执行
       - name: 格式检查
         if: matrix.platform == 'windows-latest'
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
-      - name: Clippy
+      - name: Clippy 静态检查
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: 单元测试
         working-directory: src-tauri
         run: cargo test --locked
+
+  desktop-e2e:
+    name: 真实桌面 E2E（${{ matrix.platform }}）
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 安装 Linux 桌面依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖与 Rust 工具链
+        run: |
+          pnpm install --frozen-lockfile
+          rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target/e2e
+          key: e2e
+          # 保留已成功编译的依赖缓存，桌面断言失败后仍可复用。
+          cache-on-failure: true
+
+      # 仅 feature=e2e 带内嵌 WebDriver，使用 .e2e 标识及临时用户数据。
+      - name: 构建测试专用桌面应用
+        run: pnpm e2e:build
+
+      - name: 桌面 E2E（Windows / macOS）
+        if: runner.os != 'Linux'
+        run: pnpm test:e2e --skip-build
+
+      - name: 桌面 E2E（Linux）
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --skip-build'
+
+      - name: 保留失败截图与测试日志
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-e2e-${{ runner.os }}
+          path: artifacts/e2e
+          if-no-files-found: ignore

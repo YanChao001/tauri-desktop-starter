@@ -1,8 +1,68 @@
+import type { Language } from "@/i18n/registry";
+import type {
+  DesktopStatus,
+  DiagnosticsReport,
+  NativeError as NativeFailure,
+  Note,
+  NoteInput,
+  NoteUpdate,
+  SettingsSnapshot,
+  UpdateProgress,
+  UpdateStatus,
+  WindowGeometry,
+} from "./generated/bindings";
+
+export type {
+  DesktopStatus,
+  DiagnosticsReport,
+  FrontendError,
+  Note,
+  NoteInput,
+  NoteUpdate,
+  SettingsSnapshot,
+  UpdateProgress,
+  UpdateStatus,
+  WindowGeometry,
+} from "./generated/bindings";
+
+export class NativeBridgeError extends Error {
+  readonly code: NativeFailure["code"];
+  readonly retryable: boolean;
+
+  constructor(failure: NativeFailure) {
+    super(failure.message);
+    this.name = "NativeBridgeError";
+    this.code = failure.code;
+    this.retryable = failure.retryable;
+  }
+}
+
+type NativeCommands = (typeof import("./generated/bindings"))["commands"];
+
+async function callNative<T>(
+  call: (
+    commands: NativeCommands,
+  ) => Promise<
+    { status: "ok"; data: T } | { status: "error"; error: NativeFailure }
+  >,
+): Promise<T> {
+  if (!isTauri())
+    throw new NativeBridgeError({
+      code: "PLATFORM_UNAVAILABLE",
+      message: "Start the desktop app with pnpm app:dev to use this feature.",
+      retryable: false,
+    });
+  const { commands } = await import("./generated/bindings");
+  const result = await call(commands);
+  if (result.status === "error") throw new NativeBridgeError(result.error);
+  return result.data;
+}
+
 /**
  * 系统能力的唯一出口。
  *
- * 这个文件是 `lib/` 里唯一允许 import `@tauri-apps/*` 的地方
- * （ESLint 的 no-restricted-imports 会强制这一点）。
+ * 手写应用代码只在此文件 import `@tauri-apps/*`；生成绑定是底层例外。
+ * ESLint 同时检查静态与动态导入。
  * 页面、组件、hooks 只调用这里导出的函数，不直接碰 Tauri API。
  */
 
@@ -26,14 +86,11 @@ export async function openExternal(url: string): Promise<void> {
   await openUrl(target.href);
 }
 
-/** 显示并聚焦主窗口。窗口初始为隐藏，见 tauri.conf.json。 */
+/** 通知 Rust 当前窗口首帧已完成，再显示并聚焦该窗口。 */
 export async function revealWindow(): Promise<void> {
   if (!isTauri()) return;
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const window_ = getCurrentWindow();
-    await window_.show();
-    await window_.setFocus();
+    await callNative((commands) => commands.completeFrontendStartup());
   } catch (error) {
     // 这里不抛：窗口没能显示时 Rust 侧的 3 秒兜底仍会生效
     console.error("显示窗口失败", error);
@@ -79,18 +136,49 @@ export async function onWindowResized(
   return getCurrentWindow().onResized(handler);
 }
 
+/** 订阅窗口移动，用于刷新当前显示器的尺寸约束。 */
+export async function onWindowMoved(handler: () => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().onMoved(handler);
+}
+
+/** 读取当前窗口的正常尺寸和当前显示器允许的逻辑像素范围。 */
+export function getWindowGeometry(): Promise<WindowGeometry> {
+  return callNative((commands) => commands.getWindowGeometry());
+}
+
+/** 应用并持久化当前窗口尺寸，最大化或全屏时先还原。 */
+export function setWindowSize(
+  width: number,
+  height: number,
+): Promise<WindowGeometry> {
+  return callNative((commands) => commands.setWindowSize(width, height));
+}
+
+/** 恢复所有窗口的配置默认尺寸，可同时将窗口移至各自显示器中央。 */
+export function resetWindowGeometry(center = false): Promise<WindowGeometry> {
+  return callNative((commands) => commands.resetWindowGeometry(center));
+}
+
 /**
  * 调用 Rust 侧的 greet 命令。
  *
  * 空名称由 Rust 侧返回 Err，前端拿到的就是一个 reject——
  * 这是模板刻意示范的错误链路：校验放在边界，错误由调用方展示。
  */
-export async function invokeGreet(name: string): Promise<string> {
+export async function invokeGreet(
+  name: string,
+  language: Language = "zh",
+): Promise<string> {
   if (!isTauri()) {
-    throw new Error("浏览器预览模式下无法调用，请用 pnpm app:dev 启动");
+    throw new Error(
+      language === "en"
+        ? "Unavailable in browser preview. Start the desktop app with pnpm app:dev."
+        : "浏览器预览模式下无法调用，请用 pnpm app:dev 启动",
+    );
   }
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("greet", { name });
+  return callNative((commands) => commands.greet(name, language));
 }
 
 export type AppInfo = {
@@ -111,4 +199,124 @@ export async function getAppInfo(): Promise<AppInfo> {
     app.getTauriVersion(),
   ]);
   return { version, tauriVersion };
+}
+
+export function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
+  return callNative((commands) => commands.loadSettingsSnapshot());
+}
+
+export function saveSettingsSnapshot(
+  settings: object,
+  expectedRevision: number,
+): Promise<SettingsSnapshot> {
+  const document = JSON.parse(JSON.stringify(settings));
+  return callNative((commands) =>
+    commands.saveSettingsSnapshot(document, expectedRevision),
+  );
+}
+
+async function onNativeEvent<T>(
+  event: string,
+  handler: (payload: T) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<T>(event, ({ payload }) => handler(payload));
+}
+
+export function onSettingsChanged(
+  handler: (snapshot: SettingsSnapshot) => void,
+): Promise<() => void> {
+  return onNativeEvent("app://settings-changed", handler);
+}
+
+export function onNotesChanged(handler: () => void): Promise<() => void> {
+  return onNativeEvent("app://notes-changed", handler);
+}
+
+export function onUpdateProgress(
+  handler: (progress: UpdateProgress) => void,
+): Promise<() => void> {
+  return onNativeEvent("app://update-progress", handler);
+}
+
+export function listNotes(search = ""): Promise<Note[]> {
+  return callNative((commands) => commands.listNotes(search));
+}
+
+export function createNote(input: NoteInput): Promise<Note> {
+  return callNative((commands) => commands.createNote(input));
+}
+
+export function updateNote(input: NoteUpdate): Promise<Note> {
+  return callNative((commands) => commands.updateNote(input));
+}
+
+export async function deleteNote(id: number): Promise<void> {
+  await callNative((commands) => commands.deleteNote(id));
+}
+
+export async function openSecondaryWindow(): Promise<void> {
+  await callNative((commands) => commands.openSecondaryWindow());
+}
+
+export function getDesktopStatus(): Promise<DesktopStatus> {
+  return callNative((commands) => commands.getDesktopStatus());
+}
+
+export function getAutostartEnabled(): Promise<boolean> {
+  return callNative((commands) => commands.getAutostartEnabled());
+}
+
+export function setAutostartEnabled(enabled: boolean): Promise<boolean> {
+  return callNative((commands) => commands.setAutostartEnabled(enabled));
+}
+
+export async function recordFrontendError(error: {
+  message: string;
+  stack?: string;
+  componentStack?: string;
+}): Promise<void> {
+  if (!isTauri()) return;
+  await callNative((commands) =>
+    commands.recordFrontendError({
+      message: Array.from(error.message).slice(0, 1000).join(""),
+      stack: error.stack
+        ? Array.from(error.stack).slice(0, 2000).join("")
+        : null,
+      componentStack: error.componentStack
+        ? Array.from(error.componentStack).slice(0, 2000).join("")
+        : null,
+    }),
+  );
+}
+
+export function getDiagnosticsReport(): Promise<DiagnosticsReport> {
+  return callNative((commands) => commands.getDiagnosticsReport());
+}
+
+export function checkForUpdate(): Promise<UpdateStatus> {
+  return callNative((commands) => commands.checkForUpdate());
+}
+
+export function getUpdateSnapshot(): Promise<UpdateProgress | null> {
+  return callNative((commands) => commands.getUpdateSnapshot());
+}
+
+export async function downloadAndInstallUpdate(): Promise<void> {
+  await callNative((commands) => commands.downloadAndInstallUpdate());
+}
+
+export async function relaunchApp(): Promise<void> {
+  await callNative((commands) => commands.relaunchApp());
+}
+
+export async function quitApp(): Promise<void> {
+  await callNative((commands) => commands.quitApp());
+}
+
+export async function getCurrentWindowLabel(): Promise<string> {
+  if (!isTauri()) return "browser";
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().label;
 }
