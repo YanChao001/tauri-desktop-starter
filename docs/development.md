@@ -111,6 +111,15 @@ node scripts/doctor.mjs --json
 
 清理后构建可以重建输出，但删除 Rust 缓存会使下次完整编译更慢。`CARGO_TARGET_DIR` 或 Cargo `target-dir` 指向的自定义目录不在固定清理范围内，由设置者管理。分发目录布局见 [README · 构建产物](../README.md#构建产物)。
 
+Windows 需逐文件清理并保留正式版本包时，可使用 [`clean-temporary.ps1`](../scripts/clean-temporary.ps1)。默认只预览，确认后加 `-Apply`：
+
+```powershell
+powershell -NoProfile -File scripts/clean-temporary.ps1
+powershell -NoProfile -File scripts/clean-temporary.ps1 -Apply
+```
+
+脚本只处理预定义的临时诊断目录、旧便携备份、构建输出、Rust 缓存、生成 schema 及 `node_modules` 内的 Vite / 通用缓存，保留正式版本包、便携分发和实际依赖。逐个删除普通文件后只删除空目录，不跟随目录链接；运行中的项目内程序会阻止清理其所在目标，文件占用或权限失败会报告具体路径并以非零状态退出。执行前停止开发服务与测试进程；清理 Rust 缓存后需重新编译。
+
 复制工程优先使用 Git clone 或模板仓库，避免携带本地依赖与缓存。
 
 ## 环境变量
