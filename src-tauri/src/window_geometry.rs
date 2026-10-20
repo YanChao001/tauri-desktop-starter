@@ -271,10 +271,27 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T
         .flatten()
 }
 
-#[derive(Deserialize)]
-struct LegacySize {
+#[derive(Default, Deserialize)]
+struct PluginWindowState {
     width: u32,
     height: u32,
+    x: Option<i32>,
+    y: Option<i32>,
+    prev_x: Option<i32>,
+    prev_y: Option<i32>,
+    #[serde(default)]
+    maximized: bool,
+}
+
+impl PluginWindowState {
+    fn position(&self) -> Option<PhysicalPosition<i32>> {
+        let position = if self.maximized {
+            self.prev_x.zip(self.prev_y)
+        } else {
+            self.x.zip(self.y)
+        };
+        position.map(|(x, y)| PhysicalPosition::new(x, y))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -295,6 +312,7 @@ struct Entry {
     was_special: bool,
     topology: Vec<Display>,
     initial_position: Option<WindowPosition>,
+    initial_origin: Option<PhysicalPosition<i32>>,
     initial_confirmations: u8,
     initial_target: Option<InitialTarget>,
 }
@@ -307,12 +325,26 @@ enum InitialProgress {
 }
 
 impl Entry {
+    fn initial_rect(&self, current: Rect) -> Rect {
+        if self.initial_position.is_some()
+            && let Some(position) = self.initial_origin
+        {
+            return Rect {
+                x: f64::from(position.x),
+                y: f64::from(position.y),
+                ..current
+            };
+        }
+        current
+    }
+
     fn confirm_initial(&mut self, visible: bool, confirmed: bool) -> InitialProgress {
         if self.initial_position.is_none() {
             return InitialProgress::Complete;
         }
         if visible && confirmed {
             self.initial_position = None;
+            self.initial_origin = None;
             self.initial_target = None;
             return InitialProgress::Complete;
         }
@@ -320,6 +352,7 @@ impl Entry {
             self.initial_confirmations = self.initial_confirmations.saturating_add(1);
             if self.initial_confirmations >= INITIAL_CONFIRMATIONS {
                 self.initial_position = None;
+                self.initial_origin = None;
                 self.initial_target = None;
                 return InitialProgress::Unconfirmed;
             }
@@ -353,6 +386,7 @@ impl Entry {
         {
             // 原生配置事件确认后立即结束，避免等待下一轮复核时覆盖用户移动。
             self.initial_position = None;
+            self.initial_origin = None;
             self.initial_target = None;
         }
     }
@@ -411,11 +445,24 @@ impl Entry {
 
 struct Cache {
     saved: SavedGeometry,
-    legacy: HashMap<String, LegacySize>,
+    legacy: HashMap<String, PluginWindowState>,
+    positions: HashMap<String, PhysicalPosition<i32>>,
     entries: HashMap<String, Entry>,
 }
 
 impl Cache {
+    fn observe_position(&mut self, label: &str, position: PhysicalPosition<i32>, normal: bool) {
+        if normal
+            && self
+                .entries
+                .get(label)
+                .is_some_and(|entry| entry.initial_position.is_none())
+        {
+            // 保留进程内最近的正常位置，关闭后重建窗口不再使用过期的启动快照。
+            self.positions.insert(label.to_owned(), position);
+        }
+    }
+
     fn reset_saved(&mut self, default: impl Fn(&str) -> LogicalSize) {
         // 同时重置未打开窗口的尺寸，防止下次创建窗口时重新载入旧值。
         for (label, preferred) in &mut self.saved.windows {
@@ -848,6 +895,7 @@ fn repair(window: &Window, state: &GeometryState, displays: &[Display]) -> tauri
         // 仅在真实布局已确认后消费策略；后续移动、聚焦和重复激活不再居中。
         let progress = if unavailable {
             entry.initial_position = None;
+            entry.initial_origin = None;
             entry.initial_target = None;
             InitialProgress::Unconfirmed
         } else {
@@ -905,7 +953,7 @@ fn repair_normal(
         width: f64::from(outer.width.saturating_sub(inner.width)) / scale,
         height: f64::from(outer.height.saturating_sub(inner.height)) / scale,
     };
-    let (placement, minimum_changed, changed) = {
+    let (placement, current, minimum_changed, changed) = {
         let Ok(mut cache) = state.cache.lock() else {
             return Ok(false);
         };
@@ -915,6 +963,8 @@ fn repair_normal(
         // 系统尺寸事件可能早于轮询，重新检查布局，防止覆盖上一次正常逻辑尺寸。
         let topology_changed = entry.topology != displays;
         entry.capture_resize(pending, scale, inner, is_special, topology_changed);
+        // 原生恢复可能仍在异步队列中；首次适配以明确存档目标为准，不能固化旧坐标。
+        let current = entry.initial_rect(current);
         let Some(mut placement) = fit_window(
             current,
             frame,
@@ -942,7 +992,7 @@ fn repair_normal(
             .windows
             .insert(window.label().to_owned(), preferred)
             != Some(preferred);
-        (placement, minimum_changed, changed)
+        (placement, current, minimum_changed, changed)
     };
     if minimum_changed {
         window.set_min_size(Some(placement.minimum))?;
@@ -1051,6 +1101,7 @@ fn track(window: Window) {
             })
             .filter(|size| size.valid())
             .unwrap_or(default);
+        let initial_origin = cache.positions.get(window.label()).copied();
         cache.entries.insert(
             window.label().to_owned(),
             Entry {
@@ -1068,6 +1119,7 @@ fn track(window: Window) {
                 was_special,
                 topology: monitors.clone(),
                 initial_position: Some(initial_position),
+                initial_origin,
                 initial_confirmations: 0,
                 initial_target: None,
             },
@@ -1090,13 +1142,18 @@ fn track(window: Window) {
                 })
             });
             // 只读原生缓存；窗口事件内不修改几何，也不持锁调用原生 API。
+            let position = if observing || matches!(event, WindowEvent::Moved(_)) {
+                copy.outer_position().ok()
+            } else {
+                None
+            };
             let observed = if observing {
                 (|| {
                     Some((
                         copy.is_visible().ok()?,
                         copy.inner_size().ok()?,
                         copy.outer_size().ok()?,
-                        copy.outer_position().ok()?,
+                        position?,
                     ))
                 })()
             } else {
@@ -1110,6 +1167,9 @@ fn track(window: Window) {
                 }
                 entry.was_special |= is_special;
                 entry.schedule(resized, preserve || is_special);
+                if let Some(position) = position {
+                    cache.observe_position(copy.label(), position, !is_special);
+                }
             }
         } else if matches!(event, WindowEvent::Destroyed) {
             if let Ok(mut cache) = state.cache.lock() {
@@ -1132,13 +1192,21 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
                     windows: HashMap::new(),
                 });
             // 旧插件未保存 DPI，仅在缺少逻辑存档时迁移物理尺寸，并按当前工作区约束。
-            let legacy =
+            let legacy: HashMap<String, PluginWindowState> =
                 read_json(&app.path().app_config_dir()?.join(app.filename())).unwrap_or_default();
+            // 位置沿用插件格式；在首次变更前捕获，避免异步恢复期间的移动污染目标。
+            let positions = legacy
+                .iter()
+                .filter_map(|(label, state)| {
+                    state.position().map(|position| (label.clone(), position))
+                })
+                .collect();
             let state = Arc::new(GeometryState {
                 path,
                 cache: Mutex::new(Cache {
                     saved,
                     legacy,
+                    positions,
                     entries: HashMap::new(),
                 }),
                 writing: Mutex::new(()),
@@ -1489,6 +1557,7 @@ mod tests {
             was_special: false,
             topology: Vec::new(),
             initial_position: None,
+            initial_origin: None,
             initial_confirmations: 0,
             initial_target: None,
         };
@@ -1561,6 +1630,7 @@ mod tests {
             was_special: false,
             topology: Vec::new(),
             initial_position: None,
+            initial_origin: None,
             initial_confirmations: 0,
             initial_target: None,
         };
@@ -1588,6 +1658,7 @@ mod tests {
                 was_special: false,
                 topology: Vec::new(),
                 initial_position: Some(policy),
+                initial_origin: None,
                 initial_confirmations: 0,
                 initial_target: None,
             };
@@ -1616,6 +1687,7 @@ mod tests {
             was_special: false,
             topology: Vec::new(),
             initial_position: Some(WindowPosition::Center),
+            initial_origin: None,
             initial_confirmations: 0,
             initial_target: Some(InitialTarget {
                 size: PhysicalSize::new(1000, 680),
@@ -1766,6 +1838,88 @@ mod tests {
     }
 
     #[test]
+    fn saved_position_survives_async_restore_with_a_larger_initial_window() {
+        let mut entry = starting_entry();
+        entry.preferred = size(1000.0, 677.0);
+        entry.initial_position = Some(WindowPosition::Remember);
+        entry.initial_origin = Some(PhysicalPosition::new(24, 31));
+        let monitors = [display(0.0, 31.0, 1024.0, 677.0, 1.0)];
+        for current in [
+            rect(0.0, 0.0, 1120.0, 740.0),
+            rect(0.0, 31.0, 1000.0, 677.0),
+        ] {
+            let placement = fit_window(
+                entry.initial_rect(current),
+                size(0.0, 0.0),
+                entry.preferred,
+                entry.limits,
+                &monitors,
+                true,
+            )
+            .unwrap();
+            assert_eq!(placement.size, PhysicalSize::new(1000, 677));
+            assert_eq!(placement.position, PhysicalPosition::new(24, 31));
+            entry.initial_target = Some(InitialTarget {
+                size: placement.size,
+                outer: placement.size,
+                position: placement.position,
+            });
+        }
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 677),
+            PhysicalSize::new(1000, 677),
+            PhysicalPosition::new(0, 31),
+        );
+        assert_eq!(entry.initial_position, Some(WindowPosition::Remember));
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 677),
+            PhysicalSize::new(1000, 677),
+            PhysicalPosition::new(24, 31),
+        );
+        assert_eq!(entry.initial_position, None);
+        assert_eq!(entry.initial_origin, None);
+        let moved = rect(5.0, 31.0, 1000.0, 677.0);
+        assert_eq!(entry.initial_rect(moved), moved);
+    }
+
+    #[test]
+    fn plugin_positions_restore_normal_bounds_and_allow_missing_legacy_coordinates() {
+        let normal: PluginWindowState = serde_json::from_value(serde_json::json!({
+            "width": 0, "height": 0, "x": 24, "y": 31,
+            "prev_x": 0, "prev_y": 31, "maximized": false
+        }))
+        .unwrap();
+        assert_eq!(normal.position(), Some(PhysicalPosition::new(24, 31)));
+        let maximized = PluginWindowState {
+            maximized: true,
+            ..normal
+        };
+        assert_eq!(maximized.position(), Some(PhysicalPosition::new(0, 31)));
+        let legacy: PluginWindowState =
+            serde_json::from_str(r#"{"width":1120,"height":740}"#).unwrap();
+        assert_eq!(legacy.position(), None);
+    }
+
+    #[test]
+    fn recreated_windows_use_the_latest_confirmed_normal_position() {
+        let mut cache = Cache {
+            saved: SavedGeometry::default(),
+            legacy: HashMap::new(),
+            positions: HashMap::from([("secondary".into(), PhysicalPosition::new(24, 31))]),
+            entries: HashMap::from([("secondary".into(), starting_entry())]),
+        };
+        cache.observe_position("secondary", PhysicalPosition::new(0, 0), true);
+        assert_eq!(cache.positions["secondary"], PhysicalPosition::new(24, 31));
+        cache.entries.get_mut("secondary").unwrap().initial_position = None;
+        cache.observe_position("secondary", PhysicalPosition::new(50, 60), true);
+        cache.observe_position("secondary", PhysicalPosition::new(0, 0), false);
+        cache.entries.remove("secondary");
+        assert_eq!(cache.positions["secondary"], PhysicalPosition::new(50, 60));
+    }
+
+    #[test]
     fn reset_includes_closed_windows_and_prevents_legacy_sizes_from_returning() {
         let mut cache = Cache {
             saved: SavedGeometry {
@@ -1777,11 +1931,13 @@ mod tests {
             },
             legacy: HashMap::from([(
                 "legacy".into(),
-                LegacySize {
+                PluginWindowState {
                     width: 2000,
                     height: 1200,
+                    ..Default::default()
                 },
             )]),
+            positions: HashMap::new(),
             entries: HashMap::new(),
         };
         cache.reset_saved(|label| {
