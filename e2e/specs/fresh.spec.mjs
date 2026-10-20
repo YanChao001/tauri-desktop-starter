@@ -148,6 +148,22 @@ describe("Real Tauri desktop", () => {
     assert.equal(await $("#studio-name").getValue(), "Native creative space");
     await navigate("/motion");
     await $("[data-testid=spring-stage]").waitForDisplayed();
+    await $("[data-testid=spring-stage]").scrollIntoView({
+      block: "center",
+      inline: "nearest",
+    });
+    const systemReduced = await browser.execute(
+      () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    );
+    const savedPreferences = await invoke("load_settings_snapshot");
+    assert.equal(savedPreferences.ok, true);
+    const reduced =
+      systemReduced || savedPreferences.value.settings?.motion === "reduced";
+    // CI 系统可能启用减少动态效果；同时校验真实偏好与页面状态，避免把静态策略当作动画故障。
+    assert.equal(
+      await $(".motion-lab").getAttribute("data-reduced"),
+      String(reduced),
+    );
     const orbitTransform = () =>
       browser.execute(
         () =>
@@ -155,24 +171,60 @@ describe("Real Tauri desktop", () => {
             document.querySelector(".lab-orbit-ring").parentElement,
           ).transform,
       );
-    const firstTransform = await orbitTransform();
-    await browser.waitUntil(
-      async () => (await orbitTransform()) !== firstTransform,
-      { timeout: 5000, timeoutMsg: "The SVG orbit did not move" },
-    );
-    await $("button[aria-label=Pause]").click();
-    await browser.waitUntil(
-      async () =>
-        (await $(".motion-lab").getAttribute("data-paused")) === "true",
-    );
-    const pausedTransform = await orbitTransform();
-    await browser.pause(150);
-    assert.equal(await orbitTransform(), pausedTransform);
-    await $("button[aria-label=Resume]").click();
-    await browser.waitUntil(
-      async () =>
-        (await $(".motion-lab").getAttribute("data-paused")) === "false",
-    );
+    if (reduced) {
+      assert.equal(await $("button[aria-label=Pause]").isEnabled(), false);
+      const stillTransform = await orbitTransform();
+      await browser.pause(150);
+      assert.equal(await orbitTransform(), stillTransform);
+      // 减少动态效果只移除过渡，控件仍应改变实际场景。
+      const orbLeft = () =>
+        browser.execute(
+          () =>
+            document.querySelector(".lab-orb-rim").getBoundingClientRect().left,
+        );
+      const originalLeft = await orbLeft();
+      await $("button[aria-label='Send left']").click();
+      await browser.waitUntil(
+        async () => Math.abs((await orbLeft()) - originalLeft) > 5,
+        { timeout: 5000, timeoutMsg: "The reduced-motion orb did not respond" },
+      );
+    } else {
+      // 动画仅在可见舞台运行，先等待可见性状态，再验证播放、暂停和继续后的真实运动。
+      await browser.waitUntil(
+        async () =>
+          (await $(".motion-lab").getAttribute("data-paused")) === "false",
+      );
+      const firstTransform = await orbitTransform();
+      await browser.waitUntil(
+        async () => (await orbitTransform()) !== firstTransform,
+        { timeout: 5000, timeoutMsg: "The SVG orbit did not move" },
+      );
+      await $("button[aria-label=Pause]").click();
+      await browser.waitUntil(
+        async () =>
+          (await $(".motion-lab").getAttribute("data-paused")) === "true",
+      );
+      // 播放状态提交后，等待已排队的绘制帧完成，再采样暂停后的实际画面。
+      await browser.execute(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      const pausedTransform = await orbitTransform();
+      await browser.pause(150);
+      assert.equal(await orbitTransform(), pausedTransform);
+      await $("button[aria-label=Resume]").click();
+      await browser.waitUntil(
+        async () =>
+          (await $(".motion-lab").getAttribute("data-paused")) === "false",
+      );
+      const resumedTransform = await orbitTransform();
+      await browser.waitUntil(
+        async () => (await orbitTransform()) !== resumedTransform,
+        { timeout: 5000, timeoutMsg: "The SVG orbit did not resume" },
+      );
+    }
     await $("#lab-tab-paths").click();
     await $(".lab-path-stage").waitForDisplayed();
     assert.equal(
