@@ -28,6 +28,7 @@ use crate::{
 
 const SETTLE: Duration = Duration::from_millis(300);
 const TOPOLOGY_INTERVAL: Duration = Duration::from_secs(1);
+const INITIAL_CONFIRMATIONS: u8 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 struct LogicalSize {
@@ -64,11 +65,18 @@ struct Limits {
     max_height: Option<f64>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Placement {
     size: PhysicalSize<u32>,
     position: PhysicalPosition<i32>,
     minimum: PhysicalSize<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct InitialTarget {
+    size: PhysicalSize<u32>,
+    outer: PhysicalSize<u32>,
+    position: PhysicalPosition<i32>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -213,6 +221,37 @@ fn centered_position(
     ))
 }
 
+fn outer_for_size(
+    target: PhysicalSize<u32>,
+    inner: PhysicalSize<u32>,
+    outer: PhysicalSize<u32>,
+) -> PhysicalSize<u32> {
+    PhysicalSize::new(
+        target
+            .width
+            .saturating_add(outer.width.saturating_sub(inner.width)),
+        target
+            .height
+            .saturating_add(outer.height.saturating_sub(inner.height)),
+    )
+}
+
+fn placement_confirmed(
+    inner: PhysicalSize<u32>,
+    outer: PhysicalSize<u32>,
+    position: PhysicalPosition<i32>,
+    target_size: PhysicalSize<u32>,
+    target_outer: PhysicalSize<u32>,
+    target_position: PhysicalPosition<i32>,
+) -> bool {
+    inner == target_size
+        && outer == target_outer
+        && outer.width >= inner.width
+        && outer.height >= inner.height
+        && position.x.abs_diff(target_position.x) <= 1
+        && position.y.abs_diff(target_position.y) <= 1
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SavedGeometry {
@@ -256,9 +295,68 @@ struct Entry {
     was_special: bool,
     topology: Vec<Display>,
     initial_position: Option<WindowPosition>,
+    initial_confirmations: u8,
+    initial_target: Option<InitialTarget>,
+}
+
+#[derive(Debug, PartialEq)]
+enum InitialProgress {
+    Waiting,
+    Complete,
+    Unconfirmed,
 }
 
 impl Entry {
+    fn confirm_initial(&mut self, visible: bool, confirmed: bool) -> InitialProgress {
+        if self.initial_position.is_none() {
+            return InitialProgress::Complete;
+        }
+        if visible && confirmed {
+            self.initial_position = None;
+            self.initial_target = None;
+            return InitialProgress::Complete;
+        }
+        if visible {
+            self.initial_confirmations = self.initial_confirmations.saturating_add(1);
+            if self.initial_confirmations >= INITIAL_CONFIRMATIONS {
+                self.initial_position = None;
+                self.initial_target = None;
+                return InitialProgress::Unconfirmed;
+            }
+        }
+        // GTK 等窗口系统异步配置位置和尺寸；请求返回不代表真实布局已经生效。
+        // 继续保护初始偏好，并交由工作线程复核，避免阻塞消息循环。
+        // initial_position 已保护启动尺寸，不占用 DPI 或显式尺寸请求的 preserve 标记。
+        self.schedule(false, false);
+        InitialProgress::Waiting
+    }
+
+    fn observe_initial(
+        &mut self,
+        visible: bool,
+        inner: PhysicalSize<u32>,
+        outer: PhysicalSize<u32>,
+        position: PhysicalPosition<i32>,
+    ) {
+        if self.initial_position.is_some()
+            && visible
+            && self.initial_target.is_some_and(|target| {
+                placement_confirmed(
+                    inner,
+                    outer,
+                    position,
+                    target.size,
+                    target.outer,
+                    target.position,
+                )
+            })
+        {
+            // 原生配置事件确认后立即结束，避免等待下一轮复核时覆盖用户移动。
+            self.initial_position = None;
+            self.initial_target = None;
+        }
+    }
+
     fn request_size(&mut self, preferred: LogicalSize, center: bool) {
         self.preferred = preferred;
         // 原生还原和缩放会同步触发事件，先保护目标尺寸以免被旧事件覆盖。
@@ -709,14 +807,14 @@ fn repair(window: &Window, state: &GeometryState, displays: &[Display]) -> tauri
             .get(window.label())
             .and_then(|entry| entry.initial_position)
     });
-    if initial_position.is_some() {
-        normalize_initial_frame(window)?;
-    }
     let center = initial_position == Some(WindowPosition::Center);
-    let maximized = center && window.is_maximized()?;
-    let fullscreen = center && window.is_fullscreen()?;
-    let minimized = center && window.is_minimized()?;
+    let maximized = center && window.is_maximized().unwrap_or(false);
+    let fullscreen = center && window.is_fullscreen().unwrap_or(false);
+    let minimized = center && window.is_minimized().unwrap_or(false);
     let result = (|| {
+        if initial_position.is_some() {
+            normalize_initial_frame(window)?;
+        }
         // 最大化与全屏仍保留；先调整正常窗口位置，再恢复原显示状态。
         if fullscreen {
             window.set_fullscreen(false)?;
@@ -729,6 +827,8 @@ fn repair(window: &Window, state: &GeometryState, displays: &[Display]) -> tauri
         }
         repair_normal(window, state, displays, center)
     })();
+    // 异步还原尚未进入正常态时保留原显示状态，避免反复还原、最大化造成闪烁。
+    let unavailable = center && (maximized || fullscreen || minimized) && special(window);
     let restored = (|| {
         if maximized {
             window.maximize()?;
@@ -741,13 +841,27 @@ fn repair(window: &Window, state: &GeometryState, displays: &[Display]) -> tauri
         }
         Ok(())
     })();
-    if matches!(result, Ok(true))
-        && restored.is_ok()
-        && let Ok(mut cache) = state.cache.lock()
+    let visible = window.is_visible().unwrap_or(true);
+    if let Ok(mut cache) = state.cache.lock()
         && let Some(entry) = cache.entries.get_mut(window.label())
     {
-        // 每个新窗口只消费一次策略，后续移动、聚焦和重复激活均不再居中。
-        entry.initial_position = None;
+        // 仅在真实布局已确认后消费策略；后续移动、聚焦和重复激活不再居中。
+        let progress = if unavailable {
+            entry.initial_position = None;
+            entry.initial_target = None;
+            InitialProgress::Unconfirmed
+        } else {
+            entry.confirm_initial(
+                visible,
+                result.as_ref().is_ok_and(|confirmed| *confirmed) && restored.is_ok(),
+            )
+        };
+        if progress == InitialProgress::Unconfirmed {
+            log::warn!(
+                "Window manager did not confirm initial placement for {}",
+                window.label()
+            );
+        }
     }
     result.map(|_| ()).and(restored)
 }
@@ -839,7 +953,10 @@ fn repair_normal(
         if placement.size != window.inner_size()? {
             window.set_size(placement.size)?;
         }
-        // 居中依据最终外框尺寸，避免首次非客户区重算后残留半个边框差值。
+        // 异步 resize 尚未配置时，按目标客户端尺寸加已测边框计算外框。
+        // 已配置后该值即真实外框，避免旧尺寸或初始零缓存导致错误居中。
+        let target_outer =
+            outer_for_size(placement.size, window.inner_size()?, window.outer_size()?);
         let position = if center {
             centered_position(
                 current,
@@ -847,24 +964,45 @@ fn repair_normal(
                     width: 0.0,
                     height: 0.0,
                 },
-                window.outer_size()?,
+                target_outer,
                 displays,
             )
             .unwrap_or(placement.position)
         } else {
             placement.position
         };
+        if let Ok(mut cache) = state.cache.lock()
+            && let Some(entry) = cache.entries.get_mut(window.label())
+            && entry.initial_position.is_some()
+        {
+            entry.initial_target = Some(InitialTarget {
+                size: placement.size,
+                outer: target_outer,
+                position,
+            });
+        }
         if position != window.outer_position()? {
             window.set_position(position)?;
         }
+        if changed {
+            state.dirty.store(true, Ordering::Release);
+        }
+        return Ok(placement_confirmed(
+            window.inner_size()?,
+            window.outer_size()?,
+            window.outer_position()?,
+            placement.size,
+            target_outer,
+            position,
+        ));
     }
     if changed {
         state.dirty.store(true, Ordering::Release);
     }
-    Ok(true)
+    Ok(!center)
 }
 
-/// 仅由主线程显示入口调用，确保首帧和超时兜底都先完成初始几何布局。
+/// 由主线程显示入口准备初始布局，异步窗口系统在配置事件后确认最终位置。
 pub fn before_show(window: &Window) -> NativeResult<()> {
     let app = window.app_handle();
     let state = app.state::<Arc<GeometryState>>();
@@ -930,6 +1068,8 @@ fn track(window: Window) {
                 was_special,
                 topology: monitors.clone(),
                 initial_position: Some(initial_position),
+                initial_confirmations: 0,
+                initial_target: None,
             },
         );
     }
@@ -944,9 +1084,30 @@ fn track(window: Window) {
             || matches!(event, WindowEvent::Moved(_) | WindowEvent::Focused(true))
         {
             let is_special = special(&copy);
+            let observing = state.cache.lock().is_ok_and(|cache| {
+                cache.entries.get(copy.label()).is_some_and(|entry| {
+                    entry.initial_position.is_some() && entry.initial_target.is_some()
+                })
+            });
+            // 只读原生缓存；窗口事件内不修改几何，也不持锁调用原生 API。
+            let observed = if observing {
+                (|| {
+                    Some((
+                        copy.is_visible().ok()?,
+                        copy.inner_size().ok()?,
+                        copy.outer_size().ok()?,
+                        copy.outer_position().ok()?,
+                    ))
+                })()
+            } else {
+                None
+            };
             if let Ok(mut cache) = state.cache.lock()
                 && let Some(entry) = cache.entries.get_mut(copy.label())
             {
+                if let Some((visible, inner, outer, position)) = observed {
+                    entry.observe_initial(visible, inner, outer, position);
+                }
                 entry.was_special |= is_special;
                 entry.schedule(resized, preserve || is_special);
             }
@@ -1328,6 +1489,8 @@ mod tests {
             was_special: false,
             topology: Vec::new(),
             initial_position: None,
+            initial_confirmations: 0,
+            initial_target: None,
         };
         let resize = Some(Pending {
             due: Instant::now(),
@@ -1398,6 +1561,8 @@ mod tests {
             was_special: false,
             topology: Vec::new(),
             initial_position: None,
+            initial_confirmations: 0,
+            initial_target: None,
         };
         entry.schedule(true, false);
         entry.request_size(size(1120.0, 740.0), false);
@@ -1423,6 +1588,8 @@ mod tests {
                 was_special: false,
                 topology: Vec::new(),
                 initial_position: Some(policy),
+                initial_confirmations: 0,
+                initial_target: None,
             };
             let resize = Some(Pending {
                 due: Instant::now(),
@@ -1436,6 +1603,166 @@ mod tests {
             entry.capture_resize(resize, 1.25, PhysicalSize::new(1250, 850), false, false);
             assert_eq!(entry.preferred, size(1000.0, 680.0));
         }
+    }
+
+    fn starting_entry() -> Entry {
+        Entry {
+            preferred: size(1000.0, 680.0),
+            limits: limits(),
+            scale: 1.0,
+            pending: None,
+            last_applied: Some(PhysicalSize::new(1000, 680)),
+            minimum: None,
+            was_special: false,
+            topology: Vec::new(),
+            initial_position: Some(WindowPosition::Center),
+            initial_confirmations: 0,
+            initial_target: Some(InitialTarget {
+                size: PhysicalSize::new(1000, 680),
+                outer: PhysicalSize::new(1000, 680),
+                position: PhysicalPosition::new(12, 44),
+            }),
+        }
+    }
+
+    #[test]
+    fn initial_placement_waits_for_visible_configured_geometry_without_blocking() {
+        let mut entry = starting_entry();
+        assert_eq!(entry.confirm_initial(false, true), InitialProgress::Waiting);
+        assert_eq!(entry.initial_confirmations, 0);
+        assert!(!entry.pending.unwrap().preserve);
+        assert_eq!(entry.confirm_initial(true, false), InitialProgress::Waiting);
+        assert_eq!(entry.initial_position, Some(WindowPosition::Center));
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1120, 740),
+            PhysicalSize::new(1120, 740),
+            PhysicalPosition::new(12, 44),
+        );
+        assert_eq!(entry.initial_position, Some(WindowPosition::Center));
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 680),
+            PhysicalSize::new(0, 0),
+            PhysicalPosition::new(12, 44),
+        );
+        assert_eq!(entry.initial_position, Some(WindowPosition::Center));
+    }
+
+    #[test]
+    fn native_confirmation_consumes_centering_before_the_next_user_move() {
+        let mut entry = starting_entry();
+        assert_eq!(entry.confirm_initial(false, true), InitialProgress::Waiting);
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 680),
+            PhysicalSize::new(1000, 680),
+            PhysicalPosition::new(12, 44),
+        );
+        assert_eq!(entry.initial_position, None);
+        assert_eq!(entry.initial_target, None);
+        entry.schedule(true, false);
+        let pending = entry.pending.take();
+        entry.capture_resize(pending, 1.0, PhysicalSize::new(1010, 690), false, false);
+        assert_eq!(entry.preferred, size(1010.0, 690.0));
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 680),
+            PhysicalSize::new(1000, 680),
+            PhysicalPosition::new(30, 30),
+        );
+        assert_eq!(
+            entry.confirm_initial(true, false),
+            InitialProgress::Complete
+        );
+        assert!(entry.pending.is_none());
+    }
+
+    #[test]
+    fn mapped_frame_changes_require_recomputed_center_before_confirmation() {
+        let mut entry = starting_entry();
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 680),
+            PhysicalSize::new(1016, 718),
+            PhysicalPosition::new(12, 44),
+        );
+        assert_eq!(entry.initial_position, Some(WindowPosition::Center));
+        entry.initial_target = Some(InitialTarget {
+            size: PhysicalSize::new(1000, 680),
+            outer: PhysicalSize::new(1016, 718),
+            position: PhysicalPosition::new(4, 25),
+        });
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 680),
+            PhysicalSize::new(1016, 718),
+            PhysicalPosition::new(4, 25),
+        );
+        assert_eq!(entry.initial_position, None);
+    }
+
+    #[test]
+    fn initial_confirmation_preserves_independent_size_and_dpi_protection() {
+        let mut entry = starting_entry();
+        entry.request_size(size(1000.0, 680.0), false);
+        entry.confirm_initial(false, true);
+        entry.observe_initial(
+            true,
+            PhysicalSize::new(1000, 680),
+            PhysicalSize::new(1000, 680),
+            PhysicalPosition::new(12, 44),
+        );
+        assert_eq!(entry.initial_position, None);
+        assert!(entry.pending.unwrap().preserve);
+    }
+
+    #[test]
+    fn unsupported_positioning_has_bounded_initial_confirmation() {
+        let mut entry = starting_entry();
+        for _ in 1..INITIAL_CONFIRMATIONS {
+            assert_eq!(entry.confirm_initial(true, false), InitialProgress::Waiting);
+        }
+        assert_eq!(
+            entry.confirm_initial(true, false),
+            InitialProgress::Unconfirmed
+        );
+        assert_eq!(entry.initial_position, None);
+        assert_eq!(entry.initial_target, None);
+    }
+
+    #[test]
+    fn async_resize_centering_uses_target_size_and_preserves_measured_frame() {
+        let target = PhysicalSize::new(1000, 680);
+        assert_eq!(
+            outer_for_size(
+                target,
+                PhysicalSize::new(1120, 740),
+                PhysicalSize::new(0, 0)
+            ),
+            target
+        );
+        assert_eq!(
+            outer_for_size(
+                target,
+                PhysicalSize::new(1120, 740),
+                PhysicalSize::new(1136, 778)
+            ),
+            PhysicalSize::new(1016, 718)
+        );
+        assert_eq!(
+            outer_for_size(target, target, PhysicalSize::new(1016, 718)),
+            PhysicalSize::new(1016, 718)
+        );
+        assert_eq!(
+            centered_position(
+                rect(0.0, 0.0, 0.0, 0.0),
+                size(0.0, 0.0),
+                target,
+                &[display(0.0, 0.0, 1024.0, 768.0, 1.0)]
+            ),
+            Some(PhysicalPosition::new(12, 44))
+        );
     }
 
     #[test]
