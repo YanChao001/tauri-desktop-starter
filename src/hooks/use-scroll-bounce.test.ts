@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { createRef } from "react";
+import { animate } from "motion/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useScrollBounce } from "./use-scroll-bounce";
 
@@ -78,6 +79,7 @@ describe("内容区域边界回弹", () => {
   );
 
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.useFakeTimers();
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
       window.setTimeout(() => callback(performance.now()), 16),
@@ -130,7 +132,7 @@ describe("内容区域边界回弹", () => {
     const first = result.current.get();
     for (let index = 0; index < 30; index++) wheel(content, -10000);
     expect(result.current.get()).toBeGreaterThan(first);
-    expect(result.current.get()).toBeLessThanOrEqual(40);
+    expect(result.current.get()).toBeLessThanOrEqual(56);
     act(() => vi.advanceTimersByTime(300));
     expect(result.current.get()).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
@@ -155,14 +157,61 @@ describe("内容区域边界回弹", () => {
     expect(result.current.get()).toBe(0);
   });
 
-  it("没有内容溢出时不制造可滚动区域或虚假回弹", () => {
+  it("没有滚动条时仍可双向拉伸，不制造可滚动区域，滚动事件不清除底部反馈", () => {
     const { main, content, result } = mount();
     geometry(main, { height: 400, content: 400 });
     wheel(content, -120);
+    expect(result.current.get()).toBeGreaterThan(5);
+    act(() => vi.advanceTimersByTime(200));
     expect(result.current.get()).toBe(0);
     wheel(content, 120);
+    expect(result.current.get()).toBeLessThan(-5);
+    act(() => main.dispatchEvent(new Event("scroll")));
+    expect(result.current.get()).toBeLessThan(-5);
+    act(() => vi.advanceTimersByTime(200));
     expect(result.current.get()).toBe(0);
     expect(main.scrollHeight).toBe(main.clientHeight);
+    expect(main.scrollTop).toBe(0);
+  });
+
+  it("滚轮即时启动回收，不额外等待输入结束；同帧输入只启动一次弹簧", () => {
+    const { content, result } = mount();
+    act(() => {
+      for (let index = 0; index < 4; index++)
+        content.dispatchEvent(
+          new WheelEvent("wheel", { bubbles: true, deltaY: -30 }),
+        );
+      vi.advanceTimersByTime(16);
+    });
+    expect(result.current.get()).toBeGreaterThan(5);
+    expect(animate).toHaveBeenCalledTimes(1);
+    // 第三方动画时钟在 180ms 完成；回收前不应再叠加输入静默等待。
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.get()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("短页面持指保持拉伸，小幅反向先收回，越过原点后才翻向，抬手复位", () => {
+    const { main, content, result } = mount();
+    geometry(main, { height: 400, content: 400 });
+    const point = { identifier: 1, clientX: 100, clientY: 100 };
+    touch(content, "touchstart", [point]);
+    touch(content, "touchmove", [{ ...point, clientY: 180 }]);
+    const pulled = result.current.get();
+    expect(pulled).toBeGreaterThan(5);
+    act(() => vi.advanceTimersByTime(500));
+    expect(result.current.get()).toBe(pulled);
+    expect(animate).not.toHaveBeenCalled();
+    touch(content, "touchmove", [{ ...point, clientY: 160 }]);
+    expect(result.current.get()).toBeGreaterThan(0);
+    expect(result.current.get()).toBeLessThan(pulled);
+    touch(content, "touchmove", [{ ...point, clientY: 60 }]);
+    expect(result.current.get()).toBeLessThan(0);
+    expect(main.scrollHeight).toBe(main.clientHeight);
+    expect(main.scrollTop).toBe(0);
+    touch(content, "touchend", []);
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.get()).toBe(0);
   });
 
   it("支持按行或按页报告的滚轮，同时限制异常输入的幅度", () => {
@@ -172,7 +221,7 @@ describe("内容区域边界回弹", () => {
     wheel(content, 120);
     wheel(content, -1, { deltaMode: WheelEvent.DOM_DELTA_PAGE });
     expect(result.current.get()).toBeGreaterThan(5);
-    expect(result.current.get()).toBeLessThanOrEqual(40);
+    expect(result.current.get()).toBeLessThanOrEqual(56);
   });
 
   it("内层容器优先消费自己的滚动，普通内层到边界后才反馈外层", () => {

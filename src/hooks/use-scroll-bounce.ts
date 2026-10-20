@@ -2,14 +2,20 @@ import { useLayoutEffect, type RefObject } from "react";
 import { animate, useMotionValue } from "motion/react";
 
 const edgeTolerance = 1;
-const maximumOffset = 40;
-const releaseDelay = 80;
+const maximumOffset = 56;
 
-/** 返回边界外输入对应的内容位移方向；中段和未溢出的内容保持原生滚动。 */
+type TouchGesture = {
+  identifier: number;
+  y: number;
+  originX: number;
+  originY: number;
+  axis: "vertical" | null;
+};
+
+/** 返回边界外输入的方向；不足一屏时，上下两个边界均可拉伸。 */
 function boundaryDirection(container: HTMLElement, delta: number) {
-  const range = container.scrollHeight - container.clientHeight;
-  if (range <= edgeTolerance || !Number.isFinite(delta) || delta === 0)
-    return 0;
+  const range = Math.max(0, container.scrollHeight - container.clientHeight);
+  if (!Number.isFinite(delta) || delta === 0) return 0;
   if (delta < 0 && container.scrollTop <= edgeTolerance) return 1;
   if (delta > 0 && range - container.scrollTop <= edgeTolerance) return -1;
   return 0;
@@ -75,35 +81,40 @@ export function useScrollBounce(
     const element = target;
 
     let alive = true;
-    let releaseTimer: ReturnType<typeof setTimeout> | undefined;
     let animation: { stop: () => void } | undefined;
-    const frames = new Set<number>();
-    let touch: {
-      identifier: number;
-      y: number;
-      originX: number;
-      originY: number;
-      axis: "vertical" | null;
-    } | null = null;
+    let frame: number | undefined;
+    let touch: TouchGesture | null = null;
+    const pending: {
+      event: Event;
+      delta: number;
+      wheel: boolean;
+      gesture: TouchGesture | null;
+      direction: number;
+      reserved: boolean;
+    }[] = [];
 
-    function stopRelease() {
-      clearTimeout(releaseTimer);
-      releaseTimer = undefined;
+    function stopAnimation() {
       animation?.stop();
       animation = undefined;
     }
+    function cancelFeedback() {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+      pending.length = 0;
+    }
     function reset() {
-      stopRelease();
+      stopAnimation();
       offset.jump(0);
     }
     function release() {
-      stopRelease();
+      stopAnimation();
       if (!offset.get()) return;
       animation = animate(offset, 0, {
         type: "spring",
-        stiffness: 290,
-        damping: 28,
-        mass: 0.7,
+        stiffness: 650,
+        damping: 30,
+        mass: 0.35,
+        velocity: 0,
         restDelta: 0.1,
         restSpeed: 1,
       });
@@ -115,35 +126,62 @@ export function useScrollBounce(
       wheel: boolean,
       gesture = touch,
     ) {
-      const direction = boundaryDirection(element, delta);
-      const reserved = isReservedInput(inputPath(event, element), delta);
-      // 延后一帧，等待 React 委托事件处理完成后再尊重 defaultPrevented。
-      const frame = requestAnimationFrame(() => {
-        frames.delete(frame);
-        if (
-          !alive ||
-          event.defaultPrevented ||
-          document.visibilityState === "hidden" ||
-          hasSelection() ||
-          (!wheel && gesture !== touch)
-        )
-          return;
-        if (
-          reserved ||
-          direction === 0 ||
-          direction !== boundaryDirection(element, delta)
-        ) {
-          reset();
-          return;
-        }
-        stopRelease();
-        const current = Math.max(0, offset.get() * direction);
-        const resistance = 1 - current / maximumOffset;
-        const distance = Math.min(Math.abs(delta), 160) * 0.2 * resistance;
-        offset.set(direction * Math.min(maximumOffset, current + distance));
-        if (wheel) releaseTimer = setTimeout(release, releaseDelay);
+      pending.push({
+        event,
+        delta,
+        wheel,
+        gesture,
+        direction: boundaryDirection(element, delta),
+        reserved: isReservedInput(inputPath(event, element), delta),
       });
-      frames.add(frame);
+      if (frame !== undefined) return;
+      // 等待委托处理完成，并把同帧输入合并为一次动画，避免高频尾流反复重启。
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        let value = offset.get();
+        let updated = false;
+        let shouldRelease = false;
+        for (const input of pending.splice(0)) {
+          if (
+            !alive ||
+            input.event.defaultPrevented ||
+            document.visibilityState === "hidden" ||
+            hasSelection() ||
+            (!input.wheel && input.gesture !== touch)
+          )
+            continue;
+          if (
+            input.reserved ||
+            input.direction === 0 ||
+            input.direction !== boundaryDirection(element, input.delta)
+          ) {
+            value = 0;
+            updated = true;
+            shouldRelease = false;
+            continue;
+          }
+          // 反向输入先收回已有位移，短页面也不会在小幅回拖时突然翻向。
+          const resistance =
+            value * input.direction >= 0
+              ? 1 - Math.abs(value) / maximumOffset
+              : 1;
+          const distance = Math.min(Math.abs(input.delta), 160) * 0.35;
+          value = Math.max(
+            -maximumOffset,
+            Math.min(
+              maximumOffset,
+              value + input.direction * distance * resistance,
+            ),
+          );
+          updated = true;
+          shouldRelease = input.wheel;
+        }
+        if (!updated) return;
+        stopAnimation();
+        offset.set(value);
+        // 滚轮始终即时回收，不让惯性尾流延长等待；触摸则保持到抬手。
+        if (shouldRelease) release();
+      });
     }
 
     function onWheel(event: WheelEvent) {
@@ -164,6 +202,7 @@ export function useScrollBounce(
       feedback(event, event.deltaY * unit, true);
     }
     function onTouchStart(event: TouchEvent) {
+      cancelFeedback();
       reset();
       const point = event.touches[0];
       touch =
@@ -211,7 +250,8 @@ export function useScrollBounce(
       if (
         (value > 0 && element.scrollTop > edgeTolerance) ||
         (value < 0 &&
-          element.scrollHeight - element.clientHeight - element.scrollTop >
+          Math.max(0, element.scrollHeight - element.clientHeight) -
+            element.scrollTop >
             edgeTolerance)
       )
         reset();
@@ -219,8 +259,7 @@ export function useScrollBounce(
     function onVisibilityChange() {
       if (document.visibilityState === "hidden") {
         touch = null;
-        frames.forEach(cancelAnimationFrame);
-        frames.clear();
+        cancelFeedback();
         reset();
       }
     }
@@ -234,7 +273,7 @@ export function useScrollBounce(
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       alive = false;
-      frames.forEach(cancelAnimationFrame);
+      cancelFeedback();
       reset();
       element.removeEventListener("wheel", onWheel);
       element.removeEventListener("touchstart", onTouchStart);
