@@ -8,6 +8,7 @@ import {
   ready,
   navigate,
   windowPlacement,
+  recordWindowPlacement,
 } from "../helpers.mjs";
 
 describe("App process restart", () => {
@@ -42,9 +43,21 @@ describe("App process restart", () => {
       ),
     );
     const placement = await windowPlacement();
-    assert.ok(
+    const restored =
       Math.abs(placement.position.x - expectedPosition.x) <= 2 &&
-        Math.abs(placement.position.y - expectedPosition.y) <= 2,
+      Math.abs(placement.position.y - expectedPosition.y) <= 2;
+    const diagnostic = restored
+      ? null
+      : recordWindowPlacement("restart-failed", {
+          expected: expectedPosition,
+          actual: placement.position,
+          outerSize: placement.outerSize,
+          workAreas: placement.workAreas,
+          scaleFactor: placement.scaleFactor,
+        });
+    assert.ok(
+      restored,
+      `Remembered window position changed: ${JSON.stringify(diagnostic)}`,
     );
     const geometry = await invoke("get_window_geometry");
     assert.equal(geometry.ok, true);

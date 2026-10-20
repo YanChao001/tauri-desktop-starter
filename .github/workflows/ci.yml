@@ -148,6 +148,8 @@ jobs:
         with:
           workspaces: src-tauri -> target/e2e
           key: e2e
+          # 保留已成功编译的依赖缓存，桌面断言失败后仍可复用。
+          cache-on-failure: true
 
       # 仅 feature=e2e 带内嵌 WebDriver，使用 .e2e 标识及临时用户数据。
       - name: 构建测试专用桌面应用

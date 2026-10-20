@@ -1,4 +1,6 @@
 import { browser, $ } from "@wdio/globals";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 export async function ready(label = "main") {
   await $("#root main").waitForExist();
@@ -64,13 +66,17 @@ export function appearance() {
 export function windowPlacement() {
   return browser.execute(async () => {
     const win = window.__TAURI__.window.getCurrentWindow();
-    const [position, size, monitors] = await Promise.all([
+    const [position, size, monitors, scaleFactor] = await Promise.all([
       win.outerPosition(),
       win.outerSize(),
       window.__TAURI__.window.availableMonitors(),
+      win.scaleFactor(),
     ]);
     return {
       position,
+      outerSize: size,
+      workAreas: monitors.map(({ workArea }) => workArea),
+      scaleFactor,
       centered: monitors.some(
         ({ workArea }) =>
           Math.abs(
@@ -90,17 +96,84 @@ export function windowPlacement() {
   });
 }
 
-export function placeNearWorkAreaCorner() {
-  return browser.execute(async () => {
+export async function placeNearWorkAreaCorner() {
+  const requested = await browser.execute(async () => {
     const win = window.__TAURI__.window.getCurrentWindow();
-    const area = (await window.__TAURI__.window.availableMonitors())[0]
-      .workArea;
+    const [outer, monitors] = await Promise.all([
+      win.outerSize(),
+      window.__TAURI__.window.availableMonitors(),
+    ]);
+    const area = monitors[0].workArea;
+    // 小屏幕上窗口可能占满工作区，预留偏移不能让完整外框越界。
+    const target = {
+      x:
+        area.position.x +
+        Math.min(30, Math.max(0, area.size.width - outer.width)),
+      y:
+        area.position.y +
+        Math.min(30, Math.max(0, area.size.height - outer.height)),
+    };
     await win.setPosition(
-      new window.__TAURI__.dpi.PhysicalPosition(
-        area.position.x + 30,
-        area.position.y + 30,
-      ),
+      new window.__TAURI__.dpi.PhysicalPosition(target.x, target.y),
     );
-    return win.outerPosition();
+    return { target, area, outer };
   });
+  let actual;
+  try {
+    // 命令完成不代表窗口管理器已配置位置；夹具只记录已确认的实际坐标。
+    await browser.waitUntil(
+      async () => {
+        actual = await browser.execute(() =>
+          window.__TAURI__.window.getCurrentWindow().outerPosition(),
+        );
+        return (
+          Math.abs(actual.x - requested.target.x) <= 2 &&
+          Math.abs(actual.y - requested.target.y) <= 2
+        );
+      },
+      {
+        timeoutMsg: `Window placement did not reach ${JSON.stringify(requested)}`,
+      },
+    );
+  } catch (error) {
+    recordWindowPlacement("move-failed", {
+      expected: requested.target,
+      actual,
+      area: requested.area,
+      outerSize: requested.outer,
+    });
+    throw error;
+  }
+  return actual;
+}
+
+/** 隔离测试数据会被清理，保留位置与几何存档以便在 CI artifact 中核对。 */
+export function recordWindowPlacement(checkpoint, details) {
+  const readState = (name) => {
+    try {
+      return JSON.parse(
+        readFileSync(
+          join(process.env.STARTER_E2E_DATA_ROOT, "config", name),
+          "utf8",
+        ),
+      );
+    } catch (error) {
+      return { error: error.code ?? error.message };
+    }
+  };
+  const diagnostic = {
+    platform: process.platform,
+    phase: process.env.STARTER_E2E_PHASE,
+    checkpoint,
+    ...details,
+    windowState: readState("window-state.json"),
+    windowGeometry: readState("window-geometry.json"),
+  };
+  const directory = join("artifacts", "e2e", process.env.STARTER_E2E_PHASE);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, `window-placement-${checkpoint}.json`),
+    JSON.stringify(diagnostic, null, 2),
+  );
+  return diagnostic;
 }

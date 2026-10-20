@@ -11,6 +11,8 @@ import {
   navigate,
   ready,
   placeNearWorkAreaCorner,
+  recordWindowPlacement,
+  windowPlacement,
 } from "../helpers.mjs";
 
 const execute = promisify(execFile);
@@ -640,6 +642,10 @@ describe("Real Tauri desktop", () => {
       (await invoke("plugin:window-state|save_window_state", { flags: 2 })).ok,
       true,
     );
+    recordWindowPlacement("before-restart", {
+      expected: position,
+      ...(await windowPlacement()),
+    });
   });
 });
 /* global describe, it */
