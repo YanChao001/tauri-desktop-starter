@@ -190,8 +190,9 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 
 **申请**：
 
-1. 打开 <https://signpath.org/>，用 GitHub 登录并提交 OSS 申请（仓库 URL、许可证、用途、构建方式）；
-2. 申请通过后取得组织与项目，并确认签名审批责任人。
+1. 打开 [OSS 申请表](https://signpath.org/apply)，填写项目、源码 / 首页 / 下载地址、用途、构建方式、真实的项目信誉依据及申请人姓名和收件邮箱；公开下载地址必须能获取待签名形式的版本，草稿 Release 不能代替公开发布；
+2. 申请人确认 [服务条款](https://signpath.org/terms) 与表单中的个人数据处理同意后提交，等待基金会审核；GitHub 登录、CI 通过或工作流配置完成均不表示申请已获批；
+3. 申请通过后按通知开通 SignPath 组织与账号、启用 MFA，并确认签名审批责任人。
 
 **在 SignPath 门户配置**：
 
@@ -199,7 +200,8 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 2. 创建 artifact configuration：上传一个打好的 `*-setup.exe` 作为样本，或直接粘贴
    `.signpath/artifact-configuration.xml`，slug 记为 `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`；
 3. 创建 signing policy（如 `release-signing`）并开启人工审批，slug 记为 `SIGNPATH_SIGNING_POLICY_SLUG`；
-4. 生成 API token（需要项目提交权限），存为 `SIGNPATH_API_TOKEN`。
+4. 按 [GitHub 可信构建接入说明](https://docs.signpath.io/trusted-build-systems/github) 在组织中启用 GitHub.com Trusted Build System 并关联项目，配置仓库、工作流与来源约束；按服务要求安装 SignPath GitHub App，并仅授权本仓库；
+5. 生成 API token（仅授予该项目 / 策略的提交权限），存为 `SIGNPATH_API_TOKEN`，不要授予自动审批权限。
 
 **在 GitHub 仓库配置（Settings → Secrets and variables → Actions）**：
 
