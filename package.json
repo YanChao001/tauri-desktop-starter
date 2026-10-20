@@ -2,7 +2,7 @@
   "name": "tauri-desktop-starter",
   "private": true,
   "license": "MIT",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "type": "module",
   "packageManager": "pnpm@12.14.0",
   "engines": {
@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:web": "tsc && vite build --mode web-demo",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "doctor": "node scripts/doctor.mjs",
@@ -95,5 +96,5 @@
     "type": "git",
     "url": "https://github.com/YanChao001/tauri-desktop-starter"
   },
-  "homepage": "https://v2.tauri.app/"
+  "homepage": "https://yanchao001.github.io/tauri-desktop-starter/"
 }

@@ -67,6 +67,26 @@ function setup(initial = DEFAULT_SETTINGS, remote = snapshot(1)) {
 }
 
 describe("settings synchronization", () => {
+  it("将启动位置偏好持久化，并接收其他窗口的偏好变化", async () => {
+    const env = setup();
+    await env.sync.start();
+    env.sync.update({ windowPosition: "center" });
+    await vi.waitFor(() =>
+      expect(env.latest()).toMatchObject({
+        status: "saved",
+        settings: { windowPosition: "center" },
+      }),
+    );
+    expect(env.backend.save.mock.calls.at(-1)?.[0]).toMatchObject({
+      windowPosition: "center",
+    });
+    env.send(snapshot(3, { windowPosition: "remember", theme: "dark" }));
+    expect(env.latest().settings).toMatchObject({
+      windowPosition: "remember",
+      theme: "dark",
+    });
+    env.sync.stop();
+  });
   it("subscribes before loading and seeds an empty native store from browser preferences", async () => {
     const initial = {
       ...DEFAULT_SETTINGS,
@@ -393,5 +413,39 @@ describe("settings synchronization", () => {
     expect(env.stop).toHaveBeenCalledOnce();
     expect(env.states).toHaveLength(count);
     expect(env.backend.save).toHaveBeenCalledOnce();
+  });
+
+  it("重置等待已有写入及默认值写入完成，避免提前报告持久化成功", async () => {
+    const env = setup();
+    await env.sync.start();
+    const earlier = deferred<SettingsSnapshot>();
+    const defaults = deferred<SettingsSnapshot>();
+    env.backend.save
+      .mockImplementationOnce(() => earlier.promise)
+      .mockImplementationOnce(() => defaults.promise);
+    env.sync.update({ accent: "rose" });
+    const completed = vi.fn();
+    const reset = env.sync.reset(DEFAULT_SETTINGS).then(completed);
+    earlier.resolve(snapshot(2, { accent: "rose" }));
+    await vi.waitFor(() => expect(env.backend.save).toHaveBeenCalledTimes(2));
+    expect(completed).not.toHaveBeenCalled();
+    defaults.resolve(snapshot(3));
+    await reset;
+    expect(completed).toHaveBeenCalledOnce();
+    expect(env.latest().status).toBe("saved");
+    env.sync.stop();
+  });
+
+  it("重置写盘失败返回错误并保留默认值的待保存变更", async () => {
+    const env = setup();
+    await env.sync.start();
+    env.backend.save.mockRejectedValueOnce({ code: "STORAGE_IO" });
+    await expect(env.sync.reset(DEFAULT_SETTINGS)).rejects.toEqual({
+      code: "STORAGE_IO",
+    });
+    expect(env.latest().status).toBe("error");
+    await env.sync.retry();
+    expect(env.latest().status).toBe("saved");
+    env.sync.stop();
   });
 });

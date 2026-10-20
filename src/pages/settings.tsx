@@ -1,4 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CheckIcon,
   ExternalLinkIcon,
@@ -16,6 +22,14 @@ import { SettingsPersistence } from "@/components/settings-persistence";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -44,7 +58,18 @@ import {
   type FontSize,
   type Radius,
 } from "@/providers/settings";
-import { getAppInfo, isTauri, openExternal } from "@/lib/tauri";
+import {
+  getAppInfo,
+  getWindowGeometry,
+  isTauri,
+  onWindowMoved,
+  onWindowResized,
+  openExternal,
+  resetWindowGeometry,
+  setWindowSize,
+  type WindowGeometry,
+} from "@/lib/tauri";
+import { nativeErrorText } from "@/lib/native-error";
 import { cn } from "@/lib/utils";
 
 const THEMES = [
@@ -91,7 +116,7 @@ function SettingRow({
     <div
       id={id}
       tabIndex={id ? -1 : undefined}
-      className="flex items-center justify-between gap-6 rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="settings-row flex items-center justify-between gap-6 rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="min-w-0 space-y-0.5">
         <p className="text-sm">{label}</p>
@@ -109,6 +134,170 @@ export default function Settings() {
   const { settings, update, reset } = useSettings();
   const [version, setVersion] = useState("—");
   const [tauriVersion, setTauriVersion] = useState("—");
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [windowGeometry, setGeometry] = useState<WindowGeometry | null>(null);
+  const [windowError, setWindowError] = useState<unknown>(null);
+  const [resetError, setResetError] = useState<unknown>(null);
+  const [pending, setPending] = useState(false);
+  const mounted = useRef(false);
+  const running = useRef(false);
+  const geometryGeneration = useRef(0);
+  const native = isTauri();
+  const invalidateGeometry = useCallback(() => {
+    geometryGeneration.current++;
+  }, []);
+
+  const refreshWindow = useCallback(async () => {
+    if (running.current) return;
+    const generation = ++geometryGeneration.current;
+    try {
+      const geometry = await getWindowGeometry();
+      if (!mounted.current || geometryGeneration.current !== generation) return;
+      setGeometry(geometry);
+      setWindowError(null);
+    } catch (error) {
+      if (mounted.current && geometryGeneration.current === generation)
+        setWindowError(error);
+    }
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    let stopped = false;
+    const unlisten: Array<() => void> = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (native) {
+      void refreshWindow();
+      const changed = () => {
+        if (stopped) return;
+        invalidateGeometry();
+        clearTimeout(timer);
+        timer = setTimeout(() => void refreshWindow(), 200);
+      };
+      void Promise.allSettled([
+        onWindowResized(changed),
+        onWindowMoved(changed),
+      ]).then((results) => {
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            if (stopped) result.value();
+            else unlisten.push(result.value);
+          } else if (!stopped) {
+            setWindowError(result.reason);
+          }
+        }
+      });
+    }
+    return () => {
+      mounted.current = false;
+      stopped = true;
+      invalidateGeometry();
+      clearTimeout(timer);
+      for (const stop of unlisten) stop();
+    };
+  }, [native, refreshWindow, invalidateGeometry]);
+
+  function acceptGeometry(geometry: WindowGeometry) {
+    geometryGeneration.current++;
+    setGeometry(geometry);
+    setWindowError(null);
+  }
+
+  async function applyWindowSize(width: number, height: number) {
+    if (
+      !native ||
+      running.current ||
+      !windowGeometry ||
+      width < windowGeometry.minWidth ||
+      width > windowGeometry.maxWidth ||
+      height < windowGeometry.minHeight ||
+      height > windowGeometry.maxHeight
+    )
+      return;
+    running.current = true;
+    geometryGeneration.current++;
+    setPending(true);
+    setWindowError(null);
+    try {
+      const geometry = await setWindowSize(width, height);
+      if (mounted.current) {
+        acceptGeometry(geometry);
+        toast.success(translateLatest("settings.windowSizeApplied"));
+      }
+    } catch (error) {
+      if (mounted.current) setWindowError(error);
+    } finally {
+      running.current = false;
+      if (mounted.current) setPending(false);
+    }
+  }
+
+  async function restorePreferences() {
+    if (running.current) return;
+    running.current = true;
+    geometryGeneration.current++;
+    setPending(true);
+    setResetError(null);
+    try {
+      const geometry = native ? await resetWindowGeometry(false) : null;
+      if (geometry && mounted.current) acceptGeometry(geometry);
+      await reset();
+      if (mounted.current) {
+        setConfirmReset(false);
+        toast.success(translateLatest("common.resetDone"));
+      }
+    } catch (error) {
+      if (mounted.current) setResetError(error);
+    } finally {
+      running.current = false;
+      if (mounted.current) setPending(false);
+    }
+  }
+
+  const standardWidth = windowGeometry
+    ? Math.max(
+        windowGeometry.minWidth,
+        Math.min(windowGeometry.maxWidth, windowGeometry.defaultWidth),
+      )
+    : null;
+  const standardHeight = windowGeometry
+    ? Math.max(
+        windowGeometry.minHeight,
+        Math.min(windowGeometry.maxHeight, windowGeometry.defaultHeight),
+      )
+    : null;
+  const fittedDefault =
+    windowGeometry !== null &&
+    (standardWidth !== windowGeometry.defaultWidth ||
+      standardHeight !== windowGeometry.defaultHeight);
+  const windowPresets = [
+    { id: "compact", label: "settings.windowCompact", width: 960, height: 640 },
+    {
+      id: "standard",
+      label: "settings.windowStandard",
+      width: standardWidth,
+      height: standardHeight,
+    },
+    {
+      id: "comfortable",
+      label: "settings.windowComfortable",
+      width: 1280,
+      height: 800,
+    },
+    {
+      id: "spacious",
+      label: "settings.windowSpacious",
+      width: 1440,
+      height: 900,
+    },
+  ] as const;
+  // 品牌默认尺寸与固定预设相同时，只保留标准选项。
+  const visiblePresets = windowPresets.filter(
+    (preset) =>
+      preset.id === "standard" ||
+      preset.width !== standardWidth ||
+      preset.height !== standardHeight,
+  );
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -391,6 +580,135 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      <Card id="settings-window" tabIndex={-1}>
+        <CardHeader>
+          <CardTitle className="text-sm">{t("settings.windowSize")}</CardTitle>
+          <CardDescription className="text-xs">
+            {t(
+              native ? "settings.windowSizeHint" : "settings.windowBrowserHint",
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            role="group"
+            aria-label={t("settings.windowSize")}
+            className="grid grid-cols-2 gap-2 xl:grid-cols-4"
+          >
+            {visiblePresets.map((preset) => {
+              const unavailable =
+                windowGeometry !== null &&
+                preset.width !== null &&
+                preset.height !== null &&
+                (preset.width < windowGeometry.minWidth ||
+                  preset.width > windowGeometry.maxWidth ||
+                  preset.height < windowGeometry.minHeight ||
+                  preset.height > windowGeometry.maxHeight);
+              const active =
+                windowGeometry !== null &&
+                preset.width === windowGeometry.width &&
+                preset.height === windowGeometry.height;
+              const reasonId = `window-${preset.id}-unavailable`;
+              return (
+                <button
+                  key={preset.id}
+                  data-window-preset={preset.id}
+                  type="button"
+                  aria-label={t(preset.label)}
+                  aria-pressed={active}
+                  aria-describedby={unavailable ? reasonId : undefined}
+                  disabled={
+                    !native || pending || !windowGeometry || unavailable
+                  }
+                  onClick={() => {
+                    if (preset.width !== null && preset.height !== null)
+                      void applyWindowSize(preset.width, preset.height);
+                  }}
+                  className={cn(
+                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    active
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-muted/50",
+                  )}
+                >
+                  <span className="text-sm">{t(preset.label)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {preset.width !== null && preset.height !== null
+                      ? `${preset.width} × ${preset.height}`
+                      : t("settings.windowDefaultSize")}
+                  </span>
+                  {preset.id === "standard" && fittedDefault ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t("settings.windowSizeFitted")}
+                    </span>
+                  ) : null}
+                  {unavailable ? (
+                    <span
+                      id={reasonId}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t("settings.windowPresetUnavailable")}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {native && windowGeometry ? (
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {t("settings.windowCurrentSize", {
+                width: windowGeometry.width,
+                height: windowGeometry.height,
+              })}
+            </p>
+          ) : null}
+          {windowError ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 text-sm text-destructive"
+            >
+              <span>{nativeErrorText(windowError, t)}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={() => void refreshWindow()}
+              >
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : null}
+          <Separator />
+          <div
+            id="settings-windowPosition"
+            tabIndex={-1}
+            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Label>{t("settings.windowPosition")}</Label>
+            <ToggleGroup
+              type="single"
+              aria-label={t("settings.windowPosition")}
+              disabled={pending}
+              value={settings.windowPosition}
+              onValueChange={(value) => {
+                if (value === "remember" || value === "center")
+                  update({ windowPosition: value });
+              }}
+            >
+              <ToggleGroupItem value="remember" data-window-position="remember">
+                {t("settings.windowPositionRemember")}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="center" data-window-position="center">
+                {t("settings.windowPositionCenter")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.windowPositionHint")}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <details className="studio-panel settings-about" id="settings-about">
         <summary>
           {t("studio.settingsAbout")}
@@ -456,16 +774,52 @@ export default function Settings() {
         <Button
           variant="outline"
           size="sm"
+          disabled={pending}
           onClick={() => {
-            reset();
-            setTheme("system");
-            toast.success(t("common.resetDone"));
+            setResetError(null);
+            setConfirmReset(true);
           }}
         >
           <RotateCcwIcon />
           {t("common.reset")}
         </Button>
       </div>
+      <Dialog
+        open={confirmReset}
+        onOpenChange={(open) => {
+          if (!pending) setConfirmReset(open);
+        }}
+      >
+        <DialogContent closeLabel={t("common.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("settings.resetConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("settings.resetConfirmDescription")}
+            </DialogDescription>
+          </DialogHeader>
+          {resetError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {nativeErrorText(resetError, t)}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => setConfirmReset(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => void restorePreferences()}
+            >
+              {t("common.reset")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

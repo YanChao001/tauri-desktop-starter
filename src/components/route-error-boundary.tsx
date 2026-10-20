@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { Translate } from "@/i18n/translate";
 import { reportClientError } from "@/lib/report-error";
+import { errorMessage } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
 
 class PageBoundary extends Component<
@@ -11,7 +12,9 @@ class PageBoundary extends Component<
 > {
   state: { error: Error | null } = { error: null };
   static getDerivedStateFromError(error: unknown) {
-    return { error: error instanceof Error ? error : new Error(String(error)) };
+    return {
+      error: error instanceof Error ? error : new Error(errorMessage(error)),
+    };
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     reportClientError(error, info.componentStack ?? undefined);
@@ -26,7 +29,12 @@ class PageBoundary extends Component<
           {this.state.error.message}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={onHome}>{t("common.backHome")}</Button>
+          <Button onClick={() => this.setState({ error: null })}>
+            {t("common.retry")}
+          </Button>
+          <Button variant="outline" onClick={onHome}>
+            {t("common.backHome")}
+          </Button>
           <Button variant="outline" onClick={() => window.location.reload()}>
             {t("common.reload")}
           </Button>
@@ -36,7 +44,7 @@ class PageBoundary extends Component<
   }
 }
 
-/** Page failures keep the shell, navigation and command palette available. */
+/** 页面失败时保留应用外壳、导航和命令面板 */
 export function RouteErrorBoundary({ children }: { children: ReactNode }) {
   const { key } = useLocation();
   const navigate = useNavigate();

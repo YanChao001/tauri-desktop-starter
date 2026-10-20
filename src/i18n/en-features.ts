@@ -22,7 +22,6 @@ export const enFeatures = {
   "commands.groupWindow": "Window",
   "commands.groupHelp": "Help",
   "commands.groupTools": "Tools",
-  "commands.failed": "Action failed: {error}",
   "commands.openDesktop": "Open desktop integration",
   "commands.openWindow": "Open a second window",
   "commands.openDatabase": "Open database",
@@ -59,16 +58,9 @@ export const enFeatures = {
   "common.save": "Save",
   "common.delete": "Delete",
   "common.refresh": "Refresh",
-  "common.create": "Create",
   "common.operationFailed": "Operation failed: {error}",
-  "common.saved": "Saved",
-  "common.notSupported": "Unavailable in this environment",
   "common.open": "Open",
-  "common.nativeRequired":
-    "This feature requires the desktop app. Start it with pnpm app:dev.",
   "home.title": "Welcome to {name}",
-  "home.description":
-    "Get started with desktop features, local data, or personal preferences.",
   "home.settings": "Personalize settings",
   "home.desktop": "Manage desktop features",
   "home.database": "Open local notes",
@@ -90,7 +82,6 @@ export const enFeatures = {
     "Open a second window with synchronized language, theme, skin and layout preferences.",
   "desktop.openWindow": "Open a second window",
   "desktop.windowOpen": "The second window is open",
-  "desktop.available": "Available",
   "desktop.changed": "Desktop settings updated",
   "database.title": "Local database",
   "database.description":
@@ -104,8 +95,6 @@ export const enFeatures = {
   "database.bodyPlaceholder": "Write something…",
   "database.empty": "No notes yet. Create your first note.",
   "database.noResults": "No matching notes",
-  "database.select": "Select a note to edit",
-  "database.updated": "Updated: {time}",
   "database.saved": "Note saved",
   "database.deleted": "Note deleted",
   "database.confirmDelete": "Delete this note?",
@@ -115,8 +104,6 @@ export const enFeatures = {
   "database.discardTitle": "Discard unsaved changes?",
   "database.discardDescription": "Switching notes discards your current edits.",
   "database.discard": "Discard changes",
-  "database.conflict":
-    "Another window changed this note. Keep your edits and refresh to merge them.",
   "database.version": "Version {version}",
   "diagnostics.title": "Diagnostics and logs",
   "diagnostics.description":
@@ -125,7 +112,6 @@ export const enFeatures = {
   "diagnostics.copied": "Diagnostics copied",
   "diagnostics.refresh": "Refresh diagnostics",
   "diagnostics.preview": "Diagnostics preview",
-  "diagnostics.error": "Could not load diagnostics",
   "diagnostics.logs":
     "Frontend and native errors are recorded in app logs. Copied diagnostics exclude note content and full user paths.",
   "updates.title": "Application updates",
@@ -153,7 +139,6 @@ export const enFeatures = {
   "updates.endpoint": "Release source",
   "updates.keyConfigured": "Signing public key configured",
   "updates.keyMissing": "Signing public key required",
-  "updates.failed": "Update failed: {error}",
   "errors.VALIDATION": "Please check the input and try again",
   "errors.CONFLICT":
     "Another window changed this data. Refresh and merge your changes.",

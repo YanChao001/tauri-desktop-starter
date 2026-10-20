@@ -12,16 +12,18 @@ export const alias = {
 };
 
 // https://vite.dev/config/
-export default defineConfig(() => ({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
 
   resolve: { alias },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
+  // 演示与桌面共用入口；相对资源地址同时适用于 Pages 项目子路径和独立域名。
+  base: mode === "web-demo" ? "./" : "/",
+  build: { outDir: mode === "web-demo" ? "dist-web" : "dist" },
+
+  // 保留终端输出，便于查看 Tauri 开发与构建过程中的 Rust 错误。
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
+  // Tauri 使用固定开发端口，端口被占用时直接报错。
   server: {
     port: 1420,
     strictPort: true,
@@ -39,6 +41,7 @@ export default defineConfig(() => ({
         "**/src-tauri/**",
         "**/artifacts/**",
         "**/dist/**",
+        "**/dist-web/**",
         "**/coverage/**",
       ],
     },

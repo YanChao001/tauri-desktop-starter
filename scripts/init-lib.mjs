@@ -1,19 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import {
-  lstatSync,
-  existsSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { parse as parseToml } from "smol-toml";
 import { checkVersions } from "./version.mjs";
+import { applyFileChanges, projectFile } from "./fs-utils.mjs";
 
 const FIELDS = new Set([
   "schemaVersion",
@@ -104,10 +95,41 @@ export function validateAppConfig(config) {
     throw new Error("updates.endpoint 不能包含 URL fragment");
   if (
     typeof config.updates.publicKey !== "string" ||
-    Buffer.byteLength(config.updates.publicKey) > 8192 ||
-    /PRIVATE KEY/.test(config.updates.publicKey)
+    Buffer.byteLength(config.updates.publicKey) > 8192
   )
     throw new Error("updates.publicKey 必须是公钥文本，不能是私钥");
+  if (config.updates.publicKey !== "") {
+    try {
+      // Tauri 使用标准 Base64 封装两行 minisign 公钥。
+      // Buffer 解码允许非标准输入，需通过重新编码校验规范形式。
+      const envelope = Buffer.from(config.updates.publicKey, "base64");
+      if (envelope.toString("base64") !== config.updates.publicKey)
+        throw new Error("Invalid Base64");
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(envelope);
+      const lines = text.split(/\r?\n/);
+      if (lines.at(-1) === "") lines.pop();
+      if (
+        lines.length !== 2 ||
+        !/^untrusted comment: minisign public key:? [0-9A-Fa-f]{16}$/.test(
+          lines[0],
+        )
+      )
+        throw new Error("Invalid public key envelope");
+      const packet = Buffer.from(lines[1], "base64");
+      // minisign-verify 接受 Ed / ED 标识、8 字节密钥 ID 和 32 字节公钥。
+      if (
+        packet.toString("base64") !== lines[1] ||
+        packet.length !== 42 ||
+        packet[0] !== 0x45 ||
+        ![0x64, 0x44].includes(packet[1])
+      )
+        throw new Error("Invalid public key packet");
+    } catch {
+      throw new Error(
+        "updates.publicKey 必须是 Tauri 生成的 Base64 minisign 公钥，不能是私钥或无效文本",
+      );
+    }
+  }
   return config;
 }
 
@@ -151,21 +173,6 @@ function replaceField(content, key, value) {
   );
 }
 
-function safeFile(root, path) {
-  const target = join(root, path);
-  const info = lstatSync(target);
-  const offset = relative(root, realpathSync(target));
-  if (
-    !info.isFile() ||
-    info.isSymbolicLink() ||
-    offset === ".." ||
-    offset.startsWith(`..${sep}`) ||
-    isAbsolute(offset)
-  )
-    throw new Error(`拒绝修改目录链接或项目外文件：${path}`);
-  return target;
-}
-
 const require = createRequire(import.meta.url);
 function json(value, path = "app.config.json") {
   // 使用项目已锁定的格式器预检整份 JSON，初始化后仍满足 format:check。
@@ -205,7 +212,7 @@ export function prepareInitialization(
   checkVersions(root);
   const originals = new Map();
   const read = (path) => {
-    const content = readFileSync(safeFile(root, path), "utf8");
+    const content = readFileSync(projectFile(root, path), "utf8");
     originals.set(path, content);
     return content;
   };
@@ -335,89 +342,7 @@ export function prepareInitialization(
   return { root, config: next, changes };
 }
 
-/** 所有暂存文件成功后才提交；失败恢复已改文件，保留原权限。 */
-export function applyInitialization(plan, { beforeCommit = () => {} } = {}) {
-  const staged = [];
-  const committed = [];
-  try {
-    for (const change of plan.changes) {
-      const target = safeFile(plan.root, change.path);
-      if (readFileSync(target, "utf8") !== change.before)
-        throw new Error(`文件在预检后被修改：${change.path}`);
-      const token = randomUUID();
-      const temporary = join(dirname(target), `.init-${token}.tmp`);
-      const backup = join(dirname(target), `.init-${token}.bak`);
-      writeFileSync(temporary, change.content, {
-        flag: "wx",
-        mode: lstatSync(target).mode,
-      });
-      staged.push({ ...change, target, temporary, backup });
-    }
-    for (const [index, entry] of staged.entries()) {
-      beforeCommit(index, entry);
-      if (
-        readFileSync(safeFile(plan.root, entry.path), "utf8") !== entry.before
-      )
-        throw new Error(`文件在提交前被修改：${entry.path}`);
-      renameSync(entry.target, entry.backup);
-      committed.push(entry);
-      renameSync(entry.temporary, entry.target);
-    }
-  } catch (error) {
-    const failures = [];
-    for (const entry of committed.reverse()) {
-      try {
-        try {
-          if (
-            readFileSync(safeFile(plan.root, entry.path), "utf8") !==
-            entry.content
-          )
-            throw new Error(`回滚目标已被并发修改：${entry.path}`, {
-              cause: error,
-            });
-          unlinkSync(entry.target);
-        } catch (failure) {
-          if (failure.code !== "ENOENT") throw failure;
-        }
-        const parent = realpathSync(dirname(entry.target));
-        const offset = relative(plan.root, parent);
-        if (
-          offset === ".." ||
-          offset.startsWith(`..${sep}`) ||
-          isAbsolute(offset)
-        )
-          throw new Error(`回滚目录已移出项目：${entry.path}`, {
-            cause: error,
-          });
-        renameSync(entry.backup, entry.target);
-      } catch (failure) {
-        failures.push(`${entry.backup}: ${failure.message}`);
-      }
-    }
-    if (failures.length)
-      throw new Error(
-        `${error.message}\n恢复失败，备份保留：${failures.join("; ")}`,
-        { cause: error },
-      );
-    throw error;
-  } finally {
-    for (const entry of staged)
-      try {
-        unlinkSync(entry.temporary);
-      } catch (error) {
-        if (error.code !== "ENOENT") console.warn(error.message);
-      }
-  }
-  for (const entry of staged) {
-    try {
-      unlinkSync(entry.backup);
-    } catch (error) {
-      console.warn(
-        `初始化已完成；旧备份清理失败，请检查 ${entry.backup}：${error.message}`,
-      );
-    }
-  }
-}
+export const applyInitialization = applyFileChanges;
 
 export function initializationDiff(plan) {
   return plan.changes

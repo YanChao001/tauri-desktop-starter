@@ -25,6 +25,9 @@ pub fn greet(name: &str, language: Option<&str>) -> NativeResult<String> {
     if name.chars().count() > 200 {
         return Err(NativeError::new(ErrorCode::InputTooLong, "Name exceeds 200 characters"));
     }
+    if let Some(language) = language {
+        bounded_text(language, 32, "Language")?;
+    }
     let name = name.trim();
     let english = language == Some("en");
     if name.is_empty() {
@@ -38,8 +41,8 @@ pub fn greet(name: &str, language: Option<&str>) -> NativeResult<String> {
     })
 }`;
 
-const TS_SNIPPET = `// pnpm bindings:generate exports Rust DTOs and commands
-// lib/tauri.ts — all renderer IPC uses this adapter
+const TS_SNIPPET = `// pnpm bindings:generate 导出 Rust 数据类型和命令
+// lib/tauri.ts：所有渲染进程 IPC 均通过此门面调用
 export async function invokeGreet(
   name: string, language: Language = "zh",
 ): Promise<string> {

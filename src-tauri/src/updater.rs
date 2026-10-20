@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::File,
+    io::Read,
     sync::{
         Mutex,
         atomic::{AtomicBool, AtomicI32, Ordering},
@@ -14,6 +15,7 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
 
 use crate::{
+    blocking,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     storage::DataPaths,
 };
@@ -201,7 +203,8 @@ impl UpdateManager {
             body: None,
             date: None,
         };
-        let Some(policy) = load_policy(&app.state::<DataPaths>())? else {
+        let paths = app.state::<DataPaths>().inner().clone();
+        let Some(policy) = blocking::run(move || load_policy(&paths)).await? else {
             return Ok(status);
         };
         status.configured = true;
@@ -273,7 +276,8 @@ impl UpdateManager {
                     "Check for an available update before installing",
                 )
             })?;
-        if load_policy(&app.state::<DataPaths>())?.as_ref() != Some(&policy) {
+        let paths = app.state::<DataPaths>().inner().clone();
+        if blocking::run(move || load_policy(&paths)).await?.as_ref() != Some(&policy) {
             return Err(NativeError::new(
                 ErrorCode::UpdateNotConfigured,
                 "Update deployment configuration changed; check again",
@@ -319,13 +323,16 @@ impl UpdateManager {
                 )
             })?;
         self.event(app, operation_id, UpdateStage::Installing, None, None);
-        update.install(bytes).map_err(|e| {
-            NativeError::operation(
-                ErrorCode::UpdateInstallFailed,
-                "Cannot install verified update",
-                e,
-            )
-        })?;
+        blocking::run(move || {
+            update.install(bytes).map_err(|e| {
+                NativeError::operation(
+                    ErrorCode::UpdateInstallFailed,
+                    "Cannot install verified update",
+                    e,
+                )
+            })
+        })
+        .await?;
         Ok(())
     }
 }
@@ -378,8 +385,18 @@ pub fn load_policy(paths: &DataPaths) -> NativeResult<Option<UpdatePolicy>> {
                 e,
             )
         })?;
-    let policy = match fs::read(paths.config.join("deployment.json")) {
-        Ok(bytes) => {
+    let policy = match File::open(paths.config.join("deployment.json")) {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            file.take(16 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|error| {
+                    NativeError::operation(
+                        ErrorCode::StorageIo,
+                        "Cannot read update deployment configuration",
+                        error,
+                    )
+                })?;
             if bytes.len() > 16 * 1024 {
                 return Err(NativeError::new(
                     ErrorCode::InputTooLong,
@@ -415,6 +432,7 @@ pub fn load_policy(paths: &DataPaths) -> NativeResult<Option<UpdatePolicy>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     fn policy(endpoint: &str) -> UpdatePolicy {
         UpdatePolicy {
             endpoint: endpoint.into(),
@@ -507,5 +525,14 @@ mod tests {
         )
         .unwrap();
         assert!(load_policy(&paths).is_err());
+        fs::write(
+            paths.config.join("deployment.json"),
+            vec![b' '; 16 * 1024 + 1],
+        )
+        .unwrap();
+        assert_eq!(
+            load_policy(&paths).unwrap_err().code,
+            ErrorCode::InputTooLong
+        );
     }
 }

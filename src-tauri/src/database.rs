@@ -56,6 +56,16 @@ fn validate_note(title: &str, body: &str) -> NativeResult<()> {
     Ok(())
 }
 
+fn validate_identity(id: i32, expected_version: Option<i32>) -> NativeResult<()> {
+    if id <= 0 || expected_version.is_some_and(|version| version <= 0) {
+        return Err(NativeError::new(
+            ErrorCode::InvalidArgument,
+            "Note ID and version must be positive integers",
+        ));
+    }
+    Ok(())
+}
+
 fn row_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     Ok(Note {
         id: row.get(0)?,
@@ -135,6 +145,7 @@ impl Database {
     }
 
     pub fn update(&self, input: NoteUpdate) -> NativeResult<Note> {
+        validate_identity(input.id, Some(input.expected_version))?;
         validate_note(&input.title, &input.body)?;
         let connection = self.lock()?;
         let note = connection.query_row("UPDATE notes SET title=?1,body=?2,version=version+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?3 AND version=?4 RETURNING id,title,body,updated_at,version", params![input.title.trim(), input.body, input.id, input.expected_version], row_note).optional().map_err(database_error)?;
@@ -165,6 +176,7 @@ impl Database {
     }
 
     pub fn delete(&self, id: i32) -> NativeResult<()> {
+        validate_identity(id, None)?;
         if self
             .lock()?
             .execute("DELETE FROM notes WHERE id=?1", params![id])
@@ -278,5 +290,34 @@ mod tests {
             })
         ));
         assert_eq!(std::fs::read(path).unwrap(), original);
+    }
+
+    #[test]
+    fn invalid_note_ids_and_versions_are_rejected_before_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = Database::open(&temp.path().join("notes.db")).unwrap();
+        let note = db
+            .create(NoteInput {
+                title: "Keep".into(),
+                body: "".into(),
+            })
+            .unwrap();
+        for (id, expected_version) in [(0, 1), (-1, 1), (note.id, 0), (note.id, -1)] {
+            assert_eq!(
+                db.update(NoteUpdate {
+                    id,
+                    title: "Invalid".into(),
+                    body: "".into(),
+                    expected_version,
+                })
+                .unwrap_err()
+                .code,
+                ErrorCode::InvalidArgument
+            );
+        }
+        for id in [0, -1] {
+            assert_eq!(db.delete(id).unwrap_err().code, ErrorCode::InvalidArgument);
+        }
+        assert_eq!(db.list("").unwrap(), vec![note]);
     }
 }

@@ -9,6 +9,7 @@ import type {
   SettingsSnapshot,
   UpdateProgress,
   UpdateStatus,
+  WindowGeometry,
 } from "./generated/bindings";
 
 export type {
@@ -21,6 +22,7 @@ export type {
   SettingsSnapshot,
   UpdateProgress,
   UpdateStatus,
+  WindowGeometry,
 } from "./generated/bindings";
 
 export class NativeBridgeError extends Error {
@@ -59,8 +61,8 @@ async function callNative<T>(
 /**
  * 系统能力的唯一出口。
  *
- * 这个文件是 `lib/` 里唯一允许 import `@tauri-apps/*` 的地方
- * （ESLint 的 no-restricted-imports 会强制这一点）。
+ * 手写应用代码只在此文件 import `@tauri-apps/*`；生成绑定是底层例外。
+ * ESLint 同时检查静态与动态导入。
  * 页面、组件、hooks 只调用这里导出的函数，不直接碰 Tauri API。
  */
 
@@ -84,14 +86,11 @@ export async function openExternal(url: string): Promise<void> {
   await openUrl(target.href);
 }
 
-/** 显示并聚焦主窗口。窗口初始为隐藏，见 tauri.conf.json。 */
+/** 通知 Rust 当前窗口首帧已完成，再显示并聚焦该窗口。 */
 export async function revealWindow(): Promise<void> {
   if (!isTauri()) return;
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const window_ = getCurrentWindow();
-    await window_.show();
-    await window_.setFocus();
+    await callNative((commands) => commands.completeFrontendStartup());
   } catch (error) {
     // 这里不抛：窗口没能显示时 Rust 侧的 3 秒兜底仍会生效
     console.error("显示窗口失败", error);
@@ -135,6 +134,31 @@ export async function onWindowResized(
   if (!isTauri()) return () => {};
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   return getCurrentWindow().onResized(handler);
+}
+
+/** 订阅窗口移动，用于刷新当前显示器的尺寸约束。 */
+export async function onWindowMoved(handler: () => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().onMoved(handler);
+}
+
+/** 读取当前窗口的正常尺寸和当前显示器允许的逻辑像素范围。 */
+export function getWindowGeometry(): Promise<WindowGeometry> {
+  return callNative((commands) => commands.getWindowGeometry());
+}
+
+/** 应用并持久化当前窗口尺寸，最大化或全屏时先还原。 */
+export function setWindowSize(
+  width: number,
+  height: number,
+): Promise<WindowGeometry> {
+  return callNative((commands) => commands.setWindowSize(width, height));
+}
+
+/** 恢复所有窗口的配置默认尺寸，可同时将窗口移至各自显示器中央。 */
+export function resetWindowGeometry(center = false): Promise<WindowGeometry> {
+  return callNative((commands) => commands.resetWindowGeometry(center));
 }
 
 /**

@@ -203,6 +203,31 @@ describe("native note editor", () => {
     expect(native.createNote).toHaveBeenCalledOnce();
   });
 
+  it("rejects overlong UTF-8 search and content locally while retaining input and results", async () => {
+    await open();
+    await screen.findByText("First note");
+    const search = screen.getByRole("searchbox");
+    const oversized = "界".repeat(67);
+    fireEvent.change(search, { target: { value: oversized } });
+    expect(search).toHaveValue(oversized);
+    expect(search).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("First note")).toBeVisible();
+    fireEvent.change(search, { target: { value: "valid" } });
+    await waitFor(() => expect(native.listNotes).toHaveBeenCalledWith("valid"));
+    expect(native.listNotes).not.toHaveBeenCalledWith(oversized);
+    expect(search).toHaveAttribute("aria-invalid", "false");
+    fireEvent.change(title(), { target: { value: "Unicode note" } });
+    const content = "界".repeat(21846);
+    fireEvent.change(body(), { target: { value: content } });
+    expect(body()).toHaveValue(content);
+    expect(body()).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.submit(form());
+    expect(native.createNote).not.toHaveBeenCalled();
+    fireEvent.change(body(), { target: { value: content.slice(0, -1) } });
+    expect(body()).toHaveAttribute("aria-invalid", "false");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
   it("ignores obsolete note subscriptions after search changes and cleanup", async () => {
     const view = await open();
     const obsolete = events[0]!;

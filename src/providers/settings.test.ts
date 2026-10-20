@@ -83,6 +83,24 @@ describe("loadSettings", () => {
 });
 
 describe("applySettings", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("applies the saved theme before React mounts and resolves system preference", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const root = document.documentElement;
+    root.classList.add("other-class");
+    applySettings({ ...DEFAULT_SETTINGS, theme: "dark" });
+    expect(root).toHaveClass("dark", "other-class");
+    expect(root).not.toHaveClass("light");
+    expect(root.style.colorScheme).toBe("dark");
+    applySettings({ ...DEFAULT_SETTINGS, theme: "light" });
+    expect(root).toHaveClass("light", "other-class");
+    expect(root).not.toHaveClass("dark");
+    expect(root.style.colorScheme).toBe("light");
+    applySettings({ ...DEFAULT_SETTINGS, theme: "system" });
+    expect(root).toHaveClass("dark");
+    expect(root.style.colorScheme).toBe("dark");
+    root.classList.remove("other-class");
+  });
   it("把设置写到 html 的 data-* 与 lang", () => {
     applySettings({
       ...DEFAULT_SETTINGS,

@@ -14,7 +14,12 @@ export function spawnOwned(command, args, { cwd, env, logPath } = {}) {
     mkdirSync(dirname(logPath), { recursive: true });
     log = createWriteStream(logPath, { flags: "w" });
   }
-  const state = { done: false, error: null, logError: null };
+  const state = {
+    done: false,
+    error: null,
+    logError: null,
+    cleanupError: null,
+  };
   log?.on("error", (error) => {
     state.logError = error;
   });
@@ -59,7 +64,21 @@ export async function waitOwned(owned, signal) {
 /** 停止受控子树；从不按产品名或宽泛进程搜索终止用户实例。 */
 export async function stopOwned(owned) {
   if (!owned) return;
+  if (owned.stopped) {
+    if (owned.state.cleanupError) throw owned.state.cleanupError;
+    return;
+  }
   const { child, state, detached } = owned;
+  const unixGroup = process.platform !== "win32" && detached && child.pid;
+  const signalGroup = (signal) => {
+    try {
+      process.kill(-child.pid, signal);
+    } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+    }
+  };
+  // 分离的父进程可能先于子进程退出，仍需清理本次创建的进程组。
+  if (unixGroup) signalGroup("SIGTERM");
   if (!state.done && child.pid) {
     if (process.platform === "win32") {
       if (child.exitCode === null && child.signalCode === null) {
@@ -68,15 +87,18 @@ export async function stopOwned(owned) {
             windowsHide: true,
           });
         } catch (error) {
+          state.cleanupError = new Error(
+            `受控子树清理失败，无法确认后代进程退出；保留测试数据：${error.message}`,
+            { cause: error },
+          );
           if (child.exitCode === null && child.signalCode === null) {
             child.kill();
-            console.warn(`受控子树清理失败：${error.message}`);
           }
         }
       }
-    } else {
+    } else if (!detached) {
       try {
-        process.kill(detached ? -child.pid : child.pid, "SIGTERM");
+        process.kill(child.pid, "SIGTERM");
       } catch (error) {
         if (error.code !== "ESRCH") throw error;
       }
@@ -103,9 +125,13 @@ export async function stopOwned(owned) {
         throw new Error(`受控进程 ${child.pid} 未退出；保留测试数据以便排查`);
     }
   }
+  // 父进程的 close 事件不能证明所有后代进程均已退出。
+  if (unixGroup) signalGroup("SIGKILL");
   if (owned.log && !owned.log.destroyed && !owned.log.writableEnded) {
     await new Promise((done) => owned.log.end(done));
   }
+  owned.stopped = true;
+  if (state.cleanupError) throw state.cleanupError;
 }
 
 export async function waitForWebDriver(owned, port, signal) {

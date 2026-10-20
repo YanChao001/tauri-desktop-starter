@@ -81,6 +81,27 @@ describe("versioned settings model", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe(raw);
   });
 
+  it("兼容旧存档并仅接受已知的启动位置偏好", () => {
+    expect(migrateSettings({}).windowPosition).toBe("remember");
+    expect(
+      migrateSettings({
+        schemaVersion: 1,
+        settings: { windowPosition: "center" },
+      }).windowPosition,
+    ).toBe("center");
+    expect(migrateSettings({ windowPosition: "center" }).windowPosition).toBe(
+      "center",
+    );
+    for (const windowPosition of ["top-left", true, null, 1]) {
+      expect(migrateSettings({ windowPosition }).windowPosition).toBe(
+        "remember",
+      );
+    }
+    expect(
+      normalizeSettingsPatch(DEFAULT_SETTINGS, { windowPosition: "center" }),
+    ).toEqual({ windowPosition: "center" });
+  });
+
   it("migrates the old theme key only when no explicit theme exists in the document source", () => {
     localStorage.setItem("theme", "dark");
     expect(readInitialSettings().settings.theme).toBe("dark");

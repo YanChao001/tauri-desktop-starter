@@ -26,6 +26,20 @@ export const commands = {
     typedError<null, NativeError>(__TAURI_INVOKE("delete_note", { id })),
   openSecondaryWindow: () =>
     typedError<null, NativeError>(__TAURI_INVOKE("open_secondary_window")),
+  completeFrontendStartup: () =>
+    typedError<null, NativeError>(__TAURI_INVOKE("complete_frontend_startup")),
+  getWindowGeometry: () =>
+    typedError<WindowGeometry, NativeError>(
+      __TAURI_INVOKE("get_window_geometry"),
+    ),
+  setWindowSize: (width: number, height: number) =>
+    typedError<WindowGeometry, NativeError>(
+      __TAURI_INVOKE("set_window_size", { width, height }),
+    ),
+  resetWindowGeometry: (center: boolean) =>
+    typedError<WindowGeometry, NativeError>(
+      __TAURI_INVOKE("reset_window_geometry", { center }),
+    ),
   getDesktopStatus: () =>
     typedError<DesktopStatus, NativeError>(
       __TAURI_INVOKE("get_desktop_status"),
@@ -116,8 +130,8 @@ export type FrontendError = {
 };
 
 /**
- *  Explicit named recursion keeps the Rust/TypeScript JSON contract finite.
- *  serde_json::Number preserves integer values on the wire.
+ *  具名递归类型使 Rust 与 TypeScript 的 JSON 契约保持有限定义。
+ *  serde_json::Number 保留传输过程中的整数值。
  */
 export type JsonValue =
   | null
@@ -184,6 +198,17 @@ export type UpdateStatus = {
   version: string | null;
   body: string | null;
   date: string | null;
+};
+
+export type WindowGeometry = {
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+  defaultWidth: number;
+  defaultHeight: number;
 };
 
 /* Tauri Specta runtime */

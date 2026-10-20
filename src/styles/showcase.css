@@ -1,4 +1,4 @@
-/* Shared studio surfaces; illustration colors stay separate from control tokens. */
+/* 展厅共用的背景与容器样式；插画配色与控件设计变量独立维护 */
 :root {
   --studio-violet: #7760dd;
   --studio-cyan: #219caf;
@@ -120,7 +120,7 @@
   overflow: hidden;
   padding: clamp(1.5rem, 4vw, 3.5rem);
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   align-items: center;
   gap: 2rem;
 }

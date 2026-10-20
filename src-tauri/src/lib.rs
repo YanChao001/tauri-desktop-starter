@@ -9,6 +9,7 @@ compile_error!(
 #[cfg(windows)]
 mod autostart;
 pub mod bindings;
+mod blocking;
 mod commands;
 mod database;
 mod desktop;
@@ -18,8 +19,6 @@ mod storage;
 pub mod update_signature;
 mod updater;
 mod window_geometry;
-
-use std::time::Duration;
 
 use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, TimezoneStrategy};
@@ -41,8 +40,8 @@ pub fn run() {
             .expect("E2E requires an absolute STARTER_TEST_DATA_DIR");
         for window in &mut context.config_mut().app.windows {
             window.data_directory = Some(path.join("webview").join(&window.label));
-            // WKWebView does not support data_directory; use a non-persistent store
-            // so test runs remain isolated on macOS versions before dataStoreIdentifier.
+            // WKWebView 不支持 data_directory，使用非持久化存储
+            // 使尚不支持 dataStoreIdentifier 的 macOS 版本也能隔离测试数据
             #[cfg(target_os = "macos")]
             {
                 window.incognito = true;
@@ -51,7 +50,8 @@ pub fn run() {
         path
     };
     let window_state = tauri_plugin_window_state::Builder::default().with_state_flags(
-        StateFlags::all().difference(StateFlags::DECORATIONS | StateFlags::VISIBLE),
+        StateFlags::all()
+            .difference(StateFlags::DECORATIONS | StateFlags::VISIBLE | StateFlags::SIZE),
     );
     #[cfg(feature = "e2e")]
     let window_state =
@@ -65,12 +65,12 @@ pub fn run() {
     let log_target = tauri_plugin_log::TargetKind::LogDir {
         file_name: Some("app".into()),
     };
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().manage(desktop::DesktopState::default());
 
     // 单实例必须最先注册，让重复启动在初始化日志等共享资源前退出。
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        desktop::dispatch(app, desktop::show_main);
+        desktop::request_show_main(app);
     }));
 
     let builder = builder
@@ -79,7 +79,7 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    // release 下没有控制台，文件日志是唯一的排障入口
+                    // 正式构建默认不显示控制台，使用文件日志排查运行问题
                     // 固定文件名，避免产品名带空格或改动后日志路径对不上文档
                     tauri_plugin_log::Target::new(log_target),
                 ])
@@ -88,18 +88,18 @@ pub fn run() {
                 // 保留 3 份历史归档及当前日志，单份 1MB，便于回溯现场。
                 .max_file_size(1_000_000)
                 .rotation_strategy(RotationStrategy::KeepSome(3))
-                // 默认是 UTC，与用户反馈问题时的本地时间差 8 小时，排查容易对不上
+                // 默认 UTC 可能与用户本地时间不同，使用本地时间便于对应问题发生时刻
                 .timezone_strategy(TimezoneStrategy::UseLocal)
                 .build(),
         )
+        // 尺寸由几何模块统一持久化，避免旧物理像素存档覆盖逻辑尺寸。
         // 装饰由平台配置决定；显示时机由前端首帧和下方兜底决定。
         // 插件默认会恢复旧的 decorations，并在窗口 ready 时直接 show()
         // （没有存档时也会），因此这两项不能参与状态恢复。
         .plugin(window_state.build())
         .plugin(window_geometry::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(all(desktop, not(windows), not(feature = "e2e")))]
     let builder = builder.plugin(
@@ -117,30 +117,18 @@ pub fn run() {
         app.manage(paths);
         app.manage(settings);
         app.manage(database);
-        app.manage(desktop::DesktopState::default());
         app.manage(diagnostics::DiagnosticsState::default());
         app.manage(updater::UpdateManager::default());
+        desktop::log_startup(app.handle(), "native-state-ready");
         if let Err(error) = desktop::install_tray(app.handle()) {
             log::warn!("Tray is unavailable: {error}");
         }
         // 每次启动记一条，既方便对照版本，也顺便验证日志链路是通的
         log::info!("应用启动 v{}", app.package_info().version);
 
-        // 窗口默认隐藏以等待首帧渲染，这里做兜底：
-        // 万一前端异常没能主动 show()，3 秒后强制显示，避免"点了图标没反应"
-        let handle = app.handle().clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(3));
-            let handle2 = handle.clone();
-            // 窗口操作统一回到主线程执行，避免跨线程改窗口状态
-            let _ = handle.run_on_main_thread(move || {
-                if let Some(window) = handle2.get_webview_window("main")
-                    && !window.is_visible().unwrap_or(true)
-                {
-                    let _ = window.show();
-                }
-            });
-        });
+        // 启动 WebView2 前完成应用状态初始化；从工作线程创建窗口
+        // 使事件循环能够继续接收单实例激活请求
+        desktop::start_main(app.handle());
         Ok(())
     });
 

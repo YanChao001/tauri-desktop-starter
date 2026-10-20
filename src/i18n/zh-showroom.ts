@@ -60,7 +60,6 @@ export const zhShowroom = {
   "studio.nativeSystem": "系统集成",
   "studio.settingsEyebrow": "为你而设",
   "studio.bridgeEyebrow": "连接界面与原生",
-  "studio.settingsAppearance": "外观与体验",
   "studio.settingsWorkspace": "窗口与工作区",
   "studio.settingsAbout": "关于与资源",
 } as const;

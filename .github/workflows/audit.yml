@@ -1,7 +1,7 @@
-name: Dependency Audit
+name: 依赖审计
 
-# 每周一自动审计一次，紧跟 dependabot 的升级 PR（也是周一）。
-# 有已知漏洞时任务变红；修复靠升级依赖，无法升级时按 security.md 记录原因与缓解措施。
+# 每周一自动审计，与 Dependabot 升级 PR 的周期保持一致
+# 发现已知漏洞时检查失败；无法升级时按 security.md 记录原因与缓解措施
 on:
   schedule:
     - cron: "0 2 * * 1"
@@ -24,7 +24,7 @@ jobs:
           node-version-file: .nvmrc
 
       # 只读锁文件，不需要安装依赖。发现漏洞时退出码非零
-      - name: pnpm audit
+      - name: 审计 npm 依赖
         run: pnpm audit
 
   cargo-audit:
@@ -41,5 +41,5 @@ jobs:
       - name: 安装 cargo-audit
         run: cargo install cargo-audit --locked
 
-      - name: cargo audit
+      - name: 审计 Rust 依赖
         run: cargo audit --file src-tauri/Cargo.lock

@@ -2,8 +2,7 @@
 /**
  * 清理构建产物。
  *
- * 只删这张固定列表里的目录，不接受命令行传入路径——
- * 一个能删任意路径的清理脚本，迟早会被写成 `rm -rf $1` 然后闯祸。
+ * 仅清理预定义目录，不接受任意路径，避免参数错误导致误删。
  */
 import { resolve } from "node:path";
 import { removeProjectPath } from "./fs-utils.mjs";
@@ -14,6 +13,7 @@ const DISTRIBUTIONS = [["artifacts", "按版本归档的分发产物"]];
 
 const BUILD_OUTPUT = [
   ["dist", "前端构建产物"],
+  ["dist-web", "浏览器演示构建产物"],
   ...DISTRIBUTIONS,
   ["dist-portable", "旧版便携产物（兼容清理）"],
   ["coverage", "测试覆盖率报告"],
@@ -22,7 +22,7 @@ const BUILD_OUTPUT = [
 
 const DEPENDENCIES = [["node_modules", "依赖目录"]];
 
-/** 文件被占用时给一句能照做的话，而不是甩一串堆栈。 */
+/** 文件被占用时，输出具体的处理建议。 */
 const HINTS = {
   EBUSY: "目录被占用，先关掉 dev server、预览窗口，或者正在扫描它的杀毒软件",
   EPERM: "没有权限，检查是否有进程以管理员身份占着这些文件",

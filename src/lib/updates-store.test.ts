@@ -55,6 +55,43 @@ function setup() {
 }
 
 describe("multi-window updater state", () => {
+  it("hydrates release metadata during an active download and clears the prior operation's release", async () => {
+    const env = setup();
+    env.backend.snapshot.mockResolvedValueOnce(
+      progress(2, "downloading", {
+        status: status(2),
+        downloaded: 20,
+        total: 100,
+      }),
+    );
+    await env.store.attachUpdateEvents();
+    await Promise.resolve();
+    expect(env.store.getSnapshot()).toMatchObject({
+      phase: "downloading",
+      status: { operationId: 2, version: "2.0.0" },
+    });
+    env.send(progress(3, "downloading"));
+    expect(env.store.getSnapshot()).toMatchObject({
+      operationId: 3,
+      status: null,
+    });
+  });
+  it("ignores a delayed local install response once a newer operation owns the state", async () => {
+    const env = setup();
+    await env.store.attachUpdateEvents();
+    await env.store.checkUpdates();
+    const install = deferred<void>();
+    env.backend.install.mockReturnValueOnce(install.promise);
+    const pending = env.store.installUpdate();
+    env.send(progress(2, "checked", { status: status(2, false) }));
+    install.resolve();
+    await pending;
+    expect(env.store.getSnapshot()).toMatchObject({
+      phase: "ready",
+      operationId: 2,
+      status: { available: false },
+    });
+  });
   it("deduplicates checks and replaces stale availability after a failed recheck", async () => {
     const env = setup();
     await env.store.checkUpdates();

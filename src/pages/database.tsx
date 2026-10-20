@@ -42,7 +42,8 @@ type Draft = {
   version: number;
 };
 const blank = (): Draft => ({ id: null, title: "", body: "", version: 0 });
-// One editor per WebView: route changes retain pending writes and unsaved edits.
+const utf8Length = (value: string) => new TextEncoder().encode(value).length;
+// 每个 WebView 共用一个编辑器，路由切换时保留待写入操作和未保存编辑
 type EditorState = {
   draft: Draft;
   original: Draft;
@@ -91,6 +92,8 @@ export default function Database() {
   const nextDraft = useRef<Draft | null>(null);
   const mounted = useRef(false);
   const dirty = isDirty(draft, original);
+  const searchTooLong = utf8Length(query) > 200;
+  const bodyTooLong = utf8Length(draft.body) > 65536;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -100,9 +103,10 @@ export default function Database() {
     };
   }, []);
   useEffect(() => {
+    if (searchTooLong) return;
     const timeout = setTimeout(() => setSearch(query), 180);
     return () => clearTimeout(timeout);
-  }, [query]);
+  }, [query, searchTooLong]);
   useEffect(() => {
     if (
       !notes ||
@@ -112,7 +116,7 @@ export default function Database() {
     )
       return;
     const current = notes.find((note) => note.id === editor.draft.id);
-    // A filtered result does not imply deletion of the selected note.
+    // 筛选结果未包含当前笔记，不代表笔记已被删除
     if (current && current.version > editor.draft.version) applyDraft(current);
   }, [notes, pending, draft.id, draft.version, dirty, search]);
   useEffect(() => {
@@ -159,6 +163,7 @@ export default function Database() {
     if (
       editor.pending ||
       !editor.draft.title.trim() ||
+      utf8Length(editor.draft.body) > 65536 ||
       !isDirty(editor.draft, editor.original)
     )
       return;
@@ -228,11 +233,14 @@ export default function Database() {
       <div className="flex flex-wrap gap-2">
         <Input
           type="search"
+          maxLength={200}
           className="min-w-48 flex-1"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("database.searchPlaceholder")}
           aria-label={t("database.search")}
+          aria-invalid={searchTooLong}
+          aria-describedby={searchTooLong ? "note-search-error" : undefined}
         />
         <Button
           variant="outline"
@@ -252,6 +260,15 @@ export default function Database() {
           <RefreshCwIcon />
         </Button>
       </div>
+      {searchTooLong ? (
+        <p
+          id="note-search-error"
+          role="alert"
+          className="text-xs text-destructive"
+        >
+          {t("errors.INPUT_TOO_LONG")}
+        </p>
+      ) : null}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(0,2fr)]">
         <Card>
           <CardContent className="max-h-[28rem] space-y-1 overflow-y-auto p-3">
@@ -325,6 +342,8 @@ export default function Database() {
                   id="note-body"
                   data-testid="note-body"
                   maxLength={65536}
+                  aria-invalid={bodyTooLong}
+                  aria-describedby={bodyTooLong ? "note-body-error" : undefined}
                   rows={12}
                   value={draft.body}
                   disabled={pending}
@@ -336,11 +355,22 @@ export default function Database() {
                   placeholder={t("database.bodyPlaceholder")}
                   className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 />
+                {bodyTooLong ? (
+                  <p
+                    id="note-body-error"
+                    role="alert"
+                    className="text-xs text-destructive"
+                  >
+                    {t("errors.INPUT_TOO_LONG")}
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="submit"
-                  disabled={pending || !draft.title.trim() || !dirty}
+                  disabled={
+                    pending || !draft.title.trim() || !dirty || bodyTooLong
+                  }
                 >
                   <SaveIcon />
                   {t("common.save")}

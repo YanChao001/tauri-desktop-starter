@@ -25,6 +25,15 @@ describe("settings search metadata", () => {
     expect(searchSettings("星星", createTranslator(zhCN))[0]?.id).toBe("skin");
     expect(searchSettings("樱花", createTranslator(zhCN))[0]?.id).toBe("skin");
     expect(searchSettings("sakura", createTranslator(en))[0]?.id).toBe("skin");
+    expect(searchSettings("紧凑", createTranslator(zhCN))[0]?.id).toBe(
+      "window",
+    );
+    expect(searchSettings("居中", createTranslator(zhCN))[0]?.id).toBe(
+      "windowPosition",
+    );
+    expect(
+      searchSettings("remember", createTranslator(en)).map((entry) => entry.id),
+    ).toContain("windowPosition");
     expect(searchSettings("not-a-real-setting", createTranslator(en))).toEqual(
       [],
     );

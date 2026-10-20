@@ -17,7 +17,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-/** Only unhandled, unmodified-by-IME application shortcuts are consumed. */
+/** 仅处理尚未消费且未处于输入法组合状态的应用快捷键 */
 export function matchesShortcut(
   event: KeyboardEvent,
   shortcut: Shortcut,

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
-import { openExternal } from "@/lib/tauri";
+import { isTauri, openExternal } from "@/lib/tauri";
 
 /**
  * 拦截页面上所有 http(s) 链接，交给系统浏览器打开。
@@ -10,6 +10,8 @@ import { openExternal } from "@/lib/tauri";
 export function useExternalLinks(): void {
   const t = useLatestTranslator();
   useEffect(() => {
+    // 普通浏览器保留链接目标、修饰键和中键的原生导航语义。
+    if (!isTauri()) return;
     const handler = (event: MouseEvent) => {
       // 已被其他处理器处理过的点击不再抢
       if (event.defaultPrevented) return;

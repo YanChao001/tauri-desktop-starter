@@ -60,3 +60,47 @@ export function appearance() {
     intensity: globalThis.document.documentElement.dataset.backgroundIntensity,
   }));
 }
+
+export function windowPlacement() {
+  return browser.execute(async () => {
+    const win = window.__TAURI__.window.getCurrentWindow();
+    const [position, size, monitors] = await Promise.all([
+      win.outerPosition(),
+      win.outerSize(),
+      window.__TAURI__.window.availableMonitors(),
+    ]);
+    return {
+      position,
+      centered: monitors.some(
+        ({ workArea }) =>
+          Math.abs(
+            position.x +
+              size.width / 2 -
+              workArea.position.x -
+              workArea.size.width / 2,
+          ) <= 3 &&
+          Math.abs(
+            position.y +
+              size.height / 2 -
+              workArea.position.y -
+              workArea.size.height / 2,
+          ) <= 3,
+      ),
+    };
+  });
+}
+
+export function placeNearWorkAreaCorner() {
+  return browser.execute(async () => {
+    const win = window.__TAURI__.window.getCurrentWindow();
+    const area = (await window.__TAURI__.window.availableMonitors())[0]
+      .workArea;
+    await win.setPosition(
+      new window.__TAURI__.dpi.PhysicalPosition(
+        area.position.x + 30,
+        area.position.y + 30,
+      ),
+    );
+    return win.outerPosition();
+  });
+}

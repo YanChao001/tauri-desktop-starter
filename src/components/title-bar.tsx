@@ -110,7 +110,7 @@ export function TitleBar() {
       <div
         className={cn(
           "flex min-w-0 items-center gap-2 pl-3",
-          mac && "pl-[78px]",
+          native && mac && "pl-[78px]",
         )}
       >
         <img
@@ -287,7 +287,7 @@ export function TitleBar() {
             </button>
           </>
         ) : !native ? (
-          <span className="my-auto mr-2 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
+          <span className="browser-preview-badge my-auto mr-2 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
             {t("app.preview")}
           </span>
         ) : null}

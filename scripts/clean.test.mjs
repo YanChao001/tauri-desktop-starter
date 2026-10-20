@@ -27,6 +27,7 @@ function fixture(t) {
   }
   for (const path of [
     "dist",
+    "dist-web",
     "artifacts",
     "coverage",
     "dist-portable",
@@ -51,6 +52,7 @@ test("clean removes generated output and only removes dependencies with --all", 
   assert.equal(result.status, 0, result.stderr);
   for (const path of [
     "dist",
+    "dist-web",
     "artifacts",
     "coverage",
     "dist-portable",
@@ -77,6 +79,7 @@ test("--artifacts only removes current distributions and preserves legacy output
   assert.equal(existsSync(join(root, "artifacts")), false);
   for (const path of [
     "dist",
+    "dist-web",
     "dist-portable",
     "coverage",
     "src-tauri/target",
@@ -96,6 +99,7 @@ test("mutually exclusive cleanup modes fail before deleting any output", (t) => 
   assert.equal(result.status, 1);
   for (const path of [
     "dist",
+    "dist-web",
     "artifacts",
     "dist-portable",
     "coverage",

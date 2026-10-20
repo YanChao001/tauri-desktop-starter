@@ -3,7 +3,7 @@ export type SpringParameters = {
   damping: number;
   mass: number;
 };
-/** Ideal unit-step response for the control panel's physical spring diagram. */
+/** 控制面板弹簧模型示意图使用的理想单位阶跃响应 */
 export function springResponse(
   time: number,
   { stiffness, damping, mass }: SpringParameters,

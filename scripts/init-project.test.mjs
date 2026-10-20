@@ -33,6 +33,10 @@ const config = {
   updates: { endpoint: "", publicKey: "" },
 };
 
+// 与 src-tauri/src/update_signature.rs 共用公开测试样本，不保存私钥。
+const PUBLIC_KEY =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDExMjgyNEJFMDZDREQ3QjAKUldTdzE4MEd2aVFvRVJNSlV1SVZldmFLWHlhMjdWSW9Sb3Rkdm10WklRYmFLbUtnWmhwcmJXSUMK";
+
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "starter-init-test-"));
   t.after(() => {
@@ -168,7 +172,7 @@ test("failed commit rolls every file back and removes temporary files", (t) => {
     join(root, "src-tauri"),
     join(root, "src-tauri", "src"),
   ])
-    assert.ok(readdirSync(path).every((name) => !name.startsWith(".init-")));
+    assert.ok(readdirSync(path).every((name) => !name.startsWith(".update-")));
 });
 
 test("unrelated TOML syntax errors abort initialization before any write", (t) => {
@@ -265,6 +269,73 @@ test("configuration rejects credentials, private keys and incomplete data", () =
     /私钥/,
   );
   assert.throws(() => validateAppConfig({ ...config, name: "" }), /name/);
+});
+
+test("updater public keys validate the Tauri envelope and minisign packet", () => {
+  const [comment, encodedPacket] = Buffer.from(PUBLIC_KEY, "base64")
+    .toString("utf8")
+    .trimEnd()
+    .split("\n");
+  const packet = Buffer.from(encodedPacket, "base64");
+  const encode = (text) => Buffer.from(text).toString("base64");
+  const envelope = (bytes, header = comment) =>
+    encode(`${header}\n${bytes.toString("base64")}\n`);
+  const alternate = Buffer.from(packet);
+  alternate[1] = 0x44;
+  for (const publicKey of [
+    "",
+    PUBLIC_KEY,
+    encode(`${comment}\r\n${encodedPacket}\r\n`),
+    envelope(alternate),
+  ]) {
+    assert.doesNotThrow(() =>
+      validateAppConfig({ ...config, updates: { endpoint: "", publicKey } }),
+    );
+  }
+  // 此数据包为刻意构造的无效样本，不含生成的私钥材料。
+  const fakeSecret = Buffer.concat([Buffer.from("Ed"), Buffer.alloc(156)]);
+  for (const publicKey of [
+    undefined,
+    null,
+    123,
+    " ",
+    "invalid key",
+    "a".repeat(8193),
+    "-----BEGIN PRIVATE KEY-----",
+    envelope(fakeSecret, "untrusted comment: minisign encrypted secret key"),
+    envelope(fakeSecret),
+    `${PUBLIC_KEY}==`,
+    `${PUBLIC_KEY}\n`,
+    `${PUBLIC_KEY}\0`,
+    Buffer.from([0xff]).toString("base64"),
+    Buffer.from(PUBLIC_KEY, "base64").toString("utf8"),
+    encode(`${comment}\n${encodedPacket}\nextra line`),
+    encode(`${comment}\0\n${encodedPacket}\n`),
+    encode(`${comment}\n${encodedPacket.slice(0, -1)}!\n`),
+    encode(`${comment}\n${encodedPacket}\0\n`),
+    envelope(packet.subarray(0, 41)),
+    envelope(Buffer.concat([packet, Buffer.alloc(1)])),
+    envelope(Buffer.alloc(42)),
+  ]) {
+    assert.throws(
+      () =>
+        validateAppConfig({ ...config, updates: { endpoint: "", publicKey } }),
+      /updates.publicKey.*公钥.*私钥/,
+    );
+  }
+});
+
+test("an encoded secret-key-shaped value aborts initialization before any write", (t) => {
+  const { root, files } = fixture(t);
+  const fakeSecret = Buffer.from(
+    `untrusted comment: minisign encrypted secret key\n${Buffer.alloc(158).toString("base64")}\n`,
+  ).toString("base64");
+  assert.throws(
+    () => prepareInitialization(root, { updates: { publicKey: fakeSecret } }),
+    /updates.publicKey.*公钥.*私钥/,
+  );
+  for (const [path, content] of Object.entries(files))
+    assert.equal(readFileSync(join(root, path), "utf8"), content);
 });
 
 test("directory junctions cannot redirect initialization outside the project", (t) => {

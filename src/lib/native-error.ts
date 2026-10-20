@@ -29,14 +29,19 @@ const ERROR_KEYS: Record<string, MessageKey> = {
 export function errorMessage(error: unknown): string {
   if (isRecord(error) && typeof error.message === "string")
     return error.message;
-  return String(error);
+  if (typeof error === "string") return error;
+  return "Unknown error";
 }
 export function nativeErrorText(error: unknown, t: Translate): string {
   const key =
     isRecord(error) && typeof error.code === "string"
       ? ERROR_KEYS[error.code]
       : undefined;
-  return key
-    ? t(key)
-    : t("common.operationFailed", { error: errorMessage(error) });
+  if (key) return t(key);
+  if (
+    typeof error === "string" ||
+    (isRecord(error) && typeof error.message === "string")
+  )
+    return t("common.operationFailed", { error: errorMessage(error) });
+  return t("errors.INTERNAL");
 }

@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
   getAppInfo,
+  getWindowGeometry,
   invokeGreet,
   isTauri,
   openExternal,
   revealWindow,
+  resetWindowGeometry,
+  setWindowSize,
 } from "./tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -99,5 +102,84 @@ describe("greet 语言参数", () => {
       "Start the desktop app with pnpm app:dev",
     );
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("窗口几何命令", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    vi.resetAllMocks();
+  });
+
+  it("浏览器模式在调用 IPC 前拒绝读取、修改和重置窗口尺寸", async () => {
+    await expect(getWindowGeometry()).rejects.toMatchObject({
+      code: "PLATFORM_UNAVAILABLE",
+    });
+    await expect(setWindowSize(1000, 680)).rejects.toMatchObject({
+      code: "PLATFORM_UNAVAILABLE",
+    });
+    await expect(resetWindowGeometry()).rejects.toMatchObject({
+      code: "PLATFORM_UNAVAILABLE",
+    });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("尺寸传给原生命令，重置位置默认关闭并可显式启用", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    vi.mocked(invoke).mockResolvedValue({ width: 1000, height: 680 });
+    await expect(setWindowSize(1000, 680)).resolves.toEqual({
+      width: 1000,
+      height: 680,
+    });
+    expect(invoke).toHaveBeenLastCalledWith("set_window_size", {
+      width: 1000,
+      height: 680,
+    });
+    await resetWindowGeometry();
+    expect(invoke).toHaveBeenLastCalledWith("reset_window_geometry", {
+      center: false,
+    });
+    await resetWindowGeometry(true);
+    expect(invoke).toHaveBeenLastCalledWith("reset_window_geometry", {
+      center: true,
+    });
+  });
+});
+
+describe("首帧显示握手", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
+  });
+
+  it("首帧通过原生握手显示窗口，记录就绪状态后才能响应重复启动", async () => {
+    vi.mocked(invoke).mockResolvedValue(null);
+    await expect(revealWindow()).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("complete_frontend_startup");
+  });
+
+  it("握手失败保留错误记录并交给原生超时显示，不产生未处理拒绝", async () => {
+    vi.mocked(invoke).mockRejectedValue({
+      code: "WINDOW_ERROR",
+      message: "Cannot reveal ready window",
+      retryable: true,
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(revealWindow()).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith(
+      "显示窗口失败",
+      expect.objectContaining({ message: "Cannot reveal ready window" }),
+    );
   });
 });

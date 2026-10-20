@@ -24,7 +24,7 @@ export * from "@/lib/settings-model";
 type SettingsContextValue = {
   settings: AppSettings;
   update: (patch: Partial<AppSettings>) => void;
-  reset: () => void;
+  reset: () => Promise<void>;
   persistence: PersistenceStatus;
   persistenceError: string | null;
   retrySave: () => void;
@@ -108,16 +108,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     },
     [native],
   );
-  const reset = useCallback(() => {
+  const reset = useCallback(async () => {
     const next = { ...DEFAULT_SETTINGS, language: current.current.language };
-    futureVersion.current = false;
-    if (sync.current) sync.current.reset(next);
-    else {
-      unsaved.current = next;
+    if (sync.current) {
+      futureVersion.current = false;
+      await sync.current.reset(next);
+    } else {
+      if (native) throw { code: "STORAGE_UNAVAILABLE" };
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify(settingsDocument(next)),
+        );
+      } catch {
+        setPersistence("error");
+        setPersistenceError("STORAGE_UNAVAILABLE");
+        throw { code: "STORAGE_UNAVAILABLE" };
+      }
+      futureVersion.current = false;
       current.current = next;
       setSettings(next);
+      setPersistence("saved");
+      setPersistenceError(null);
     }
-  }, []);
+  }, [native]);
   const retrySave = useCallback(() => {
     if (sync.current) void sync.current.retry();
     else setRetry((value) => value + 1);

@@ -13,7 +13,7 @@ type Token = { kind: TokenKind; text: string };
 const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const LITERAL = /^(true|false|null)\b/;
 
-/** A text lexer only: it never parses or inserts markup from diagnostics. */
+/** 仅对文本进行词法分析，不解析或插入诊断内容中的标记 */
 export function tokenizeJson(code: string): Token[] {
   const tokens: Token[] = [];
   const add = (kind: TokenKind, text: string) => {
@@ -74,7 +74,7 @@ type CodeBlockProps = Omit<
   language?: "json" | "text";
 };
 
-/** Keep the original selectable text; additional languages can add their own lexer. */
+/** 保留原始文本及其可选中性；新增语言时可扩展对应的词法分析器 */
 export function CodeBlock({
   code,
   language = "text",

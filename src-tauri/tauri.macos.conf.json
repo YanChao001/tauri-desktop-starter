@@ -4,6 +4,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Tauri Desktop Starter",
         "width": 1120,
         "height": 740,

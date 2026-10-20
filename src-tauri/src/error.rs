@@ -42,7 +42,10 @@ impl NativeError {
     }
 
     pub fn operation(code: ErrorCode, message: &str, error: impl std::fmt::Display) -> Self {
-        log::error!("{message}: {error}");
+        log::error!(
+            "{}",
+            crate::diagnostics::redact(&format!("{message}: {error}"))
+        );
         Self {
             code,
             message: message.into(),

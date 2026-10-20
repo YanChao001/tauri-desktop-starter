@@ -6,7 +6,7 @@ export type Playback = {
   stop: () => void;
   state?: string;
 };
-/** MotionConfig alone does not pause imperative loops or SVG drawing. */
+/** MotionConfig 不会自动暂停命令式动画循环或 SVG 绘制 */
 export function usePlaybackGate(
   control: RefObject<Playback | null>,
   active: boolean,

@@ -13,6 +13,7 @@ describe("demo motion activity", () => {
   let viewport: IntersectionObserverCallback;
   const mediaListeners = new Set<() => void>();
   const disconnect = vi.fn();
+  const observe = vi.fn();
   const initialVisibility = Object.getOwnPropertyDescriptor(
     document,
     "visibilityState",
@@ -23,6 +24,7 @@ describe("demo motion activity", () => {
     pageVisibility = "visible";
     mediaListeners.clear();
     disconnect.mockClear();
+    observe.mockClear();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => pageVisibility,
@@ -42,7 +44,7 @@ describe("demo motion activity", () => {
         constructor(callback: IntersectionObserverCallback) {
           viewport = callback;
         }
-        observe() {}
+        observe = observe;
         disconnect = disconnect;
       },
     );
@@ -70,6 +72,38 @@ describe("demo motion activity", () => {
     preference.motion = "reduced";
     rerender();
     expect(result.current.active).toBe(false);
+  });
+  it("observes late-mounted canvases and ignores callbacks from replaced targets", () => {
+    const ref = createRef<HTMLDivElement>();
+    const view = renderHook(() => useDemoMotion(ref));
+    expect(observe).not.toHaveBeenCalled();
+    const first = document.createElement("div");
+    ref.current = first;
+    view.rerender();
+    expect(observe).toHaveBeenLastCalledWith(first);
+    const previous = viewport;
+    const next = document.createElement("div");
+    ref.current = next;
+    view.rerender();
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(observe).toHaveBeenLastCalledWith(next);
+    act(() =>
+      previous(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+    expect(view.result.current.active).toBe(true);
+    act(() =>
+      viewport(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+    expect(view.result.current.active).toBe(false);
+    expect(observe).toHaveBeenCalledTimes(2);
+    view.unmount();
+    expect(disconnect).toHaveBeenCalledTimes(2);
   });
   it("pauses hidden or offscreen scenes and releases its observers on unmount", () => {
     const ref = createRef<HTMLDivElement>();

@@ -6,7 +6,7 @@
     "module": "ESNext",
     "skipLibCheck": true,
 
-    /* Bundler mode */
+    /* 打包器模块解析模式 */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
@@ -15,12 +15,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path alias（TS 6 起 paths 无需 baseUrl，按 tsconfig 所在目录解析） */
+    /* 路径别名（TS 6 起 paths 无需 baseUrl，按 tsconfig 所在目录解析） */
     "paths": {
       "@/*": ["./src/*"]
     },
 
-    /* Linting */
+    /* 静态检查 */
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,

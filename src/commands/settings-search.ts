@@ -14,7 +14,7 @@ export type SettingsSearchEntry = {
   keywords: readonly string[];
 };
 
-/** Shared by settings search and the application command palette. */
+/** 设置搜索与应用命令面板共用的搜索入口 */
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
     id: "language",
@@ -111,6 +111,48 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     labelKey: "settings.appMode",
     descriptionKey: "settings.appModeDescription",
     keywords: ["demo", "minimal", "mode", "演示", "精简", "模式"],
+  },
+  {
+    id: "window",
+    anchor: "settings-window",
+    labelKey: "settings.windowSize",
+    descriptionKey: "settings.windowSizeHint",
+    searchKeys: [
+      "settings.windowCompact",
+      "settings.windowStandard",
+      "settings.windowComfortable",
+      "settings.windowSpacious",
+    ],
+    keywords: [
+      "window",
+      "resize",
+      "dimensions",
+      "preset",
+      "窗口",
+      "大小",
+      "尺寸",
+      "预设",
+      "宽度",
+      "高度",
+    ],
+  },
+  {
+    id: "windowPosition",
+    anchor: "settings-windowPosition",
+    labelKey: "settings.windowPosition",
+    descriptionKey: "settings.windowPositionHint",
+    searchKeys: [
+      "settings.windowPositionRemember",
+      "settings.windowPositionCenter",
+    ],
+    keywords: [
+      "startup position",
+      "center",
+      "remember",
+      "启动位置",
+      "居中",
+      "上次位置",
+    ],
   },
 ];
 

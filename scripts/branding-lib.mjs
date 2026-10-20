@@ -64,6 +64,8 @@ export const INSTALLER_IMAGES = Object.freeze([
     height: 312,
   },
 ]);
+// 位图直接由矢量以三倍分辨率渲染，避免高 DPI 显示时放大低分辨率图像。
+export const INSTALLER_BITMAP_SCALE = 3;
 const sourceNames = new Set([
   "app-icon.svg",
   ...INSTALLER_IMAGES.map(({ source }) => source),
@@ -91,7 +93,7 @@ function inspectPath(path) {
   }
 }
 
-/** A linked output ancestor can redirect fixed filenames to another location. */
+/** 校验输出路径的祖先目录，防止链接将固定文件名重定向到其他位置。 */
 function assertOutputParent(context, path) {
   const offset = relative(context.realRoot, dirname(path));
   let current = context.realRoot;
@@ -141,7 +143,7 @@ function validateOutputs(plan, root) {
   return { context, entries };
 }
 
-/** Inline only our local vector sources. No font, raster or network dependencies. */
+/** 仅内联项目内的矢量源，不引入字体、位图或网络依赖。 */
 export function readBrandingSvg(name, root = BRANDING_ROOT, ancestors = []) {
   if (!sourceNames.has(name) || ancestors.includes(name)) {
     throw new Error(`Unsupported or circular branding source: ${name}`);
@@ -198,7 +200,7 @@ export function renderBranding(svg, width) {
   }).render();
 }
 
-/** Windows installers expect uncompressed, bottom-up 24-bit BGR bitmaps. */
+/** Windows 安装器使用未压缩、像素行自下而上排列的 24 位 BGR 位图。 */
 export function encodeBitmap({ width, height, pixels }) {
   if (
     !Number.isInteger(width) ||
@@ -237,7 +239,7 @@ export function encodeBitmap({ width, height, pixels }) {
   return file;
 }
 
-/** Keep the 32px Windows layer first, retaining Tauri's original image payloads. */
+/** 将 32 像素图层置于 ICO 目录首位，保留 Tauri 生成的各层图像数据。 */
 export function normalizeWindowsIcon(contents) {
   const normalized = Buffer.from(contents);
   const count = contents.readUInt16LE(4);
@@ -266,7 +268,7 @@ export function normalizeWindowsIcon(contents) {
   return normalized;
 }
 
-/** Tauri's ICNS encoder iterates a HashMap; sort chunks for reproducible output. */
+/** Tauri 的 ICNS 编码器遍历 HashMap，需排序图层以保证输出可复现。 */
 export function normalizeMacIcon(contents) {
   if (
     contents.toString("ascii", 0, 4) !== "icns" ||
@@ -289,7 +291,7 @@ export function normalizeMacIcon(contents) {
   return Buffer.concat([contents.subarray(0, 8), ...chunks]);
 }
 
-/** Generate in a temporary directory before touching any tracked asset. */
+/** 先在临时目录生成完整结果，再更新仓库中的资源。 */
 export function planBranding(root = BRANDING_ROOT) {
   const temporary = mkdtempSync(join(tmpdir(), "starter-branding-"));
   try {
@@ -297,7 +299,7 @@ export function planBranding(root = BRANDING_ROOT) {
     const input = join(temporary, "app-icon.svg");
     const output = join(temporary, "icons");
     writeFileSync(input, icon);
-    // Tauri maintains the ICO/ICNS encoders, including every platform layer.
+    // 使用 Tauri 维护的 ICO / ICNS 编码器生成各平台所需的全部图层。
     const generated = spawnSync(
       process.execPath,
       [
@@ -327,10 +329,12 @@ export function planBranding(root = BRANDING_ROOT) {
       };
     });
     for (const { source, target, width, height } of INSTALLER_IMAGES) {
-      const rendered = renderBranding(readBrandingSvg(source, root));
-      if (rendered.width !== width || rendered.height !== height) {
+      const svg = readBrandingSvg(source, root);
+      const logical = renderBranding(svg);
+      if (logical.width !== width || logical.height !== height) {
         throw new Error(`${source} must remain ${width} × ${height}`);
       }
+      const rendered = renderBranding(svg, width * INSTALLER_BITMAP_SCALE);
       plan.push({
         path: join(root, "src-tauri/installer", target),
         contents: encodeBitmap(rendered),
@@ -375,7 +379,7 @@ export function writeBranding(plan, root = BRANDING_ROOT) {
         closeSync(descriptor);
       }
     }
-    // Validate the complete batch again before replacing the first output.
+    // 替换首个输出文件前，再次校验整批目标。
     for (const { entry } of staged) assertOutput(context, entry);
     for (const { entry, temporary } of staged) {
       const { path } = assertOutput(context, entry);

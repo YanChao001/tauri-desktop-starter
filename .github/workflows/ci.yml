@@ -1,4 +1,4 @@
-name: CI
+name: 持续集成
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 版本由 package.json 的 packageManager 字段决定，不在这里写死
+      # 版本由 package.json 的 packageManager 字段统一维护
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
@@ -42,7 +42,7 @@ jobs:
       - name: 格式检查
         run: pnpm format:check
 
-      - name: ESLint
+      - name: ESLint 静态检查
         run: pnpm lint
 
       - name: 类型检查
@@ -54,15 +54,18 @@ jobs:
       - name: 构建前端
         run: pnpm build
 
+      - name: 构建浏览器演示
+        run: pnpm build:web
+
   rust:
     name: Rust 校验（${{ matrix.platform }}）
     runs-on: ${{ matrix.platform }}
     strategy:
-      # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
+      # 保留其他平台的执行结果，分别定位平台问题
       fail-fast: false
       matrix:
-        # 平台差异（cfg 分支、系统库、链接器）必须在三端都过一遍编译，
-        # 否则 macOS/Linux 的问题要到 release 流水线才第一次暴露
+        # 在三端编译验证 cfg 分支、系统库和链接器差异
+        # 避免平台问题延迟到发布阶段才暴露
         platform: [windows-latest, ubuntu-22.04, macos-latest]
     steps:
       - uses: actions/checkout@v7
@@ -98,13 +101,13 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: pnpm bindings:check
 
-      # 格式与平台无关，跑一次就够
+      # 格式规则与平台无关，仅在一个平台执行
       - name: 格式检查
         if: matrix.platform == 'windows-latest'
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
-      - name: Clippy
+      - name: Clippy 静态检查
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 

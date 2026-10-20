@@ -59,7 +59,7 @@ export default function Components() {
             </TabsTrigger>
           ))}
         </TabsList>
-        {/* Mounted, hidden stages retain this page's edits without creating a persistence promise. */}
+        {/* 隐藏阶段保持挂载以保留本页编辑；不提供持久化存储 */}
         <TabsContent
           value="inputs"
           forceMount

@@ -39,7 +39,7 @@ function switchThemeWithReveal(
   );
 
   const transition = doc.startViewTransition(() => {
-    // 主题是 React state，必须同步提交，View Transition 才能截到新帧
+    // 主题属于 React 状态，必须同步提交，View Transition 才能捕获新帧
     flushSync(applyTheme);
   });
 

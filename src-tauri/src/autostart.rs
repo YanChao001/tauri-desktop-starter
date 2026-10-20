@@ -1,4 +1,4 @@
-//! Current-user Windows startup entries, with an unambiguous quoted executable path.
+//! 当前用户的 Windows 开机启动项，使用引号明确可执行文件路径的边界。
 
 use crate::error::{ErrorCode, NativeError, NativeResult};
 use windows_registry::{CURRENT_USER, Type};

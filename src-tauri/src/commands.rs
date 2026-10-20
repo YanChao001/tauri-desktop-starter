@@ -1,14 +1,16 @@
-//! Renderer-facing commands. DTOs and stable error codes are exported from Rust.
+//! 面向渲染进程的命令，数据结构与稳定错误码由 Rust 统一导出。
 
 use tauri::{Emitter, Manager, State};
 
 use crate::{
+    blocking,
     database::{Database, Note, NoteInput, NoteUpdate},
     desktop::{self, DesktopStatus},
     diagnostics::{self, DiagnosticsReport, DiagnosticsState, FrontendError},
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     storage::{JsonValue, SETTINGS_EVENT, SettingsSnapshot, SettingsStore},
     updater::{UpdateManager, UpdateProgress, UpdateStatus},
+    window_geometry::{self, WindowGeometry},
 };
 
 #[tauri::command]
@@ -55,75 +57,109 @@ pub async fn load_settings_snapshot(
 #[specta::specta]
 pub async fn save_settings_snapshot(
     app: tauri::AppHandle,
-    store: State<'_, SettingsStore>,
     settings: JsonValue,
     expected_revision: i32,
 ) -> NativeResult<SettingsSnapshot> {
     let settings = serde_json::to_value(settings).map_err(|e| {
         NativeError::operation(ErrorCode::InvalidArgument, "Settings JSON is invalid", e)
     })?;
-    let snapshot = store.save(settings, expected_revision)?;
-    if let Err(error) = desktop::refresh_tray(&app) {
-        log::warn!("{error}");
-    }
-    if let Err(error) = app.emit(SETTINGS_EVENT, &snapshot) {
-        log::warn!(
-            "Could not broadcast settings revision {}: {error}",
-            snapshot.revision
-        );
-    }
-    Ok(snapshot)
+    blocking::run(move || {
+        let snapshot = app
+            .state::<SettingsStore>()
+            .save(settings, expected_revision)?;
+        if let Err(error) = desktop::refresh_tray(&app) {
+            log::warn!("{error}");
+        }
+        if let Err(error) = app.emit(SETTINGS_EVENT, &snapshot) {
+            log::warn!(
+                "Could not broadcast settings revision {}: {error}",
+                snapshot.revision
+            );
+        }
+        Ok(snapshot)
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_notes(
-    database: State<'_, Database>,
-    search: Option<String>,
-) -> NativeResult<Vec<Note>> {
-    database.list(search.as_deref().unwrap_or_default())
+pub async fn list_notes(app: tauri::AppHandle, search: Option<String>) -> NativeResult<Vec<Note>> {
+    blocking::run(move || {
+        app.state::<Database>()
+            .list(search.as_deref().unwrap_or_default())
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn create_note(
-    app: tauri::AppHandle,
-    database: State<'_, Database>,
-    input: NoteInput,
-) -> NativeResult<Note> {
-    let note = database.create(input)?;
-    let _ = app.emit("app://notes-changed", ());
-    Ok(note)
+pub async fn create_note(app: tauri::AppHandle, input: NoteInput) -> NativeResult<Note> {
+    blocking::run(move || {
+        let note = app.state::<Database>().create(input)?;
+        let _ = app.emit("app://notes-changed", ());
+        Ok(note)
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn update_note(
-    app: tauri::AppHandle,
-    database: State<'_, Database>,
-    input: NoteUpdate,
-) -> NativeResult<Note> {
-    let note = database.update(input)?;
-    let _ = app.emit("app://notes-changed", ());
-    Ok(note)
+pub async fn update_note(app: tauri::AppHandle, input: NoteUpdate) -> NativeResult<Note> {
+    blocking::run(move || {
+        let note = app.state::<Database>().update(input)?;
+        let _ = app.emit("app://notes-changed", ());
+        Ok(note)
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_note(
-    app: tauri::AppHandle,
-    database: State<'_, Database>,
-    id: i32,
-) -> NativeResult<()> {
-    database.delete(id)?;
-    let _ = app.emit("app://notes-changed", ());
-    Ok(())
+pub async fn delete_note(app: tauri::AppHandle, id: i32) -> NativeResult<()> {
+    blocking::run(move || {
+        app.state::<Database>().delete(id)?;
+        let _ = app.emit("app://notes-changed", ());
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn open_secondary_window(app: tauri::AppHandle) -> NativeResult<()> {
-    desktop::open_secondary(&app)
+    blocking::run(move || desktop::open_secondary(&app)).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn complete_frontend_startup(window: tauri::WebviewWindow) -> NativeResult<()> {
+    blocking::run(move || desktop::complete_frontend_startup(window)).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_window_geometry(window: tauri::WebviewWindow) -> NativeResult<WindowGeometry> {
+    blocking::run(move || window_geometry::read(window)).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_window_size(
+    window: tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+) -> NativeResult<WindowGeometry> {
+    blocking::run(move || window_geometry::set_size(window, f64::from(width), f64::from(height)))
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reset_window_geometry(
+    window: tauri::WebviewWindow,
+    center: bool,
+) -> NativeResult<WindowGeometry> {
+    blocking::run(move || window_geometry::reset(window, center)).await
 }
 
 #[tauri::command]
@@ -135,13 +171,13 @@ pub fn get_desktop_status(app: tauri::AppHandle) -> NativeResult<DesktopStatus> 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_autostart_enabled(app: tauri::AppHandle) -> NativeResult<bool> {
-    desktop::get_autostart(&app)
+    blocking::run(move || desktop::get_autostart(&app)).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn set_autostart_enabled(app: tauri::AppHandle, enabled: bool) -> NativeResult<bool> {
-    desktop::set_autostart(&app, enabled)
+    blocking::run(move || desktop::set_autostart(&app, enabled)).await
 }
 
 #[tauri::command]
@@ -159,7 +195,8 @@ pub async fn get_diagnostics_report(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
 ) -> NativeResult<DiagnosticsReport> {
-    diagnostics::report(&app, window.label())
+    let label = window.label().to_owned();
+    blocking::run(move || diagnostics::report(&app, &label)).await
 }
 
 #[tauri::command]

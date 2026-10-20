@@ -41,7 +41,23 @@ describe("settings provider persistence", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps a future browser schema intact through edits and retries until reset", () => {
+  it("保存启动位置偏好，重新挂载时恢复，重置时回到记住上次位置", async () => {
+    const first = renderHook(useSettings, { wrapper });
+    act(() => first.result.current.update({ windowPosition: "center" }));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      windowPosition: "center",
+    });
+    first.unmount();
+    const next = renderHook(useSettings, { wrapper });
+    expect(next.result.current.settings.windowPosition).toBe("center");
+    await act(async () => next.result.current.reset());
+    expect(next.result.current.settings.windowPosition).toBe("remember");
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      windowPosition: "remember",
+    });
+  });
+
+  it("keeps a future browser schema intact through edits and retries until reset", async () => {
     const raw = JSON.stringify({ schemaVersion: 99, unknown: "preserved" });
     localStorage.setItem(STORAGE_KEY, raw);
     const { result } = renderHook(useSettings, { wrapper });
@@ -56,7 +72,7 @@ describe("settings provider persistence", () => {
       persistenceError: "FUTURE_SETTINGS_VERSION",
     });
     expect(localStorage.getItem(STORAGE_KEY)).toBe(raw);
-    act(() => result.current.reset());
+    await act(async () => result.current.reset());
     expect(result.current.settings).toEqual({
       ...DEFAULT_SETTINGS,
       language: "en",
@@ -200,7 +216,7 @@ describe("settings provider persistence", () => {
     expect(result.current.persistence).toBe("error");
     expect(localStorage.getItem(STORAGE_KEY)).toBe(cached);
     expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
-    act(() => result.current.reset());
+    await act(async () => result.current.reset());
     await waitFor(() => expect(result.current.persistence).toBe("saved"));
     expect(result.current.settings).toEqual({
       ...DEFAULT_SETTINGS,

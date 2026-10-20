@@ -1,4 +1,4 @@
-name: Release
+name: 版本发布
 
 # 打 tag 触发（v1.2.0），也可在 Actions 页面手动触发。
 # 产物默认作为 draft Release 上传，人工确认后再发布。
@@ -9,7 +9,7 @@ on:
 
 permissions:
   contents: write
-  # SignPath action 需要读本次 run 的 artifact
+  # SignPath 操作需要读取本次工作流运行的构建产物
   actions: read
 
 # tag 与手动触发也可能指向同一版本，按仓库串行发布，避免交叉覆盖资产。
@@ -37,7 +37,7 @@ jobs:
     name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
     needs: validate
     strategy:
-      # 一个平台失败不要拖垮其他平台，方便看清楚是哪个平台的问题
+      # 保留其他平台的执行结果，分别定位平台问题
       fail-fast: false
       matrix:
         include:
@@ -311,9 +311,9 @@ jobs:
   # 可选：SignPath Foundation（开源免费签名）。未配置仓库变量时整个 job 跳过，
   # 不影响现有发布流程。申请与配置步骤见 docs/build-release.md 的「路线 A」。
   # 与上面的 PFX 链路二选一：同时配置会在构建前报错。
-  # Variables: SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
+  # 仓库变量：SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
   #            SIGNPATH_SIGNING_POLICY_SLUG / SIGNPATH_ARTIFACT_CONFIGURATION_SLUG
-  # Secret:    SIGNPATH_API_TOKEN
+  # 仓库密钥：SIGNPATH_API_TOKEN
   sign-windows:
     name: 签名 Windows 安装包（未配置 SignPath 时跳过）
     needs: build
@@ -361,7 +361,7 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
-          # 每次签名都要在 SignPath 门户人工批准，留够时间
+          # 每次签名均需在 SignPath 门户批准，为人工处理保留等待时间
           wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed
           parameters: |
@@ -415,6 +415,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $releaseJson = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName
+          if ($LASTEXITCODE -ne 0) { throw "读取本次 Release 状态失败" }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.isDraft -or $release.tagName -ne $env:TAG) {
+            throw "签名产物只能替换本次版本的 draft Release 资产"
+          }
           $uploadDir = Join-Path $env:RUNNER_TEMP "signed-release-assets"
           New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
           $uploads = @()
@@ -425,4 +431,5 @@ jobs:
             Copy-Item -LiteralPath $file.FullName -Destination $destination
             $uploads += $destination
           }
-          gh release upload $env:TAG @uploads --clobber
+          gh release upload $env:TAG @uploads --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "上传签名后的安装包失败" }

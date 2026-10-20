@@ -4,6 +4,7 @@ import { getLocale, isLanguage } from "@/i18n/registry";
 import { createTranslator } from "@/i18n/translate";
 import { loadSettings } from "@/providers/settings";
 import { reportClientError } from "@/lib/report-error";
+import { errorMessage } from "@/lib/native-error";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -29,7 +30,9 @@ export class ErrorBoundary extends Component<
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
-    return { error: error instanceof Error ? error : new Error(String(error)) };
+    return {
+      error: error instanceof Error ? error : new Error(errorMessage(error)),
+    };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {

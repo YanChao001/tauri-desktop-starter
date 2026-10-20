@@ -12,6 +12,7 @@
           "windows": ["main", "secondary"],
           "permissions": [
             "wdio-webdriver:default",
+            "window-state:allow-save-window-state",
             "core:window:allow-is-visible",
             "core:window:allow-hide",
             "core:window:allow-is-minimized",

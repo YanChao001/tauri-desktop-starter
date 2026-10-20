@@ -14,7 +14,7 @@ import {
 import type { DictKey } from "@/providers/i18n";
 
 /**
- * 页面按路由懒加载：首屏只解析当前页，组件演示页那堆控件不会拖慢启动。
+ * 页面按路由懒加载，避免未访问页面的控件增加启动解析成本。
  */
 const Overview = lazy(() => import("@/pages/overview"));
 const Components = lazy(() => import("@/pages/components"));

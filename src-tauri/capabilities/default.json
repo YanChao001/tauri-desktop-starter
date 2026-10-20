@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口的 Tauri 核心与插件能力声明；自定义命令另由应用 ACL 控制",
+  "description": "主 / 次窗口的 Tauri 核心与插件能力声明；自定义命令另由应用 ACL 规则控制",
   "windows": ["main", "secondary"],
   "permissions": [
     "core:default",

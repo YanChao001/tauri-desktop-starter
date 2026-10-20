@@ -50,8 +50,8 @@ describe("语言资源", () => {
 
 describe("词条回退与插值", () => {
   it("缺词和空词条回退默认语言，未知占位符保留", () => {
-    const t = createTranslator({ "common.copy": "" });
-    expect(t("common.copy")).toBe("复制");
+    const t = createTranslator({ "common.close": "" });
+    expect(t("common.close")).toBe("关闭");
     expect(t("settings.searchResults")).toBe("找到 {count} 项设置");
     expect(t("settings.searchResults", { count: 0 })).toBe("找到 0 项设置");
   });

@@ -4,14 +4,17 @@ import { ChevronRightIcon } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { TitleBar } from "@/components/title-bar";
+import { BrowserDemoBar } from "@/components/browser-demo-bar";
 import { WindowBackground } from "@/components/window-background";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { APP_ROUTES, NAVIGATION_GROUPS, matchRoute } from "@/routes";
+import { isTauri } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import "@/styles/app-navigation.css";
 
-/** Route-aware application layout; page failures leave navigation available. */
+/** 感知路由的应用布局；页面失败时保留导航能力 */
 export function AppShell() {
   const { pathname } = useLocation();
   const current = matchRoute(pathname);
@@ -26,8 +29,8 @@ export function AppShell() {
   const main = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
-    // Only page changes reset scrolling. Settings search may deliberately focus
-    // a field on the same pathname; navigation never steals its focus.
+    // 仅切换页面时重置滚动；设置搜索可能在当前路径内主动聚焦字段
+    // 导航更新不应覆盖该焦点
     if (main.current) {
       main.current.scrollTop = 0;
       main.current.scrollLeft = 0;
@@ -35,8 +38,14 @@ export function AppShell() {
   }, [pathname]);
 
   return (
-    <div className="app-shell flex h-screen flex-col overflow-hidden text-foreground">
+    <div
+      className={cn(
+        "app-shell flex h-screen flex-col overflow-hidden text-foreground",
+        !isTauri() && "app-shell-browser",
+      )}
+    >
       <WindowBackground />
+      <BrowserDemoBar />
       <TitleBar />
       <div className="app-workspace flex min-h-0 flex-1">
         <AppSidebar routes={routes} />

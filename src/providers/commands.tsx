@@ -346,7 +346,7 @@ export function useCommands() {
   return value;
 }
 
-/** Register a memoized array; cleanup restores any commands overridden by this feature. */
+/** 注册引用稳定的命令数组；清理时恢复该功能覆盖的命令 */
 export function useRegisterCommands(commands: readonly AppCommand[]) {
   const { register } = useCommands();
   useEffect(() => register(commands), [commands, register]);

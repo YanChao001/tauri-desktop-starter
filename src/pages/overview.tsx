@@ -58,7 +58,7 @@ type Appearance = Pick<
   "accent" | "background" | "backgroundIntensity" | "theme" | "radius"
 >;
 
-/** Original vector sculpture; only the visible scene runs its ambient motion. */
+/** 原创矢量造型，仅在场景可见时运行环境动效 */
 function LightSculpture() {
   const id = useId().replace(/:/g, "");
   return (

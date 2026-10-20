@@ -29,7 +29,7 @@ export default function App() {
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
-          // main.tsx applies the theme before mounting; this CSR app needs no SSR script.
+          // main.tsx 在挂载前应用主题；当前客户端渲染不需要服务端主题脚本
           scriptProps={{ type: "text/plain" }}
         >
           <DemoMotion>

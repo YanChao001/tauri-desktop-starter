@@ -70,7 +70,7 @@ export function updaterReleasePlan({
   };
 }
 
-// Match tauri-action@v1's default ghAssetName, including its special .app archive name.
+// 与 tauri-action@v1 默认 ghAssetName 一致，包含 .app 归档的特殊命名。
 export function releaseAssetName(path, { productName, version, target }) {
   let name = basename(path.replaceAll("\\", "/"));
   if (name.endsWith(".app.tar.gz") || name.endsWith(".app.tar.gz.sig")) {
@@ -99,7 +99,7 @@ function artifactKind(path, platform) {
   return undefined;
 }
 
-/** Only consume the exact artifacts returned by this tauri-action invocation. */
+/** 只处理本次 tauri-action 明确返回的产物。 */
 export function collectUpdaterMetadata({
   paths,
   target,
@@ -154,7 +154,7 @@ export function collectUpdaterMetadata({
     : info.platform.startsWith("darwin-")
       ? platforms[`${info.platform}-app`]
       : platforms[`${info.platform}-appimage`];
-  // A generic Linux entry must be an AppImage: a deb/rpm needs its installer-specific key.
+  // Linux 通用入口只接受 AppImage；DEB / RPM 必须使用对应安装类型的键。
   if (preferred) platforms[info.platform] = preferred;
   return {
     metadata: { version, tag, repository, target, platforms },

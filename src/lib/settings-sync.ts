@@ -26,7 +26,7 @@ const codeOf = (error: unknown) =>
     ? error.code
     : "STORAGE_UNAVAILABLE";
 
-/** Keep local field edits over remote snapshots until their CAS write succeeds. */
+/** 保留本地字段变更，直至基于版本校验的写入成功，避免被远端快照覆盖。 */
 export class SettingsSync {
   private base: AppSettings;
   private pending: Partial<AppSettings> = {};
@@ -41,6 +41,10 @@ export class SettingsSync {
   private error: string | null = null;
   private initialization: Promise<void> | null = null;
   private unlisten?: () => void;
+  private completions = new Set<{
+    resolve: () => void;
+    reject: (error: { code: string }) => void;
+  }>();
 
   constructor(
     initial: AppSettings,
@@ -63,6 +67,13 @@ export class SettingsSync {
           ? "saving"
           : "saved";
     this.changed({ settings: this.settings(), status, error: this.error });
+    if (status === "saved" || status === "error") {
+      for (const completion of this.completions) {
+        if (this.error) completion.reject({ code: this.error });
+        else completion.resolve();
+      }
+      this.completions.clear();
+    }
   }
   private fail(error: unknown) {
     this.error = codeOf(error);
@@ -79,7 +90,7 @@ export class SettingsSync {
     try {
       next = migrateSettings(snapshot.settings);
     } catch (error) {
-      // Remember the revision so an explicit reset can safely replace a newer schema.
+      // 保留版本号，确保显式重置可以安全替换更高版本的结构。
       if (codeOf(error) === "FUTURE_SETTINGS_VERSION")
         this.revision = snapshot.revision;
       throw error;
@@ -90,7 +101,7 @@ export class SettingsSync {
       isRecord(snapshot.settings) &&
       Object.keys(snapshot.settings).length === 0
     ) {
-      // Seed a new native store from the existing browser preferences exactly once.
+      // 新建原生存档时，仅用现有浏览器偏好初始化一次。
       this.needsSeed = true;
     } else {
       this.base = next;
@@ -161,8 +172,11 @@ export class SettingsSync {
     void this.flush();
   }
 
-  reset(settings: AppSettings) {
-    if (this.stopped) return;
+  reset(settings: AppSettings): Promise<void> {
+    if (this.stopped) return Promise.reject({ code: "STORAGE_UNAVAILABLE" });
+    const completion = new Promise<void>((resolve, reject) => {
+      this.completions.add({ resolve, reject });
+    });
     this.blocked = false;
     this.error = null;
     this.pending = migrateSettings(settings);
@@ -170,6 +184,7 @@ export class SettingsSync {
     this.emit();
     if (!this.ready) void this.initialize();
     else void this.flush();
+    return completion;
   }
 
   async retry() {
@@ -233,11 +248,14 @@ export class SettingsSync {
     }
   }
 
-  /** Return unsaved fields so a provider lifecycle replay can retain local edits. */
+  /** 返回未保存字段，供提供器生命周期重放时恢复本地变更。 */
   stop(): Partial<AppSettings> {
     this.stopped = true;
     this.unlisten?.();
     this.unlisten = undefined;
+    for (const completion of this.completions)
+      completion.reject({ code: "STORAGE_UNAVAILABLE" });
+    this.completions.clear();
     return { ...this.inFlight, ...this.pending };
   }
 }

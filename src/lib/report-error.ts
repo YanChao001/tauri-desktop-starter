@@ -19,7 +19,7 @@ function redact(text: string) {
     .replace(/(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\n)]+/g, "[local path]")
     .replace(/\/(?:Users|home)\/[^/\s]+/g, "/[home]");
 }
-// UTF-8 may need four bytes per character. Respect the native wire limits exactly.
+// UTF-8 单个字符最多占四字节，必须遵守原生传输边界的字节限制
 function bounded(text: string, bytes: number) {
   const encoded = new TextEncoder().encode(text);
   if (encoded.length <= bytes) return text;

@@ -44,7 +44,7 @@ const finite = (value: number | null, positive = false) =>
     ? value
     : null;
 
-/** One store per WebView; operation ids also reconcile broadcasts from other windows. */
+/** 每个 WebView 独立维护状态，通过操作 ID 协调其他窗口的广播 */
 export function createUpdatesStore(backend: Backend) {
   let state: State = {
     phase: "idle",
@@ -96,7 +96,11 @@ export function createUpdatesStore(backend: Backend) {
       total ??= state.progress?.total ?? null;
     }
     const progress = { ...value, downloaded, total };
-    const common = { operationId: value.operationId, progress };
+    const common = {
+      operationId: value.operationId,
+      progress,
+      status: value.status ?? (same ? state.status : null),
+    };
     stage = value.stage;
     switch (value.stage) {
       case "checking":
@@ -144,7 +148,7 @@ export function createUpdatesStore(backend: Backend) {
         error: null,
       });
     } catch (error) {
-      // Once a newer operation has broadcast, its terminal event owns the state.
+      // 已收到新操作的广播时，只接受该操作的终态更新
       if (state.operationId === operationId)
         update({ phase: "error", status: null, error });
     } finally {
@@ -165,7 +169,8 @@ export function createUpdatesStore(backend: Backend) {
     update({ phase: "downloading", progress: null, error: null });
     try {
       await backend.install();
-      update({ phase: "installed", error: null });
+      if (state.operationId === operationId && stage !== "failed")
+        update({ phase: "installed", error: null });
     } catch (error) {
       if (state.operationId === operationId)
         update({ phase: "error", status: null, progress: null, error });
@@ -179,7 +184,7 @@ export function createUpdatesStore(backend: Backend) {
     const stop = await backend.listen((value) => {
       if (!stopped) accept(value);
     });
-    // Subscribe first, then hydrate; older snapshots cannot overwrite newer events.
+    // 先订阅再读取快照，避免旧快照覆盖更新的事件
     void backend
       .snapshot()
       .then((value) => {

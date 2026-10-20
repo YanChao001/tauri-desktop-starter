@@ -16,6 +16,7 @@ import { test } from "node:test";
 import {
   BRANDING_ROOT,
   INSTALLER_IMAGES,
+  INSTALLER_BITMAP_SCALE,
   brandingDifferences,
   encodeBitmap,
   normalizeMacIcon,
@@ -117,6 +118,13 @@ test("Tauri platform outputs retain all sizes and reproducible ICO/ICNS layers",
   const asset = (name) =>
     plan.find(({ path }) => basename(path) === name).contents;
   const ico = asset("icon.ico");
+  for (const { target, width, height } of INSTALLER_IMAGES) {
+    const bitmap = asset(target);
+    assert.equal(bitmap.readInt32LE(18), width * INSTALLER_BITMAP_SCALE);
+    assert.equal(bitmap.readInt32LE(22), height * INSTALLER_BITMAP_SCALE);
+    assert.equal(bitmap.readUInt16LE(28), 24);
+    assert.equal(bitmap.readUInt32LE(30), 0);
+  }
   const sizes = Array.from(
     { length: ico.readUInt16LE(4) },
     (_, index) => ico[6 + index * 16] || 256,

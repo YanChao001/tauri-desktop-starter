@@ -28,7 +28,7 @@ try {
   process.once("SIGTERM", interrupt);
   const temporaryBase = realpathSync(tmpdir());
   dataRoot = mkdtempSync(join(temporaryBase, "starter-e2e-"));
-  for (const phase of ["fresh", "persisted"]) {
+  for (const phase of ["fresh", "persisted", "centered"]) {
     const port = await new Promise((done, fail) => {
       const socket = createServer();
       socket.once("error", fail);

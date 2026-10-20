@@ -65,7 +65,6 @@ export const enShowroom = {
   "studio.nativeSystem": "System integration",
   "studio.settingsEyebrow": "Make it yours",
   "studio.bridgeEyebrow": "Interface meets native",
-  "studio.settingsAppearance": "Look & feel",
   "studio.settingsWorkspace": "Window & workspace",
   "studio.settingsAbout": "About & resources",
 } satisfies Record<keyof typeof zhShowroom, string>;

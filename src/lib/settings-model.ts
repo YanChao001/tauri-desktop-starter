@@ -34,6 +34,7 @@ export const FONT_SIZES = ["sm", "md", "lg"] as const;
 export const MOTIONS = ["full", "reduced"] as const;
 export const THEMES = ["light", "dark", "system"] as const;
 export const APP_MODES = ["demo", "minimal"] as const;
+export const WINDOW_POSITIONS = ["remember", "center"] as const;
 export const SETTINGS_VERSION = 2;
 export const STORAGE_KEY = "tauri-starter:settings";
 export type Accent = (typeof ACCENTS)[number];
@@ -42,6 +43,7 @@ export type Font = (typeof FONTS)[number];
 export type FontSize = (typeof FONT_SIZES)[number];
 export type Motion = (typeof MOTIONS)[number];
 export type AppTheme = (typeof THEMES)[number];
+export type WindowPosition = (typeof WINDOW_POSITIONS)[number];
 export type AppSettings = {
   language: Language;
   accent: Accent;
@@ -56,6 +58,7 @@ export type AppSettings = {
   sidebarWidth: number;
   appMode: "demo" | "minimal";
   runInBackground: boolean;
+  windowPosition: WindowPosition;
   theme: AppTheme;
 };
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -72,6 +75,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarWidth: 224,
   appMode: APP_CONFIG.defaultMode,
   runInBackground: false,
+  windowPosition: "remember",
   theme: "system",
 };
 const LEGACY_BACKGROUNDS: Record<string, string> = {
@@ -138,6 +142,11 @@ export function migrateSettings(raw: unknown): AppSettings {
     menuBar: flag("menuBar"),
     sidebarCollapsed: flag("sidebarCollapsed"),
     runInBackground: flag("runInBackground"),
+    windowPosition: pick(
+      WINDOW_POSITIONS,
+      source.windowPosition,
+      DEFAULT_SETTINGS.windowPosition,
+    ),
     sidebarWidth:
       typeof source.sidebarWidth === "number" &&
       Number.isFinite(source.sidebarWidth)
@@ -147,7 +156,7 @@ export function migrateSettings(raw: unknown): AppSettings {
     theme: pick(THEMES, source.theme, DEFAULT_SETTINGS.theme),
   };
 }
-/** Ignore unknown keys and normalize only the fields supplied by the caller. */
+/** 忽略未知字段，仅规范化调用方明确传入的字段。 */
 export function normalizeSettingsPatch(
   current: AppSettings,
   patch: Partial<AppSettings>,
@@ -200,6 +209,13 @@ export function loadSettings(): AppSettings {
 }
 export function applySettings(settings: AppSettings) {
   const root = document.documentElement;
+  const dark =
+    settings.theme === "dark" ||
+    (settings.theme === "system" &&
+      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false));
+  root.classList.toggle("dark", dark);
+  root.classList.toggle("light", !dark);
+  root.style.colorScheme = dark ? "dark" : "light";
   for (const [name, value] of Object.entries({
     accent: settings.accent,
     radius: settings.radius,

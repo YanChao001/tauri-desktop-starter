@@ -1,4 +1,4 @@
-/* Navigation chrome stays quiet so each page can own its visual hierarchy. */
+/* 导航保持克制，由各页面建立自身的视觉层级 */
 .app-route-enter {
   animation: studio-route-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }

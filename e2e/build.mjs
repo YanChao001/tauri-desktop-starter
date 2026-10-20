@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildEnvironment } from "../scripts/build-lib.mjs";
+import { fileSha256 } from "../scripts/artifact-lib.mjs";
 
 const require = createRequire(import.meta.url);
 export const root = resolve(import.meta.dirname, "..");
@@ -72,9 +72,7 @@ export async function buildE2E() {
       {
         executable,
         target: host,
-        sha256: createHash("sha256")
-          .update(readFileSync(executable))
-          .digest("hex"),
+        sha256: fileSha256(executable),
       },
       null,
       2,
@@ -93,9 +91,7 @@ export function readE2EBuild() {
     !/^[a-zA-Z0-9_-]+$/.test(receipt.target) ||
     typeof receipt.executable !== "string" ||
     resolve(receipt.executable, "..") !== expected ||
-    createHash("sha256")
-      .update(readFileSync(receipt.executable))
-      .digest("hex") !== receipt.sha256
+    fileSha256(receipt.executable) !== receipt.sha256
   )
     throw new Error("E2E 构建收据失效，请重新运行 pnpm e2e:build。");
   return receipt.executable;

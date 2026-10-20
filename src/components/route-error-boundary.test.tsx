@@ -40,6 +40,32 @@ describe("route error boundary", () => {
     cleanup();
     vi.restoreAllMocks();
   });
+  it("retries a transient page failure in place while preserving the shell", () => {
+    let broken = true;
+    function TransientPage() {
+      if (broken) throw new Error("Transient failure");
+      return <p>Recovered page</p>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/broken"]}>
+        <SettingsProvider>
+          <I18nProvider>
+            <Shell />
+            <RouteErrorBoundary>
+              <TransientPage />
+            </RouteErrorBoundary>
+          </I18nProvider>
+        </SettingsProvider>
+      </MemoryRouter>,
+    );
+    const navigation = screen.getByRole("navigation");
+    expect(screen.getByRole("alert")).toBeVisible();
+    broken = false;
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(screen.getByText("Recovered page")).toBeVisible();
+    expect(screen.getByRole("navigation")).toBe(navigation);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("preserves shell navigation, translates the fallback live and recovers after navigation", () => {
     render(
       <MemoryRouter initialEntries={["/broken"]}>

@@ -309,8 +309,7 @@ html[data-background="plain"] {
   position: relative;
   z-index: 1;
 }
-.app-title-bar,
-.app-page-header {
+.app-title-bar {
   background-color: color-mix(
     in oklch,
     var(--background) var(--skin-chrome-opacity),
@@ -402,7 +401,6 @@ html[data-background="plain"] {
     display: none;
   }
   .app-title-bar,
-  .app-page-header,
   .app-sidebar,
   .app-main [data-slot="card"] {
     background-color: var(--background);
@@ -443,53 +441,6 @@ html[data-motion="reduced"] *::after {
   z-index: 2;
 }
 
-/* 页面自带的少量关键帧，避免为演示引入动画库 */
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-@keyframes float-soft {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-.animate-fade-up {
-  animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.animate-marquee {
-  animation: marquee 18s linear infinite;
-}
-
-.animate-float-soft {
-  animation: float-soft 5s ease-in-out infinite;
-}
-
-.marquee-track:hover .animate-marquee {
-  animation-play-state: paused;
-}
-
 /* 桌面端滚动条细一点，别抢内容 */
 ::-webkit-scrollbar {
   width: 10px;
@@ -508,7 +459,7 @@ html[data-motion="reduced"] *::after {
   background: transparent;
 }
 
-/* Sidebar transitions keep pointer resizing immediate. */
+/* 侧栏过渡不延迟指针拖动时的尺寸更新 */
 .app-sidebar {
   transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -519,40 +470,23 @@ html[data-motion="reduced"] *::after {
     opacity 160ms ease,
     transform 200ms ease;
 }
-.app-sidebar-footer {
-  display: grid;
-  grid-template-rows: 1fr;
-  padding: 0.75rem 1rem;
-  opacity: 1;
-  transition:
-    grid-template-rows 240ms ease,
-    padding-block 240ms ease,
-    opacity 160ms ease;
-}
 .app-sidebar[data-collapsed="true"] .app-sidebar-label {
   opacity: 0;
   transform: translateX(-6px);
 }
-.app-sidebar[data-collapsed="true"] .app-sidebar-footer {
-  grid-template-rows: 0fr;
-  padding-block: 0;
-  opacity: 0;
-}
 .app-sidebar[data-resizing="true"],
 .app-sidebar[data-motion="reduced"],
-.app-sidebar[data-motion="reduced"] .app-sidebar-label,
-.app-sidebar[data-motion="reduced"] .app-sidebar-footer {
+.app-sidebar[data-motion="reduced"] .app-sidebar-label {
   transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .app-sidebar,
-  .app-sidebar-label,
-  .app-sidebar-footer {
+  .app-sidebar-label {
     transition: none !important;
   }
 }
 
-/* JSON is rendered as React text tokens; colors follow the application theme. */
+/* JSON 通过 React 文本节点渲染，配色跟随应用主题 */
 .code-block {
   --code-property: #4338ca;
   --code-string: #047857;

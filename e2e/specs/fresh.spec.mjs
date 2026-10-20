@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { browser, $ } from "@wdio/globals";
-import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
+import {
+  appearance,
+  invoke,
+  language,
+  navigate,
+  ready,
+  placeNearWorkAreaCorner,
+} from "../helpers.mjs";
+
+const execute = promisify(execFile);
 
 describe("Real Tauri desktop", () => {
   it("reveals the main window and invokes Rust success and structured failure", async () => {
@@ -16,6 +29,26 @@ describe("Real Tauri desktop", () => {
     assert.equal(failure.ok, false);
     assert.equal(failure.failure.code, "NAME_REQUIRED");
     assert.match(failure.failure.message, /Name cannot be empty/);
+  });
+
+  it("stays responsive when the application is launched repeatedly in parallel", async () => {
+    await Promise.all(
+      Array.from({ length: 6 }, () =>
+        execute(process.env.STARTER_E2E_BINARY, [], {
+          timeout: 7000,
+          windowsHide: true,
+          maxBuffer: 64 * 1024,
+        }),
+      ),
+    );
+    assert.equal((await browser.getWindowHandles()).length, 1);
+    const greeting = await invoke("greet", {
+      name: "Relaunch",
+      language: "en",
+    });
+    assert.equal(greeting.ok, true);
+    assert.match(greeting.value, /Hello, Relaunch!/);
+    await $("#root main").waitForDisplayed();
   });
 
   it("switches both languages through the title bar and renders real IPC results", async () => {
@@ -259,6 +292,110 @@ describe("Real Tauri desktop", () => {
     }
   });
 
+  it("applies size presets and restores default preferences without moving the window", async () => {
+    await navigate("/settings");
+    const initial = await invoke("get_window_geometry");
+    assert.equal(initial.ok, true);
+    const bounds = initial.value;
+    assert.equal(
+      bounds.width,
+      Math.max(bounds.minWidth, Math.min(bounds.maxWidth, bounds.defaultWidth)),
+    );
+    assert.equal(
+      bounds.height,
+      Math.max(
+        bounds.minHeight,
+        Math.min(bounds.maxHeight, bounds.defaultHeight),
+      ),
+    );
+    const compactFits =
+      bounds.minWidth <= 960 &&
+      bounds.maxWidth >= 960 &&
+      bounds.minHeight <= 640 &&
+      bounds.maxHeight >= 640;
+    const width = compactFits
+      ? 960
+      : Math.max(
+          bounds.minWidth,
+          Math.min(bounds.maxWidth, bounds.defaultWidth),
+        );
+    const height = compactFits
+      ? 640
+      : Math.max(
+          bounds.minHeight,
+          Math.min(bounds.maxHeight, bounds.defaultHeight),
+        );
+    await browser.execute(async () => {
+      const win = window.__TAURI__.window.getCurrentWindow();
+      if (!(await win.isMaximized())) await win.toggleMaximize();
+    });
+    await browser.waitUntil(async () =>
+      browser.execute(async () =>
+        window.__TAURI__.window.getCurrentWindow().isMaximized(),
+      ),
+    );
+    assert.equal(await $("#window-width").isExisting(), false);
+    assert.equal(await $("#window-height").isExisting(), false);
+    await $(
+      `[data-window-preset='${compactFits ? "compact" : "standard"}']`,
+    ).click();
+    await browser.waitUntil(async () => {
+      const result = await invoke("get_window_geometry");
+      return (
+        result.ok &&
+        result.value.width === width &&
+        result.value.height === height
+      );
+    });
+    assert.equal(
+      await browser.execute(async () =>
+        window.__TAURI__.window.getCurrentWindow().isMaximized(),
+      ),
+      false,
+    );
+    const position = await browser.execute(async () =>
+      window.__TAURI__.window.getCurrentWindow().outerPosition(),
+    );
+    await $("[data-window-position=center]").click();
+    await browser.waitUntil(
+      async () =>
+        (await invoke("load_settings_snapshot")).value.settings
+          ?.windowPosition === "center",
+    );
+    const afterPreference = await browser.execute(async () =>
+      window.__TAURI__.window.getCurrentWindow().outerPosition(),
+    );
+    assert.deepEqual(afterPreference, position);
+    await $("button=Reset preferences").click();
+    assert.equal(await $("[role=dialog] [role=checkbox]").isExisting(), false);
+    await $("[role=dialog]").$("button=Reset preferences").click();
+    await $("[role=dialog]").waitForExist({ reverse: true });
+    const reset = await invoke("get_window_geometry");
+    assert.equal(reset.ok, true);
+    assert.equal(
+      (await invoke("load_settings_snapshot")).value.settings.windowPosition,
+      "remember",
+    );
+    assert.equal(
+      reset.value.width,
+      Math.min(bounds.maxWidth, bounds.defaultWidth),
+    );
+    assert.equal(
+      reset.value.height,
+      Math.min(bounds.maxHeight, bounds.defaultHeight),
+    );
+    const unchanged = await browser.execute(async () =>
+      window.__TAURI__.window.getCurrentWindow().outerPosition(),
+    );
+    assert.ok(
+      Math.abs(position.x - unchanged.x) <= 2 &&
+        Math.abs(position.y - unchanged.y) <= 2,
+    );
+    const invalid = await invoke("set_window_size", { width: 1, height: 1 });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.failure.code, "INVALID_ARGUMENT");
+  });
+
   it("renders diagnostic JSON as highlighted inert text", async () => {
     await navigate("/diagnostics");
     await browser.waitUntil(async () =>
@@ -349,6 +486,45 @@ describe("Real Tauri desktop", () => {
     await language("en");
     await browser.switchToWindow(secondary);
     await browser.waitUntil(async () => (await appearance()).language === "en");
+    const secondaryBounds = (await invoke("get_window_geometry")).value;
+    assert.equal(
+      (
+        await invoke("set_window_size", {
+          width: Math.min(
+            secondaryBounds.maxWidth,
+            Math.max(secondaryBounds.minWidth, 980),
+          ),
+          height: Math.min(
+            secondaryBounds.maxHeight,
+            Math.max(secondaryBounds.minHeight, 650),
+          ),
+        })
+      ).ok,
+      true,
+    );
+    const secondaryPosition = await browser.execute(async () =>
+      window.__TAURI__.window.getCurrentWindow().outerPosition(),
+    );
+    await browser.switchToWindow(main);
+    assert.equal(
+      (await invoke("reset_window_geometry", { center: false })).ok,
+      true,
+    );
+    await browser.switchToWindow(secondary);
+    await browser.waitUntil(async () => {
+      const geometry = (await invoke("get_window_geometry")).value;
+      return (
+        geometry.width === Math.min(geometry.maxWidth, geometry.defaultWidth) &&
+        geometry.height === Math.min(geometry.maxHeight, geometry.defaultHeight)
+      );
+    });
+    const restoredPosition = await browser.execute(async () =>
+      window.__TAURI__.window.getCurrentWindow().outerPosition(),
+    );
+    assert.ok(
+      Math.abs(secondaryPosition.x - restoredPosition.x) <= 2 &&
+        Math.abs(secondaryPosition.y - restoredPosition.y) <= 2,
+    );
     await browser.switchToWindow(main);
     assert.equal(
       (await invoke("plugin:window|close", { label: "secondary" })).ok,
@@ -383,6 +559,35 @@ describe("Real Tauri desktop", () => {
         result.value.settings?.backgroundIntensity === "strong"
       );
     });
+    const geometry = (await invoke("get_window_geometry")).value;
+    assert.equal(
+      (
+        await invoke("set_window_size", {
+          width: Math.min(geometry.maxWidth, Math.max(geometry.minWidth, 1000)),
+          height: Math.min(
+            geometry.maxHeight,
+            Math.max(geometry.minHeight, 680),
+          ),
+        })
+      ).ok,
+      true,
+    );
+    await $("[data-window-position=remember]").click();
+    await browser.waitUntil(
+      async () =>
+        (await invoke("load_settings_snapshot")).value.settings
+          ?.windowPosition === "remember",
+    );
+    const position = await placeNearWorkAreaCorner();
+    writeFileSync(
+      join(process.env.STARTER_E2E_DATA_ROOT, "window-placement-fixture.json"),
+      JSON.stringify(position),
+    );
+    // 测试 runner 会强制回收进程，先调用原生插件完成正常退出时的位置写盘。
+    assert.equal(
+      (await invoke("plugin:window-state|save_window_state", { flags: 2 })).ok,
+      true,
+    );
   });
 });
 /* global describe, it */
