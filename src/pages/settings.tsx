@@ -6,6 +6,7 @@ import {
   MoonIcon,
   RotateCcwIcon,
   SunIcon,
+  ChevronDownIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LanguageSwitch } from "@/components/language-switch";
@@ -137,14 +138,11 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold tracking-tight">
-          {t("settings.title")}
-        </h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {t("settings.subtitle")}
-        </p>
+    <div className="studio-page settings-studio">
+      <div className="studio-intro">
+        <span className="studio-eyebrow">{t("studio.settingsEyebrow")}</span>
+        <h2>{t("settings.title")}</h2>
+        <p>{t("settings.subtitle")}</p>
       </div>
 
       <SettingsSearch />
@@ -329,12 +327,11 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-layout" tabIndex={-1}>
         <CardHeader>
-          <CardTitle className="text-sm">{t("settings.window")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.customTitlebarHint")}
-          </CardDescription>
+          <CardTitle className="text-sm">
+            {t("studio.settingsWorkspace")}
+          </CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
           <SettingRow
@@ -348,17 +345,6 @@ export default function Settings() {
               aria-label={t("settings.menuBar")}
             />
           </SettingRow>
-          <SettingRow label={t("settings.customTitlebar")}>
-            <Badge variant="secondary">{t("settings.enabled")}</Badge>
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      <Card id="settings-layout" tabIndex={-1}>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.layout")}</CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y">
           <SettingRow
             id="settings-appMode"
             label={t("settings.appMode")}
@@ -405,52 +391,60 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.runtime")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.runtimeHint")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="divide-y">
-          <SettingRow label={t("settings.appVersion")}>
-            <span className="font-mono text-xs">{version}</span>
-          </SettingRow>
-          <SettingRow label={t("settings.tauriVersion")}>
-            <span className="font-mono text-xs">{tauriVersion}</span>
-          </SettingRow>
-          <SettingRow label={t("settings.environment")}>
-            <Badge variant="outline" className="font-normal">
-              {isTauri() ? t("app.native") : t("app.preview")}
-            </Badge>
-          </SettingRow>
-        </CardContent>
-      </Card>
+      <details className="studio-panel settings-about" id="settings-about">
+        <summary>
+          {t("studio.settingsAbout")}
+          <ChevronDownIcon size={16} />
+        </summary>
+        <div className="settings-about-content">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">{t("settings.runtime")}</CardTitle>
+              <CardDescription className="text-xs">
+                {t("settings.runtimeHint")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="divide-y">
+              <SettingRow label={t("settings.appVersion")}>
+                <span className="font-mono text-xs">{version}</span>
+              </SettingRow>
+              <SettingRow label={t("settings.tauriVersion")}>
+                <span className="font-mono text-xs">{tauriVersion}</span>
+              </SettingRow>
+              <SettingRow label={t("settings.environment")}>
+                <Badge variant="outline" className="font-normal">
+                  {isTauri() ? t("app.native") : t("app.preview")}
+                </Badge>
+              </SettingRow>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.links")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.linksHint")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          {LINKS.map((link) => (
-            <button
-              key={link.url}
-              type="button"
-              onClick={() => void handleOpenLink(link.url)}
-              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
-            >
-              <span>{link.label}</span>
-              <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                {new URL(link.url).host}
-                <ExternalLinkIcon className="size-3" />
-              </span>
-            </button>
-          ))}
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">{t("settings.links")}</CardTitle>
+              <CardDescription className="text-xs">
+                {t("settings.linksHint")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              {LINKS.map((link) => (
+                <button
+                  key={link.url}
+                  type="button"
+                  onClick={() => void handleOpenLink(link.url)}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
+                >
+                  <span>{link.label}</span>
+                  <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    {new URL(link.url).host}
+                    <ExternalLinkIcon className="size-3" />
+                  </span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </details>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed px-4 py-3">
         <div className="space-y-0.5">

@@ -1,0 +1,219 @@
+/* Shared studio surfaces; illustration colors stay separate from control tokens. */
+:root {
+  --studio-violet: #7760dd;
+  --studio-cyan: #219caf;
+  --studio-rose: #ce658f;
+  --studio-surface: color-mix(in oklch, var(--card) 92%, transparent);
+  --studio-edge: color-mix(in oklch, var(--border) 78%, transparent);
+}
+.dark {
+  --studio-violet: #b0a0ff;
+  --studio-cyan: #62c8dc;
+  --studio-rose: #f3a0c2;
+}
+.studio-page {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-width: 0;
+}
+.studio-page :where([data-slot="card"]) {
+  border-color: var(--studio-edge);
+  box-shadow: none;
+}
+.settings-about > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  list-style: none;
+  border-radius: inherit;
+}
+.settings-about > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-about > summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.settings-about[open] > summary svg {
+  transform: rotate(180deg);
+}
+.settings-about-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: 0 1rem 1rem;
+}
+.settings-about-content [data-slot="card"] {
+  border: none;
+  background: transparent;
+}
+.settings-about-content [data-slot="card-header"] {
+  padding-inline: 0.25rem;
+}
+.settings-about-content [data-slot="card-content"] {
+  padding-inline: 0.25rem;
+}
+@media (max-width: 800px) {
+  .settings-about-content {
+    grid-template-columns: 1fr;
+  }
+}
+.studio-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.studio-intro h2 {
+  font-size: clamp(1.6rem, 2.7vw, 2.35rem);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+}
+.studio-intro > p {
+  max-width: 44rem;
+  font-size: 0.875rem;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.studio-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.075em;
+  color: var(--muted-foreground);
+}
+.studio-panel {
+  border: 1px solid var(--studio-edge);
+  border-radius: 1.25rem;
+  background: var(--studio-surface);
+}
+.studio-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.studio-section-heading h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.studio-section-heading p {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+.studio-section-heading > svg {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+.studio-native-preview {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.5rem, 4vw, 3.5rem);
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  align-items: center;
+  gap: 2rem;
+}
+.studio-native-art {
+  min-height: 14rem;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.studio-native-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse,
+    color-mix(in oklch, var(--studio-violet) 20%, transparent),
+    transparent 68%
+  );
+}
+.studio-native-art > div {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 8.5rem;
+  height: 6rem;
+  border: 1px solid var(--studio-edge);
+  border-radius: 1rem;
+  background: var(--card);
+  color: var(--studio-violet);
+  box-shadow: 0 1.5rem 4rem #00000012;
+}
+.studio-native-art > div:first-child {
+  transform: translate(-1.8rem, -1.5rem) rotate(-12deg);
+}
+.studio-native-art > div:last-child {
+  transform: translate(2rem, 1.5rem) rotate(8deg);
+  color: var(--studio-cyan);
+}
+.studio-native-copy h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+.studio-native-copy p {
+  font-size: 0.875rem;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+  margin-top: 0.75rem;
+}
+.studio-native-tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.studio-native-tags span {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.65rem;
+  color: var(--muted-foreground);
+}
+.studio-native-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+.studio-native-note {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  padding-top: 0.5rem;
+}
+@media (max-width: 850px) {
+  .studio-native-preview {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .studio-native-art {
+    min-height: 10rem;
+  }
+}
+@media (forced-colors: active) {
+  .studio-panel {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+  .studio-native-art::before {
+    display: none;
+  }
+}

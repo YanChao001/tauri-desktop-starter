@@ -17,31 +17,52 @@ flowchart LR
   Events --> Facade
 ```
 
-前端由根 [`index.html`](../index.html) 加载 [`main.tsx`](../src/main.tsx)，挂载 App。App 组合设置、语言、主题、命令 Provider 和 HashRouter；AppShell 组合标题栏、侧栏与页面。原生由 [`main.rs`](../src-tauri/src/main.rs) 调用 [`lib.rs`](../src-tauri/src/lib.rs)，后者只组装插件、共享状态、命令和生命周期。
+前端由根 [`index.html`](../index.html) 加载 [`main.tsx`](../src/main.tsx)，挂载 App。App 组合设置、语言、主题、命令 Provider、全局 DemoMotion 与 HashRouter；AppShell 组合标题栏、分组侧栏、轻量位置提示与页面。原生由 [`main.rs`](../src-tauri/src/main.rs) 调用 [`lib.rs`](../src-tauri/src/lib.rs)，后者只组装插件、共享状态、命令和生命周期。
 
 `pnpm dev` 只有浏览器界面；`pnpm app:dev` 同时启动 Rust 与 WebView。生产前端使用 Tauri 自定义协议和 HashRouter。源码入口、中间产物与交付目录见 [README](../README.md#从源码运行)。
 
 ## 模块职责
 
-| 位置                                             | 职责                                                     |
-| ------------------------------------------------ | -------------------------------------------------------- |
-| `src/routes.tsx`                                 | 懒加载页面、路径、导航文案及演示页面标记                 |
-| `src/config/app.ts` / `app.config.json`          | 品牌、默认演示 / 精简模式、部署更新默认值                |
-| `src/commands/` / `providers/commands.tsx`       | 命令描述、上下文可用性、菜单 / 面板 / 快捷键共用执行入口 |
-| `src/components/`                                | 交互与外壳；`ui/` 为 shadcn 原子组件                     |
-| `src/providers/settings.tsx`                     | 设置状态、保存反馈与生命周期                             |
-| `src/lib/settings-model.ts` / `settings-sync.ts` | schema 迁移、校验、局部字段合并、原生 revision 同步      |
-| `src/i18n/`                                      | 类型化词典、语言注册表、系统匹配与翻译回退               |
-| `src/lib/tauri.ts`                               | 系统能力的唯一前端门面；生成绑定是允许的底层例外         |
-| `src-tauri/src/commands.rs`                      | IPC 参数边界与服务编排                                   |
-| `src-tauri/src/bindings.rs`                      | 命令 / DTO 导出注册；Rust 是 IPC 契约来源                |
-| `storage.rs` / `database.rs`                     | 原子设置存储与 SQLite 迁移、事务、并发版本               |
-| `desktop.rs`                                     | 窗口复用、托盘、后台行为与自启动                         |
-| `window_geometry.rs`                             | 按窗口保存逻辑尺寸，适配 DPI 与显示器工作区变化          |
-| `diagnostics.rs` / `updater.rs`                  | 诊断脱敏及更新策略、下载 / 安装状态                      |
-| `resources/branding/` / `scripts/branding.mjs`   | SVG 设计源与平台图标、安装器位图的可复现生成             |
+| 位置                                                          | 职责                                                     |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| `src/routes.tsx`                                              | 懒加载页面、路径、导航分组、文案及演示页面标记           |
+| `src/config/app.ts` / `app.config.json`                       | 品牌、默认演示 / 精简模式、部署更新默认值                |
+| `src/commands/` / `providers/commands.tsx`                    | 命令描述、上下文可用性、菜单 / 面板 / 快捷键共用执行入口 |
+| `src/components/`                                             | 交互与外壳；`ui/` 为 shadcn 原子组件                     |
+| `src/components/showcase/` / `motion-lab/`                    | 交互场景与动效实验，页面内数据与播放状态                 |
+| `src/hooks/use-demo-motion.ts` / `components/demo-motion.tsx` | 文档可见性、场景离屏、用户偏好与全局 MotionConfig        |
+| `src/styles/`                                                 | 共用页面层次、导航与独立场景样式                         |
+| `src/providers/settings.tsx`                                  | 设置状态、保存反馈与生命周期                             |
+| `src/lib/settings-model.ts` / `settings-sync.ts`              | schema 迁移、校验、局部字段合并、原生 revision 同步      |
+| `src/i18n/`                                                   | 类型化词典、语言注册表、系统匹配与翻译回退               |
+| `src/lib/tauri.ts`                                            | 系统能力的唯一前端门面；生成绑定是允许的底层例外         |
+| `src-tauri/src/commands.rs`                                   | IPC 参数边界与服务编排                                   |
+| `src-tauri/src/bindings.rs`                                   | 命令 / DTO 导出注册；Rust 是 IPC 契约来源                |
+| `storage.rs` / `database.rs`                                  | 原子设置存储与 SQLite 迁移、事务、并发版本               |
+| `desktop.rs`                                                  | 窗口复用、托盘、后台行为与自启动                         |
+| `window_geometry.rs`                                          | 按窗口保存逻辑尺寸，适配 DPI 与显示器工作区变化          |
+| `diagnostics.rs` / `updater.rs`                               | 诊断脱敏及更新策略、下载 / 安装状态                      |
+| `resources/branding/` / `scripts/branding.mjs`                | SVG 设计源与平台图标、安装器位图的可复现生成             |
 
 小领域继续放在现有页面、组件、Hook 和原生服务中；同一业务领域需要独立维护一组页面、数据与组件时，再引入 `features/<domain>/`。不要为消除几行相似代码增加空壳层。
+
+## 页面与演示边界
+
+导航由 `APP_ROUTES.group` 和 `NAVIGATION_GROUPS` 生成，分组不改变原有 URL 或命令 ID：
+
+| 分组     | 页面                                                       |
+| -------- | ---------------------------------------------------------- |
+| 体验     | `/` 创意展厅、`/components` 交互场景、`/motion` 动效实验室 |
+| 桌面能力 | `/desktop`、`/database`、`/bridge` 原生通信                |
+| 系统     | `/diagnostics`、`/updates`、`/settings`                    |
+
+精简模式隐藏标记为 `demoOnly` 的导航和命令，首页呈现桌面功能、本地笔记与设置入口。外壳仅显示随内容滚动的位置提示；各页负责自己的标题与层次，不再重复展示固定页标题栏和版本号。侧栏底部复用命令面板入口。页面路径变化时重置主滚动区，不抢导航焦点；同页查询参数变化保留设置定位行为。
+
+创意展厅的 SVG 雕塑和三种风格属于交互预览。选择预设不会写设置，点击应用才通过现有设置 / 主题入口修改外观；撤销恢复本轮首次应用前的外观。组件页的创作预览、演示协作者、通知与资料收藏使用页面内状态，切换场景保留输入，离开或重载页面不承诺恢复。示例资料与应用内通知不代表账户、邮件或后台服务，持久笔记仍由原生 SQLite 页面管理。
+
+动效实验室将弹簧、共享布局、指针倾斜和 SVG 路径拆为独立场景。`motion/react` 提供运动与布局能力；DemoMotion 统一减少动效策略，useDemoMotion 判断场景活动状态。CSS 持续动画及命令式播放仍需消费活动状态并在退出时清理，MotionConfig 不会自动暂停所有动画。具体约定见 [动效规范](./conventions/ui-guidelines.md#动效)。
+
+设置页将窗口与布局放在同一工作区，版本和资源链接收进可折叠的关于区，保留设置搜索锚点与保存反馈。浏览器中的原生能力页通过 NativePage 说明实际能力与下一步入口，不渲染伪造的 IPC 成功结果。
 
 ## 命令与桌面交互
 

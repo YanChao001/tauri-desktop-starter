@@ -11,6 +11,9 @@ vi.mock("@/providers/commands", () => ({
 }));
 vi.mock("@/components/command-palette", () => ({ CommandPalette: () => null }));
 vi.mock("@/components/desktop-effects", () => ({ DesktopEffects: () => null }));
+vi.mock("@/components/demo-motion", () => ({
+  DemoMotion: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("@/layouts/app-shell", () => ({
   AppShell: () => <Outlet />,
 }));

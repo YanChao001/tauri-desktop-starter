@@ -46,6 +46,109 @@ describe("Real Tauri desktop", () => {
     assert.doesNotMatch(rejected, /\[object Object\]/);
   });
 
+  it("previews, applies and undoes a showroom appearance through real native preferences", async () => {
+    await navigate("/");
+    await $("[data-testid=showroom]").waitForDisplayed();
+    const original = await appearance();
+    const originalNative = (await invoke("load_settings_snapshot")).value
+      .settings;
+    await $("label:has(input[name='showroom-vibe'][value='sakura'])").click();
+    assert.deepEqual(await appearance(), original);
+    await $("//button[normalize-space()='Apply to window']").click();
+    await browser.waitUntil(
+      async () => (await appearance()).background === "sakura",
+    );
+    await browser.waitUntil(async () => {
+      const snapshot = await invoke("load_settings_snapshot");
+      return (
+        snapshot.ok &&
+        snapshot.value.settings?.background === "sakura" &&
+        snapshot.value.settings?.accent === "rose"
+      );
+    });
+    await $("button[aria-label='Undo the change']").click();
+    await browser.waitUntil(
+      async () => (await appearance()).background === original.background,
+    );
+    await browser.waitUntil(
+      async () => {
+        const snapshot = await invoke("load_settings_snapshot");
+        return (
+          snapshot.ok &&
+          [
+            "background",
+            "backgroundIntensity",
+            "accent",
+            "radius",
+            "theme",
+          ].every(
+            (field) =>
+              snapshot.value.settings?.[field] === originalNative?.[field],
+          )
+        );
+      },
+      {
+        timeoutMsg: "The undone appearance did not persist in the native store",
+      },
+    );
+    assert.deepEqual(await appearance(), original);
+  });
+
+  it("runs the interactive playground and controllable motion lab in the native WebView", async () => {
+    await navigate("/components");
+    await $("#studio-name").setValue("Native creative space");
+    await browser.waitUntil(
+      async () =>
+        (await $("[data-testid=studio-preview-title]").getText()) ===
+        "Native creative space",
+    );
+    await $(
+      "//button[@role='tab'][contains(., 'Resource collection')]",
+    ).click();
+    await $("input[aria-label='Search sample resources']").setValue("Prism");
+    await browser.waitUntil(async () =>
+      (await $(".library-resource-grid").getText()).includes(
+        "Prism visual toolkit",
+      ),
+    );
+    await $("//button[@role='tab'][contains(., 'Creative studio')]").click();
+    assert.equal(await $("#studio-name").getValue(), "Native creative space");
+    await navigate("/motion");
+    await $("[data-testid=spring-stage]").waitForDisplayed();
+    const orbitTransform = () =>
+      browser.execute(
+        () =>
+          getComputedStyle(
+            document.querySelector(".lab-orbit-ring").parentElement,
+          ).transform,
+      );
+    const firstTransform = await orbitTransform();
+    await browser.waitUntil(
+      async () => (await orbitTransform()) !== firstTransform,
+      { timeout: 5000, timeoutMsg: "The SVG orbit did not move" },
+    );
+    await $("button[aria-label=Pause]").click();
+    await browser.waitUntil(
+      async () =>
+        (await $(".motion-lab").getAttribute("data-paused")) === "true",
+    );
+    const pausedTransform = await orbitTransform();
+    await browser.pause(150);
+    assert.equal(await orbitTransform(), pausedTransform);
+    await $("button[aria-label=Resume]").click();
+    await browser.waitUntil(
+      async () =>
+        (await $(".motion-lab").getAttribute("data-paused")) === "false",
+    );
+    await $("#lab-tab-paths").click();
+    await $(".lab-path-stage").waitForDisplayed();
+    assert.equal(
+      await $("#lab-tab-paths").getAttribute("aria-selected"),
+      "true",
+    );
+    await browser.saveScreenshot("artifacts/e2e/fresh/motion-lab.png");
+  });
+
   it("uses the actual native window maximize, restore and minimize controls", async () => {
     const original = await invoke("plugin:window|is_maximized", {
       label: "main",

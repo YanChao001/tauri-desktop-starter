@@ -101,13 +101,12 @@ export default function Bridge() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-1.5">
+    <div className="studio-page">
+      <div className="studio-intro">
+        <span className="studio-eyebrow">{t("studio.bridgeEyebrow")}</span>
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-4 text-muted-foreground" />
-          <h2 className="text-xl font-semibold tracking-tight">
-            {t("bridge.title")}
-          </h2>
+          <h2>{t("bridge.title")}</h2>
           <Badge variant="outline" className="font-normal">
             invoke
           </Badge>

@@ -1,18 +1,22 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
-import { APP_CONFIG } from "@/config/app";
+import {
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SearchIcon,
+} from "lucide-react";
+import { formatShortcut } from "@/commands/shortcuts";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { isTauri } from "@/lib/tauri";
+import { isMacOS } from "@/lib/platform";
 import { useCommands } from "@/providers/commands";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
-import type { AppRoute } from "@/routes";
+import { NAVIGATION_GROUPS, type AppRoute } from "@/routes";
 
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 360;
@@ -27,6 +31,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   const { t } = useI18n();
   const { settings, update } = useSettings();
   const { execute } = useCommands();
+  const navigationId = useId();
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const [resizing, setResizing] = useState(false);
   const resizeHandle = useCallback((node: HTMLDivElement | null) => {
@@ -39,6 +44,10 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   const width = settings.sidebarWidth;
   const resize = (value: number) =>
     update({ sidebarWidth: clampSidebarWidth(value) });
+  const groups = NAVIGATION_GROUPS.map((group) => ({
+    ...group,
+    routes: routes.filter((route) => route.group === group.id),
+  })).filter((group) => group.routes.length > 0);
   return (
     <aside
       id="app-sidebar"
@@ -49,15 +58,15 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
       style={{ width: collapsed ? 56 : width }}
       className="app-sidebar relative flex shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground"
     >
-      <div className="relative flex h-12 shrink-0 items-center px-4">
+      <div className="app-sidebar-top relative flex shrink-0 items-center">
         <span
           aria-hidden={collapsed}
-          className="app-sidebar-label min-w-0 flex-1 truncate pr-10 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+          className="app-sidebar-label app-sidebar-caption min-w-0 flex-1 truncate"
         >
-          {APP_CONFIG.name}
+          {t("navContext.browse")}
         </span>
         <Button
-          className="absolute right-3.5"
+          className="absolute right-3"
           variant="ghost"
           size="icon-sm"
           aria-label={t(
@@ -72,36 +81,76 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
       </div>
       <nav
         id="app-sidebar-navigation"
-        className="flex-1 space-y-0.5 overflow-y-auto p-2"
+        className="app-sidebar-navigation min-h-0 flex-1 overflow-y-auto"
       >
-        {routes.map(({ path, labelKey, icon: Icon, exact }) => (
-          <Tooltip key={path}>
-            <TooltipTrigger asChild>
-              <NavLink
-                to={path}
-                end={exact}
-                className="flex h-9 items-center gap-2.5 overflow-hidden rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground"
-              >
-                <Icon className="size-4 shrink-0" aria-hidden="true" />
-                <span className="app-sidebar-label min-w-0 flex-1 truncate">
-                  {t(labelKey)}
-                </span>
-              </NavLink>
-            </TooltipTrigger>
-            {collapsed ? (
-              <TooltipContent side="right">{t(labelKey)}</TooltipContent>
-            ) : null}
-          </Tooltip>
+        {groups.map((group) => (
+          <div
+            key={group.id}
+            role="group"
+            aria-labelledby={`${navigationId}-${group.id}`}
+            className="app-sidebar-group"
+          >
+            <p
+              id={`${navigationId}-${group.id}`}
+              className="app-sidebar-group-heading"
+            >
+              <span className="app-sidebar-label">{t(group.labelKey)}</span>
+            </p>
+            <div className="space-y-0.5">
+              {group.routes.map(({ path, labelKey, icon: Icon, exact }) => (
+                <Tooltip key={path}>
+                  <TooltipTrigger asChild>
+                    <NavLink
+                      to={path}
+                      end={exact}
+                      className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
+                    >
+                      <Icon className="size-4 shrink-0" aria-hidden="true" />
+                      <span className="app-sidebar-label min-w-0 flex-1 truncate">
+                        {t(labelKey)}
+                      </span>
+                    </NavLink>
+                  </TooltipTrigger>
+                  {collapsed ? (
+                    <TooltipContent side="right" className="space-y-0.5">
+                      <p className="text-[10px] opacity-65">
+                        {t(group.labelKey)}
+                      </p>
+                      <p>{t(labelKey)}</p>
+                    </TooltipContent>
+                  ) : null}
+                </Tooltip>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
-      <div
-        aria-hidden={collapsed}
-        className="app-sidebar-footer shrink-0 border-t border-sidebar-border text-xs text-muted-foreground"
-      >
-        <div className="min-h-0 space-y-1 overflow-hidden">
-          {settings.appMode === "demo" ? <p>Tauri 2 · React 19</p> : null}
-          <p>{isTauri() ? t("app.native") : t("app.preview")}</p>
-        </div>
+      <div className="app-sidebar-tools shrink-0">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="app-sidebar-command flex w-full items-center gap-2.5 overflow-hidden rounded-lg px-3"
+              aria-label={t("navContext.commands")}
+              aria-keyshortcuts={isMacOS() ? "Meta+K" : "Control+K"}
+              onClick={() => void execute("command-palette")}
+            >
+              <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
+              <span className="app-sidebar-label min-w-0 flex-1 truncate text-left">
+                {t("navContext.commands")}
+              </span>
+              <kbd className="app-sidebar-keycap" aria-hidden="true">
+                {formatShortcut({ key: "k", primary: true })}
+              </kbd>
+            </button>
+          </TooltipTrigger>
+          {collapsed ? (
+            <TooltipContent side="right">
+              {t("navContext.commands")} ·{" "}
+              {formatShortcut({ key: "k", primary: true })}
+            </TooltipContent>
+          ) : null}
+        </Tooltip>
       </div>
       {!collapsed ? (
         <div

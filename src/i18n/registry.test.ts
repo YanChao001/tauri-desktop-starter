@@ -52,8 +52,8 @@ describe("词条回退与插值", () => {
   it("缺词和空词条回退默认语言，未知占位符保留", () => {
     const t = createTranslator({ "common.copy": "" });
     expect(t("common.copy")).toBe("复制");
-    expect(t("motion.item")).toBe("动效条目 {index}");
-    expect(t("motion.item", { index: 0 })).toBe("动效条目 0");
+    expect(t("settings.searchResults")).toBe("找到 {count} 项设置");
+    expect(t("settings.searchResults", { count: 0 })).toBe("找到 0 项设置");
   });
 
   it("占位符只替换一次，错误文本中的模板或美元符号保持原样", () => {

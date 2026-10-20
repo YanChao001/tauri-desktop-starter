@@ -1,10 +1,37 @@
 import type { ReactNode } from "react";
-import { AlertCircleIcon, MonitorIcon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  MonitorIcon,
+  DatabaseIcon,
+  LayersIcon,
+  ArrowRightIcon,
+} from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useI18n } from "@/providers/i18n";
+import { useSettings } from "@/providers/settings";
 import { isTauri } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
+function NativePreviewActions() {
+  const { settings } = useSettings();
+  const { t } = useI18n();
+  const minimal = settings.appMode === "minimal";
+  return (
+    <div className="studio-native-actions">
+      <Button asChild>
+        <Link to={minimal ? "/" : "/components"}>
+          {t(minimal ? "showroom.workspace" : "studio.nativeCta")}
+          <ArrowRightIcon />
+        </Link>
+      </Button>
+      <Button asChild variant="ghost">
+        <Link to={minimal ? "/settings" : "/motion"}>
+          {t(minimal ? "nav.settings" : "studio.nativeMotion")}
+        </Link>
+      </Button>
+    </div>
+  );
+}
 export function NativePage({
   title,
   description,
@@ -16,20 +43,38 @@ export function NativePage({
 }) {
   const { t } = useI18n();
   return (
-    <div className="space-y-5">
-      <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
+    <div className="studio-page">
+      <div className="studio-intro">
+        <h2>{title}</h2>
+        <p>{description}</p>
       </div>
       {isTauri() ? (
         children
       ) : (
-        <Card>
-          <CardContent className="flex items-center gap-3 py-6">
-            <MonitorIcon className="size-5 shrink-0 text-muted-foreground" />
-            <p className="text-sm">{t("common.nativeRequired")}</p>
-          </CardContent>
-        </Card>
+        <section className="studio-panel studio-native-preview">
+          <div className="studio-native-art" aria-hidden="true">
+            <div>
+              <MonitorIcon size={32} />
+            </div>
+            <div>
+              <DatabaseIcon size={32} />
+            </div>
+          </div>
+          <div className="studio-native-copy">
+            <h3>{t("studio.nativeTitle")}</h3>
+            <p>{t("studio.nativeDescription")}</p>
+            <div className="studio-native-tags">
+              <span>{t("studio.nativeWindow")}</span>
+              <span>{t("studio.nativeData")}</span>
+              <span>{t("studio.nativeSystem")}</span>
+            </div>
+            <NativePreviewActions />
+          </div>
+          <p className="studio-native-note">
+            <LayersIcon size={13} />
+            {t("studio.nativeNote")}
+          </p>
+        </section>
       )}
     </div>
   );

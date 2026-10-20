@@ -218,9 +218,9 @@ describe("unified application commands", () => {
     fireEvent.click(screen.getByText("Palette"));
     await screen.findByRole("dialog");
     expect(
-      screen.queryByRole("option", { name: "组件" }),
+      screen.queryByRole("option", { name: "交互场景" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "概览" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "创意展厅" })).toBeVisible();
   });
 
   it("dispatches registered commands from menus with the same availability", async () => {

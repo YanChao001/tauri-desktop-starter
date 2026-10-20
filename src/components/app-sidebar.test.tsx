@@ -4,18 +4,23 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomeIcon } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/providers/i18n";
-import { CommandsProvider } from "@/providers/commands";
+import { CommandsProvider, useCommands } from "@/providers/commands";
+import { zhCN } from "@/i18n/zh-CN";
 import { SettingsProvider, STORAGE_KEY } from "@/providers/settings";
 import type { AppRoute } from "@/routes";
 import { AppSidebar } from "./app-sidebar";
 
-vi.mock("@/routes", () => ({ APP_ROUTES: [] }));
+vi.mock("@/routes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/routes")>()),
+  APP_ROUTES: [],
+}));
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => false,
@@ -36,19 +41,26 @@ const routes: AppRoute[] = [
   {
     path: "/",
     labelKey: "nav.overview",
+    group: "experience",
     icon: HomeIcon,
     component: () => null,
     exact: true,
   },
 ];
-function renderSidebar() {
+function PaletteState() {
+  const { paletteOpen } = useCommands();
+  return <output data-testid="palette-state">{String(paletteOpen)}</output>;
+}
+
+function renderSidebar(entries: readonly AppRoute[] = routes) {
   return render(
     <MemoryRouter>
       <SettingsProvider>
         <I18nProvider>
           <CommandsProvider>
             <TooltipProvider>
-              <AppSidebar routes={routes} />
+              <AppSidebar routes={entries} />
+              <PaletteState />
             </TooltipProvider>
           </CommandsProvider>
         </I18nProvider>
@@ -67,7 +79,7 @@ describe("persisted application sidebar", () => {
   });
   it("preserves navigation layout classes through the Radix tooltip slot", () => {
     renderSidebar();
-    const link = screen.getByRole("link", { name: "概览" });
+    const link = screen.getByRole("link", { name: zhCN["nav.overview"] });
     expect(link).toHaveClass("flex", "items-center");
     expect(link).toHaveAttribute("aria-current", "page");
     expect(link.className).not.toContain("=>");
@@ -96,8 +108,12 @@ describe("persisted application sidebar", () => {
       shiftKey: true,
     });
     fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
-    expect(screen.getByRole("link", { name: "概览" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "概览" })).toHaveClass("px-3");
+    expect(
+      screen.getByRole("link", { name: zhCN["nav.overview"] }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: zhCN["nav.overview"] }),
+    ).toHaveClass("px-3");
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "展开侧栏" })).toHaveAttribute(
       "aria-expanded",
@@ -146,12 +162,14 @@ describe("persisted application sidebar", () => {
     renderSidebar();
     const sidebar = screen.getByRole("complementary");
     const label = screen
-      .getByRole("link", { name: "概览" })
+      .getByRole("link", { name: zhCN["nav.overview"] })
       .querySelector("span");
     expect(sidebar).toHaveAttribute("data-motion", "reduced");
     fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
     expect(
-      screen.getByRole("link", { name: "概览" }).querySelector("span"),
+      screen
+        .getByRole("link", { name: zhCN["nav.overview"] })
+        .querySelector("span"),
     ).toBe(label);
     expect(label).not.toHaveClass("sr-only");
     expect(sidebar).toHaveAttribute("data-collapsed", "true");
@@ -181,5 +199,59 @@ describe("persisted application sidebar", () => {
       fireEvent.click(screen.getByRole("button", { name: "展开侧栏" })),
     );
     expect(sidebar).toHaveAttribute("data-resizing", "false");
+  });
+
+  it("groups visible routes by metadata and omits empty groups", () => {
+    const view = renderSidebar();
+    expect(
+      within(
+        screen.getByRole("group", { name: zhCN["navGroup.experience"] }),
+      ).getByRole("link"),
+    ).toHaveAttribute("href", "/");
+    expect(
+      screen.queryByRole("group", { name: zhCN["navGroup.system"] }),
+    ).not.toBeInTheDocument();
+    view.unmount();
+    renderSidebar([
+      {
+        ...routes[0]!,
+        path: "/settings",
+        labelKey: "nav.settings",
+        group: "system",
+      },
+      routes[0]!,
+      {
+        ...routes[0]!,
+        path: "/desktop",
+        labelKey: "nav.desktop",
+        group: "capabilities",
+      },
+    ]);
+    expect(
+      screen
+        .getAllByRole("group")
+        .map((group) => group.getAttribute("aria-labelledby")),
+    ).toHaveLength(3);
+    expect(
+      screen.getAllByRole("link").map((link) => link.getAttribute("href")),
+    ).toEqual(["/", "/desktop", "/settings"]);
+  });
+
+  it("opens the real command palette state from the footer even when collapsed", async () => {
+    renderSidebar();
+    const commands = screen.getByRole("button", {
+      name: zhCN["navContext.commands"],
+    });
+    expect(commands).toHaveAttribute("aria-keyshortcuts", "Control+K");
+    expect(screen.getByTestId("palette-state")).toHaveTextContent("false");
+    await act(async () => fireEvent.click(commands));
+    expect(screen.getByTestId("palette-state")).toHaveTextContent("true");
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
+    expect(
+      screen.getByRole("button", { name: zhCN["navContext.commands"] }),
+    ).toBe(commands);
+    await act(async () => fireEvent.click(commands));
+    expect(screen.getByTestId("palette-state")).toHaveTextContent("false");
+    expect(screen.queryByText("Tauri 2 · React 19")).not.toBeInTheDocument();
   });
 });

@@ -41,6 +41,8 @@ describe("useLatestTranslator", () => {
     expect(original.t("common.copied")).toBe("已复制到剪贴板");
     expect(result.current.latest).toBe(original.latest);
     expect(original.latest("common.copied")).toBe("Copied to clipboard");
-    expect(original.latest("motion.item", { index: 2 })).toBe("Motion item 2");
+    expect(original.latest("settings.searchResults", { count: 2 })).toBe(
+      "Found 2 settings",
+    );
   });
 });
