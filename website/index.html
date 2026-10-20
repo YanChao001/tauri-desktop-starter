@@ -1,0 +1,596 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Tauri Desktop Starter：以 Tauri 2、React 19 和 TypeScript 构建桌面应用，集成原生存储、多窗口、主题、测试与发布工作流。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tauri Desktop Starter" />
+    <meta
+      property="og:description"
+      content="从一个有设计、有原生能力、有工程约定的起点，构建你的桌面应用。"
+    />
+    <meta name="theme-color" content="#0d0e19" />
+    <title>Tauri Desktop Starter · 让桌面创意落地</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/app-icon.svg" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.mjs"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main" data-i18n="skip">跳到主要内容</a>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Tauri Desktop Starter">
+        <img src="./assets/app-icon.svg" width="36" height="36" alt="" />
+        <span>Tauri Desktop <strong>Starter</strong></span>
+      </a>
+      <nav class="main-nav" aria-label="主要导航" data-i18n-aria="navigation">
+        <a href="#experience" data-i18n="navExperience">体验与能力</a>
+        <a href="#architecture" data-i18n="navArchitecture">工程架构</a>
+        <a href="#start" data-i18n="navStart">快速开始</a>
+        <a href="#resources" data-i18n="navDocs">文档</a>
+      </nav>
+      <div class="header-actions">
+        <button class="language-button" id="language" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="m4 5 12 0M10 3v2m-4 0c0 6 6 10 6 10M14 5c0 6-6 10-10 11m10 5 4-10 4 10m-6.8-3h5.6"
+            />
+          </svg>
+          <span>English</span>
+        </button>
+        <a
+          class="github-link"
+          href="https://github.com/YanChao001/tauri-desktop-starter"
+          aria-label="GitHub"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.61-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.76c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+            />
+          </svg>
+        </a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero section-shell">
+        <div class="hero-orbit" aria-hidden="true">
+          <i></i><i></i><i></i><span>✦</span>
+        </div>
+        <p class="eyebrow">
+          <span class="status-dot"></span
+          ><span data-i18n="heroEyebrow">一个桌面应用，从这里开始</span>
+        </p>
+        <h1>
+          <span data-i18n="heroTitle">让桌面创意，</span><br /><span
+            class="gradient-text"
+            data-i18n="heroAccent"
+            >有一个好起点。</span
+          >
+        </h1>
+        <p class="hero-description" data-i18n="heroDescription">
+          设计、原生能力与工程约定，在同一个起点相遇。用熟悉的 React
+          构建界面，用 Rust 连接桌面，把精力留给你的产品。
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#start"
+            ><span data-i18n="heroStart">开始构建</span
+            ><span aria-hidden="true">↗</span></a
+          >
+          <a
+            class="button button-secondary"
+            href="https://github.com/YanChao001/tauri-desktop-starter"
+            ><span data-i18n="heroSource">查看源代码</span
+            ><span aria-hidden="true">→</span></a
+          >
+        </div>
+        <ul class="tech-stack" aria-label="技术栈" data-i18n-aria="techStack">
+          <li>Tauri <b>2</b></li>
+          <li>React <b>19</b></li>
+          <li>TypeScript</li>
+          <li>Rust</li>
+          <li>MIT</li>
+        </ul>
+      </section>
+
+      <section
+        class="showcase section-shell"
+        id="experience"
+        aria-labelledby="showcase-title"
+      >
+        <div class="showcase-toolbar">
+          <p id="showcase-title">
+            <span class="status-dot"></span
+            ><span data-i18n="showcaseTitle">界面有个性，能力有边界</span>
+          </p>
+          <span class="small-label" data-i18n="showcaseLabel"
+            >PROJECT PREVIEW / 项目实景</span
+          >
+        </div>
+        <figure class="screenshot-frame">
+          <img
+            id="preview-image"
+            src="./assets/showroom-desktop.png"
+            alt="真实桌面应用的英文深色创意展厅，带自定义标题栏、导航和原创樱花皮肤"
+            width="1400"
+            height="889"
+            fetchpriority="high"
+          />
+          <figcaption>
+            <span class="image-counter" id="preview-counter">01 / 02</span
+            ><span id="preview-caption"
+              >桌面应用 · 深色创意展厅 · 原生 E2E 截图</span
+            >
+          </figcaption>
+        </figure>
+        <div
+          class="preview-controls"
+          id="preview-controls"
+          hidden
+          role="group"
+          aria-label="选择项目截图"
+          data-i18n-aria="previewControls"
+        >
+          <button
+            type="button"
+            class="preview-choice"
+            data-preview="0"
+            aria-pressed="true"
+          >
+            <span>01</span
+            ><span data-i18n="previewShowroom">创意展厅</span></button
+          ><button
+            type="button"
+            class="preview-choice"
+            data-preview="1"
+            aria-pressed="false"
+          >
+            <span>02</span><span data-i18n="previewMotion">动效实验室</span>
+          </button>
+        </div>
+        <p class="image-note" data-i18n="imageNote">
+          以上为项目真实截图。此页面是项目介绍；浏览器预览与原生桌面能力的边界见下方说明。
+        </p>
+      </section>
+
+      <section
+        class="capabilities section-shell"
+        aria-labelledby="capabilities-title"
+      >
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="capabilitiesEyebrow">
+              从界面，到桌面
+            </p>
+            <h2 id="capabilities-title" data-i18n="capabilitiesTitle">
+              把重复的基础工作，<br />变成可以继续的起点。
+            </h2>
+          </div>
+          <p data-i18n="capabilitiesIntro">
+            既能探索交互，也能切换到精简模式。按真实产品的需要，保留、替换和扩展。
+          </p>
+        </div>
+        <div class="capability-grid">
+          <article>
+            <span class="feature-icon" aria-hidden="true">◐</span>
+            <h3 data-i18n="featureAppearanceTitle">让界面成为你的</h3>
+            <p data-i18n="featureAppearance">
+              明暗与系统主题、主题色、字号、圆角、原创 SVG 皮肤，以及简体中文 /
+              English。命令面板连接菜单、快捷键与设置搜索。
+            </p>
+            <span class="feature-meta">THEMES · I18N · COMMANDS</span>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">⌘</span>
+            <h3 data-i18n="featureDesktopTitle">连接真正的桌面</h3>
+            <p data-i18n="featureDesktop">
+              主次窗口、单实例恢复、窗口位置记忆和系统托盘。按用户选择启用后台运行与登录启动。
+            </p>
+            <span class="feature-meta">WINDOWS · TRAY · AUTOSTART</span>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">▤</span>
+            <h3 data-i18n="featureDataTitle">数据有自己的归处</h3>
+            <p data-i18n="featureData">
+              原子设置存储、迁移、跨窗口同步与保存重试。Rust 管理 SQLite
+              笔记，提供参数化查询与版本冲突处理。
+            </p>
+            <span class="feature-meta">ATOMIC JSON · SQLITE</span>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">↔</span>
+            <h3 data-i18n="featureBridgeTitle">从类型契约到原生能力</h3>
+            <p data-i18n="featureBridge">
+              Rust 生成 TypeScript IPC
+              绑定；统一门面收敛原生调用，结构化错误说明失败原因与重试语义。
+            </p>
+            <span class="feature-meta">GENERATED IPC · RUST</span>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">↗</span>
+            <h3 data-i18n="featureReleaseTitle">把交付链路接起来</h3>
+            <p data-i18n="featureRelease">
+              三端构建工作流、版本一致性、安装包收集与 SHA-256
+              清单。更新下载和签名验证链路按维护者配置启用。
+            </p>
+            <span class="feature-meta">CI · RELEASES · UPDATER</span>
+          </article>
+          <article>
+            <span class="feature-icon" aria-hidden="true">◎</span>
+            <h3 data-i18n="featureQualityTitle">让维护有据可依</h3>
+            <p data-i18n="featureQuality">
+              前端、工程脚本与 Rust 测试，真实桌面
+              E2E，局部错误恢复、环境诊断与脱敏日志预览。
+            </p>
+            <span class="feature-meta">TESTS · E2E · DIAGNOSTICS</span>
+          </article>
+        </div>
+      </section>
+
+      <section
+        class="engineering"
+        id="architecture"
+        aria-labelledby="architecture-title"
+      >
+        <div class="section-shell engineering-inner">
+          <div class="engineering-copy">
+            <p class="eyebrow" data-i18n="architectureEyebrow">
+              可理解的边界，可持续的扩展
+            </p>
+            <h2 id="architecture-title" data-i18n="architectureTitle">
+              从第一行开始，<br />为后续开发留出空间。
+            </h2>
+            <p data-i18n="architectureDescription">
+              界面、通信与系统服务各有职责。通过单一入口表达约定，再用类型与检查执行约定，让改动可以被理解和验证。
+            </p>
+            <a
+              class="text-link"
+              href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/architecture.md"
+              ><span data-i18n="architectureLink">阅读架构与扩展原则</span
+              ><span aria-hidden="true">↗</span></a
+            >
+            <div class="engineering-principles">
+              <p>
+                <span>01</span
+                ><span data-i18n="principleOne"
+                  >页面按需加载，演示模式可切换</span
+                >
+              </p>
+              <p>
+                <span>02</span
+                ><span data-i18n="principleTwo"
+                  >命令、路由与语言各有统一注册入口</span
+                >
+              </p>
+              <p>
+                <span>03</span
+                ><span data-i18n="principleThree"
+                  >按领域复杂度拆分，避免预建空壳层</span
+                >
+              </p>
+            </div>
+          </div>
+          <div
+            class="architecture-diagram"
+            role="img"
+            aria-label="架构调用路径：React 页面通过原生门面和生成绑定，调用 Rust 命令边界，再到原生服务与本地存储"
+            data-i18n-aria="architectureDiagram"
+          >
+            <div class="diagram-header">
+              <span class="file-dots" aria-hidden="true">● ● ●</span
+              ><span>APPLICATION / NATIVE</span><span>↙</span>
+            </div>
+            <div class="architecture-layer">
+              <span class="layer-number">01</span>
+              <div>
+                <strong>React + TypeScript</strong
+                ><small data-i18n="layerUi">页面 · 外壳 · 命令 · 设置</small>
+              </div>
+              <span class="layer-tag">UI</span>
+            </div>
+            <div class="connector">
+              <span></span><code>src/lib/tauri.ts</code>
+            </div>
+            <div class="architecture-layer bridge-layer">
+              <span class="layer-number">02</span>
+              <div>
+                <strong data-i18n="layerContractTitle">生成的类型契约</strong
+                ><small data-i18n="layerContract"
+                  >TypeScript IPC ↔ Rust DTO</small
+                >
+              </div>
+              <span class="layer-tag">IPC</span>
+            </div>
+            <div class="connector"><span></span><code>commands.rs</code></div>
+            <div class="architecture-layer">
+              <span class="layer-number">03</span>
+              <div>
+                <strong data-i18n="layerServiceTitle">Rust 原生服务</strong
+                ><small
+                  >storage · database · desktop<br />diagnostics ·
+                  updater</small
+                >
+              </div>
+              <span class="layer-tag">RUST</span>
+            </div>
+            <div class="diagram-storage">
+              <span data-i18n="storageSettings">原子 JSON</span
+              ><span>SQLite</span
+              ><span data-i18n="storageSystem">系统能力</span>
+            </div>
+            <p class="diagram-note" data-i18n="diagramNote">
+              事件同步变化，命令返回操作结果。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="getting-started section-shell"
+        id="start"
+        aria-labelledby="start-title"
+      >
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="startEyebrow">从源码，走到你的产品</p>
+            <h2 id="start-title" data-i18n="startTitle">
+              选一个入口，开始动手。
+            </h2>
+          </div>
+          <p data-i18n="startIntro">
+            先配置 Node.js、pnpm、Rust
+            与平台依赖。工具版本以仓库配置为准，首次原生编译需要构建依赖。
+          </p>
+        </div>
+        <div class="start-grid">
+          <div class="terminal">
+            <div class="terminal-top">
+              <span class="file-dots" aria-hidden="true">● ● ●</span
+              ><span data-i18n="terminalTitle">启动完整桌面应用</span
+              ><button
+                type="button"
+                class="copy-button"
+                id="copy-command"
+                hidden
+                data-i18n="copy"
+              >
+                复制
+              </button>
+            </div>
+            <pre><code id="start-command"><span class="code-comment"># Clone &amp; enter the project</span>
+git clone https://github.com/YanChao001/tauri-desktop-starter.git
+cd tauri-desktop-starter
+
+<span class="code-comment"># Install, check, launch</span>
+pnpm install --frozen-lockfile
+rustup toolchain install
+pnpm run doctor
+pnpm app:dev</code></pre>
+            <div class="terminal-bottom">
+              <span class="status-dot"></span
+              ><span data-i18n="terminalFooter"
+                >React 热更新 + Rust 原生窗口</span
+              >
+            </div>
+          </div>
+          <div class="start-options">
+            <a
+              class="start-option"
+              href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/development.md"
+              ><span class="option-number">01</span>
+              <div>
+                <h3 data-i18n="startDevelopmentTitle">先把开发环境准备好</h3>
+                <p data-i18n="startDevelopment">
+                  查看平台要求、环境诊断、F5 调试与常用命令。
+                </p>
+              </div>
+              <span aria-hidden="true">↗</span></a
+            ><a
+              class="start-option"
+              href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/development.md#项目初始化"
+              ><span class="option-number">02</span>
+              <div>
+                <h3 data-i18n="startCustomizeTitle">换成你的应用身份</h3>
+                <p data-i18n="startCustomize">
+                  使用 init:project 同步品牌和包名；可选 --minimal，先用
+                  --dry-run 预览。
+                </p>
+              </div>
+              <span aria-hidden="true">↗</span></a
+            ><a
+              class="start-option"
+              href="https://github.com/YanChao001/tauri-desktop-starter/releases/latest"
+              ><span class="option-number">03</span>
+              <div>
+                <h3 data-i18n="startDownloadTitle">查看已发布的安装包</h3>
+                <p data-i18n="startDownload">
+                  前往 GitHub Releases，核对目标平台、版本说明与签名状态。
+                </p>
+              </div>
+              <span aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+        <div class="boundary-note">
+          <span aria-hidden="true">ⓘ</span>
+          <p data-i18n="browserBoundary">
+            只想浏览界面？运行 pnpm
+            dev。在浏览器中可体验主题、语言与交互；SQLite、托盘、多窗口和更新需要通过
+            pnpm app:dev 启动原生应用。本展示网站不执行这些原生操作。
+          </p>
+        </div>
+      </section>
+
+      <section
+        class="resources section-shell"
+        id="resources"
+        aria-labelledby="resources-title"
+      >
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow" data-i18n="resourcesEyebrow">
+              不止代码，还有协作的上下文
+            </p>
+            <h2 id="resources-title" data-i18n="resourcesTitle">
+              让下一次改动，有迹可循。
+            </h2>
+          </div>
+          <a
+            class="text-link"
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/README.md"
+            ><span data-i18n="resourcesAll">完整文档索引</span
+            ><span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <div class="resource-grid">
+          <a
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/architecture.md"
+            ><span class="resource-index">01 / ARCHITECTURE</span>
+            <h3 data-i18n="resourceArchitectureTitle">
+              架构与数据边界 <span aria-hidden="true">↗</span>
+            </h3>
+            <p data-i18n="resourceArchitecture">
+              入口、模块职责、IPC、状态与存储。
+            </p></a
+          ><a
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/conventions/code-style.md"
+            ><span class="resource-index">02 / CONVENTIONS</span>
+            <h3 data-i18n="resourceConventionsTitle">
+              工程与界面规范 <span aria-hidden="true">↗</span>
+            </h3>
+            <p data-i18n="resourceConventions">
+              代码风格、组件边界与界面约定。
+            </p></a
+          ><a
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/testing.md"
+            ><span class="resource-index">03 / VALIDATION</span>
+            <h3 data-i18n="resourceTestingTitle">
+              测试与验证 <span aria-hidden="true">↗</span>
+            </h3>
+            <p data-i18n="resourceTesting">
+              前端、Rust、工程脚本与真实桌面 E2E。
+            </p></a
+          ><a
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/build-release.md"
+            ><span class="resource-index">04 / DELIVERY</span>
+            <h3 data-i18n="resourceReleaseTitle">
+              构建与发布 <span aria-hidden="true">↗</span>
+            </h3>
+            <p data-i18n="resourceRelease">
+              版本、品牌资源、平台产物与签名更新。
+            </p></a
+          ><a
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/security.md"
+            ><span class="resource-index">05 / SECURITY</span>
+            <h3 data-i18n="resourceSecurityTitle">
+              安全与权限 <span aria-hidden="true">↗</span>
+            </h3>
+            <p data-i18n="resourceSecurity">
+              最小能力、本地数据与依赖审计。
+            </p></a
+          ><a
+            href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/CONTRIBUTING.md"
+            ><span class="resource-index">06 / COLLABORATION</span>
+            <h3 data-i18n="resourceContributingTitle">
+              贡献与技术决策 <span aria-hidden="true">↗</span>
+            </h3>
+            <p data-i18n="resourceContributing">
+              从贡献流程进入 Git 协作和 ADR。
+            </p></a
+          >
+        </div>
+      </section>
+
+      <section class="faq section-shell" aria-labelledby="faq-title">
+        <div>
+          <p class="eyebrow" data-i18n="faqEyebrow">开始前，了解这些</p>
+          <h2 id="faq-title" data-i18n="faqTitle">
+            实际边界，<br />清楚说明。
+          </h2>
+        </div>
+        <div class="faq-items">
+          <details>
+            <summary data-i18n="faqPlatformQuestion">
+              支持哪些桌面平台？
+            </summary>
+            <p data-i18n="faqPlatformAnswer">
+              仓库提供 Windows x64、macOS arm64 / x64 和 Linux x64 的构建与 CI
+              工作流。Windows 安装包为 NSIS / MSI，macOS 为 DMG / APP，Linux 为
+              DEB / RPM / AppImage。实际可下载版本以 Releases
+              为准，仍需针对你的目标系统做安装验收。
+            </p>
+          </details>
+          <details>
+            <summary data-i18n="faqSigningQuestion">
+              签名和自动更新可以直接用于正式分发吗？
+            </summary>
+            <p data-i18n="faqSigningAnswer">
+              需要由应用维护者配置更新公钥、发布凭据和平台签名。模板默认更新公钥为空，不发起更新请求。系统代码签名与更新签名承担不同职责，具体接线与限制见构建发布文档。
+            </p>
+          </details>
+          <details>
+            <summary data-i18n="faqScopeQuestion">这是完整业务系统吗？</summary>
+            <p data-i18n="faqScopeAnswer">
+              这是桌面应用基座，包含交互演示与原生能力示例。组件场景使用页面内演示数据；持久笔记由原生
+              SQLite 页面管理。账户、云同步、业务 API
+              和敏感凭据存储需要按产品需求设计。
+            </p>
+          </details>
+          <details>
+            <summary data-i18n="faqLicenseQuestion">
+              可以用来开发自己的产品吗？
+            </summary>
+            <p data-i18n="faqLicenseAnswer">
+              项目使用 MIT
+              许可证。派生项目需保留许可证要求的声明，并分别核对所使用依赖和分发渠道的要求。应用品牌、标识符、签名和安全联系方式应改为你自己的配置。
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <section class="closing section-shell">
+        <div class="closing-glow" aria-hidden="true"></div>
+        <img
+          src="./assets/app-icon.svg"
+          alt=""
+          width="64"
+          height="64"
+          loading="lazy"
+        />
+        <p class="eyebrow">TAURI DESKTOP STARTER</p>
+        <h2 data-i18n="closingTitle">下一步，让它成为你的。</h2>
+        <p data-i18n="closingDescription">
+          从一个清晰的起点，构建属于你的桌面体验。
+        </p>
+        <a
+          class="button button-primary"
+          href="https://github.com/YanChao001/tauri-desktop-starter"
+          ><span data-i18n="closingAction">在 GitHub 上开始</span
+          ><span aria-hidden="true">↗</span></a
+        >
+      </section>
+    </main>
+    <footer class="site-footer section-shell">
+      <p>Tauri Desktop Starter <span>·</span> MIT</p>
+      <div>
+        <a href="https://github.com/YanChao001/tauri-desktop-starter"
+          >GitHub ↗</a
+        ><a
+          href="https://github.com/YanChao001/tauri-desktop-starter/releases/latest"
+          data-i18n="footerReleases"
+          >版本与下载 ↗</a
+        ><a
+          href="https://github.com/YanChao001/tauri-desktop-starter/blob/develop/SECURITY.md"
+          data-i18n="footerSecurity"
+          >安全报告 ↗</a
+        >
+      </div>
+      <a class="back-top" href="#" data-i18n="backTop">返回顶部 ↑</a>
+    </footer>
+    <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+  </body>
+</html>
