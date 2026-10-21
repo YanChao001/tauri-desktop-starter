@@ -116,13 +116,13 @@ function SettingRow({
     <div
       id={id}
       tabIndex={id ? -1 : undefined}
-      className="settings-row flex items-center justify-between gap-6 rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="settings-row rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="min-w-0 space-y-0.5">
         <p className="text-sm">{label}</p>
         {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="settings-row-control">{children}</div>
     </div>
   );
 }
@@ -679,12 +679,11 @@ export default function Settings() {
             </div>
           ) : null}
           <Separator />
-          <div
+          <SettingRow
             id="settings-windowPosition"
-            tabIndex={-1}
-            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            label={t("settings.windowPosition")}
+            hint={t("settings.windowPositionHint")}
           >
-            <Label>{t("settings.windowPosition")}</Label>
             <ToggleGroup
               type="single"
               aria-label={t("settings.windowPosition")}
@@ -702,10 +701,7 @@ export default function Settings() {
                 {t("settings.windowPositionCenter")}
               </ToggleGroupItem>
             </ToggleGroup>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.windowPositionHint")}
-            </p>
-          </div>
+          </SettingRow>
         </CardContent>
       </Card>
 

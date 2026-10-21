@@ -62,4 +62,18 @@ describe("safe JSON code display", () => {
     expect(container.querySelector("pre")!.textContent).toBe(code);
     expect(container.querySelector("span, div div")).toBeNull();
   });
+
+  it("Rust 高亮始终以 React 文本渲染，不将源码中的 HTML 转成元素", () => {
+    const code = 'pub fn main() { println!(r#"<img src=x onerror=run()>"#); }';
+    const { container } = render(<CodeBlock code={code} language="rust" />);
+    expect(container.querySelector("code")).toHaveAttribute(
+      "data-language",
+      "rust",
+    );
+    expect(container.querySelector("pre")?.textContent).toBe(code);
+    expect(container.querySelector('[data-token="keyword"]')).toHaveTextContent(
+      "pub",
+    );
+    expect(container.querySelector("img, script")).toBeNull();
+  });
 });

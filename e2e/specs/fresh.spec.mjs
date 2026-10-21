@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $ } from "@wdio/globals";
 import {
@@ -20,6 +20,7 @@ import {
   waitForLifecycleDialogToClose,
 } from "../helpers.mjs";
 
+import { desktopUiChecks } from "./desktop-ui.mjs";
 const execute = promisify(execFile);
 
 describe("Real Tauri desktop", () => {
@@ -85,6 +86,8 @@ describe("Real Tauri desktop", () => {
     assert.match(rejected, /check the input|Name cannot be empty/);
     assert.doesNotMatch(rejected, /\[object Object\]/);
   });
+
+  desktopUiChecks();
 
   it("previews, applies and undoes a showroom appearance through real native preferences", async () => {
     await navigate("/");
@@ -975,6 +978,25 @@ describe("Real Tauri desktop", () => {
         result.value.settings?.backgroundIntensity === "strong"
       );
     });
+    const snapshot = (await invoke("load_settings_snapshot")).value;
+    const customBackground = JSON.parse(
+      readFileSync(
+        join(
+          process.env.STARTER_E2E_DATA_ROOT,
+          "background-image-fixture.json",
+        ),
+        "utf8",
+      ),
+    );
+    assert.equal(
+      (
+        await invoke("save_settings_snapshot", {
+          settings: { ...snapshot.settings, customBackground },
+          expectedRevision: snapshot.revision,
+        })
+      ).ok,
+      true,
+    );
     const geometry = (await invoke("get_window_geometry")).value;
     assert.equal(
       (

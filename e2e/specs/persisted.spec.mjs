@@ -33,6 +33,20 @@ describe("App process restart", () => {
     assert.equal(settings.value.settings.background, "sakura");
     assert.equal(settings.value.settings.backgroundIntensity, "strong");
     assert.equal(settings.value.settings.windowPosition, "remember");
+    const backgroundFixture = JSON.parse(
+      readFileSync(
+        join(
+          process.env.STARTER_E2E_DATA_ROOT,
+          "background-image-fixture.json",
+        ),
+        "utf8",
+      ),
+    );
+    assert.equal(settings.value.settings.schemaVersion, 3);
+    assert.deepEqual(
+      settings.value.settings.customBackground,
+      backgroundFixture,
+    );
     const expectedPosition = JSON.parse(
       readFileSync(
         join(
