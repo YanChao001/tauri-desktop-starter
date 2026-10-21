@@ -1,4 +1,4 @@
-import { CheckIcon, Loader2Icon, AlertCircleIcon } from "lucide-react";
+import { AlertCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSettings } from "@/providers/settings";
 import { useI18n } from "@/providers/i18n";
@@ -12,30 +12,27 @@ export function SettingsPersistence({
   if (compact && persistence !== "error") return null;
   const failed = persistence === "error";
   const busy = persistence === "loading" || persistence === "saving";
-  const text = failed
-    ? persistenceError === "FUTURE_SETTINGS_VERSION"
-      ? t("settings.persistenceFuture")
-      : t("settings.persistenceError")
-    : busy
-      ? t(
+  if (!failed)
+    return busy ? (
+      <span role="status" className="sr-only">
+        {t(
           persistence === "loading"
             ? "settings.persistenceLoading"
             : "settings.persistenceSaving",
-        )
-      : t("settings.persistenceSaved");
+        )}
+      </span>
+    ) : null;
+  const text =
+    persistenceError === "FUTURE_SETTINGS_VERSION"
+      ? t("settings.persistenceFuture")
+      : t("settings.persistenceError");
   return (
     <div
-      role={failed ? "alert" : "status"}
-      className={`flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2 text-xs ${failed ? "border-destructive/40" : "text-muted-foreground"}`}
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-background px-3 py-2 text-xs"
     >
       <span className="flex items-center gap-2">
-        {failed ? (
-          <AlertCircleIcon className="size-4 shrink-0 text-destructive" />
-        ) : busy ? (
-          <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
-        ) : (
-          <CheckIcon className="size-3.5 shrink-0" />
-        )}
+        <AlertCircleIcon className="size-4 shrink-0 text-destructive" />
         {text}
       </span>
       {failed && persistenceError !== "FUTURE_SETTINGS_VERSION" ? (

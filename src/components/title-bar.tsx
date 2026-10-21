@@ -124,10 +124,13 @@ export function TitleBar() {
         />
 
         {settings.menuBar ? (
-          <nav className="ml-1 flex items-center" aria-label={APP_CONFIG.name}>
-            <DropdownMenu>
+          <nav
+            className="ml-1 flex items-center gap-0.5"
+            aria-label={APP_CONFIG.name}
+          >
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <button type="button" className="app-title-menu-trigger">
                   {t("title.file")}
                 </button>
               </DropdownMenuTrigger>
@@ -139,9 +142,9 @@ export function TitleBar() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <button type="button" className="app-title-menu-trigger">
                   {t("title.edit")}
                 </button>
               </DropdownMenuTrigger>
@@ -151,9 +154,9 @@ export function TitleBar() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <button type="button" className="app-title-menu-trigger">
                   {t("title.view")}
                 </button>
               </DropdownMenuTrigger>
@@ -188,9 +191,9 @@ export function TitleBar() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <button type="button" className="app-title-menu-trigger">
                   {t("title.help")}
                 </button>
               </DropdownMenuTrigger>

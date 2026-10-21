@@ -158,21 +158,48 @@ export const en = {
     "Register new commands in bindings.rs, then run pnpm bindings:generate to update the frontend contract.",
   "settings.bgPlainDescription":
     "A clean canvas that keeps the focus on your content",
-  "settings.bgStarlight": "Starry notes",
+  "settings.bgStarlight": "Future star map",
+  "settings.bgAurora": "Fluid abstract",
+  "settings.bgAuroraDescription":
+    "Mint and lilac ribbons meet in a light, flowing composition",
+  "settings.bgDune": "Minimal geometry",
+  "settings.bgDuneDescription":
+    "Circles, arches and warm terracotta blocks in a Bauhaus composition",
+  "settings.bgInkwash": "Ink landscape",
+  "settings.bgInkwashDescription":
+    "Quiet ink-wash peaks, a small boat and a vermilion sun",
+  "settings.bgCustom": "My background",
+  "settings.bgCustomDescription": "Make your workspace feel like your own",
+  "settings.customImageHint":
+    "Choose an image for your window. It is processed and saved only on this device.",
+  "settings.importBackground": "Import background image",
+  "settings.replaceBackground": "Replace image",
+  "settings.removeBackground": "Remove background image",
+  "settings.backgroundFit": "Image fit",
+  "settings.backgroundCover": "Fill window",
+  "settings.backgroundContain": "Show full image",
+  "settings.imageFormats":
+    "PNG, JPEG or WebP, up to 10MB. Images are automatically optimized.",
+  "settings.imageProcessing": "Optimizing your background…",
+  "settings.imageTypeError": "Choose a PNG, JPEG or WebP image.",
+  "settings.imageSizeError":
+    "The image is too large. Choose one under 10MB and 40 million pixels, or resize it and try again.",
+  "settings.imageDecodeError":
+    "This image could not be read. Check the file or try another image.",
   "settings.bgStarlightDescription":
-    "Small stars frame a calm space for reading",
-  "settings.bgSakura": "Cherry blossom letter",
+    "Constellations, a ringed planet and precise lines in a quiet space blueprint",
+  "settings.bgSakura": "Anime spring",
   "settings.bgSakuraDescription":
-    "Falling blossoms and soft spring colors, like a letter to yourself",
-  "settings.bgMoonlit": "Moonlit mountains",
+    "A springtime frame of falling petals and a girl walking home from school",
+  "settings.bgMoonlit": "Retro pixels",
   "settings.bgMoonlitDescription":
-    "Moonlight and distant mountains bring a quiet night to your workspace",
-  "settings.bgBotanical": "Forest journal",
+    "A blocky moon, stepped mountains and a cat from an eight-bit night",
+  "settings.bgBotanical": "Botanical sketch",
   "settings.bgBotanicalDescription":
-    "Leafy accents and journal details bring a little forest calm",
-  "settings.bgCloudscape": "Above the clouds",
+    "Fine leaf veins and soft green branches inspired by botanical drawings",
+  "settings.bgCloudscape": "Layered papercut",
   "settings.bgCloudscapeDescription":
-    "Open skies and soft clouds leave room for inspiration",
+    "Layered paper clouds, crisp cut edges and an origami plane",
   "settings.backgroundIntensity": "Skin intensity",
   "settings.backgroundIntensityDescription":
     "Adjust how prominent the decorations look while keeping text clear",
@@ -181,7 +208,7 @@ export const en = {
   "settings.intensityStrong": "Strong",
   "settings.skinGallery": "Window skins",
   "settings.skinGalleryDescription":
-    "Choose a background for the entire window",
+    "Eight distinct visual styles to set the mood of your entire window",
   "settings.activeSkin": "Current skin",
   "settings.skinLightweight": "Lightweight artwork",
   "settings.languageDescription":

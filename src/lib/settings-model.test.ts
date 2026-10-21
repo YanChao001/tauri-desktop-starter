@@ -43,6 +43,48 @@ describe("versioned settings model", () => {
     );
   });
 
+  it("schema 2 升级保留偏好，导入图片随 schema 3 存档并可移除", () => {
+    const old = migrateSettings({
+      schemaVersion: 2,
+      language: "en",
+      background: "sakura",
+      theme: "dark",
+      sidebarWidth: 300,
+    });
+    expect(old).toMatchObject({
+      language: "en",
+      background: "sakura",
+      theme: "dark",
+      sidebarWidth: 300,
+      customBackground: null,
+    });
+    const customBackground = {
+      name: "sky.webp",
+      dataUrl: "data:image/webp;base64," + btoa("RIFF0000WEBP"),
+      fit: "cover" as const,
+    };
+    const custom = migrateSettings({
+      ...old,
+      background: "custom",
+      customBackground,
+    });
+    expect(migrateSettings(settingsDocument(custom))).toEqual(custom);
+    expect(settingsDocument(custom).schemaVersion).toBe(3);
+    expect(normalizeSettingsPatch(custom, { customBackground: null })).toEqual({
+      customBackground: null,
+      background: "plain",
+    });
+    expect(
+      migrateSettings({
+        background: "custom",
+        customBackground: {
+          name: "remote",
+          dataUrl: "https://example.com/a.png",
+        },
+      }),
+    ).toMatchObject({ background: "plain", customBackground: null });
+  });
+
   it.each([null, [], "invalid", 5, { settings: [] }])(
     "normalizes malformed document %j",
     (raw) => {

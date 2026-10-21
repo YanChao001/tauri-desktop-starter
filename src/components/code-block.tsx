@@ -1,5 +1,6 @@
 import { useMemo, type ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { tokenizeRust, type RustToken } from "@/lib/rust-highlight";
 
 type TokenKind =
   | "plain"
@@ -8,7 +9,8 @@ type TokenKind =
   | "number"
   | "boolean"
   | "null"
-  | "punctuation";
+  | "punctuation"
+  | RustToken["kind"];
 type Token = { kind: TokenKind; text: string };
 const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const LITERAL = /^(true|false|null)\b/;
@@ -71,7 +73,7 @@ type CodeBlockProps = Omit<
   "children" | "dangerouslySetInnerHTML"
 > & {
   code: string;
-  language?: "json" | "text";
+  language?: "json" | "rust" | "text";
 };
 
 /** 保留原始文本及其可选中性；新增语言时可扩展对应的词法分析器 */
@@ -86,7 +88,9 @@ export function CodeBlock({
     () =>
       language === "json"
         ? tokenizeJson(code)
-        : [{ kind: "plain" as const, text: code }],
+        : language === "rust"
+          ? tokenizeRust(code)
+          : [{ kind: "plain" as const, text: code }],
     [code, language],
   );
   return (

@@ -126,14 +126,13 @@
   }
   html {
     height: 100%;
-    overflow-x: clip;
-    scroll-padding-top: var(--app-chrome-height);
-    /* 保留原生边界回弹，同时禁止下拉刷新与横向历史导航。 */
-    overscroll-behavior: none contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
   body,
   #root {
-    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
   }
   body {
     @apply bg-background text-foreground;
@@ -274,18 +273,12 @@ html[data-font-size="lg"] {
 /* 插画只铺在窗口底层；阅读表面与装饰分别调节，避免降低文字对比度。 */
 :root {
   --skin-strength: 1;
-  --skin-glow-opacity: 0.16;
-  --skin-fill-opacity: 0.46;
-  --skin-line-opacity: 0.3;
   --skin-chrome-opacity: 52%;
   --skin-sidebar-opacity: 42%;
   --skin-card-opacity: 78%;
 }
 
 .dark {
-  --skin-glow-opacity: 0.2;
-  --skin-fill-opacity: 0.34;
-  --skin-line-opacity: 0.38;
   --skin-chrome-opacity: 58%;
   --skin-sidebar-opacity: 46%;
   --skin-card-opacity: 82%;
@@ -306,7 +299,8 @@ html[data-background="plain"] {
 .app-shell {
   position: relative;
   isolation: isolate;
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
 }
 /* 固定元素直接以视口定位，不随文档的原生边界回弹移动。 */
 .app-chrome {
@@ -346,11 +340,15 @@ html[data-background="plain"] {
   );
 }
 .app-main {
-  position: relative;
+  position: absolute;
+  inset: var(--app-chrome-height) 0 0 var(--app-sidebar-width);
   z-index: 1;
-  min-height: 100dvh;
-  margin-inline-start: var(--app-sidebar-width);
-  padding-top: var(--app-chrome-height);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: none contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 1.25rem;
   background: transparent;
 }
 .app-main [data-slot="card"] {
@@ -370,10 +368,12 @@ html[data-background="plain"] {
 }
 
 .pattern-artwork {
-  --skin-color: color-mix(in oklch, var(--primary) 48%, #a3b4da);
-  --skin-secondary: color-mix(in oklch, var(--primary) 30%, #c3cfee);
-  --skin-ink: color-mix(in oklch, var(--primary) 38%, #8393bd);
-  --skin-highlight: color-mix(in oklch, var(--primary) 12%, #cba760);
+  --skin-color: #b7b0dc;
+  --skin-secondary: #c9d5ec;
+  --skin-ink: #7c7aab;
+  --skin-highlight: #ebcf86;
+  --skin-paper: #fff9f3;
+  --skin-face: #ffe2d4;
   display: block;
   width: 100%;
   height: 100%;
@@ -381,44 +381,123 @@ html[data-background="plain"] {
   background: var(--background);
 }
 .pattern-artwork[data-pattern="sakura"] {
-  --skin-color: color-mix(in oklch, var(--primary) 18%, #e7afc7);
-  --skin-secondary: color-mix(in oklch, var(--primary) 10%, #efb7cd);
-  --skin-ink: color-mix(in oklch, var(--primary) 20%, #b08192);
-  --skin-highlight: #d0ab76;
+  --skin-color: #d6a4c7;
+  --skin-secondary: #e8bad5;
+  --skin-ink: #9d819d;
+  --skin-highlight: #edaac5;
 }
 .pattern-artwork[data-pattern="moonlit"] {
-  --skin-color: color-mix(in oklch, var(--primary) 35%, #8da0d3);
-  --skin-secondary: color-mix(in oklch, var(--primary) 35%, #a2accd);
-  --skin-ink: color-mix(in oklch, var(--primary) 35%, #6d7aa6);
+  --skin-color: #92a6ca;
+  --skin-secondary: #b2c3dd;
+  --skin-ink: #6d83ad;
   --skin-highlight: #dccca3;
 }
 .pattern-artwork[data-pattern="botanical"] {
-  --skin-color: color-mix(in oklch, var(--primary) 18%, #a9b69a);
-  --skin-secondary: color-mix(in oklch, var(--primary) 18%, #a6b998);
-  --skin-ink: color-mix(in oklch, var(--primary) 25%, #81917b);
-  --skin-highlight: #b8a585;
+  --skin-color: #96b8a7;
+  --skin-secondary: #bcd0aa;
+  --skin-ink: #608c87;
+  --skin-highlight: #e2c3a2;
 }
 .pattern-artwork[data-pattern="cloudscape"] {
-  --skin-color: color-mix(in oklch, var(--primary) 22%, #afc8e5);
-  --skin-secondary: color-mix(in oklch, var(--background) 65%, #bfd2e8);
-  --skin-ink: color-mix(in oklch, var(--primary) 22%, #8aa6c8);
-  --skin-highlight: #e5c98d;
+  --skin-color: #9dbfd9;
+  --skin-secondary: #c0d9e5;
+  --skin-ink: #7390af;
+  --skin-highlight: #e8b8c7;
 }
-.skin-glow {
-  opacity: calc(var(--skin-glow-opacity) * var(--skin-strength));
+.pattern-artwork[data-pattern="aurora"] {
+  --skin-color: #b1b0e0;
+  --skin-secondary: #97cabc;
+  --skin-ink: #789aad;
+  --skin-highlight: #d8afd0;
 }
-.skin-fill {
-  opacity: calc(var(--skin-fill-opacity) * var(--skin-strength));
+.pattern-artwork[data-pattern="dune"] {
+  --skin-color: #c79286;
+  --skin-secondary: #ddc4a6;
+  --skin-ink: #9c797d;
+  --skin-highlight: #e5b578;
 }
-.skin-lines {
-  opacity: calc(var(--skin-line-opacity) * var(--skin-strength));
+.pattern-artwork[data-pattern="inkwash"] {
+  --skin-color: #75848b;
+  --skin-secondary: #afb9b9;
+  --skin-ink: #52616d;
+  --skin-highlight: #be7164;
+}
+.skin-scene {
+  opacity: calc(0.22 * var(--skin-strength));
+}
+.dark .skin-scene {
+  opacity: calc(0.18 * var(--skin-strength));
+}
+.pattern-artwork--preview .skin-scene {
+  opacity: 0.95;
+}
+.custom-background-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-position: center;
+  opacity: calc(0.16 * var(--skin-strength));
+}
+html:not([data-background="plain"]) {
+  --muted-foreground: oklch(0.43 0 0);
+}
+html.dark:not([data-background="plain"]) {
+  --muted-foreground: oklch(0.78 0 0);
+}
+html[data-background="custom"] {
+  --skin-chrome-opacity: 94%;
+  --skin-sidebar-opacity: 90%;
+  --skin-card-opacity: 94%;
 }
 .pattern-artwork--preview {
   --skin-strength: 1;
-  --skin-glow-opacity: 0.3;
-  --skin-fill-opacity: 0.8;
-  --skin-line-opacity: 0.7;
   border-radius: inherit;
+  background: color-mix(in oklch, var(--skin-color) 12%, var(--background));
+}
+.pattern-artwork[data-pattern="plain"] {
+  background: var(--background);
+}
+.dark .pattern-artwork {
+  --skin-paper: #bcc1d1;
+  --skin-face: #d9b5ac;
+}
+.dark .pattern-artwork[data-pattern="sakura"] {
+  --skin-color: #997e9f;
+  --skin-secondary: #a38a9c;
+  --skin-ink: #696b8d;
+  --skin-highlight: #d29caf;
+}
+.dark .pattern-artwork[data-pattern="moonlit"],
+.dark .pattern-artwork[data-pattern="starlight"] {
+  --skin-color: #6f7d9d;
+  --skin-secondary: #8291ac;
+  --skin-ink: #545e7e;
+  --skin-highlight: #c6bda3;
+}
+.dark .pattern-artwork[data-pattern="botanical"] {
+  --skin-color: #738f88;
+  --skin-secondary: #8caaa0;
+  --skin-ink: #536f6d;
+  --skin-highlight: #c2a697;
+}
+.dark .pattern-artwork[data-pattern="inkwash"] {
+  --skin-color: #687d85;
+  --skin-secondary: #7e9295;
+  --skin-ink: #46575f;
+  --skin-highlight: #bc8a7c;
+}
+.dark .pattern-artwork[data-pattern="cloudscape"],
+.dark .pattern-artwork[data-pattern="aurora"] {
+  --skin-color: #8198b7;
+  --skin-secondary: #89b2b1;
+  --skin-ink: #536b8b;
+  --skin-highlight: #bca7cb;
+}
+.dark .pattern-artwork[data-pattern="dune"] {
+  --skin-color: #9a827d;
+  --skin-secondary: #b3a092;
+  --skin-ink: #796b76;
+  --skin-highlight: #c3a180;
 }
 
 @media (prefers-contrast: more), (forced-colors: active) {
@@ -437,6 +516,9 @@ html[data-background="plain"] {
 html[data-motion="reduced"] {
   overscroll-behavior-y: none;
 }
+html[data-motion="reduced"] .app-main {
+  overscroll-behavior-y: none;
+}
 html[data-motion="reduced"] *,
 html[data-motion="reduced"] *::before,
 html[data-motion="reduced"] *::after {
@@ -447,7 +529,8 @@ html[data-motion="reduced"] *::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
+  html,
+  .app-main {
     overscroll-behavior-y: none;
   }
   *,
@@ -473,16 +556,33 @@ html[data-motion="reduced"] *::after {
   z-index: 2;
 }
 
-/* 桌面端滚动条细一点，别抢内容 */
+/* 原生滚动配合同一套无箭头细轨道；渐变只改变颜色，不改变布局宽度。 */
+@property --app-scrollbar-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.18;
+}
+.app-scroll-region {
+  --app-scrollbar-opacity: 0;
+  transition: --app-scrollbar-opacity 280ms ease 450ms;
+}
+.app-scroll-region:is(:hover, :focus-within) {
+  --app-scrollbar-opacity: 0.2;
+  transition-delay: 0ms;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
-  background-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background-color: color-mix(
+    in oklch,
+    var(--foreground) calc(var(--app-scrollbar-opacity) * 100%),
+    transparent
+  );
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in oklch, var(--foreground) 28%, transparent);
@@ -490,13 +590,40 @@ html[data-motion="reduced"] *::after {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .app-scroll-region {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklch,
+        var(--foreground) calc(var(--app-scrollbar-opacity) * 100%),
+        transparent
+      )
+      transparent;
+  }
+}
+@media (forced-colors: active) {
+  .app-scroll-region {
+    --app-scrollbar-opacity: 1;
+    scrollbar-color: auto;
+  }
+}
 
 /* 侧栏过渡不延迟指针拖动时的尺寸更新 */
 .app-sidebar {
   transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .app-main {
-  transition: margin-inline-start 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    inset-inline-start 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    --app-scrollbar-opacity 280ms ease 450ms;
 }
 .app-shell:has(.app-sidebar[data-resizing="true"]) .app-main {
   transition: none;
@@ -556,6 +683,24 @@ html[data-motion="reduced"] *::after {
 }
 .code-token--punctuation {
   color: var(--muted-foreground);
+}
+.code-token--keyword,
+.code-token--lifetime {
+  color: var(--code-boolean);
+}
+.code-token--type,
+.code-token--macro {
+  color: var(--code-number);
+}
+.code-token--function {
+  color: var(--code-property);
+}
+.code-token--comment {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.code-token--operator {
+  color: var(--code-null);
 }
 @media (forced-colors: active) {
   .code-token {

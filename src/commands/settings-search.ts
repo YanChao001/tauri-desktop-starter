@@ -3,6 +3,7 @@ import type { MessageKey as DictKey } from "@/i18n/zh-CN";
 import {
   BACKGROUND_METADATA,
   BACKGROUND_INTENSITY_METADATA,
+  BACKGROUND_STYLES,
 } from "@/lib/backgrounds";
 
 export type SettingsSearchEntry = {
@@ -59,20 +60,32 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     anchor: "settings-skin",
     labelKey: "settings.skinGallery",
     descriptionKey: "settings.skinGalleryDescription",
-    searchKeys: Object.values(BACKGROUND_METADATA).flatMap((item) => [
-      item.labelKey,
-      item.descriptionKey,
-    ]),
+    searchKeys: [
+      ...Object.values(BACKGROUND_METADATA).flatMap((item) => [
+        item.labelKey,
+        item.descriptionKey,
+      ]),
+      "settings.importBackground",
+      "settings.backgroundFit",
+      "settings.removeBackground",
+      "settings.imageFormats",
+    ],
     keywords: [
       "background",
       "skin",
       "wallpaper",
       "stars",
       ...Object.keys(BACKGROUND_METADATA),
+      ...Object.values(BACKGROUND_STYLES),
+      "image",
+      "import",
       "背景",
       "皮肤",
       "插画",
       "星星",
+      "图片",
+      "导入",
+      "自定义",
     ],
   },
   {

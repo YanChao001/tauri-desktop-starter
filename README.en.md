@@ -6,6 +6,16 @@ An open source Tauri 2, React 19 and TypeScript desktop starter with a complete,
 
 The desktop app includes SQLite pagination, drafts, backups and recovery; a file workbench; real Rust scan / SHA-256 jobs; window lifecycle coordination; system integration; network examples; and data table, form and media labs. Browser previews share the React source and clearly distinguish local fixtures, external services and desktop-only capabilities.
 
+## Desktop windows
+
+Captured from an isolated Windows desktop build of the current source.
+
+| Light                                                    | Dark                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------ |
+| ![Light desktop window](./docs/assets/preview-light.png) | ![Dark desktop window](./docs/assets/preview-dark.png) |
+
+[View the Windows skin gallery](./docs/assets/skins-dark.png).
+
 ## Quick start
 
 Use the versions in [`.nvmrc`](./.nvmrc), [`package.json`](./package.json) and [`rust-toolchain.toml`](./rust-toolchain.toml). Install your platform prerequisites from the [development guide](./docs/development.md#环境要求).

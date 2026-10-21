@@ -166,7 +166,7 @@ describe("设置页", () => {
     const view = () => <SettingsView />;
     const { unmount } = render(view());
     expect(screen.getByRole("radio", { name: "轻盈" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("radio", { name: "樱花来信" }));
+    fireEvent.click(screen.getByRole("radio", { name: "日系动漫" }));
     fireEvent.click(screen.getByRole("radio", { name: "鲜明" }));
     expect(document.documentElement).toHaveAttribute(
       "data-background",
@@ -178,7 +178,7 @@ describe("设置页", () => {
     );
     unmount();
     render(view());
-    expect(screen.getByRole("radio", { name: "樱花来信" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "日系动漫" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "鲜明" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
     expect(screen.getByRole("radio", { name: "鲜明" })).toBeDisabled();

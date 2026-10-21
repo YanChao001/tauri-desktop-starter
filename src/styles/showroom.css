@@ -117,6 +117,17 @@
   );
   pointer-events: none;
 }
+.dark .showroom-scene-aura {
+  display: none;
+}
+.dark .showroom-hero-actions > :first-child,
+.dark .showroom-window,
+.dark .portal-orb {
+  box-shadow: none;
+}
+.dark .showroom-portal-art {
+  background: none;
+}
 .showroom-scene-label {
   position: absolute;
   top: 0;

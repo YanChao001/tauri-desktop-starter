@@ -1,5 +1,6 @@
 import { CheckIcon, SparklesIcon } from "lucide-react";
 import { PatternArtwork } from "@/components/window-background";
+import { CustomBackgroundPicker } from "@/components/custom-background-picker";
 import {
   Card,
   CardContent,
@@ -9,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
-  BACKGROUNDS,
+  BUILTIN_BACKGROUNDS,
   BACKGROUND_METADATA,
   BACKGROUND_INTENSITIES,
   BACKGROUND_INTENSITY_METADATA,
@@ -41,10 +42,10 @@ export function SkinPicker() {
       </CardHeader>
       <CardContent className="space-y-5">
         <fieldset
-          className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-3"
+          className="skin-gallery"
           aria-labelledby="skin-gallery-heading"
         >
-          {BACKGROUNDS.map((kind) => {
+          {BUILTIN_BACKGROUNDS.map((kind) => {
             const metadata = BACKGROUND_METADATA[kind];
             const active = settings.background === kind;
             const descriptionId = `skin-${kind}-description`;
@@ -52,7 +53,7 @@ export function SkinPicker() {
               <label
                 key={kind}
                 className={cn(
-                  "group relative cursor-pointer rounded-xl border p-2 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
+                  "skin-gallery-card group relative cursor-pointer rounded-xl border p-2 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
                   active
                     ? "border-primary bg-primary/5"
                     : "border-border/70 bg-background/25 hover:border-primary/50 hover:bg-background/45",
@@ -68,7 +69,7 @@ export function SkinPicker() {
                   aria-describedby={descriptionId}
                   onChange={() => update({ background: kind })}
                 />
-                <span className="relative block aspect-[1.9] overflow-hidden rounded-lg border border-foreground/8 bg-background">
+                <span className="relative block aspect-[1.6] overflow-hidden rounded-lg border border-foreground/8 bg-background">
                   <PatternArtwork
                     kind={kind}
                     preview
@@ -104,6 +105,8 @@ export function SkinPicker() {
             );
           })}
         </fieldset>
+
+        <CustomBackgroundPicker />
 
         <fieldset
           id="settings-backgroundIntensity"

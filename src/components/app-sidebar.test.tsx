@@ -128,6 +128,48 @@ describe("persisted application sidebar", () => {
     );
   });
 
+  it("折叠不激活展开时的隐藏提示，键盘聚焦一次只显示当前一条", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    renderSidebar([
+      routes[0]!,
+      {
+        ...routes[0]!,
+        path: "/desktop",
+        labelKey: "nav.desktop",
+        group: "capabilities",
+      },
+    ]);
+    const first = screen.getByRole("link", { name: zhCN["nav.overview"] });
+    const second = screen.getByRole("link", { name: zhCN["nav.desktop"] });
+    fireEvent.focus(first);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(first);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      zhCN["nav.overview"],
+    );
+    fireEvent.focus(second);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      zhCN["nav.desktop"],
+    );
+    // 上一项晚到的关闭不能清除当前项；切页则立即卸载提示，防止退出动画残留。
+    fireEvent.blur(first);
+    expect(screen.getAllByRole("tooltip")).toHaveLength(1);
+    await act(async () => fireEvent.click(second));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开侧栏" }));
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("marks active pointer resizing for immediate width updates and clears it after release", () => {
     vi.stubGlobal(
       "PointerEvent",

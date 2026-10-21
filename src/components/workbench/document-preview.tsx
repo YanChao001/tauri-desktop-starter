@@ -9,10 +9,23 @@ export function MarkdownPreview({ content }: { content: string }) {
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? "";
     if (line.startsWith("```")) {
+      const language = line.slice(3).trim().toLowerCase();
       const code: string[] = [];
       while (++index < lines.length && !lines[index]?.startsWith("```"))
         code.push(lines[index] ?? "");
-      nodes.push(<CodeBlock key={index} code={code.join("\n")} />);
+      nodes.push(
+        <CodeBlock
+          key={index}
+          code={code.join("\n")}
+          language={
+            language === "rust" || language === "rs"
+              ? "rust"
+              : language === "json"
+                ? "json"
+                : "text"
+          }
+        />,
+      );
       continue;
     }
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
@@ -77,7 +90,13 @@ export function DocumentPreview({
   return (
     <CodeBlock
       code={content}
-      language={document.kind === "json" ? "json" : "text"}
+      language={
+        document.kind === "json"
+          ? "json"
+          : /\.rs$/i.test(document.name)
+            ? "rust"
+            : "text"
+      }
       className="max-h-[36rem] overflow-auto whitespace-pre-wrap break-words"
     />
   );

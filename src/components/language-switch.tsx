@@ -40,7 +40,7 @@ export function LanguageSwitch({
         className={cn(
           "w-40",
           compact &&
-            "h-8 w-auto gap-1.5 border-0 bg-transparent px-2 shadow-none",
+            "app-title-language h-8 w-22 gap-1.5 border-0 bg-transparent px-2 text-[13px] shadow-none",
           className,
         )}
       >
@@ -51,7 +51,7 @@ export function LanguageSwitch({
           {compact ? locale.shortLabel : locale.nativeName}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align="end">
+      <SelectContent position="popper" align="end">
         {LANGUAGES.map((language) => (
           <SelectItem
             key={language}

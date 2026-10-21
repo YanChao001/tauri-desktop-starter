@@ -42,6 +42,34 @@ describe("settings search metadata", () => {
       new Set(SETTINGS_SEARCH_ENTRIES.map((entry) => entry.anchor)).size,
     ).toBe(SETTINGS_SEARCH_ENTRIES.length);
   });
+  it("finds all eight styles and local image controls in both interface languages", () => {
+    for (const query of [
+      "流动抽象",
+      "极简几何",
+      "东方水墨",
+      "未来星图",
+      "日系动漫",
+      "复古像素",
+      "植物手绘",
+      "立体剪纸",
+      "导入背景图片",
+    ])
+      expect(searchSettings(query, createTranslator(zhCN))[0]?.id).toBe("skin");
+    for (const query of [
+      "fluid",
+      "geometric",
+      "inkwash",
+      "starmap",
+      "anime",
+      "pixel",
+      "botanical",
+      "papercut",
+      "import background image",
+      "PNG",
+    ])
+      expect(searchSettings(query, createTranslator(en))[0]?.id).toBe("skin");
+  });
+
   it("scrolls and transfers focus to the matching setting", () => {
     const target = document.createElement("section");
     target.id = "settings-language";

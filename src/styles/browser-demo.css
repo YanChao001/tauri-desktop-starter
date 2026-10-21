@@ -110,7 +110,7 @@
     display: none;
   }
   .app-shell-browser .app-main {
-    margin-inline-start: 0;
+    inset-inline-start: 0;
   }
   .app-shell-browser .app-page-content {
     padding: 1rem 0.9rem 2rem;
@@ -121,9 +121,5 @@
   .app-shell-browser .studio-native-note {
     align-items: flex-start;
     text-align: center;
-  }
-  .app-shell-browser .settings-row {
-    flex-wrap: wrap;
-    gap: 0.7rem;
   }
 }
