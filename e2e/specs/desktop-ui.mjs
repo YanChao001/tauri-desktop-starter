@@ -64,6 +64,7 @@ export function desktopUiChecks() {
       await patchSettings({ motion: "full", sidebarCollapsed: false });
       await navigate("/settings");
       await settledAppearance({ motion: "full" });
+      await $(".wallpaper-library[aria-busy=false]").waitForExist();
       for (const selector of ["main", ".app-sidebar-navigation"]) {
         const result = await browser.execute(async (target) => {
           const viewport = document.querySelector(target);

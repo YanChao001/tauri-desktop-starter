@@ -48,6 +48,7 @@ export async function captureReadmePreviews(bounds) {
   await screenshot("desktop-dark.png");
   await navigate("/settings");
   await $(".skin-gallery").waitForDisplayed();
+  await $(".wallpaper-library[aria-busy=false]").waitForExist();
   const galleryWidth = Math.max(bounds.minWidth, Math.min(1120, target.width));
   const gallerySize = await invoke("set_window_size", {
     width: galleryWidth,
