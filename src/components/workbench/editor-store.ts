@@ -9,6 +9,7 @@ type EditorState = {
   entries: WorkbenchEditorEntry[];
   selectedId: string | null;
   activationErrors: unknown[];
+  pending: boolean;
 };
 
 /** 每个 WebView 内保留打开文档与草稿，路由切换不会丢掉编辑。 */
@@ -17,6 +18,7 @@ export function createWorkbenchEditor() {
     entries: [],
     selectedId: null,
     activationErrors: [],
+    pending: false,
   };
   const listeners = new Set<() => void>();
   const activations = new Map<number, Promise<void>>();
@@ -91,6 +93,14 @@ export function createWorkbenchEditor() {
   }
   return {
     getSnapshot: () => state,
+    beginOperation() {
+      if (state.pending) return false;
+      emit({ ...state, pending: true });
+      return true;
+    },
+    finishOperation() {
+      emit({ ...state, pending: false });
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {

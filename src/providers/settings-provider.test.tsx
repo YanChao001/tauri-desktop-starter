@@ -111,6 +111,52 @@ describe("settings provider persistence", () => {
     });
   });
 
+  it("preserves unreadable browser settings until an explicit reset", async () => {
+    const raw = '{"schemaVersion":3,"accent":';
+    localStorage.setItem(STORAGE_KEY, raw);
+    const { result } = renderHook(useSettings, { wrapper });
+    act(() => result.current.update({ language: "en", accent: "rose" }));
+    act(() => result.current.retrySave());
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(raw);
+    expect(result.current).toMatchObject({
+      persistence: "error",
+      persistenceError: "STORAGE_UNAVAILABLE",
+      settings: { language: "en", accent: "rose" },
+    });
+    await act(async () => result.current.reset());
+    expect(result.current.persistence).toBe("saved");
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual(
+      settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
+    );
+  });
+
+  it("reloads after a browser read failure and merges only edits made while unavailable", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(settingsDocument({ ...DEFAULT_SETTINGS, theme: "dark" })),
+    );
+    const read = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("unavailable");
+      });
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    const { result } = renderHook(useSettings, { wrapper });
+    act(() => result.current.update({ accent: "rose" }));
+    expect(write).not.toHaveBeenCalled();
+    read.mockRestore();
+    act(() => result.current.retrySave());
+    expect(result.current).toMatchObject({
+      persistence: "saved",
+      persistenceError: null,
+      settings: { theme: "dark", accent: "rose" },
+    });
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      theme: "dark",
+      accent: "rose",
+    });
+  });
+
   it("normalizes browser patches without accepting unknown keys or losing other fields", () => {
     const { result } = renderHook(useSettings, { wrapper });
     act(() => result.current.update({ theme: "dark", accent: "rose" }));

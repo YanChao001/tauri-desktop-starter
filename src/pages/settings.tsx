@@ -136,7 +136,6 @@ export default function Settings() {
     const unlisten: Array<() => void> = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (native) {
-      void refreshWindow();
       const changed = () => {
         if (stopped) return;
         invalidateGeometry();
@@ -155,6 +154,7 @@ export default function Settings() {
             setWindowError(result.reason);
           }
         }
+        if (!stopped) void refreshWindow();
       });
     }
     return () => {

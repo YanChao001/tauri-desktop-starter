@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
 import type { Note } from "@/lib/tauri";
+import type { UnsavedWork } from "@/providers/unsaved-work";
 import Database from "./database";
 
 vi.mock("@/lib/tauri", () => ({
@@ -42,18 +43,10 @@ vi.mock("@/providers/i18n", async () => {
   };
 });
 const lifecycle = vi.hoisted(() => ({
-  current: null as null | {
-    dirty: boolean;
-    save: () => Promise<void>;
-    discard: () => void | Promise<void>;
-  },
+  current: null as UnsavedWork | null,
 }));
 vi.mock("@/providers/unsaved-work", () => ({
-  useUnsavedWork: (work: {
-    dirty: boolean;
-    save: () => Promise<void>;
-    discard: () => void | Promise<void>;
-  }) => {
+  useUnsavedWork: (work: UnsavedWork) => {
     lifecycle.current = work;
   },
 }));
@@ -67,10 +60,12 @@ const first: Note = {
 };
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 let notes: Note[];
 let events: Array<() => void>;
@@ -112,12 +107,14 @@ describe("native note editor", () => {
       return vi.fn<() => void>();
     });
   });
-  afterEach(() => {
+  afterEach(async () => {
     const create = screen.queryByRole("button", { name: "New note" });
     if (create && !create.hasAttribute("disabled")) {
       fireEvent.click(create);
       const discard = screen.queryByRole("button", { name: "Discard changes" });
-      if (discard) fireEvent.click(discard);
+      if (discard) {
+        await act(async () => fireEvent.click(discard));
+      }
     }
     cleanup();
   });
@@ -499,6 +496,80 @@ describe("native note editor", () => {
     expect(lifecycle.current?.dirty).toBe(true);
   });
 
+  it("keeps a failed in-flight save's draft when the waiting discard is cancelled", async () => {
+    await open();
+    fireEvent.change(title(), {
+      target: { value: "Must survive cancellation" },
+    });
+    const saving = deferred<void>();
+    vi.mocked(native.createNote).mockImplementationOnce(async () => {
+      await saving.promise;
+      throw { code: "STORAGE_IO" };
+    });
+    fireEvent.submit(form());
+    const controller = new AbortController();
+    const discarding = Promise.resolve(
+      lifecycle.current!.discard(controller.signal),
+    );
+    controller.abort();
+    await act(async () => {
+      saving.resolve();
+      await expect(discarding).rejects.toThrow();
+    });
+    expect(title()).toHaveValue("Must survive cancellation");
+    expect(lifecycle.current?.dirty).toBe(true);
+  });
+
+  it("does not start persistence or refresh after a lifecycle save is cancelled", async () => {
+    await open();
+    fireEvent.change(title(), { target: { value: "Committed before cancel" } });
+    const work = lifecycle.current!;
+    vi.mocked(native.saveNoteDraft).mockClear();
+    vi.mocked(native.queryNotes).mockClear();
+    const controller = new AbortController();
+    vi.mocked(native.createNote).mockImplementationOnce(async () => {
+      controller.abort();
+      return { ...first, title: "Committed before cancel" };
+    });
+    await act(async () => {
+      await expect(work.save(controller.signal)).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    expect(native.saveNoteDraft).not.toHaveBeenCalled();
+    expect(native.queryNotes).not.toHaveBeenCalled();
+    expect(title()).toHaveValue("Committed before cancel");
+    expect(lifecycle.current?.dirty).toBe(false);
+  });
+
+  it("does not submit or discard drafts for an already cancelled lifecycle request", async () => {
+    await open();
+    fireEvent.change(title(), { target: { value: "Still dirty" } });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(lifecycle.current!.save(controller.signal)).rejects.toThrow();
+    await expect(
+      lifecycle.current!.discard(controller.signal),
+    ).rejects.toThrow();
+    expect(native.createNote).not.toHaveBeenCalled();
+    expect(title()).toHaveValue("Still dirty");
+  });
+
+  it("clears a persisted draft when edits are manually reverted to the original", async () => {
+    await open();
+    fireEvent.click(await screen.findByText("First note"));
+    fireEvent.change(body(), { target: { value: "Temporary edit" } });
+    await waitFor(() =>
+      expect(native.saveNoteDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ body: "Temporary edit" }),
+      ),
+    );
+    fireEvent.change(body(), { target: { value: first.body } });
+    await waitFor(() =>
+      expect(native.saveNoteDraft).toHaveBeenLastCalledWith(null),
+    );
+    expect(lifecycle.current?.dirty).toBe(false);
+  });
+
   it("previews a complete backup and restores only after explicit confirmation", async () => {
     const info = {
       id: "notes-backup-example.json",
@@ -554,7 +625,7 @@ describe("native note editor", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("locks the editor while restoration is in flight", async () => {
+  it("waits for draft readiness around restoration and retries failed recovery reads without writing old drafts", async () => {
     const info = {
       id: "notes-backup-test.json",
       createdAt: first.updatedAt,
@@ -574,24 +645,68 @@ describe("native note editor", () => {
     vi.mocked(native.restoreDataBackup).mockReturnValueOnce(
       restoration.promise,
     );
+    const previousWrite = deferred<void>();
+    vi.mocked(native.saveNoteDraft).mockReturnValueOnce(previousWrite.promise);
+    const initialDraft =
+      deferred<Awaited<ReturnType<typeof native.loadNoteDraft>>>();
+    vi.mocked(native.loadNoteDraft).mockReturnValueOnce(initialDraft.promise);
     await open();
     fireEvent.click(screen.getByText("Backup and restore"));
+    expect(
+      screen.getByRole("button", { name: "Create full backup" }),
+    ).toBeDisabled();
     fireEvent.click(
       await screen.findByRole("button", { name: "Preview backup" }),
     );
-    fireEvent.click(
-      within(await screen.findByRole("dialog")).getByRole("button", {
-        name: "Restore this backup",
-      }),
+    const restore = within(await screen.findByRole("dialog")).getByRole(
+      "button",
+      { name: "Restore this backup" },
     );
+    expect(restore).toBeDisabled();
+    expect(native.saveNoteDraft).not.toHaveBeenCalled();
+    await act(async () => initialDraft.resolve(null));
+    expect(restore).toBeEnabled();
+    fireEvent.click(restore);
     expect(screen.getByTestId("note-title")).toBeDisabled();
     expect(screen.getByTestId("note-body")).toBeDisabled();
+    expect(native.restoreDataBackup).not.toHaveBeenCalled();
+    await act(async () => previousWrite.resolve());
+    await waitFor(() =>
+      expect(native.restoreDataBackup).toHaveBeenCalledOnce(),
+    );
+    const recovered =
+      deferred<Awaited<ReturnType<typeof native.loadNoteDraft>>>();
+    vi.mocked(native.loadNoteDraft).mockReturnValueOnce(recovered.promise);
     await act(async () =>
       restoration.resolve({ restored: 1, safetyBackup: info }),
     );
+    await waitFor(() => expect(native.loadNoteDraft).toHaveBeenCalledTimes(2));
+    vi.mocked(native.saveNoteDraft).mockClear();
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+    expect(native.saveNoteDraft).not.toHaveBeenCalled();
+    expect(screen.getByTestId("note-body")).toBeDisabled();
+    await act(async () => recovered.reject({ code: "STORAGE_IO" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(body()).toHaveValue("");
+    expect(body()).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Create full backup" }),
+    ).toBeDisabled();
+    expect(native.saveNoteDraft).not.toHaveBeenCalled();
+    vi.mocked(native.loadNoteDraft).mockResolvedValueOnce({
+      noteId: 1,
+      title: first.title,
+      body: "Restored unsaved work",
+      expectedVersion: 1,
+      originalTitle: first.title,
+      originalBody: first.body,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() =>
       expect(screen.getByTestId("note-title")).not.toBeDisabled(),
     );
+    expect(body()).toHaveValue("Restored unsaved work");
+    expect(native.restoreDataBackup).toHaveBeenCalledOnce();
   });
 
   it("allows a deleted remote note to be saved as a separate local copy", async () => {
@@ -618,14 +733,32 @@ describe("native note editor", () => {
     );
   });
 
-  it("does not erase a persisted draft when loading it fails", async () => {
-    vi.mocked(native.loadNoteDraft).mockRejectedValueOnce({
-      code: "STORAGE_CORRUPT",
+  it("preserves unread drafts after startup errors and ignores old reads after recovery retries", async () => {
+    const startup =
+      deferred<Awaited<ReturnType<typeof native.loadNoteDraft>>>();
+    vi.mocked(native.loadNoteDraft).mockReturnValueOnce(startup.promise);
+    vi.mocked(native.onNotesChanged).mockRejectedValueOnce({
+      code: "STORAGE_IO",
     });
     await open();
     await screen.findByRole("alert");
-    vi.mocked(native.saveNoteDraft).mockClear();
+    await waitFor(() => expect(native.loadNoteDraft).toHaveBeenCalledOnce());
     await act(async () => new Promise((done) => setTimeout(done, 250)));
     expect(native.saveNoteDraft).not.toHaveBeenCalled();
+    vi.mocked(native.loadNoteDraft).mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(body()).toBeEnabled());
+    await act(async () =>
+      startup.resolve({
+        noteId: first.id,
+        title: first.title,
+        body: "Outdated startup draft",
+        expectedVersion: first.version,
+        originalTitle: first.title,
+        originalBody: first.body,
+      }),
+    );
+    expect(body()).toHaveValue("");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

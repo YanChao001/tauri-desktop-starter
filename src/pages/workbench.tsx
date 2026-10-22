@@ -60,13 +60,12 @@ export default function Workbench() {
   const [recent, setRecent] = useState<RecentWorkbenchFile[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [dropErrors, setDropErrors] = useState<string[]>([]);
-  const [pending, setPending] = useState(false);
+  const pending = state.pending;
   const [conflict, setConflict] = useState(false);
   const [remote, setRemote] = useState<WorkbenchDocument | null>(null);
   const [closeId, setCloseId] = useState<string | null>(null);
   const [imported, setImported] = useState(false);
   const mounted = useRef(false);
-  const running = useRef(false);
   const jsonError = useMemo(() => {
     if (selected?.document.kind !== "json") return false;
     try {
@@ -113,10 +112,11 @@ export default function Workbench() {
   useUnsavedWork({
     id: "workbench",
     label: t("nav.workbench"),
-    dirty: workbenchEditor.hasUnsavedChanges(),
+    dirty: workbenchEditor.hasUnsavedChanges() || pending,
     save: async (signal) => {
-      if (running.current) throw new Error(latest("workbench.busy"));
-      running.current = true;
+      signal?.throwIfAborted();
+      if (!workbenchEditor.beginOperation())
+        throw new Error(latest("workbench.busy"));
       try {
         for (const entry of workbenchEditor.getSnapshot().entries) {
           signal?.throwIfAborted();
@@ -133,11 +133,12 @@ export default function Workbench() {
           signal?.throwIfAborted();
         }
       } finally {
-        running.current = false;
+        workbenchEditor.finishOperation();
       }
     },
     discard: async (signal) => {
-      if (running.current) throw new Error(latest("workbench.busy"));
+      if (workbenchEditor.getSnapshot().pending)
+        throw new Error(latest("workbench.busy"));
       for (const entry of workbenchEditor.getSnapshot().entries) {
         signal?.throwIfAborted();
         workbenchEditor.accept(entry.document);
@@ -149,9 +150,7 @@ export default function Workbench() {
     setError(null);
   }, [state.selectedId]);
   const perform = useCallback(async (action: () => Promise<void>) => {
-    if (running.current) return;
-    running.current = true;
-    setPending(true);
+    if (!workbenchEditor.beginOperation()) return;
     setError(null);
     try {
       await action();
@@ -167,8 +166,7 @@ export default function Workbench() {
           setConflict(true);
       }
     } finally {
-      running.current = false;
-      if (mounted.current) setPending(false);
+      workbenchEditor.finishOperation();
     }
   }, []);
   const open = useCallback(
@@ -604,6 +602,7 @@ export default function Workbench() {
               {t("common.cancel")}
             </Button>
             <Button
+              disabled={pending}
               onClick={() => {
                 if (remote) workbenchEditor.accept(remote);
                 setRemote(null);
@@ -635,6 +634,7 @@ export default function Workbench() {
             </Button>
             <Button
               variant="destructive"
+              disabled={pending}
               onClick={() => {
                 if (closeId) workbenchEditor.close(closeId);
                 setCloseId(null);

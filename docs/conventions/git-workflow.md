@@ -130,6 +130,7 @@ docs: 补充发布流程中的签名说明
 - 正文按需要说明问题、改动原因、行为影响及验证结果，避免中英文交替描述同一工程事实。工具自动生成的合并记录与外部依赖元数据保留其标准格式。
 - 一次提交围绕一个明确问题；必要的格式整理和文档同步随对应改动提交，避免夹带无关重排。
 - 破坏性变更在 footer 写 `BREAKING CHANGE: 说明`，并在 PR 标题加 `!`，如 `feat(ipc)!: 重命名 invoke 封装`。
+- 不提交 `node_modules`、`dist`、`dist-web`、`src-tauri/target` 等依赖与构建输出；凭据及 `.env` 的处理见 [密钥与证书](../security.md#密钥与证书)。
 
 ## 本地不装 git hook
 
@@ -229,19 +230,7 @@ GitHub 路径：Settings → Branches → Add branch protection rule。
 
 ## 冲突处理
 
-```bash
-git fetch origin
-git rebase origin/develop
-# 冲突文件会标记出来
-# 编辑解决后：
-git add <file>
-git rebase --continue
-
-# 想整个放弃重来：
-git rebase --abort
-```
-
-原则：
+同步、继续及放弃命令见 [rebase 规则](#rebase-规则必须遵守)。解决冲突时还需确认：
 
 - 冲突解决后重新执行适用检查，确认 rebase 后的最终行为与预期一致。
 - 锁文件冲突先合并清单，再基于已有锁文件重新解析并审查差异，见 [锁文件冲突处理](../troubleshooting.md#pnpm-锁文件冲突)；不要借解决冲突全量升级依赖。
@@ -291,7 +280,8 @@ git push origin --delete release/1.2.0
 git switch main
 git pull --ff-only
 git switch -c hotfix/1.1.1
-# 修 bug，自检，提交
+# 修复后同步本次版本，再自检、提交
+pnpm version:set 1.1.1
 git push -u origin hotfix/1.1.1
 # 先向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
 
@@ -304,14 +294,3 @@ git push origin v1.1.1
 ```
 
 判断标准：**只有线上故障才走 hotfix**。还没发布的 bug 一律回 develop 走正常流程。
-
-## 明确禁止
-
-- 直接 push 到 `develop` 或 `main`
-- 在 `develop` / `main` 上 rebase 或 force push
-- 用 `git merge develop` 同步特性分支
-- 用 `git push --force`（只能用 `--force-with-lease`）
-- 提交 `node_modules`、`dist`、`src-tauri/target`
-- 提交任何密钥、证书、`.env`
-- 在同一 PR 混入与目标无关的重构或功能；为完成目标所必需的重构需说明关系
-- 发布后遗漏 `main` → `develop` 的回流

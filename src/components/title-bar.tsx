@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckIcon,
   Code2Icon,
@@ -65,7 +65,7 @@ export function TitleBar() {
   const { execute, aboutOpen, setAboutOpen } = useCommands();
   const mac = isMacOS();
 
-  const native = useMemo(() => typeof window !== "undefined" && isTauri(), []);
+  const native = isTauri();
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -75,6 +75,7 @@ export function TitleBar() {
     let request = 0;
 
     async function syncMaximized() {
+      if (cancelled) return;
       const current = ++request;
       try {
         const value = await isWindowMaximized();
@@ -84,17 +85,22 @@ export function TitleBar() {
       }
     }
 
-    void syncMaximized();
     void onWindowResized(() => {
       void syncMaximized();
     })
       .then((stop) => {
         // 订阅注册是异步的，StrictMode 的清理可能先于它完成
         if (cancelled) stop();
-        else unlisten = stop;
+        else {
+          unlisten = stop;
+          void syncMaximized();
+        }
       })
       .catch((error: unknown) => {
-        console.warn("监听窗口状态失败", error);
+        if (!cancelled) {
+          console.warn("监听窗口状态失败", error);
+          void syncMaximized();
+        }
       });
 
     return () => {

@@ -203,7 +203,15 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
-                if app.state::<storage::SettingsStore>().run_in_background()
+                let lifecycle = app.state::<lifecycle::LifecycleState>();
+                if lifecycle.active_action().is_some()
+                    && !lifecycle
+                        .approved_exit
+                        .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    // 协商完成后仍可能正在安装；窗口关闭不能穿透执行期的占用。
+                    api.prevent_close();
+                } else if app.state::<storage::SettingsStore>().run_in_background()
                     && desktop::status(app).tray_available
                 {
                     api.prevent_close();
@@ -253,10 +261,18 @@ pub fn run() {
                 if !state
                     .approved_exit
                     .load(std::sync::atomic::Ordering::Acquire)
-                    && state.is_dirty(None)
                 {
-                    api.prevent_exit();
-                    lifecycle::request_action(app, lifecycle::LifecycleAction::Quit, None);
+                    if let Some(action) = state.active_action() {
+                        // 已授权 Close 销毁最后一个窗口后可正常退出，不能留下无窗口进程。
+                        if action != lifecycle::LifecycleAction::Close
+                            || !app.webview_windows().is_empty()
+                        {
+                            api.prevent_exit();
+                        }
+                    } else if state.is_dirty(None) {
+                        api.prevent_exit();
+                        lifecycle::request_action(app, lifecycle::LifecycleAction::Quit, None);
+                    }
                 }
             }
         });

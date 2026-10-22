@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import {
   act,
   cleanup,
@@ -300,5 +301,34 @@ describe("多图壁纸图库", () => {
     await act(async () => finish(stop));
     expect(stop).toHaveBeenCalledOnce();
     expect(library.listWallpaperLibrary).not.toHaveBeenCalled();
+  });
+  it("StrictMode 的旧图库通知不会使当前加载失效", async () => {
+    let stale!: () => void;
+    let finish!: (entries: Wallpaper[]) => void;
+    library.onWallpaperLibraryChanged.mockImplementationOnce(
+      async (handler: () => void) => {
+        stale = handler;
+        return vi.fn();
+      },
+    );
+    library.listWallpaperLibrary.mockImplementationOnce(
+      () =>
+        new Promise<Wallpaper[]>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(
+      <StrictMode>
+        <CustomBackgroundPicker />
+      </StrictMode>,
+    );
+    await waitFor(() =>
+      expect(library.listWallpaperLibrary).toHaveBeenCalledOnce(),
+    );
+    act(() => stale());
+    await act(async () => finish([wallpaper]));
+    expect(library.listWallpaperLibrary).toHaveBeenCalledOnce();
+    expect(screen.getByRole("radio")).toBeVisible();
+    await loaded();
   });
 });
