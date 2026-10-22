@@ -28,6 +28,29 @@ function geometry() {
     };
   });
 }
+
+function settingsLayout() {
+  return browser.execute(() =>
+    [
+      ...document.querySelectorAll(
+        ".settings-studio > *, .skin-gallery > *, #settings-window [data-window-preset], .wallpaper-library > *, #settings-about > *",
+      ),
+    ].map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        tag: element.tagName,
+        id: element.id,
+        className: element.className,
+        text: element.textContent?.trim().slice(0, 80),
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      };
+    }),
+  );
+}
+
 export function desktopUiChecks() {
   it("keeps wheel tails native without replaying edge animations in WebView2", async function () {
     if (
@@ -112,12 +135,33 @@ export function desktopUiChecks() {
       );
       assert.equal(before.main.y, before.chrome.height);
       assert.equal(before.rootScrollTop, 0);
+      const beforeLayout = await settingsLayout();
       for (const menu of await $$(".app-title-menu-trigger")) {
         // 桌面驱动的 element.click 只发 DOM click；菜单同时以键盘入口验证。
         await browser.execute((element) => element.focus(), menu);
         await browser.keys("ArrowDown");
         await $("[role=menu]").waitForDisplayed();
-        assert.deepEqual(await geometry(), before);
+        const after = await geometry();
+        if (!isDeepStrictEqual(after, before))
+          writeFileSync(
+            join(
+              "artifacts",
+              "e2e",
+              process.env.STARTER_E2E_PHASE,
+              "menu-layout.json",
+            ),
+            JSON.stringify(
+              {
+                before,
+                after,
+                beforeLayout,
+                afterLayout: await settingsLayout(),
+              },
+              null,
+              2,
+            ),
+          );
+        assert.deepEqual(after, before);
         await browser.keys("Escape");
         await $("[role=menu]").waitForExist({ reverse: true });
         assert.deepEqual(await geometry(), before);
