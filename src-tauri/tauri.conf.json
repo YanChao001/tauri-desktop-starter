@@ -80,6 +80,8 @@
       },
       "wix": {
         "language": "zh-CN",
+        "fragmentPaths": ["installer/wix-ui.wxs"],
+        "componentGroupRefs": ["StarterInstallerUI"],
         "bannerPath": "installer/wix-banner.bmp",
         "dialogImagePath": "installer/wix-dialog.bmp"
       }

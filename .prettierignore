@@ -8,6 +8,9 @@ src-tauri/gen
 pnpm-lock.yaml
 src-tauri/Cargo.lock
 
+# WiX 的 .wxs 是 XML，避免被 Prettier 当作 JavaScript 解析
+src-tauri/installer/*.wxs
+
 # shadcn 原子组件沿用上游格式，局部行为修复不触发批量格式化
 src/components/ui
 
