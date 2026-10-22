@@ -1,3 +1,4 @@
+import { STORAGE_KEY } from "@/lib/settings-model";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, waitFor } from "@testing-library/react";
@@ -90,7 +91,7 @@ describe("设置页", () => {
     );
     window.localStorage.clear();
     window.localStorage.setItem(
-      "tauri-starter:settings",
+      STORAGE_KEY,
       JSON.stringify({ language: "zh" }),
     );
     Element.prototype.scrollIntoView = vi.fn();
@@ -112,9 +113,9 @@ describe("设置页", () => {
       screen.getByRole("combobox", { name: "Language" }),
     ).toHaveTextContent("English");
     expect(document.documentElement.lang).toBe("en");
-    expect(
-      JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
-    ).toMatchObject({ language: "en" });
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject(
+      { language: "en" },
+    );
     expect(screen.getByRole("button", { name: "System" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -123,7 +124,7 @@ describe("设置页", () => {
 
   it("重置外观时保留用户语言并恢复其余默认偏好", async () => {
     window.localStorage.setItem(
-      "tauri-starter:settings",
+      STORAGE_KEY,
       JSON.stringify({
         language: "en",
         accent: "rose",
@@ -136,17 +137,17 @@ describe("设置页", () => {
     );
     render(<SettingsView />);
     fireEvent.click(screen.getByRole("button", { name: "Reset preferences" }));
-    expect(
-      JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
-    ).toMatchObject({ accent: "rose", font: "mono" });
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject(
+      { accent: "rose", font: "mono" },
+    );
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel",
       }),
     );
-    expect(
-      JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
-    ).toMatchObject({ accent: "rose", font: "mono" });
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject(
+      { accent: "rose", font: "mono" },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Reset preferences" }));
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
@@ -158,9 +159,7 @@ describe("设置页", () => {
     );
     expect(document.documentElement.lang).toBe("en");
     expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
-    expect(
-      JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
-    ).toEqual({
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toEqual({
       schemaVersion: SETTINGS_VERSION,
       ...DEFAULT_SETTINGS,
       language: "en",
@@ -208,9 +207,9 @@ describe("设置页", () => {
     expect(desktop.getWindowGeometry).not.toHaveBeenCalled();
     expect(screen.getByRole("radio", { name: "记住上次位置" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "居中" }));
-    expect(
-      JSON.parse(localStorage.getItem("tauri-starter:settings")!),
-    ).toMatchObject({ windowPosition: "center" });
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      windowPosition: "center",
+    });
     expect(desktop.setWindowSize).not.toHaveBeenCalled();
     expect(desktop.resetWindowGeometry).not.toHaveBeenCalled();
   });

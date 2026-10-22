@@ -38,7 +38,7 @@ pnpm exec vitest related --run src/lib/settings-sync.ts
 pnpm exec prettier --check docs/testing.md
 ```
 
-已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、品牌一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查与桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
+已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、身份配置与品牌资源一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查与桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
 
 新增测试应说明要防止哪种实际回归。可逆的样式、文案调整通常用预览确认；不复制配置数组、不重复测试第三方库本身，也不为已经被类型检查约束的普通赋值增加测试。自定义组件的行为修复、数据持久化、并发和外部输入边界仍保留针对性回归。
 
@@ -46,14 +46,17 @@ pnpm exec prettier --check docs/testing.md
 
 日常界面回归默认使用无头浏览器，鼠标、键盘和页面焦点操作在测试浏览器内部完成。不要为每次样式、翻译或布局修改重复打开真实桌面窗口。
 
-| 命令                              | 桌面影响与用途                                                                          |
-| --------------------------------- | --------------------------------------------------------------------------------------- |
-| `pnpm test:ui`                    | 先构建浏览器产物，再运行无头 Playwright；不显示浏览器窗口，适合用户继续工作时验证界面。 |
-| `pnpm e2e:build`                  | 只构建隔离的原生测试程序，不启动应用窗口。                                              |
-| `pnpm test:e2e --interactive`     | 显式运行真实桌面验收；会显示、激活和切换窗口，并验证最小化 / 恢复等行为。               |
-| `pnpm docs:capture --interactive` | Windows 原生截图采集并同步；会显示和调整窗口，只运行三个 README 场景。                  |
+| 命令                                | 桌面影响与用途                                                                          |
+| ----------------------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm test:ui`                      | 先构建浏览器产物，再运行无头 Playwright；不显示浏览器窗口，适合用户继续工作时验证界面。 |
+| `pnpm e2e:build`                    | 只构建隔离的原生测试程序，不启动应用窗口。                                              |
+| `pnpm test:installer --interactive` | 执行 NSIS 原生绘制回归，会启动测试 exe；仅用于隔离 Windows 环境或安排的验收时段。       |
+| `pnpm test:e2e --interactive`       | 显式运行真实桌面验收；会显示、激活和切换窗口，并验证最小化 / 恢复等行为。               |
+| `pnpm docs:capture --interactive`   | Windows 原生截图采集并同步；会显示和调整窗口，只运行三个 README 场景。                  |
 
 单独执行 `pnpm test:e2e` 或只带 `--skip-build` 会在构建、读取收据和创建进程之前退出，提示选择无头界面检查或显式的前台验收。CI 环境变量也不会自动绕过这个要求；仓库的独立 CI runner 使用 `--interactive` 保留原生覆盖。
+
+普通 `test:scripts` / `verify` 默认跳过安装器原生绘制回归；显式运行 `test:installer --interactive` 前，需要 Windows 和 Tauri NSIS 构建缓存中的编译器。用例虽使用静默模式与不显示的测试控件，仍会创建并执行原生 exe，因此遵循同一桌面边界。发布工作流在独立 Windows runner 完成 NSIS 构建后执行该回归。
 
 独立标识符和临时数据目录只隔离数据，不能隔离当前桌面的前台焦点。`windowsHide` 只隐藏子进程控制台，不隐藏应用 GUI，见 [Node.js 子进程选项](https://nodejs.org/api/child_process.html#child_processspawncommand-args-options)。无头浏览器由 [Playwright 的 headless 配置](https://playwright.dev/docs/test-use-options#other-options) 控制，仍可输出截图与 trace。
 

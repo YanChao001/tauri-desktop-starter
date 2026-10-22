@@ -32,6 +32,9 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      - name: 验证应用配置与派生元数据一致
+        run: pnpm config:check
+
       - name: 验证品牌资源与 SVG 源一致
         run: pnpm branding:check
 

@@ -22,6 +22,7 @@ use tauri_plugin_opener::OpenerExt;
 use walkdir::WalkDir;
 
 use crate::{
+    app_config::INTEGRATION,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     storage::atomic_write,
 };
@@ -409,7 +410,7 @@ impl WorkbenchState {
             .cloned()
             .collect())
     }
-    fn document(&self, path: &Path) -> NativeResult<WorkbenchDocument> {
+    pub(crate) fn document(&self, path: &Path) -> NativeResult<WorkbenchDocument> {
         let entry = self.grant(path, false)?;
         self.load(&entry.id)
     }
@@ -763,7 +764,8 @@ fn file_kind(path: &Path) -> NativeResult<WorkbenchFileKind> {
         .to_ascii_lowercase()
         .as_str()
     {
-        "json" | "tdemo" => Ok(WorkbenchFileKind::Json),
+        extension if extension == INTEGRATION.file_extension => Ok(WorkbenchFileKind::Json),
+        "json" => Ok(WorkbenchFileKind::Json),
         "md" | "markdown" => Ok(WorkbenchFileKind::Markdown),
         "png" | "jpg" | "jpeg" | "gif" | "webp" => Ok(WorkbenchFileKind::Image),
         "txt" | "log" | "csv" | "tsv" | "rs" | "ts" | "js" | "css" | "toml" | "yaml" | "yml"
@@ -875,8 +877,18 @@ pub fn pick_files(app: &tauri::AppHandle) -> NativeResult<Vec<WorkbenchDocument>
         .add_filter(
             "Text / JSON / Markdown / Images",
             &[
-                "txt", "json", "tdemo", "md", "markdown", "log", "csv", "png", "jpg", "jpeg",
-                "gif", "webp",
+                "txt",
+                "json",
+                &INTEGRATION.file_extension,
+                "md",
+                "markdown",
+                "log",
+                "csv",
+                "png",
+                "jpg",
+                "jpeg",
+                "gif",
+                "webp",
             ],
         )
         .blocking_pick_files();
@@ -1386,7 +1398,9 @@ mod tests {
     #[test]
     fn associated_demo_documents_use_the_same_native_grant_and_json_save_contract() {
         let temp = tempfile::tempdir().unwrap();
-        let file = temp.path().join("associated.tdemo");
+        let file = temp
+            .path()
+            .join(format!("associated.{}", INTEGRATION.file_extension));
         fs::write(&file, r#"{"title":"Native association"}"#).unwrap();
         let state = WorkbenchState::open(temp.path().join("state")).unwrap();
         let document = state.document(&file).unwrap();
@@ -1405,8 +1419,11 @@ mod tests {
             .unwrap();
         assert_eq!(saved.content.as_deref(), Some(r#"{"title":"Saved"}"#));
         assert_eq!(state.recent().unwrap()[0].id, saved.id);
-        fs::write(temp.path().join("invalid.tdemo"), [0xff, 0xfe]).unwrap();
-        assert!(state.document(&temp.path().join("invalid.tdemo")).is_err());
+        let invalid = temp
+            .path()
+            .join(format!("invalid.{}", INTEGRATION.file_extension));
+        fs::write(&invalid, [0xff, 0xfe]).unwrap();
+        assert!(state.document(&invalid).is_err());
     }
     #[test]
     fn json_size_and_image_boundaries_reject_unsafe_content() {

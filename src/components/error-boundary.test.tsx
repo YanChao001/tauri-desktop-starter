@@ -1,3 +1,4 @@
+import { STORAGE_KEY } from "@/lib/settings-model";
 import type { ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +14,7 @@ describe("ErrorBoundary", () => {
   beforeEach(() => {
     delete document.documentElement.dataset.language;
     window.localStorage.setItem(
-      "tauri-starter:settings",
+      STORAGE_KEY,
       JSON.stringify({ language: "zh" }),
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -53,7 +54,7 @@ describe("ErrorBoundary", () => {
 
   it("provider 不可用时仍按已选英文显示错误入口", () => {
     window.localStorage.setItem(
-      "tauri-starter:settings",
+      STORAGE_KEY,
       JSON.stringify({ language: "en" }),
     );
     render(

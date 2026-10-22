@@ -54,6 +54,7 @@ const selected = {
 beforeEach(() => {
   for (const entry of workbenchEditor.getSnapshot().entries)
     workbenchEditor.close(entry.document.id);
+  workbenchEditor.clearActivationErrors();
   lifecycle.work = null;
   vi.clearAllMocks();
   vi.mocked(native.recentWorkbenchFiles).mockResolvedValue([]);
@@ -63,6 +64,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("file workbench", () => {
+  it("shows file-association failures collected before mounting and clears them explicitly", async () => {
+    await workbenchEditor.openActivation(
+      {
+        id: 1000,
+        source: "startup",
+        route: "/workbench",
+        files: ["bad.json"],
+        resourceIds: [],
+        errors: ["bad.json: invalid document"],
+      },
+      native.loadWorkbenchDocument,
+    );
+    render(<Workbench />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "bad.json: invalid document",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "workbench.clearOpenErrors" }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("imports the current draft into SQLite without discarding its file edits", async () => {
     vi.mocked(native.createNote).mockResolvedValue({
       id: 7,

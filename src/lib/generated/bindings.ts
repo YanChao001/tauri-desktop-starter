@@ -306,6 +306,8 @@ export type Activation = {
   source: string;
   route: string | null;
   files: string[];
+  resourceIds: string[];
+  errors: string[];
 };
 
 export type BackupInfo = {

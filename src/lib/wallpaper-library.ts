@@ -1,12 +1,13 @@
 import { normalizeBackgroundImage } from "@/lib/background-image";
+import { APP_CONFIG } from "@/config/app";
 import * as desktop from "@/lib/tauri";
 import type { Wallpaper, WallpaperInput } from "@/lib/tauri";
 
 export type { Wallpaper } from "@/lib/tauri";
 export const MAX_WALLPAPERS = 24;
-const DATABASE = "tauri-starter:wallpapers";
+const DATABASE = `${APP_CONFIG.browserStorageNamespace}:wallpapers`;
 const STORE = "library";
-const CHANNEL = "tauri-starter:wallpapers-changed";
+const CHANNEL = `${APP_CONFIG.browserStorageNamespace}:wallpapers-changed`;
 type Library = { version: 1; images: Wallpaper[] };
 
 export class WallpaperLibraryError extends Error {

@@ -166,7 +166,7 @@ function platformForTarget(target) {
   optionError(`app:build 仅支持桌面目标平台：${target}`);
 }
 
-function safeBinaryName(name) {
+export function safeBinaryName(name) {
   if (
     typeof name !== "string" ||
     !name ||
@@ -177,6 +177,18 @@ function safeBinaryName(name) {
     throw new Error("主程序名称必须是单个文件名");
   }
   return name;
+}
+
+/** Cargo 可包含辅助程序；正式构建与 E2E 必须使用相同的主程序选择规则。 */
+export function mainCargoBinary(pkg) {
+  const binaries = pkg.targets.filter((entry) => entry.kind.includes("bin"));
+  const binary = pkg.default_run
+    ? binaries.find((entry) => entry.name === pkg.default_run)
+    : (binaries.find((entry) => entry.name === pkg.name) ??
+      (binaries.length === 1 ? binaries[0] : undefined));
+  if (!binary)
+    throw new Error("无法确定主程序，请在 Cargo.toml 设置 default-run");
+  return binary;
 }
 
 /** 统一版本、JSON 配置与 Cargo 元数据；不解析或覆盖 Cargo 的 target 设置。 */
@@ -216,13 +228,7 @@ export function prepareBuild(
     (entry) => realpathSync(entry.manifest_path) === manifest,
   );
   if (!pkg) throw new Error("cargo metadata 中没有找到应用 package");
-  const binaries = pkg.targets.filter((entry) => entry.kind.includes("bin"));
-  const binary = pkg.default_run
-    ? binaries.find((entry) => entry.name === pkg.default_run)
-    : (binaries.find((entry) => entry.name === pkg.name) ??
-      (binaries.length === 1 ? binaries[0] : undefined));
-  if (!binary)
-    throw new Error("无法确定主程序，请在 Cargo.toml 设置 default-run");
+  const binary = mainCargoBinary(pkg);
   safeBinaryName(config.mainBinaryName ?? binary.name);
   const targets = options.bundles.length
     ? options.bundles

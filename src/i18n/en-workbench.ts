@@ -25,6 +25,7 @@ export const enWorkbench = {
   "workbench.reveal": "Show in file manager",
   "workbench.reload": "Inspect disk version",
   "workbench.close": "Close file",
+  "workbench.clearOpenErrors": "Clear file errors",
   "workbench.drop":
     "Drop text, JSON, Markdown or PNG / JPEG / GIF / WebP images into the window, or use the open button.",
   "workbench.limits":

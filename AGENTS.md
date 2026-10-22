@@ -54,7 +54,7 @@
 | Rust、IPC、桌面生命周期 | 对应 Rust 测试与绑定检查；真实窗口验收按桌面干扰边界运行 `pnpm test:e2e --interactive`                                          |
 | 浏览器演示部署          | `pnpm build:web` 后运行 `pnpm test:browser`，按影响补中英 / 明暗 / 窄屏、键盘与读屏复核                                         |
 
-`pnpm verify` 包含格式、品牌一致性、lint、类型、前端 / 脚本测试、版本检查与前端构建。Rust、绑定一致性、浏览器演示构建 / Playwright 和真实桌面 E2E 需分别执行；不要求每次局部改动都跑整套检查。
+`pnpm verify` 包含格式、身份配置与品牌资源一致性、lint、类型、前端 / 脚本测试、版本检查与前端构建。Rust、绑定一致性、浏览器演示构建 / Playwright 和真实桌面 E2E 需分别执行；不要求每次局部改动都跑整套检查。
 
 需要完整 Rust 检查时，从根目录执行，先构建 `dist/` 供 `generate_context!` 读取：
 

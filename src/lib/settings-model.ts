@@ -40,7 +40,8 @@ export const THEMES = ["light", "dark", "system"] as const;
 export const APP_MODES = ["demo", "minimal"] as const;
 export const WINDOW_POSITIONS = ["remember", "center"] as const;
 export const SETTINGS_VERSION = 3;
-export const STORAGE_KEY = "tauri-starter:settings";
+export const STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:settings`;
+export const THEME_STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:theme`;
 export type Accent = (typeof ACCENTS)[number];
 export type Radius = (typeof RADII)[number];
 export type Font = (typeof FONTS)[number];
@@ -209,7 +210,10 @@ export function readInitialSettings(): {
     if (isRecord(document) && !Object.hasOwn(settingsSource(document), "theme"))
       settings.theme = pick(
         THEMES,
-        window.localStorage.getItem("theme"),
+        window.localStorage.getItem(THEME_STORAGE_KEY) ??
+          (APP_CONFIG.browserStorageNamespace === "tauri-starter"
+            ? window.localStorage.getItem("theme")
+            : null),
         DEFAULT_SETTINGS.theme,
       );
     return { settings, error: null };

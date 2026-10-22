@@ -45,6 +45,7 @@ vi.mock("@/config/app", async (importOriginal) => {
   return {
     APP_CONFIG: {
       ...actual.APP_CONFIG,
+      repositoryUrl: "https://github.com/example/migrated-app",
       updates: { ...actual.APP_CONFIG.updates, publicKey: "build-default-key" },
     },
   };
@@ -105,7 +106,7 @@ describe("updater controls", () => {
       screen.getByRole("link", { name: "View GitHub releases" }),
     ).toHaveAttribute(
       "href",
-      "https://github.com/YanChao001/tauri-desktop-starter/releases",
+      "https://github.com/example/migrated-app/releases",
     );
   });
   it("distinguishes an unpublished feed from a current version and keeps retry available", () => {

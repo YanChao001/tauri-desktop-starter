@@ -3,13 +3,46 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildEnvironment } from "../scripts/build-lib.mjs";
+import {
+  buildEnvironment,
+  effectiveConfig,
+  mainCargoBinary,
+  parseBuildArgs,
+  safeBinaryName,
+} from "../scripts/build-lib.mjs";
 import { fileSha256 } from "../scripts/artifact-lib.mjs";
 
 const require = createRequire(import.meta.url);
 export const root = resolve(import.meta.dirname, "..");
 const targetDirectory = join(root, "src-tauri", "target", "e2e");
 const receiptPath = join(targetDirectory, "build.json");
+
+/** 平台配置与 E2E 覆盖都可能重命名程序，不能只猜 Cargo package 的名称。 */
+export function e2eExecutable(projectRoot, target, pkg) {
+  const platform = target.includes("-windows-")
+    ? "windows"
+    : target.endsWith("-apple-darwin")
+      ? "macos"
+      : "linux";
+  const config = effectiveConfig(
+    projectRoot,
+    parseBuildArgs(["--config", "src-tauri/tauri.e2e.conf.json"]),
+    pkg.version,
+    platform,
+  );
+  const binary = safeBinaryName(
+    config.mainBinaryName ?? mainCargoBinary(pkg).name,
+  );
+  return join(
+    projectRoot,
+    "src-tauri",
+    "target",
+    "e2e",
+    target,
+    "debug",
+    `${binary}${platform === "windows" ? ".exe" : ""}`,
+  );
+}
 
 export async function buildE2E() {
   const env = { ...buildEnvironment(), CARGO_TARGET_DIR: targetDirectory };
@@ -40,13 +73,7 @@ export async function buildE2E() {
       resolve(item.manifest_path) === join(root, "src-tauri", "Cargo.toml"),
   );
   if (!pkg) throw new Error("未找到应用 Cargo package");
-  const binary = pkg.default_run ?? pkg.name;
-  const executable = join(
-    targetDirectory,
-    host,
-    "debug",
-    `${binary}${process.platform === "win32" ? ".exe" : ""}`,
-  );
+  const executable = e2eExecutable(root, host, pkg);
   await new Promise((done, fail) => {
     const child = spawn(
       process.execPath,
