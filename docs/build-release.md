@@ -409,7 +409,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 - [ ] 系统集成使用派生项目自己的 scheme / 扩展名，验证安装版深链、文件关联冷 / 热启动及通知、快捷键、凭据权限；未测平台明确记录
 - [ ] 涉及数据格式变更时，按 [数据与恢复验证](./testing.md#数据与恢复验证) 记录支持升级的历史版本、迁移失败状态及恢复演练结果
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
-- [ ] `release/*` 已通过 PR 合入 `main` 和 `develop`，在 `main` 对应合并提交打 tag `vX.Y.Z`
+- [ ] `release/*` 已通过 PR 合入 `main`，在对应发布提交打 tag `vX.Y.Z`；再通过 `main` → `develop` 的回流 PR 同步发布历史，见 [Git 发布流程](./conventions/git-workflow.md#发布流程)
 - [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布
 - [ ] 发布公告与更新说明同步给使用方
 
