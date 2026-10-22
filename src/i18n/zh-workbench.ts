@@ -23,6 +23,7 @@ export const zhWorkbench = {
   "workbench.reveal": "在文件管理器中显示",
   "workbench.reload": "查看磁盘版本",
   "workbench.close": "关闭文件",
+  "workbench.clearOpenErrors": "清除文件错误",
   "workbench.drop":
     "将文本、JSON、Markdown 或 PNG / JPEG / GIF / WebP 图片拖入窗口，也可使用打开按钮。",
   "workbench.limits":
@@ -82,7 +83,8 @@ export const zhWorkbench = {
   "tasks.noResults": "没有已完成的文件结果。",
   "tasks.previewLimit":
     "页面最多预览前 200 项；导出可获得本次已处理的完整结果。",
-  "tasks.truncated": "扫描达到文件数量上限，本次结果并非整个目录的完整清单。",
+  "tasks.truncated":
+    "扫描达到文件数量或目录深度上限，本次结果并非整个目录的完整清单。",
   "tasks.retryOf": "重新运行任务：{id}",
   "tasks.status.queued": "排队中",
   "tasks.status.running": "执行中",

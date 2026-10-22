@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { spawnOwned, stopOwned, waitOwned } from "./process.mjs";
+import {
+  spawnOwned,
+  stopOwned,
+  waitForWebDriver,
+  waitOwned,
+} from "./process.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "starter-process-test-"));
@@ -70,6 +75,31 @@ test("failed process startup is reported and cleanup remains safe", async (t) =>
   await assert.rejects(waitOwned(owned), { code: "ENOENT" });
   await stopOwned(owned);
   assert.equal(owned.state.done, true);
+});
+
+test("an unwritable log fails promptly while still stopping the owned process", async (t) => {
+  const { root } = fixture(t);
+  // 向已有目录写日志会在 Windows / Unix 都失败，子进程本身仍保持运行。
+  const owned = spawnOwned(
+    process.execPath,
+    ["-e", "setInterval(() => process.stdout.write('running'), 50)"],
+    { logPath: root },
+  );
+  try {
+    await assert.rejects(
+      waitOwned(owned, AbortSignal.timeout(5000)),
+      /无法保存受控进程日志/,
+    );
+    await assert.rejects(
+      waitForWebDriver(owned, 1, AbortSignal.timeout(5000)),
+      /无法保存受控进程日志/,
+    );
+    await assert.rejects(stopOwned(owned), /无法保存受控进程日志/);
+    assert.equal(owned.state.done, true);
+    await assert.rejects(stopOwned(owned), /无法保存受控进程日志/);
+  } finally {
+    await stopOwned(owned).catch(() => {});
+  }
 });
 
 test(

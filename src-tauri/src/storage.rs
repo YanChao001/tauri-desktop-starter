@@ -15,7 +15,9 @@ use tauri::Manager;
 use crate::error::{ErrorCode, NativeError, NativeResult};
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
+const SETTINGS_SCHEMA_VERSION: u32 = 3;
 const MAX_SETTINGS_SIZE: usize = 128 * 1024;
+pub(crate) const MAX_SETTINGS_FILE_SIZE: usize = MAX_SETTINGS_SIZE + 1024;
 const MAX_BACKGROUND_DATA_LENGTH: usize = 96 * 1024;
 
 /// 具名递归类型使 Rust 与 TypeScript 的 JSON 契约保持有限定义。
@@ -190,7 +192,14 @@ pub(crate) fn validate_custom_background(value: &Value) -> NativeResult<()> {
     Ok(())
 }
 
-fn validate_settings(settings: &Value) -> NativeResult<()> {
+pub(crate) fn future_settings_schema(settings: &Value) -> bool {
+    settings
+        .get("schemaVersion")
+        .and_then(Value::as_f64)
+        .is_some_and(|version| version > f64::from(SETTINGS_SCHEMA_VERSION))
+}
+
+pub(crate) fn validate_settings(settings: &Value) -> NativeResult<()> {
     let object = settings.as_object().ok_or_else(|| {
         NativeError::new(ErrorCode::InvalidArgument, "Settings must be a JSON object")
     })?;
@@ -212,10 +221,7 @@ fn validate_settings(settings: &Value) -> NativeResult<()> {
         ));
     }
     // 未来结构可能扩展位置策略；保留原值供前端执行未来版本只读保护。
-    let future_schema = object
-        .get("schemaVersion")
-        .and_then(Value::as_f64)
-        .is_some_and(|version| version > 3.0);
+    let future_schema = future_settings_schema(settings);
     if !future_schema && let Some(image) = object.get("customBackground") {
         validate_custom_background(image)?;
     }
@@ -250,7 +256,7 @@ impl SettingsStore {
     pub fn open(path: PathBuf) -> NativeResult<Self> {
         let snapshot = match read_settings_file(&path) {
             Ok(bytes) => {
-                if bytes.len() > MAX_SETTINGS_SIZE + 1024 {
+                if bytes.len() > MAX_SETTINGS_FILE_SIZE {
                     return Err(NativeError::new(
                         ErrorCode::StorageCorrupt,
                         "Settings file exceeds the supported size",
@@ -409,7 +415,7 @@ impl SettingsStore {
 fn read_settings_file(path: &Path) -> std::io::Result<Vec<u8>> {
     let file = fs::File::open(path)?;
     let mut bytes = Vec::new();
-    file.take((MAX_SETTINGS_SIZE + 1025) as u64)
+    file.take((MAX_SETTINGS_FILE_SIZE + 1) as u64)
         .read_to_end(&mut bytes)?;
     Ok(bytes)
 }
@@ -417,6 +423,13 @@ fn read_settings_file(path: &Path) -> std::io::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fractional_future_schema_versions_keep_the_future_version_guard() {
+        assert!(!future_settings_schema(&json!({"schemaVersion": 3})));
+        assert!(future_settings_schema(&json!({"schemaVersion": 3.5})));
+        assert!(future_settings_schema(&json!({"schemaVersion": 4})));
+    }
 
     #[test]
     fn settings_are_atomic_versioned_and_reloaded() {

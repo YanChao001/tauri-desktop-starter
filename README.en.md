@@ -39,7 +39,7 @@ pnpm test:browser
 
 ## Make it yours
 
-Use `pnpm init:project --config ../my-app.json --dry-run`, review the changes, then repeat without `--dry-run`. Configure your own icons, security contact, signing and update keys. Also replace the `tdemo` URL scheme and `.tdemo` file association in configuration, native parsing and examples.
+Use `pnpm init:project --config ../my-app.json --dry-run`, review the changes, then repeat without `--dry-run`. Initialization synchronizes branding, URL schemes, file associations and browser storage isolation. Run `pnpm config:check` to detect configuration drift. Configure your own icons, security contact, signing and update keys; see the [initialization guide](./docs/development.md#项目初始化).
 
 The [module guide](./docs/demo-modules.md) includes hands-on workflows, a complete page → Rust IPC → test example, and concrete database / updater removal recipes. Changes span routes, commands, generated bindings, dependencies, permissions, translations and tests.
 

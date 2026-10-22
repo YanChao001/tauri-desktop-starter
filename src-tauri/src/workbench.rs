@@ -22,6 +22,7 @@ use tauri_plugin_opener::OpenerExt;
 use walkdir::WalkDir;
 
 use crate::{
+    app_config::INTEGRATION,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     storage::atomic_write,
 };
@@ -32,6 +33,7 @@ const DIALOG_LIMIT: usize = 16 * 1024 * 1024;
 const TASK_REPORT_LIMIT: usize = 64 * 1024 * 1024;
 const TASK_PREVIEW_ENTRIES: usize = 200;
 const MAX_TASK_FILES: usize = 5_000;
+const MAX_TASK_DEPTH: usize = 32;
 const MAX_HASH_FILE: u64 = 512 * 1024 * 1024;
 const MAX_HISTORY: usize = 30;
 const MAX_ACTIVE: usize = 2;
@@ -409,7 +411,7 @@ impl WorkbenchState {
             .cloned()
             .collect())
     }
-    fn document(&self, path: &Path) -> NativeResult<WorkbenchDocument> {
+    pub(crate) fn document(&self, path: &Path) -> NativeResult<WorkbenchDocument> {
         let entry = self.grant(path, false)?;
         self.load(&entry.id)
     }
@@ -474,7 +476,6 @@ impl WorkbenchState {
             .lock()
             .map_err(|_| invalid("Workbench writer is unavailable"))?;
         atomic_save(&path, content.as_bytes(), Some(expected_revision))?;
-        drop(_write);
         self.load(id)
     }
     pub fn snapshot(&self) -> NativeResult<WorkbenchTaskSnapshot> {
@@ -506,8 +507,27 @@ impl WorkbenchState {
         attempt_of: Option<String>,
         app: &tauri::AppHandle,
     ) -> NativeResult<WorkbenchTask> {
+        let (task, cancel) = self.enqueue(kind, directory_id, attempt_of)?;
+        self.announce(app);
+        if task.status == WorkbenchTaskStatus::Running {
+            self.spawn_task(task.clone(), cancel, app);
+        }
+        self.launch_queued(app);
+        Ok(task)
+    }
+    fn enqueue(
+        &self,
+        kind: WorkbenchTaskKind,
+        directory_id: &str,
+        attempt_of: Option<String>,
+    ) -> NativeResult<(WorkbenchTask, Arc<AtomicBool>)> {
         let root = self.resource(directory_id, true)?;
         let cancel = Arc::new(AtomicBool::new(false));
+        // 与 persist 保持相同锁顺序；持久化成功前不让 worker 看见候选任务。
+        let _write = self
+            .writing
+            .lock()
+            .map_err(|_| invalid("Workbench writer is unavailable"))?;
         let mut inner = self.lock()?;
         let status = inner.admission_status()?;
         let task = WorkbenchTask {
@@ -526,38 +546,33 @@ impl WorkbenchState {
             truncated: false,
             attempt_of,
         };
-        inner.cancellations.insert(task.id.clone(), cancel.clone());
-        inner.history.tasks.insert(0, task.clone());
-        while inner.history.tasks.len() > MAX_HISTORY {
-            if let Some(index) = inner
-                .history
-                .tasks
-                .iter()
-                .rposition(|task| !task.status.active())
-            {
-                let removed = inner.history.tasks.remove(index);
-                // 只处理经过生成 ID 校验的领域报告，其他文件不参与历史清理。
-                if valid_id(&removed.id) {
-                    let _ = fs::remove_file(self.root.join(format!("{}.json", removed.id)));
-                }
+        let mut history = inner.history.clone();
+        let mut removed_ids = vec![];
+        history.tasks.insert(0, task.clone());
+        while history.tasks.len() > MAX_HISTORY {
+            if let Some(index) = history.tasks.iter().rposition(|task| !task.status.active()) {
+                removed_ids.push(history.tasks.remove(index).id);
             } else {
                 break;
             }
         }
+        if self.history_writable {
+            let contents = encode_history(&history)?;
+            atomic_write(&self.root.join("history.json"), &contents)?;
+        }
+        inner.history = history;
+        inner.cancellations.insert(task.id.clone(), cancel.clone());
         inner.revision = inner.revision.saturating_add(1);
         drop(inner);
-        if let Err(error) = self.persist() {
-            let mut inner = self.lock()?;
-            inner.history.tasks.retain(|entry| entry.id != task.id);
-            inner.cancellations.remove(&task.id);
-            return Err(error);
+        // 仅在新历史已保存后清理过期报告，写入失败须保留原来的完整导出。
+        if self.history_writable {
+            for id in removed_ids {
+                if valid_id(&id) {
+                    let _ = fs::remove_file(self.root.join(format!("{id}.json")));
+                }
+            }
         }
-        self.announce(app);
-        if task.status == WorkbenchTaskStatus::Running {
-            self.spawn_task(task.clone(), cancel, app);
-        }
-        self.launch_queued(app);
-        Ok(task)
+        Ok((task, cancel))
     }
     fn launch_queued(&self, app: &tauri::AppHandle) {
         loop {
@@ -678,6 +693,12 @@ impl WorkbenchState {
         if !valid_id(id) {
             return Err(invalid("Invalid task ID"));
         }
+        if !self.history_writable {
+            return Err(NativeError::new(
+                ErrorCode::StorageIo,
+                "Workbench history is unavailable; the complete report remains in memory",
+            ));
+        }
         let bytes = serde_json::to_vec_pretty(report).map_err(io_error)?;
         bounded_text_size(bytes.len(), TASK_REPORT_LIMIT)?;
         atomic_write(&self.root.join(format!("{id}.json")), &bytes)
@@ -763,7 +784,8 @@ fn file_kind(path: &Path) -> NativeResult<WorkbenchFileKind> {
         .to_ascii_lowercase()
         .as_str()
     {
-        "json" | "tdemo" => Ok(WorkbenchFileKind::Json),
+        extension if extension == INTEGRATION.file_extension => Ok(WorkbenchFileKind::Json),
+        "json" => Ok(WorkbenchFileKind::Json),
         "md" | "markdown" => Ok(WorkbenchFileKind::Markdown),
         "png" | "jpg" | "jpeg" | "gif" | "webp" => Ok(WorkbenchFileKind::Image),
         "txt" | "log" | "csv" | "tsv" | "rs" | "ts" | "js" | "css" | "toml" | "yaml" | "yml"
@@ -875,8 +897,18 @@ pub fn pick_files(app: &tauri::AppHandle) -> NativeResult<Vec<WorkbenchDocument>
         .add_filter(
             "Text / JSON / Markdown / Images",
             &[
-                "txt", "json", "tdemo", "md", "markdown", "log", "csv", "png", "jpg", "jpeg",
-                "gif", "webp",
+                "txt",
+                "json",
+                &INTEGRATION.file_extension,
+                "md",
+                "markdown",
+                "log",
+                "csv",
+                "png",
+                "jpg",
+                "jpeg",
+                "gif",
+                "webp",
             ],
         )
         .blocking_pick_files();
@@ -1023,22 +1055,28 @@ fn run_directory_task(
     let mut paths = vec![];
     let mut errors = 0;
     let mut truncated = false;
-    for entry in WalkDir::new(&root).follow_links(false).max_depth(32) {
+    for entry in WalkDir::new(&root)
+        .follow_links(false)
+        .max_depth(MAX_TASK_DEPTH)
+    {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
         match entry {
+            Ok(entry) if entry.file_type().is_dir() && entry.depth() == MAX_TASK_DEPTH => {
+                truncated = true;
+            }
             Ok(entry) if entry.file_type().is_file() => {
+                if paths.len() == MAX_TASK_FILES {
+                    truncated = true;
+                    break;
+                }
                 let path = entry.path().to_path_buf();
                 let canonical = fs::canonicalize(&path).map_err(io_error)?;
                 if !canonical.starts_with(&root) {
                     return Err(invalid("A scanned path escaped the selected directory"));
                 }
                 paths.push(path);
-                if paths.len() >= MAX_TASK_FILES {
-                    truncated = true;
-                    break;
-                }
             }
             Err(_) => errors += 1,
             _ => {}
@@ -1247,6 +1285,70 @@ mod tests {
     }
 
     #[test]
+    fn failed_task_admission_preserves_history_and_complete_reports() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("workbench");
+        let mut state = WorkbenchState::open(root.clone()).unwrap();
+        let directory = state.grant(temporary.path(), true).unwrap();
+        state.lock().unwrap().history.tasks = (0..MAX_HISTORY)
+            .map(|index| task(&format!("task-{index}"), WorkbenchTaskStatus::Completed))
+            .collect();
+        state.persist().unwrap();
+        let oldest_report = root.join(format!("task-{}.json", MAX_HISTORY - 1));
+        fs::write(&oldest_report, b"complete report").unwrap();
+        let before = serde_json::to_value(state.snapshot().unwrap()).unwrap();
+
+        // 用同名目录阻止原子替换，稳定模拟历史写入失败。
+        let history_path = root.join("history.json");
+        fs::remove_file(&history_path).unwrap();
+        fs::create_dir(&history_path).unwrap();
+        assert!(
+            state
+                .enqueue(WorkbenchTaskKind::Scan, &directory.id, None)
+                .is_err()
+        );
+        assert_eq!(
+            serde_json::to_value(state.snapshot().unwrap()).unwrap(),
+            before
+        );
+        assert!(state.lock().unwrap().cancellations.is_empty());
+        assert_eq!(fs::read(&oldest_report).unwrap(), b"complete report");
+
+        fs::remove_dir(&history_path).unwrap();
+        let (admitted, _) = state
+            .enqueue(WorkbenchTaskKind::Scan, &directory.id, None)
+            .unwrap();
+        assert_eq!(state.snapshot().unwrap().tasks.len(), MAX_HISTORY);
+        assert!(!oldest_report.exists());
+        let persisted: History = serde_json::from_slice(&fs::read(&history_path).unwrap()).unwrap();
+        assert_eq!(persisted.tasks[0].id, admitted.id);
+
+        let retained_id = format!("task-{}", MAX_HISTORY - 2);
+        let retained_report = root.join(format!("{retained_id}.json"));
+        fs::write(&retained_report, b"retained report").unwrap();
+        let checkpoint = fs::read(&history_path).unwrap();
+        state.history_writable = false;
+        state
+            .enqueue(WorkbenchTaskKind::Scan, &directory.id, None)
+            .unwrap();
+        assert!(
+            state
+                .persist_report(
+                    &retained_id,
+                    &TaskReport {
+                        total: 0,
+                        entries: vec![],
+                        truncated: false,
+                        message: None,
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(fs::read(history_path).unwrap(), checkpoint);
+        assert_eq!(fs::read(retained_report).unwrap(), b"retained report");
+    }
+
+    #[test]
     fn bounded_history_keeps_complete_large_reports_exportable_after_restart() {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path().join("workbench");
@@ -1386,7 +1488,9 @@ mod tests {
     #[test]
     fn associated_demo_documents_use_the_same_native_grant_and_json_save_contract() {
         let temp = tempfile::tempdir().unwrap();
-        let file = temp.path().join("associated.tdemo");
+        let file = temp
+            .path()
+            .join(format!("associated.{}", INTEGRATION.file_extension));
         fs::write(&file, r#"{"title":"Native association"}"#).unwrap();
         let state = WorkbenchState::open(temp.path().join("state")).unwrap();
         let document = state.document(&file).unwrap();
@@ -1405,8 +1509,11 @@ mod tests {
             .unwrap();
         assert_eq!(saved.content.as_deref(), Some(r#"{"title":"Saved"}"#));
         assert_eq!(state.recent().unwrap()[0].id, saved.id);
-        fs::write(temp.path().join("invalid.tdemo"), [0xff, 0xfe]).unwrap();
-        assert!(state.document(&temp.path().join("invalid.tdemo")).is_err());
+        let invalid = temp
+            .path()
+            .join(format!("invalid.{}", INTEGRATION.file_extension));
+        fs::write(&invalid, [0xff, 0xfe]).unwrap();
+        assert!(state.document(&invalid).is_err());
     }
     #[test]
     fn json_size_and_image_boundaries_reject_unsafe_content() {
@@ -1471,5 +1578,34 @@ mod tests {
         )
         .unwrap();
         assert!(cancelled.entries.is_empty());
+
+        let mut boundary = temp.path().to_path_buf();
+        for _ in 0..MAX_TASK_DEPTH - 1 {
+            boundary.push("d");
+        }
+        fs::create_dir_all(&boundary).unwrap();
+        fs::write(boundary.join("included.txt"), "included").unwrap();
+        let complete = run_directory_task(
+            temp.path(),
+            &WorkbenchTaskKind::Scan,
+            &AtomicBool::new(false),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(complete.total, 2);
+        assert!(!complete.truncated);
+
+        let beyond = boundary.join("d");
+        fs::create_dir(&beyond).unwrap();
+        fs::write(beyond.join("excluded.txt"), "excluded").unwrap();
+        let limited = run_directory_task(
+            temp.path(),
+            &WorkbenchTaskKind::Scan,
+            &AtomicBool::new(false),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(limited.total, complete.total);
+        assert!(limited.truncated);
     }
 }

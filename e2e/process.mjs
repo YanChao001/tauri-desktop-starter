@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { createWriteStream, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { finished } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
@@ -20,8 +21,11 @@ export function spawnOwned(command, args, { cwd, env, logPath } = {}) {
     logError: null,
     cleanupError: null,
   };
-  log?.on("error", (error) => {
-    state.logError = error;
+  const logFailed = new Promise((done) => {
+    log?.on("error", (error) => {
+      state.logError = error;
+      done(error);
+    });
   });
   const child = spawn(command, args, {
     cwd,
@@ -41,18 +45,31 @@ export function spawnOwned(command, args, { cwd, env, logPath } = {}) {
       done({ code, signal, error: state.error });
     });
   });
-  return { child, state, exited, log, logPath, detached };
+  return { child, state, exited, log, logPath, logFailed, detached };
+}
+
+function assertLog(owned) {
+  if (owned.state.logError)
+    throw new Error(`无法保存受控进程日志：${owned.logPath}`, {
+      cause: owned.state.logError,
+    });
 }
 
 export async function waitOwned(owned, signal) {
   signal?.throwIfAborted();
+  assertLog(owned);
   let onAbort;
   const aborted = new Promise((_, fail) => {
     onAbort = () => fail(signal.reason);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
   try {
-    const result = await Promise.race([owned.exited, aborted]);
+    const result = await Promise.race([
+      owned.exited,
+      aborted,
+      owned.logFailed.then(() => assertLog(owned)),
+    ]);
+    assertLog(owned);
     if (result.error) throw result.error;
     if (result.code !== 0)
       throw new Error(`受控进程退出（${result.code ?? result.signal}）`);
@@ -66,6 +83,7 @@ export async function stopOwned(owned) {
   if (!owned) return;
   if (owned.stopped) {
     if (owned.state.cleanupError) throw owned.state.cleanupError;
+    assertLog(owned);
     return;
   }
   const { child, state, detached } = owned;
@@ -127,17 +145,25 @@ export async function stopOwned(owned) {
   }
   // 父进程的 close 事件不能证明所有后代进程均已退出。
   if (unixGroup) signalGroup("SIGKILL");
-  if (owned.log && !owned.log.destroyed && !owned.log.writableEnded) {
-    await new Promise((done) => owned.log.end(done));
+  if (owned.log) {
+    const flushed = finished(owned.log);
+    if (!owned.log.destroyed && !owned.log.writableEnded) owned.log.end();
+    try {
+      await flushed;
+    } catch (error) {
+      owned.state.logError ??= error;
+    }
   }
   owned.stopped = true;
   if (state.cleanupError) throw state.cleanupError;
+  assertLog(owned);
 }
 
 export async function waitForWebDriver(owned, port, signal) {
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
     signal.throwIfAborted();
+    assertLog(owned);
     if (owned.state.error) throw owned.state.error;
     if (owned.state.done || owned.child.exitCode !== null)
       throw new Error(

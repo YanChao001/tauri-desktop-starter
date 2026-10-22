@@ -113,7 +113,7 @@ function NetworkLab() {
       postController.current?.abort();
     }
   }, [offline, client]);
-  const error = mutation.error ?? query.error;
+  const error = mutation.status === "idle" ? query.error : mutation.error;
   function errorText(reason: unknown) {
     return reason instanceof NetworkLabError
       ? t(`labs.network.error.${reason.code}`)
@@ -354,7 +354,7 @@ function NetworkLab() {
                 ? t(`labs.network.${notice}`)
                 : t("labs.idle")}
           </p>
-          {query.failureCount > 0 ? (
+          {mutation.status === "idle" && query.failureCount > 0 ? (
             <p className="text-xs text-muted-foreground">
               {t("labs.network.attempts", { count: query.failureCount })}
             </p>

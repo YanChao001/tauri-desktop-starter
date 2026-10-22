@@ -8,13 +8,23 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { RecordsTable } from "./records-table";
 
+const locale = vi.hoisted(() => ({ language: "en" as "en" | "zh" }));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
-  const t = createTranslator(en);
-  return { useI18n: () => ({ language: "en", t }) };
+  const { zhCN } = await import("@/i18n/zh-CN");
+  const translators = { en: createTranslator(en), zh: createTranslator(zhCN) };
+  return {
+    useI18n: () => ({
+      language: locale.language,
+      t: translators[locale.language],
+    }),
+  };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  locale.language = "en";
+});
 
 it("uses stable selection through filtering and retains failed bulk records", () => {
   render(<RecordsTable />);
@@ -51,4 +61,27 @@ it("sorts the whole model and limits rendered rows in virtual mode", () => {
   expect(
     within(screen.getByRole("table")).getAllByRole("row").length,
   ).toBeLessThan(100);
+});
+
+it("切换语言后团队列与搜索使用当前翻译，并保留选中记录", () => {
+  const { rerender } = render(<RecordsTable />);
+  fireEvent.click(screen.getByLabelText("Select record 1"));
+  fireEvent.click(screen.getByRole("button", { name: /Name/ }));
+  expect(
+    screen.getAllByRole("cell", { name: "Design" }).length,
+  ).toBeGreaterThan(0);
+  locale.language = "zh";
+  rerender(<RecordsTable />);
+  expect(screen.getByRole("columnheader", { name: /名称/ })).toHaveAttribute(
+    "aria-sort",
+    "ascending",
+  );
+  expect(screen.queryAllByRole("cell", { name: "Design" })).toHaveLength(0);
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "设计" },
+  });
+  expect(screen.getAllByRole("cell", { name: "设计" }).length).toBeGreaterThan(
+    0,
+  );
+  expect(screen.getByLabelText("选择记录 1")).toBeChecked();
 });

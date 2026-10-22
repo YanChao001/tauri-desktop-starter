@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -54,6 +55,7 @@ const selected = {
 beforeEach(() => {
   for (const entry of workbenchEditor.getSnapshot().entries)
     workbenchEditor.close(entry.document.id);
+  workbenchEditor.clearActivationErrors();
   lifecycle.work = null;
   vi.clearAllMocks();
   vi.mocked(native.recentWorkbenchFiles).mockResolvedValue([]);
@@ -63,6 +65,80 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("file workbench", () => {
+  it("keeps an in-flight save locked across route remounts", async () => {
+    workbenchEditor.open([selected]);
+    workbenchEditor.edit(selected.id, "saved edit");
+    let finish!: (document: typeof selected) => void;
+    vi.mocked(native.saveWorkbenchDocument).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = render(<Workbench />);
+    fireEvent.click(screen.getByRole("button", { name: "workbench.save" }));
+    view.unmount();
+    render(<Workbench />);
+    expect(screen.getByLabelText("workbench.editor")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "workbench.save" }),
+    ).toBeDisabled();
+    await act(async () =>
+      finish({ ...selected, content: "saved edit", revision: "v2" }),
+    );
+    expect(screen.getByLabelText("workbench.editor")).toBeEnabled();
+    expect(screen.getByLabelText("workbench.editor")).toHaveValue("saved edit");
+    expect(native.saveWorkbenchDocument).toHaveBeenCalledOnce();
+  });
+
+  it("locks the editor for a lifecycle save until the native write finishes", async () => {
+    workbenchEditor.open([selected]);
+    workbenchEditor.edit(selected.id, "saved edit");
+    let finish!: (document: typeof selected) => void;
+    vi.mocked(native.saveWorkbenchDocument).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<Workbench />);
+    let saving!: Promise<void>;
+    act(() => {
+      saving = lifecycle.work!.save();
+    });
+    expect(screen.getByLabelText("workbench.editor")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "workbench.close note.txt" }),
+    ).toBeDisabled();
+    await act(async () => {
+      finish({ ...selected, content: "saved edit", revision: "v2" });
+      await saving;
+    });
+    expect(screen.getByLabelText("workbench.editor")).toBeEnabled();
+    expect(workbenchEditor.hasUnsavedChanges()).toBe(false);
+  });
+
+  it("shows file-association failures collected before mounting and clears them explicitly", async () => {
+    await workbenchEditor.openActivation(
+      {
+        id: 1000,
+        source: "startup",
+        route: "/workbench",
+        files: ["bad.json"],
+        resourceIds: [],
+        errors: ["bad.json: invalid document"],
+      },
+      native.loadWorkbenchDocument,
+    );
+    render(<Workbench />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "bad.json: invalid document",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "workbench.clearOpenErrors" }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("imports the current draft into SQLite without discarding its file edits", async () => {
     vi.mocked(native.createNote).mockResolvedValue({
       id: 7,

@@ -39,8 +39,12 @@ export const MOTIONS = ["full", "reduced"] as const;
 export const THEMES = ["light", "dark", "system"] as const;
 export const APP_MODES = ["demo", "minimal"] as const;
 export const WINDOW_POSITIONS = ["remember", "center"] as const;
+export const SIDEBAR_MIN_WIDTH = 180;
+export const SIDEBAR_MAX_WIDTH = 360;
+export const SIDEBAR_DEFAULT_WIDTH = 224;
 export const SETTINGS_VERSION = 3;
-export const STORAGE_KEY = "tauri-starter:settings";
+export const STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:settings`;
+export const THEME_STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:theme`;
 export type Accent = (typeof ACCENTS)[number];
 export type Radius = (typeof RADII)[number];
 export type Font = (typeof FONTS)[number];
@@ -79,7 +83,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   motion: "full",
   menuBar: true,
   sidebarCollapsed: false,
-  sidebarWidth: 224,
+  sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   appMode: APP_CONFIG.defaultMode,
   runInBackground: false,
   autoCheckUpdates: true,
@@ -170,7 +174,12 @@ export function migrateSettings(raw: unknown): AppSettings {
     sidebarWidth:
       typeof source.sidebarWidth === "number" &&
       Number.isFinite(source.sidebarWidth)
-        ? Math.round(Math.max(180, Math.min(360, source.sidebarWidth)))
+        ? Math.round(
+            Math.max(
+              SIDEBAR_MIN_WIDTH,
+              Math.min(SIDEBAR_MAX_WIDTH, source.sidebarWidth),
+            ),
+          )
         : DEFAULT_SETTINGS.sidebarWidth,
     appMode: pick(APP_MODES, source.appMode, DEFAULT_SETTINGS.appMode),
     theme: pick(THEMES, source.theme, DEFAULT_SETTINGS.theme),
@@ -209,7 +218,10 @@ export function readInitialSettings(): {
     if (isRecord(document) && !Object.hasOwn(settingsSource(document), "theme"))
       settings.theme = pick(
         THEMES,
-        window.localStorage.getItem("theme"),
+        window.localStorage.getItem(THEME_STORAGE_KEY) ??
+          (APP_CONFIG.browserStorageNamespace === "tauri-starter"
+            ? window.localStorage.getItem("theme")
+            : null),
         DEFAULT_SETTINGS.theme,
       );
     return { settings, error: null };

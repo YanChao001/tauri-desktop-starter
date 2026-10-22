@@ -45,6 +45,7 @@ describe("unsaved work lifecycle", () => {
   let finished: ((id: number) => void) | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(native.respondLifecycle).mockResolvedValue(undefined);
     vi.mocked(native.onLifecycleRequest).mockImplementation(async (handler) => {
       request = handler;
       return () => {};
@@ -57,6 +58,27 @@ describe("unsaved work lifecycle", () => {
     );
   });
   afterEach(cleanup);
+  it("stops automatic approval after an IPC failure and allows an explicit retry", async () => {
+    vi.mocked(native.respondLifecycle).mockRejectedValueOnce(
+      new Error("Lifecycle response failed"),
+    );
+    render(<UnsavedWorkProvider>{null}</UnsavedWorkProvider>);
+    act(() => request?.({ id: 1, action: "quit", windows: ["main"] }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Lifecycle response failed",
+    );
+    expect(native.respondLifecycle).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Save and continue" }),
+    ).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await waitFor(() =>
+      expect(native.respondLifecycle).toHaveBeenCalledTimes(2),
+    );
+    expect(native.respondLifecycle).toHaveBeenLastCalledWith(1, true);
+  });
   it("closes on a native cancellation broadcast and ignores a delayed copy of the finished request", async () => {
     render(
       <UnsavedWorkProvider>

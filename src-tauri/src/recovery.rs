@@ -4,7 +4,10 @@ use crate::{
     blocking,
     database::{BACKUP_LIMIT, BackupInfo, BackupPreview, DATABASE_SCHEMA_VERSION, Database},
     error::{ErrorCode, NativeError, NativeResult},
-    storage::{DataPaths, SettingsStore, atomic_write},
+    storage::{
+        DataPaths, MAX_SETTINGS_FILE_SIZE, SettingsStore, atomic_write, future_settings_schema,
+        validate_settings,
+    },
 };
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
@@ -145,7 +148,9 @@ fn verify_database(path: &Path) -> NativeResult<u32> {
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|e| failure("Cannot verify database schema", e))?;
     if schema != DATABASE_SCHEMA_VERSION {
-        return Err(invalid("Recovery requires a supported schema 2 database"));
+        return Err(invalid(&format!(
+            "Recovery requires a supported schema {DATABASE_SCHEMA_VERSION} database"
+        )));
     }
     let result: String = connection
         .query_row("PRAGMA quick_check", [], |row| row.get(0))
@@ -212,12 +217,7 @@ fn protect_future(paths: &DataPaths, reset_settings: bool) -> NativeResult<()> {
             ));
         }
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&contents)
-            && value
-                .get("settings")
-                .unwrap_or(&value)
-                .get("schemaVersion")
-                .and_then(|v| v.as_f64())
-                .is_some_and(|version| version > 2.0)
+            && future_settings_schema(value.get("settings").unwrap_or(&value))
         {
             return Err(invalid(
                 "Settings from a newer application must not be overwritten",
@@ -292,19 +292,26 @@ fn apply_pending_with(
     protect_future(paths, request.reset_settings)?;
     verify_database(&candidate(paths, &request.token, false))?;
     if request.reset_settings {
-        let settings: crate::storage::SettingsSnapshot =
-            json(&candidate(paths, &request.token, true))?;
+        let path = candidate(paths, &request.token, true);
+        if !regular(&path)? {
+            return Err(invalid("Recovery settings candidate is missing"));
+        }
+        if fs::metadata(&path)
+            .map_err(|e| failure("Cannot inspect recovery settings candidate", e))?
+            .len()
+            > MAX_SETTINGS_FILE_SIZE as u64
+        {
+            return Err(invalid(
+                "Recovery settings candidate exceeds the supported size",
+            ));
+        }
+        let settings: crate::storage::SettingsSnapshot = json(&path)?;
         if settings.revision < 0
-            || !settings.settings.is_object()
-            || settings
-                .settings
-                .get("schemaVersion")
-                .and_then(|value| value.as_f64())
-                .is_some_and(|version| version > 2.0)
+            || future_settings_schema(&settings.settings)
+            || validate_settings(&settings.settings).is_err()
         {
             return Err(invalid("Invalid or newer recovery settings candidate"));
         }
-        SettingsStore::open(candidate(paths, &request.token, true))?;
     }
     let mut originals = Vec::new();
     for name in [
@@ -892,6 +899,122 @@ mod tests {
             restarted.settings.snapshot().unwrap().settings,
             serde_json::json!({})
         );
+    }
+
+    #[test]
+    fn current_settings_schema_can_be_staged_and_recovered_without_losing_the_archive() {
+        let (_root, paths) = fixture();
+        let original = serde_json::json!({
+            "revision": 7,
+            "settings": {"schemaVersion": 3, "windowPosition": "center"},
+        });
+        let original_bytes = serde_json::to_vec(&original).unwrap();
+        fs::write(paths.config.join("settings.json"), &original_bytes).unwrap();
+        let initialized = recovered(&paths);
+        let replacement = initialized
+            .settings
+            .save(
+                serde_json::json!({"schemaVersion": 3, "windowPosition": "remember"}),
+                initialized.settings.snapshot().unwrap().revision,
+            )
+            .unwrap();
+        stage(
+            &initialized.recovery,
+            &initialized.database,
+            &initialized.settings,
+            true,
+        )
+        .unwrap();
+        drop(initialized);
+
+        let restarted = initialize(&paths).unwrap();
+        let status = restarted.recovery.report().unwrap();
+        assert!(!status.active);
+        assert_eq!(restarted.settings.snapshot().unwrap(), replacement);
+        assert_eq!(
+            fs::read(
+                paths
+                    .config
+                    .join(status.archive_id.unwrap())
+                    .join("settings.json")
+            )
+            .unwrap(),
+            original_bytes,
+        );
+    }
+
+    #[test]
+    fn next_settings_schema_is_rejected_in_originals_and_staged_candidates() {
+        let (_root, paths) = fixture();
+        let initialized = recovered(&paths);
+        let future = serde_json::json!({"revision": 1, "settings": {"schemaVersion": 4}});
+        write_json(&paths.config.join("settings.json"), &future).unwrap();
+        assert!(protect_future(&paths, true).is_err());
+        assert!(!paths.data.join(PENDING).exists());
+        fs::remove_file(paths.config.join("settings.json")).unwrap();
+
+        stage(
+            &initialized.recovery,
+            &initialized.database,
+            &initialized.settings,
+            true,
+        )
+        .unwrap();
+        let pending: Pending = json(&paths.data.join(PENDING)).unwrap();
+        write_json(&candidate(&paths, &pending.token, true), &future).unwrap();
+        assert!(apply_pending(&paths).is_err());
+        assert_eq!(
+            fs::read(paths.data.join("starter.sqlite3")).unwrap(),
+            b"original corrupt database"
+        );
+        assert!(paths.data.join(PENDING).exists());
+        assert!(!paths.data.join(JOURNAL).exists());
+    }
+
+    #[test]
+    fn invalid_settings_candidates_leave_originals_and_recovery_evidence_untouched() {
+        for contents in [
+            r#"{"revision":1,"settings":{"runInBackground":"yes"}}"#.to_owned(),
+            format!(
+                "{}{}",
+                r#"{"revision":1,"settings":{}}"#,
+                " ".repeat(MAX_SETTINGS_FILE_SIZE)
+            ),
+        ] {
+            let (_root, paths) = fixture();
+            let original_settings = br#"{"revision":7,"settings":{"windowPosition":"center"}}"#;
+            fs::write(paths.config.join("settings.json"), original_settings).unwrap();
+            let initialized = recovered(&paths);
+            stage(
+                &initialized.recovery,
+                &initialized.database,
+                &initialized.settings,
+                true,
+            )
+            .unwrap();
+            drop(initialized);
+            let pending_bytes = fs::read(paths.data.join(PENDING)).unwrap();
+            let pending: Pending = serde_json::from_slice(&pending_bytes).unwrap();
+            let settings_path = candidate(&paths, &pending.token, true);
+            fs::write(&settings_path, &contents).unwrap();
+
+            assert_eq!(
+                apply_pending(&paths).unwrap_err().code,
+                ErrorCode::StorageCorrupt
+            );
+            assert_eq!(fs::read_to_string(&settings_path).unwrap(), contents);
+            assert_eq!(
+                fs::read(paths.config.join("settings.json")).unwrap(),
+                original_settings
+            );
+            assert_eq!(
+                fs::read(paths.data.join("starter.sqlite3")).unwrap(),
+                b"original corrupt database"
+            );
+            assert_eq!(fs::read(paths.data.join(PENDING)).unwrap(), pending_bytes);
+            assert!(!paths.data.join(JOURNAL).exists());
+            assert_eq!(fs::read_dir(&paths.config).unwrap().count(), 2);
+        }
     }
 
     #[test]

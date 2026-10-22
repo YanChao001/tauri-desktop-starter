@@ -20,10 +20,21 @@ pub fn redact(text: &str) -> String {
             "[url omitted]".into()
         }
     });
+    static AUTHORIZATION_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let authorization = AUTHORIZATION_PATTERN.get_or_init(|| {
+        // 未加引号的认证头按整行处理，避免只抹掉 Basic / Digest 等方案名。
+        Regex::new(r#"(?i)(authorization["']?(?:\s*[:=]\s*|\s+))(?:"(?:\\[^\r\n]|[^"\\\r\n])*"?|'(?:\\[^\r\n]|[^'\\\r\n])*'?|[^\r\n]+)"#)
+            .expect("valid authorization redaction pattern")
+    });
+    let sanitized_authorization = authorization.replace_all(&sanitized_urls, "$1[redacted]");
     static SECRET_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = SECRET_PATTERN.get_or_init(|| Regex::new(r#"(?i)(authorization[\s\"'=:]+(?:bearer\s+)?|bearer\s+|(?:token|password|secret|api[_-]?key)[\s\"'=:]+)[^\s&\"']+"#).expect("valid redaction pattern"));
+    let pattern = SECRET_PATTERN.get_or_init(|| {
+        // 引号中的空格、转义引号与日志截断后的未闭合值都需完整脱敏。
+        Regex::new(r#"(?i)(bearer\s+|(?:token|password|secret|api[_-]?key)["']?(?:\s*[:=]\s*|\s+))(?:"(?:\\[^\r\n]|[^"\\\r\n])*"?|'(?:\\[^\r\n]|[^'\\\r\n])*'?|[^\s&"']+)"#)
+            .expect("valid secret redaction pattern")
+    });
     let mut redacted = pattern
-        .replace_all(&sanitized_urls, "$1[redacted]")
+        .replace_all(&sanitized_authorization, "$1[redacted]")
         .into_owned();
     for variable in ["USERPROFILE", "HOME"] {
         if let Some(value) = std::env::var_os(variable) {
@@ -55,5 +66,55 @@ mod tests {
         assert_eq!(url, "fetch https://example.com/path");
         assert!(!url.contains("user"));
         assert!(!url.contains("oauth"));
+    }
+
+    #[test]
+    fn authorization_redacts_the_full_credential_for_each_scheme() {
+        for value in [
+            "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+            "authorization=Bearer private-access-token",
+            r#"Authorization: Digest username="private-user", response="private-response""#,
+            r#"{"Authorization":"Basic private-credential","status":401}"#,
+        ] {
+            let redacted = redact(&format!("{value}\nnext log entry"));
+            assert!(!redacted.contains("private"), "{redacted}");
+            assert!(!redacted.contains("dXNlcjpwYXNzd29yZA=="));
+            assert!(redacted.ends_with("\nnext log entry"));
+        }
+        assert_eq!(
+            redact(r#"{"Authorization":"Basic private-credential","status":401}"#),
+            r#"{"Authorization":[redacted],"status":401}"#
+        );
+    }
+
+    #[test]
+    fn quoted_secrets_redact_spaces_and_escaped_quotes_without_losing_other_fields() {
+        for value in [
+            r#"password="first secret last" status=failed"#,
+            r#"secret='first secret last' status=failed"#,
+            r#"api_key="first \"secret\" last" status=failed"#,
+            r#"token='first \'secret\' last' status=failed"#,
+            r#"password: "first secret last" status=failed"#,
+        ] {
+            let redacted = redact(value);
+            assert!(!redacted.contains("first"), "{redacted}");
+            assert!(!redacted.contains("last"), "{redacted}");
+            assert!(redacted.ends_with(" status=failed"));
+        }
+        assert_eq!(
+            redact(r#"{"password":"first secret last","status":"failed"}"#),
+            r#"{"password":[redacted],"status":"failed"}"#
+        );
+        for value in [
+            r#"password="first secret last"#,
+            "secret='first secret last",
+            r#"Authorization: "Basic private-credential"#,
+        ] {
+            let redacted = redact(&format!("{value}\nnext log entry"));
+            assert!(!redacted.contains("first"), "{redacted}");
+            assert!(!redacted.contains("last"), "{redacted}");
+            assert!(!redacted.contains("private"), "{redacted}");
+            assert!(redacted.ends_with("\nnext log entry"));
+        }
     }
 }

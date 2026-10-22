@@ -5,6 +5,7 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   INVALID_ARGUMENT: "errors.VALIDATION",
   USER_CANCELLED: "nativeError.userCancelled",
   CREDENTIAL_ERROR: "nativeError.credentialError",
+  WORKBENCH_BUSY: "workbench.busy",
   NAME_REQUIRED: "errors.VALIDATION",
   INPUT_TOO_LONG: "errors.INPUT_TOO_LONG",
   STORAGE_IO: "errors.IO",

@@ -670,7 +670,7 @@ impl Database {
     }
 
     pub fn preview_backup(&self, directory: &Path, id: &str) -> NativeResult<BackupPreview> {
-        let contents = self.export_backup(directory, id)?;
+        let contents = read_backup(directory, id)?;
         let document = decode_backup(&contents)?;
         Ok(BackupPreview {
             info: backup_info(id, &document, contents.len()),

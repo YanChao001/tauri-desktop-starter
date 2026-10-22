@@ -28,7 +28,7 @@ export const enSystem: Record<keyof typeof zhSystem, string> = {
   "system.readClipboard": "Read text",
   "system.deepLink": "Deep links and file associations",
   "system.deepLinkHelp":
-    "Installed builds support tdemo://open?route=/database and .tdemo files. Cold and repeated launch inputs appear below; the file workbench validates file content.",
+    "Installed builds support {deepLink} and .{extension} files. Cold and repeated launch inputs appear below; the file workbench validates file content.",
   "system.events": "Launch and activation history",
   "system.empty": "No activation events received yet.",
   "system.window": "Open independent notes window",

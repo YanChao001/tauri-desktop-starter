@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
+import { APP_CONFIG } from "@/config/app";
+import { reportClientError } from "@/lib/report-error";
 import {
   getActivationSnapshot,
   isTauri,
@@ -27,7 +29,7 @@ import {
 
 export default function System() {
   const { t } = useI18n();
-  const [text, setText] = useState("Tauri Desktop Starter");
+  const [text, setText] = useState(APP_CONFIG.name);
   const [shortcut, setShortcut] = useState("CommandOrControl+Shift+Space");
   const [registered, setRegistered] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,23 +37,29 @@ export default function System() {
   const [events, setEvents] = useState<Activation[]>([]);
   const unregister = useRef<(() => Promise<void>) | null>(null);
   const alive = useRef(true);
+  const running = useRef(false);
+  const deepLink = `${APP_CONFIG.integration.deepLinkScheme}://open?route=/database`;
   useEffect(() => {
     alive.current = true;
     let disposed = false;
     let stop: (() => void) | undefined;
     if (isTauri()) {
-      void onActivation((value) =>
+      void onActivation((value) => {
+        if (disposed) return;
         setEvents((current) =>
-          [...current.filter((v) => v.id !== value.id), value].slice(-20),
-        ),
-      )
-        .then((value) => {
-          if (disposed) value();
-          else stop = value;
-        })
-        .catch(setError);
-      void getActivationSnapshot()
-        .then((value) => {
+          [...current.filter((v) => v.id !== value.id), value]
+            .sort((a, b) => a.id - b.id)
+            .slice(-20),
+        );
+      })
+        .then(async (unsubscribe) => {
+          if (disposed) {
+            unsubscribe();
+            return;
+          }
+          stop = unsubscribe;
+          // 订阅就绪后再读取历史，覆盖订阅注册期间发生的激活。
+          const value = await getActivationSnapshot();
           if (!disposed)
             setEvents((current) =>
               [
@@ -63,18 +71,21 @@ export default function System() {
                 .slice(-20),
             );
         })
-        .catch(setError);
+        .catch((reason: unknown) => {
+          if (!disposed) setError(reason);
+        });
     }
     return () => {
       disposed = true;
       alive.current = false;
       stop?.();
-      void unregister.current?.();
+      void unregister.current?.().catch(reportClientError);
       unregister.current = null;
     };
   }, []);
   async function run(action: () => Promise<void>) {
-    if (busy) return;
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -83,6 +94,7 @@ export default function System() {
     } catch (reason) {
       if (alive.current) setError(reason);
     } finally {
+      running.current = false;
       if (alive.current) setBusy(false);
     }
   }
@@ -193,10 +205,13 @@ export default function System() {
         <section className="space-y-3 rounded-xl border bg-card p-5">
           <h2 className="font-semibold">{t("system.deepLink")}</h2>
           <p className="text-sm text-muted-foreground">
-            {t("system.deepLinkHelp")}
+            {t("system.deepLinkHelp", {
+              deepLink,
+              extension: APP_CONFIG.integration.fileExtension,
+            })}
           </p>
           <code className="block select-text break-all rounded bg-muted p-3 text-xs">
-            tdemo://open?route=/database
+            {deepLink}
           </code>
           <h3 className="text-sm font-medium">{t("system.events")}</h3>
           <ul className="space-y-2 text-sm" aria-live="polite">

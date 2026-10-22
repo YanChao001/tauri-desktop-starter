@@ -14,6 +14,7 @@ import { APP_ROUTES } from "@/routes";
 import { DemoMotion } from "@/components/demo-motion";
 import { UnsavedWorkProvider } from "@/providers/unsaved-work";
 import { RecoveryGate } from "@/components/recovery-gate";
+import { THEME_STORAGE_KEY } from "@/lib/settings-model";
 
 function AppEffects() {
   useExternalLinks();
@@ -28,6 +29,7 @@ export default function App() {
         <UnsavedWorkProvider>
           <AppEffects />
           <ThemeProvider
+            storageKey={THEME_STORAGE_KEY}
             attribute="class"
             defaultTheme="system"
             enableSystem

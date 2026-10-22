@@ -2,8 +2,9 @@
 import { Buffer } from "node:buffer";
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import appConfig from "../../app.config.json" with { type: "json" };
 
-const KEY = "tauri-starter:settings";
+const KEY = `${appConfig.browserStorageNamespace}:settings`;
 const routes = [
   "/",
   "/catalog",
@@ -24,19 +25,22 @@ const routes = [
   "/settings",
 ];
 async function seed(page: Page, settings: Record<string, unknown> = {}) {
-  await page.addInitScript((value) => {
-    if (!localStorage.getItem("tauri-starter:settings"))
-      localStorage.setItem(
-        "tauri-starter:settings",
-        JSON.stringify({
-          schemaVersion: 3,
-          language: "en",
-          theme: "light",
-          motion: "reduced",
-          ...value,
-        }),
-      );
-  }, settings);
+  await page.addInitScript(
+    ({ key, value }) => {
+      if (!localStorage.getItem(key))
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            schemaVersion: 3,
+            language: "en",
+            theme: "light",
+            motion: "reduced",
+            ...value,
+          }),
+        );
+    },
+    { key: KEY, value: settings },
+  );
 }
 
 for (const theme of ["light", "dark"]) {
@@ -713,6 +717,32 @@ test("menus and language selection preserve content geometry and scroll position
   await seed(page, { background: "aurora" });
   await page.goto("./#/settings");
   await expect(page.locator("main h2")).toBeVisible();
+  const presetColumns = () =>
+    page
+      .locator("#settings-window [data-window-preset]")
+      .evaluateAll((buttons) => {
+        const first = buttons[0]!.getBoundingClientRect();
+        return buttons.filter(
+          (button) =>
+            Math.abs(button.getBoundingClientRect().y - first.y) < 0.5,
+        ).length;
+      });
+  // 原生截图采集会缩窄后恢复窗口；按实际卡片行数确认响应式布局。
+  for (const [width, columns] of [
+    [1120, 2],
+    [1280, 4],
+  ] as const) {
+    await page.setViewportSize({ width, height: 820 });
+    await expect.poll(presetColumns).toBe(columns);
+  }
+  // 窗口宽度不变时，拉宽侧栏同样应减少列数，避免预设被挤压。
+  const separator = page.locator(
+    '[role="separator"][aria-controls="app-sidebar"]',
+  );
+  await separator.press("End");
+  await expect.poll(presetColumns).toBe(2);
+  await separator.press("Enter");
+  await expect.poll(presetColumns).toBe(4);
   await page.locator("main").evaluate((element) => {
     element.scrollTop = 180;
   });
@@ -952,8 +982,9 @@ test("full screen menu and F11 share real fullscreen state and restore the sideb
   await expect(page.locator(".app-shell")).not.toHaveClass(
     /app-shell-immersive/,
   );
-  const settings = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("tauri-starter:settings")!),
+  const settings = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!),
+    KEY,
   );
   expect(settings.sidebarCollapsed).toBe(true);
   expect(settings.sidebarWidth).toBe(280);

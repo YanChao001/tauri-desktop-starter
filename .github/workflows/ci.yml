@@ -32,6 +32,9 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      - name: 验证应用配置与派生元数据一致
+        run: pnpm config:check
+
       - name: 验证品牌资源与 SVG 源一致
         run: pnpm branding:check
 
@@ -100,9 +103,13 @@ jobs:
 
       - name: 安装 Linux 系统依赖
         if: matrix.platform == 'ubuntu-22.04'
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          # runner 默认先尝试 Azure 镜像；直接使用已验证可用的 Ubuntu 官方 HTTPS 源。
+          printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          "${apt[@]}" update
+          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       # tauri::generate_context! 会在编译期读取前端产物，必须先构建 dist
       - uses: pnpm/action-setup@v6
@@ -156,9 +163,12 @@ jobs:
 
       - name: 安装 Linux 桌面依赖
         if: runner.os == 'Linux'
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
+          printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          "${apt[@]}" update
+          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
 
       - uses: pnpm/action-setup@v6
 

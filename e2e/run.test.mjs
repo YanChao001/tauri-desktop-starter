@@ -76,3 +76,35 @@ for (const args of [
     assert.equal(result.stdout, "");
   });
 }
+
+test("ordinary script checks skip native installer executables before probing tools, including CI", () => {
+  const env = {
+    ...process.env,
+    PATH: "",
+    Path: "",
+    LOCALAPPDATA: "",
+    CI: "1",
+  };
+  // 子 CLI 独立输出 TAP，不继承父测试 runner 的内部二进制报告协议。
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(
+        new URL("../scripts/installer-layout.test.mjs", import.meta.url),
+      ),
+    ],
+    {
+      env,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 15000,
+    },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    result.stdout,
+    /SKIP Native installer executable tests require pnpm test:installer --interactive/,
+  );
+});

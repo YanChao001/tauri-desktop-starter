@@ -1,3 +1,4 @@
+import { STORAGE_KEY } from "@/lib/settings-model";
 import type { ReactNode } from "react";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -16,7 +17,7 @@ function Providers({ children }: { children: ReactNode }) {
 describe("useLatestTranslator", () => {
   beforeEach(() => {
     window.localStorage.setItem(
-      "tauri-starter:settings",
+      STORAGE_KEY,
       JSON.stringify({ language: "zh" }),
     );
   });

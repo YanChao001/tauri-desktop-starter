@@ -24,7 +24,7 @@ import { nativeErrorText } from "@/lib/native-error";
 type Props = {
   dirty: boolean;
   pending: boolean;
-  beforeBackup: () => Promise<void>;
+  flushDraft: () => Promise<void>;
   afterRestore: () => Promise<void>;
   lockEditor: (locked: boolean) => void;
 };
@@ -32,7 +32,7 @@ type Props = {
 export function BackupPanel({
   dirty,
   pending,
-  beforeBackup,
+  flushDraft,
   afterRestore,
   lockEditor,
 }: Props) {
@@ -69,11 +69,12 @@ export function BackupPanel({
     if (!preview || dirty || pending) return;
     lockEditor(true);
     try {
+      await flushDraft();
       const result = await restoreDataBackup(preview.info.id);
+      if (mounted.current) setPreview(null);
       await afterRestore();
       if (mounted.current) {
         setBackups(await listDataBackups());
-        setPreview(null);
         setNotice(t("data.restored", { count: result.restored }));
       }
     } finally {
@@ -103,7 +104,7 @@ export function BackupPanel({
             disabled={busy || pending}
             onClick={() =>
               void run(async () => {
-                await beforeBackup();
+                await flushDraft();
                 const info = await createDataBackup();
                 const items = await listDataBackups();
                 if (mounted.current) {

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import appConfig from "../../app.config.json" with { type: "json" };
 
 async function seed(
   page: Page,
@@ -13,9 +14,9 @@ async function seed(
   } = {},
 ) {
   await page.addInitScript(
-    (value) =>
+    ({ key, value }) =>
       localStorage.setItem(
-        "tauri-starter:settings",
+        key,
         JSON.stringify({
           schemaVersion: 3,
           language: "en",
@@ -24,7 +25,10 @@ async function seed(
           ...value,
         }),
       ),
-    { theme, motion, ...extra },
+    {
+      key: `${appConfig.browserStorageNamespace}:settings`,
+      value: { theme, motion, ...extra },
+    },
   );
 }
 const frames = (page: Page, count = 8) =>

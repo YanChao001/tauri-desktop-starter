@@ -25,6 +25,7 @@ export const enWorkbench = {
   "workbench.reveal": "Show in file manager",
   "workbench.reload": "Inspect disk version",
   "workbench.close": "Close file",
+  "workbench.clearOpenErrors": "Clear file errors",
   "workbench.drop":
     "Drop text, JSON, Markdown or PNG / JPEG / GIF / WebP images into the window, or use the open button.",
   "workbench.limits":
@@ -88,7 +89,7 @@ export const enWorkbench = {
   "tasks.previewLimit":
     "The page previews up to 200 entries. Export includes all files processed by this task.",
   "tasks.truncated":
-    "The scan reached its file limit. This is not a complete inventory of the directory.",
+    "The scan reached its file count or directory depth limit. This is not a complete inventory of the directory.",
   "tasks.retryOf": "Rerun of task: {id}",
   "tasks.status.queued": "Queued",
   "tasks.status.running": "Running",
