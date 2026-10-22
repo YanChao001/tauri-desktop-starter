@@ -10,6 +10,7 @@ import { FilePlus2Icon, FolderOpenIcon, SaveIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { NativePage } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
@@ -521,7 +522,7 @@ export default function Workbench() {
                 <Label htmlFor="workbench-editor">
                   {t("workbench.editor")}
                 </Label>
-                <textarea
+                <Textarea
                   id="workbench-editor"
                   rows={14}
                   disabled={pending}
@@ -536,7 +537,7 @@ export default function Workbench() {
                       event.target.value,
                     )
                   }
-                  className="w-full resize-y rounded-md border bg-background p-3 font-mono text-sm focus-visible:ring-2 focus-visible:ring-ring"
+                  className="font-mono"
                 />
                 {jsonError ? (
                   <p

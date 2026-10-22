@@ -10,6 +10,8 @@ import type {
   UpdateProgress,
   UpdateStatus,
   WindowGeometry,
+  Wallpaper,
+  WallpaperInput,
 } from "./generated/bindings";
 
 export type {
@@ -23,7 +25,27 @@ export type {
   UpdateProgress,
   UpdateStatus,
   WindowGeometry,
+  Wallpaper,
+  WallpaperInput,
 } from "./generated/bindings";
+
+export function listWallpapers(
+  legacy: WallpaperInput | null = null,
+): Promise<Wallpaper[]> {
+  return callNative((commands) => commands.listWallpapers(legacy));
+}
+export function addWallpaper(input: WallpaperInput): Promise<Wallpaper> {
+  return callNative((commands) => commands.addWallpaper(input));
+}
+export function renameWallpaper(id: string, name: string): Promise<Wallpaper> {
+  return callNative((commands) => commands.renameWallpaper(id, name));
+}
+export async function removeWallpaper(id: string): Promise<void> {
+  await callNative((commands) => commands.removeWallpaper(id));
+}
+export function onWallpapersChanged(handler: () => void): Promise<() => void> {
+  return onNativeEvent("app://wallpapers-changed", handler);
+}
 
 export class NativeBridgeError extends Error {
   readonly code: NativeFailure["code"];
@@ -125,6 +147,23 @@ export async function isWindowMaximized(): Promise<boolean> {
   if (!isTauri()) return false;
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   return getCurrentWindow().isMaximized();
+}
+
+export async function isWindowFullscreen(): Promise<boolean> {
+  if (!isTauri()) return !!document.fullscreenElement;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().isFullscreen();
+}
+
+/** 浏览器采用真实 Fullscreen API；拒绝或不支持时由调用方显示错误。 */
+export async function setWindowFullscreen(fullscreen: boolean): Promise<void> {
+  if (!isTauri()) {
+    if (fullscreen) await document.documentElement.requestFullscreen();
+    else if (document.fullscreenElement) await document.exitFullscreen();
+    return;
+  }
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().setFullscreen(fullscreen);
 }
 
 /** 订阅窗口尺寸变化，返回取消订阅函数。 */

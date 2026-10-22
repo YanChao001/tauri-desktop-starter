@@ -54,17 +54,19 @@ export const INSTALLER_IMAGES = Object.freeze([
   {
     source: "installer-wix-banner.svg",
     target: "wix-banner.bmp",
-    width: 493,
-    height: 58,
+    width: 370,
+    height: 44,
+    scale: 4,
   },
   {
     source: "installer-wix-dialog.svg",
     target: "wix-dialog.bmp",
-    width: 493,
-    height: 312,
+    width: 370,
+    height: 234,
+    scale: 4,
   },
 ]);
-// 位图直接由矢量以三倍分辨率渲染，避免高 DPI 显示时放大低分辨率图像。
+// NSIS 按设计像素的三倍渲染；WiX 使用原生 installer unit，以四倍渲染保持控件比例。
 export const INSTALLER_BITMAP_SCALE = 3;
 const sourceNames = new Set([
   "app-icon.svg",
@@ -328,13 +330,19 @@ export function planBranding(root = BRANDING_ROOT) {
               : contents,
       };
     });
-    for (const { source, target, width, height } of INSTALLER_IMAGES) {
+    for (const {
+      source,
+      target,
+      width,
+      height,
+      scale = INSTALLER_BITMAP_SCALE,
+    } of INSTALLER_IMAGES) {
       const svg = readBrandingSvg(source, root);
       const logical = renderBranding(svg);
       if (logical.width !== width || logical.height !== height) {
         throw new Error(`${source} must remain ${width} × ${height}`);
       }
-      const rendered = renderBranding(svg, width * INSTALLER_BITMAP_SCALE);
+      const rendered = renderBranding(svg, width * scale);
       plan.push({
         path: join(root, "src-tauri/installer", target),
         contents: encodeBitmap(rendered),

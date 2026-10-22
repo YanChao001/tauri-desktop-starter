@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { DownloadIcon, RotateCcwIcon } from "lucide-react";
+import { DownloadIcon, RotateCcwIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLink } from "@/components/external-link";
+import { SettingRow } from "@/components/setting-row";
 import { NativePage, ResourceError } from "@/components/native-page";
 import {
   Card,
@@ -12,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -21,13 +24,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/providers/i18n";
+import { useSettings } from "@/providers/settings";
+import { getLocale } from "@/i18n/registry";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { APP_CONFIG } from "@/config/app";
 import { useUpdates, checkUpdates, installUpdate } from "@/lib/updates-store";
 import { relaunchApp } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 export default function Updates() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const { settings, update } = useSettings();
   const latest = useLatestTranslator();
   const { phase, operationId, status, progress, error } = useUpdates();
   const [confirmInstall, setConfirmInstall] = useState<number | null>(null);
@@ -36,6 +42,11 @@ export default function Updates() {
   const [restarting, setRestarting] = useState(false);
   const configured =
     status?.configured ?? Boolean(APP_CONFIG.updates.publicKey);
+  const checkedAt = status?.checkedAt
+    ? new Date(status.checkedAt).toLocaleString(
+        getLocale(language).documentLang,
+      )
+    : null;
   const restartingRef = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -98,12 +109,44 @@ export default function Updates() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="break-all font-mono text-xs text-muted-foreground">
-            {APP_CONFIG.updates.endpoint}
-          </p>
-          <Badge variant={configured ? "secondary" : "outline"}>
-            {t(configured ? "updates.keyConfigured" : "updates.keyMissing")}
-          </Badge>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Badge variant={configured ? "secondary" : "outline"}>
+              {t(configured ? "updates.keyConfigured" : "updates.keyMissing")}
+            </Badge>
+            <ExternalLink
+              href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
+              className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {t("updates.releases")}
+              <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
+            </ExternalLink>
+          </div>
+          <SettingRow
+            label={
+              <label htmlFor="auto-check-updates">
+                {t("updates.autoCheck")}
+              </label>
+            }
+            hint={t("updates.autoCheckHint")}
+          >
+            <Switch
+              id="auto-check-updates"
+              checked={settings.autoCheckUpdates}
+              onCheckedChange={(autoCheckUpdates) =>
+                update({ autoCheckUpdates })
+              }
+            />
+          </SettingRow>
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t("updates.endpoint")}
+            </summary>
+            <p className="mt-2 break-all font-mono">
+              {status
+                ? (status.endpoint ?? t("updates.endpointDisabled"))
+                : APP_CONFIG.updates.endpoint}
+            </p>
+          </details>
         </CardContent>
       </Card>
       <Card>
@@ -122,6 +165,15 @@ export default function Updates() {
               </span>
             ) : null}
           </div>
+          {checkedAt ? (
+            <p className="text-xs text-muted-foreground">
+              {t("updates.lastChecked", { time: checkedAt })}
+            </p>
+          ) : phase === "idle" ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t("updates.idle")}
+            </p>
+          ) : null}
           {status && !status.configured ? (
             <p role="status" className="text-sm text-muted-foreground">
               {t("updates.notConfigured")}

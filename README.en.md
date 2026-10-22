@@ -1,10 +1,20 @@
 # Tauri Desktop Starter
 
-[中文](./README.md) · [Live demo](https://yanchao001.github.io/tauri-desktop-starter/) · [Documentation](./docs/README.md) · [Releases](https://github.com/YanChao001/tauri-desktop-starter/releases)
+[中文](./README.md) · [Live demo](https://yanchao001.github.io/tauri-desktop-starter/) · [Documentation](./docs/README.md) · [Releases](https://github.com/YanChao001/tauri-desktop-starter/releases) · [Code signing policy](./docs/code-signing-policy.md)
 
 An open source Tauri 2, React 19 and TypeScript desktop starter with a complete, interactive demo. Keep the examples while exploring, then remove modules your product does not need. **Minimal mode changes visibility; it does not remove code, dependencies or permissions.**
 
 The desktop app includes SQLite pagination, drafts, backups and recovery; a file workbench; real Rust scan / SHA-256 jobs; window lifecycle coordination; system integration; network examples; and data table, form and media labs. Browser previews share the React source and clearly distinguish local fixtures, external services and desktop-only capabilities.
+
+## Desktop windows
+
+Captured from an isolated Windows desktop build and refreshed through the [screenshot update workflow](./docs/testing.md#readme-原生截图更新). UI and screenshot updates may land in separate pull requests.
+
+| Light                                                    | Dark                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------ |
+| ![Light desktop window](./docs/assets/preview-light.png) | ![Dark desktop window](./docs/assets/preview-dark.png) |
+
+[View the Windows skin gallery](./docs/assets/skins-dark.png).
 
 ## Quick start
 

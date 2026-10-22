@@ -91,6 +91,11 @@ export default function MotionLab() {
       data-paused={paused || !visible}
     >
       <header className="lab-heading">
+        <div className="lab-brand-mark" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
         <p>{t("lab.eyebrow")}</p>
         <h2>{t("lab.title")}</h2>
         <span>{t("lab.subtitle")}</span>
@@ -117,11 +122,15 @@ export default function MotionLab() {
           >
             <item.icon />
             <span>{t(item.label)}</span>
+            <span className="lab-scene-number" aria-hidden="true">
+              0{index + 1}
+            </span>
           </button>
         ))}
       </div>
       <section
         className="lab-console"
+        data-scene={scene}
         role="tabpanel"
         id={`lab-panel-${scene}`}
         aria-labelledby={`lab-tab-${scene}`}
@@ -203,7 +212,10 @@ export default function MotionLab() {
           {t("lab.reducedHint")}
         </p>
       )}
-      <p className="lab-footer">{t("lab.footer")}</p>
+      <div className="lab-footer">
+        <span aria-hidden="true">✳</span>
+        <p>{t("lab.footer")}</p>
+      </div>
     </div>
   );
 }

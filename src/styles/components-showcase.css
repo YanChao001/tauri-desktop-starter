@@ -49,7 +49,7 @@
 }
 .playground-stage-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 100%;
   height: auto;
   min-height: 3.6rem;
@@ -78,7 +78,6 @@
 }
 .playground-stage-index {
   font: 0.65rem var(--font-mono, monospace);
-  opacity: 0.55;
 }
 .playground-stage {
   min-width: 0;
@@ -788,6 +787,12 @@
   align-items: center;
   gap: 0.7rem;
 }
+.control-states {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  padding: 0.5rem;
+}
 .studio-art-spark {
   animation: playground-spark 5s ease-in-out infinite;
   animation-play-state: paused;
@@ -796,6 +801,9 @@
   animation-play-state: running;
 }
 @container (min-width: 560px) {
+  .control-states {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .playground-studio {
     grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   }
@@ -823,6 +831,9 @@
   }
 }
 @container (max-width: 559px) {
+  .playground-stage-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .playground-stage-index {
     display: none;
   }

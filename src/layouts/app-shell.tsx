@@ -1,37 +1,43 @@
 import { Suspense, useLayoutEffect, useRef, type CSSProperties } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, MinimizeIcon } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { TitleBar } from "@/components/title-bar";
-import { BrowserDemoBar } from "@/components/browser-demo-bar";
 import { WindowBackground } from "@/components/window-background";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
+import { useCommands } from "@/providers/commands";
+import { Button } from "@/components/ui/button";
 import { APP_ROUTES, NAVIGATION_GROUPS, matchRoute } from "@/routes";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { JourneyGuide } from "@/features/journeys/journey-guide";
+import { currentJourney } from "@/features/journeys/model";
 import "@/styles/app-navigation.css";
 
 /** 感知路由的应用布局；页面失败时保留导航能力 */
 export function AppShell() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const current = matchRoute(pathname);
   const group =
     NAVIGATION_GROUPS.find(({ id }) => id === current.group) ??
     NAVIGATION_GROUPS[0];
   const { t } = useI18n();
   const { settings } = useSettings();
+  const { fullscreen, execute } = useCommands();
   const routes = APP_ROUTES.filter(
     (route) => settings.appMode !== "minimal" || !route.demoOnly,
   );
   const chrome = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLElement>(null);
+  const journeyStep = currentJourney(pathname, search)?.index;
 
   useLayoutEffect(() => {
     const header = chrome.current!;
     const root = document.documentElement;
-    // 在线演示的说明栏会换行，按实际高度为固定外壳留出空间。
+    // 按标题栏实际高度为固定外壳留出空间。
     const syncHeight = () =>
       root.style.setProperty(
         "--app-chrome-height",
@@ -49,14 +55,18 @@ export function AppShell() {
   useLayoutEffect(() => {
     // 仅切换页面时重置滚动；设置搜索可能在当前路径内主动聚焦字段
     // 导航更新不应覆盖该焦点
-    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-  }, [pathname]);
+    if (content.current) {
+      content.current.scrollTop = 0;
+      content.current.scrollLeft = 0;
+    }
+  }, [pathname, journeyStep]);
 
   return (
     <div
       className={cn(
         "app-shell text-foreground",
         !isTauri() && "app-shell-browser",
+        fullscreen && "app-shell-immersive",
       )}
       style={
         {
@@ -65,12 +75,27 @@ export function AppShell() {
       }
     >
       <WindowBackground />
+      {fullscreen ? (
+        <div className="immersive-exit">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void execute("exit-fullscreen")}
+            aria-label={t("title.exitFullscreen")}
+            aria-keyshortcuts="F11 Escape"
+            title={t("title.fullscreenHint")}
+          >
+            <MinimizeIcon className="size-3.5" />
+            <span>{t("title.exitFullscreen")}</span>
+            <kbd>F11 / Esc</kbd>
+          </Button>
+        </div>
+      ) : null}
       <div ref={chrome} className="app-chrome">
-        <BrowserDemoBar />
         <TitleBar />
       </div>
       <AppSidebar routes={routes} />
-      <main className="app-main" tabIndex={-1}>
+      <main ref={content} className="app-main app-scroll-region" tabIndex={-1}>
         <div className="app-page-content">
           <nav
             aria-label={t("navContext.location")}
@@ -87,6 +112,7 @@ export function AppShell() {
               <li aria-current="page">{t(current.labelKey)}</li>
             </ol>
           </nav>
+          <JourneyGuide />
           <RouteErrorBoundary>
             <Suspense
               fallback={

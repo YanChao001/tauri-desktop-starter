@@ -1,12 +1,11 @@
 import type { zhShowroom } from "./zh-showroom";
 export const enShowroom = {
-  "showroom.eyebrow": "Desktop experiences · Yours to explore",
-  "showroom.title": "A little space.",
-  "showroom.titleAccent": "A lot of possibility.",
+  "showroom.eyebrow": "A complete desktop playground",
+  "showroom.title": "One idea.",
+  "showroom.titleAccent": "A whole desktop experience.",
   "showroom.description":
-    "From the smallest response to the character of a whole window. Click, drag and explore an interface that moves with your imagination.",
-  "showroom.start": "Enter the motion lab",
-  "showroom.explore": "Explore the playground",
+    "Files, data, background work, and system integration. Explore expressive interfaces and real desktop capabilities in one workspace.",
+  "showroom.start": "Start exploring",
   "showroom.shortcut": "Find your next destination",
   "showroom.commands": "Open quick actions",
   "showroom.canvas": "Room for an idea",
@@ -29,24 +28,6 @@ export const enShowroom = {
   "showroom.appliedToast": "Your window has a new look",
   "showroom.undo": "Undo the change",
   "showroom.undoToast": "Your previous appearance is restored",
-  "showroom.discover": "Made to be explored",
-  "showroom.discoverHint":
-    "Every destination is a small experiment you can make your own.",
-  "showroom.motionLabel": "Motion & space",
-  "showroom.motionTitle": "Give an interface a feeling",
-  "showroom.motionDescription":
-    "Nudge a spring, unfold a card and follow an orbit. Find a rhythm that feels just right.",
-  "showroom.motionTag": "Springs · Shared layout · Light",
-  "showroom.componentsLabel": "Components & interaction",
-  "showroom.componentsTitle": "Beyond a collection of controls",
-  "showroom.componentsDescription":
-    "Shape a creative card, organize a collection and see how feedback fits into a real flow.",
-  "showroom.componentsTag": "Live preview · Forms · Data",
-  "showroom.desktopLabel": "Meet the desktop",
-  "showroom.desktopTitle": "More room than a browser",
-  "showroom.desktopDescription":
-    "Open another window, sync preferences and explore the tray, background mode and local storage.",
-  "showroom.desktopTag": "Windows · Tray · Local data",
   "showroom.nativeLive": "Desktop capabilities connected",
   "showroom.browserLive":
     "Explore interactions here. Unlock system capabilities in the desktop app.",

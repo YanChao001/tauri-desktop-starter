@@ -1,5 +1,9 @@
 import { APP_CONFIG } from "@/config/app";
 import {
+  normalizeBackgroundImage,
+  type CustomBackground,
+} from "@/lib/background-image";
+import {
   DEFAULT_LANGUAGE,
   detectLanguage,
   getLocale,
@@ -35,7 +39,7 @@ export const MOTIONS = ["full", "reduced"] as const;
 export const THEMES = ["light", "dark", "system"] as const;
 export const APP_MODES = ["demo", "minimal"] as const;
 export const WINDOW_POSITIONS = ["remember", "center"] as const;
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 export const STORAGE_KEY = "tauri-starter:settings";
 export type Accent = (typeof ACCENTS)[number];
 export type Radius = (typeof RADII)[number];
@@ -52,12 +56,14 @@ export type AppSettings = {
   fontSize: FontSize;
   background: Background;
   backgroundIntensity: BackgroundIntensity;
+  customBackground: CustomBackground | null;
   motion: Motion;
   menuBar: boolean;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   appMode: "demo" | "minimal";
   runInBackground: boolean;
+  autoCheckUpdates: boolean;
   windowPosition: WindowPosition;
   theme: AppTheme;
 };
@@ -69,12 +75,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: "md",
   background: "plain",
   backgroundIntensity: "balanced",
+  customBackground: null,
   motion: "full",
   menuBar: true,
   sidebarCollapsed: false,
   sidebarWidth: 224,
   appMode: APP_CONFIG.defaultMode,
   runInBackground: false,
+  autoCheckUpdates: true,
   windowPosition: "remember",
   theme: "system",
 };
@@ -109,7 +117,7 @@ function settingsSource(document: Record<string, unknown>) {
     ? document.settings
     : document;
 }
-/** v0 为旧扁平存档；v1 支持 settings 包装；v2 加入布局和桌面行为。 */
+/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机背景图片。 */
 export function migrateSettings(raw: unknown): AppSettings {
   const document = isRecord(raw) ? raw : {};
   if (
@@ -118,11 +126,20 @@ export function migrateSettings(raw: unknown): AppSettings {
   )
     throw new SettingsVersionError();
   const source = settingsSource(document);
-  const background =
+  const rawBackground =
     typeof source.background === "string"
       ? (LEGACY_BACKGROUNDS[source.background] ?? source.background)
       : source.background;
-  const flag = (key: "menuBar" | "sidebarCollapsed" | "runInBackground") =>
+  const customBackground = normalizeBackgroundImage(source.customBackground);
+  const background = pick(
+    BACKGROUNDS,
+    rawBackground,
+    DEFAULT_SETTINGS.background,
+  );
+  const flag = (
+    key:
+      "menuBar" | "sidebarCollapsed" | "runInBackground" | "autoCheckUpdates",
+  ) =>
     typeof source[key] === "boolean"
       ? (source[key] as boolean)
       : DEFAULT_SETTINGS[key];
@@ -132,7 +149,9 @@ export function migrateSettings(raw: unknown): AppSettings {
     radius: pick(RADII, source.radius, DEFAULT_SETTINGS.radius),
     font: pick(FONTS, source.font, DEFAULT_SETTINGS.font),
     fontSize: pick(FONT_SIZES, source.fontSize, DEFAULT_SETTINGS.fontSize),
-    background: pick(BACKGROUNDS, background, DEFAULT_SETTINGS.background),
+    background:
+      background === "custom" && !customBackground ? "plain" : background,
+    customBackground,
     backgroundIntensity: pick(
       BACKGROUND_INTENSITIES,
       source.backgroundIntensity,
@@ -142,6 +161,7 @@ export function migrateSettings(raw: unknown): AppSettings {
     menuBar: flag("menuBar"),
     sidebarCollapsed: flag("sidebarCollapsed"),
     runInBackground: flag("runInBackground"),
+    autoCheckUpdates: flag("autoCheckUpdates"),
     windowPosition: pick(
       WINDOW_POSITIONS,
       source.windowPosition,
@@ -167,6 +187,12 @@ export function normalizeSettingsPatch(
   ) as Array<keyof AppSettings>;
   const selected = Object.fromEntries(keys.map((key) => [key, patch[key]]));
   const normalized = migrateSettings({ ...current, ...selected });
+  if (
+    keys.includes("customBackground") &&
+    !keys.includes("background") &&
+    normalized.background !== current.background
+  )
+    keys.push("background");
   return Object.fromEntries(keys.map((key) => [key, normalized[key]]));
 }
 export function settingsDocument(settings: AppSettings) {

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2Icon, TerminalIcon } from "lucide-react";
 import { toast } from "sonner";
+import { CodeBlock } from "@/components/code-block";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -184,9 +185,12 @@ export default function Bridge() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-xs leading-relaxed">
-              {RUST_SNIPPET}
-            </pre>
+            <CodeBlock
+              code={RUST_SNIPPET}
+              language="rust"
+              aria-label="src-tauri/src/commands.rs"
+              className="p-3"
+            />
           </CardContent>
         </Card>
         <Card>
@@ -196,9 +200,11 @@ export default function Bridge() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-xs leading-relaxed">
-              {TS_SNIPPET}
-            </pre>
+            <CodeBlock
+              code={TS_SNIPPET}
+              language="typescript"
+              className="p-3"
+            />
           </CardContent>
         </Card>
       </div>

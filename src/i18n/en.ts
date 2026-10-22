@@ -1,3 +1,4 @@
+import { enExperience } from "./en-experience";
 import type { Messages } from "./zh-CN";
 import { enFeatures } from "./en-features";
 import { enShowroom } from "./en-showroom";
@@ -24,6 +25,7 @@ export const en = {
   ...enLabs,
   ...enCatalog,
   ...enRecovery,
+  ...enExperience,
   "nav.overview": "Showroom",
   "nav.components": "Playground",
   "nav.motion": "Motion lab",
@@ -158,21 +160,47 @@ export const en = {
     "Register new commands in bindings.rs, then run pnpm bindings:generate to update the frontend contract.",
   "settings.bgPlainDescription":
     "A clean canvas that keeps the focus on your content",
-  "settings.bgStarlight": "Starry notes",
+  "settings.bgStarlight": "Star notes",
+  "settings.bgAurora": "Cat doodles",
+  "settings.bgAuroraDescription":
+    "Sleepy cats and little paw prints along the page",
+  "settings.bgDune": "Coffee break",
+  "settings.bgDuneDescription": "Warm cups, croissants and curls of steam",
+  "settings.bgInkwash": "Mountain notes",
+  "settings.bgInkwashDescription":
+    "A few mountain peaks and tiny cabins in the margins",
+  "settings.bgCustom": "My wallpapers",
+  "settings.bgCustomDescription": "Make your workspace feel like your own",
+  "settings.customImageHint":
+    "Add several images, switch, rename or delete. Your collection stays on this device.",
+  "settings.importBackground": "Add wallpapers",
+  "settings.replaceBackground": "Replace image",
+  "settings.removeBackground": "Remove background image",
+  "settings.backgroundFit": "Image fit",
+  "settings.backgroundCover": "Fill window",
+  "settings.backgroundContain": "Show full image",
+  "settings.imageFormats":
+    "PNG, JPEG or WebP, up to 10MB. Images are automatically optimized.",
+  "settings.imageProcessing": "Saving wallpapers…",
+  "settings.imageTypeError": "Choose a PNG, JPEG or WebP image.",
+  "settings.imageSizeError":
+    "The image is too large. Choose one under 10MB and 40 million pixels, or resize it and try again.",
+  "settings.imageDecodeError":
+    "This image could not be read. Check the file or try another image.",
   "settings.bgStarlightDescription":
-    "Small stars frame a calm space for reading",
-  "settings.bgSakura": "Cherry blossom letter",
+    "Linework watermark · a few hand-drawn stars with room to breathe",
+  "settings.bgSakura": "Cloud notes",
   "settings.bgSakuraDescription":
-    "Falling blossoms and soft spring colors, like a letter to yourself",
-  "settings.bgMoonlit": "Moonlit mountains",
+    "Fluffy clouds and little suns for a lighter day",
+  "settings.bgMoonlit": "Moon orbits",
   "settings.bgMoonlitDescription":
-    "Moonlight and distant mountains bring a quiet night to your workspace",
-  "settings.bgBotanical": "Forest journal",
+    "Crescent moons and ringed planets in the margins",
+  "settings.bgBotanical": "Leaf notes",
   "settings.bgBotanicalDescription":
-    "Leafy accents and journal details bring a little forest calm",
-  "settings.bgCloudscape": "Above the clouds",
+    "Loose botanical sketches of leaves and little flowers",
+  "settings.bgCloudscape": "Paper flights",
   "settings.bgCloudscapeDescription":
-    "Open skies and soft clouds leave room for inspiration",
+    "Paper planes, envelopes and dotted flight paths",
   "settings.backgroundIntensity": "Skin intensity",
   "settings.backgroundIntensityDescription":
     "Adjust how prominent the decorations look while keeping text clear",
@@ -181,9 +209,29 @@ export const en = {
   "settings.intensityStrong": "Strong",
   "settings.skinGallery": "Window skins",
   "settings.skinGalleryDescription":
-    "Choose a background for the entire window",
+    "Eight airy line drawings that follow your theme and accent color",
   "settings.activeSkin": "Current skin",
-  "settings.skinLightweight": "Lightweight artwork",
+  "settings.skinLightweight": "Hand-drawn textures",
   "settings.languageDescription":
     "Switch the interface language instantly and remember your choice",
+  "settings.libraryCount": "{count} / {max} images",
+  "settings.libraryEmpty":
+    "Add your favorite images to start a wallpaper collection",
+  "settings.libraryFull":
+    "Your library holds up to 24 wallpapers. Remove an image to make room.",
+  "settings.libraryError":
+    "Could not save or load wallpapers. Existing images were kept. Please retry.",
+  "settings.chooseWallpaper": "Use wallpaper: {name}",
+  "settings.deleteWallpaper": "Delete wallpaper: {name}",
+  "settings.renameWallpaper": "Rename wallpaper: {name}",
+  "settings.renameWallpaperTitle": "Rename wallpaper",
+  "settings.renameWallpaperHint":
+    "Only the name in your library changes. The original file stays untouched.",
+  "settings.wallpaperName": "Wallpaper name",
+  "settings.currentWallpaper": "Selected image: {name}",
+  "settings.clearWallpaper": "Clear image background",
+  "title.fullscreen": "Immersive fullscreen",
+  "title.exitFullscreen": "Exit fullscreen",
+  "title.fullscreenHint":
+    "Press F11 or Esc to exit fullscreen and restore your layout",
 } satisfies Messages;

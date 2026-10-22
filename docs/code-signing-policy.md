@@ -1,10 +1,12 @@
 # 代码签名策略（Code signing policy）
 
-拟申请 [SignPath Foundation](https://signpath.org/) 的开源签名服务；申请状态与签名结果以实际发布记录为准。
+已申请 [SignPath Foundation](https://signpath.org/) 的开源签名服务，本次申请未获批准；当前未获得该基金会的免费签名资格。
 
 ## 状态
 
-仓库默认不提供签名凭据。本页记录拟启用的 SignPath 签名策略；是否已获批、某次产物是否签名，以服务配置、发布记录及实际签名验证为准，不从工作流存在推断签名已启用。
+截至 2026-10-22，维护者反馈本次申请因项目知名度 / 可验证信誉不足未获批准。仓库保留可选 SignPath 集成，本页记录获批后拟启用的策略；后续资格变化与某次产物的签名状态，以服务配置、发布记录及实际签名验证为准，不从工作流存在推断签名已启用。
+
+仓库默认不提供签名凭据。其他 Windows 签名方式及其配置边界见 [构建与发布](./build-release.md#代码签名)。
 
 启用前按 [SignPath Foundation 条款](https://signpath.org/terms) 在仓库首页和下载 / Release 页面提供名为 “Code signing policy” 的入口，并在本页注明实际服务提供方：“Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)”。这是启用前的署名要求，不表示当前已获得服务。
 
@@ -49,7 +51,7 @@ build job 的 `build-installers-<target>` 是 SignPath 处理前的归档；最�
 
 应用没有遥测，日志只写本地系统日志目录，位置见 [排障手册](./troubleshooting.md#先看日志)。诊断信息由用户主动复制，外链由用户触发后交给系统浏览器。
 
-更新功能已接入，默认因缺少公钥而禁用且不发起请求。维护者配置更新公钥后，用户主动检查、下载或安装时会访问已配置的更新端点和下载地址，默认使用 GitHub Releases；配置与验签策略见 [自动更新](./build-release.md#自动更新)，服务的数据处理见 [GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)。WebView2 运行时由 Microsoft 提供，其数据处理见 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
+更新功能使用本项目独立生成的更新密钥，与 SignPath 的 Windows 发布者签名分别配置。默认启用启动检查，主窗口就绪后访问 GitHub Releases 更新端点；用户可在更新页关闭该偏好，下载和安装始终由用户确认。公钥未配置或受控部署显式禁用时不请求网络。配置与验签策略见 [自动更新](./build-release.md#自动更新)，服务的数据处理见 [GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)。WebView2 运行时由 Microsoft 提供，其数据处理见 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
 
 ## 变更
 

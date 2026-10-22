@@ -35,7 +35,13 @@ export function projectFile(root, path) {
   return target;
 }
 
-/** 先暂存全部文件，再逐个替换；失败回滚，遇到并发编辑时保留原件备份。 */
+function contentsEqual(path, expected) {
+  return readFileSync(path).equals(
+    Buffer.isBuffer(expected) ? expected : Buffer.from(expected, "utf8"),
+  );
+}
+
+/** 支持文本与 Buffer；先暂存全部文件，失败回滚，并发编辑时保留原件备份。 */
 export function applyFileChanges(
   { root, changes },
   { beforeCommit = () => {} } = {},
@@ -52,7 +58,7 @@ export function applyFileChanges(
   try {
     for (const change of changes) {
       const target = projectFile(root, change.path);
-      if (readFileSync(target, "utf8") !== change.before)
+      if (!contentsEqual(target, change.before))
         throw new Error(`文件在预检后被修改：${change.path}`);
       const token = randomUUID();
       const temporary = join(dirname(target), `.update-${token}.tmp`);
@@ -72,7 +78,7 @@ export function applyFileChanges(
     for (const [index, entry] of staged.entries()) {
       beforeCommit(index, entry);
       assertParent(entry);
-      if (readFileSync(projectFile(root, entry.path), "utf8") !== entry.before)
+      if (!contentsEqual(projectFile(root, entry.path), entry.before))
         throw new Error(`文件在提交前被修改：${entry.path}`);
       renameSync(entry.target, entry.backup);
       committed.push(entry);
@@ -84,10 +90,7 @@ export function applyFileChanges(
       try {
         assertParent(entry);
         try {
-          if (
-            readFileSync(projectFile(root, entry.path), "utf8") !==
-            entry.content
-          )
+          if (!contentsEqual(projectFile(root, entry.path), entry.content))
             throw new Error(`回滚目标已被并发修改：${entry.path}`, {
               cause: error,
             });

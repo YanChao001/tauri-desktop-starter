@@ -5,9 +5,7 @@ export const enCatalog = {
   "catalog.description":
     "Explore capabilities, runtime boundaries and source through real routes. Choose a journey, then make one small change across a page, facade and Rust command.",
   "catalog.runtimeBrowser":
-    "Browser preview: local interactions work here. Native pages explain how to continue in the desktop app.",
-  "catalog.runtimeNative":
-    "Desktop app: native actions use your current user environment. External networks, permissions and release configuration may still be unavailable.",
+    "Browser preview. Open the desktop app to use system features.",
   "catalog.native": "Real native capability",
   "catalog.local": "Local UI / fixture",
   "catalog.external": "External service or configuration",
@@ -22,16 +20,13 @@ export const enCatalog = {
   "catalog.docs": "Related documentation",
   "catalog.hidden": "Demo entry hidden in minimal mode",
   "catalog.empty": "No matching capabilities.",
-  "catalog.journey": "Choose an exploration journey",
-  "catalog.journeyHint":
-    "Journeys reuse the app's navigation groups. Each entry opens a real page in this app.",
   "catalog.modules": "Modules & capability boundaries",
   "catalog.overview":
-    "Preview, apply and undo a window style; explore controlled motion.",
+    "Pick one of four journeys. Preview, apply and undo a window style.",
   "catalog.components":
-    "Try forms, feedback, filtering and favorites. Scenario data belongs to the current page.",
+    "Try forms, feedback, favorites and a workspace with a resource tree, context menus, drag ordering, type filters and split panels. Data stays on this page.",
   "catalog.motion":
-    "Tune springs, layouts, paths and tilt, with reduced-motion and pause support.",
+    "Drag a spring orb, reshape layouts, flip a tilt card and follow orbital trails, with reduced-motion and pause support.",
   "catalog.bridge":
     "Invoke real Rust commands and inspect successful results and structured errors.",
   "catalog.desktop":
@@ -55,14 +50,16 @@ export const enCatalog = {
   "catalog.network":
     "Local request-failure scenarios, cache and sessions, with optional HTTPS and system credential storage.",
   "catalog.dataStudio":
-    "Virtualize 10,000 local records, inspect partial bulk failures and complete a complex form.",
+    "Filter and virtualize 10,000 records, hide and resize columns, open details, inspect partial bulk failures and try a conditional form.",
   "catalog.media":
-    "Safe Markdown, local media and charts, with optional WSS and a controlled worker.",
+    "Explore content, charts and live connections in separate tabs: safe Markdown, local media, optional WSS and a controlled worker.",
   "catalog.catalog":
     "Discover capabilities from current routes, inspect source and follow the page-to-IPC exercise.",
   "catalog.generic":
     "Inspect the page and architecture documentation for its runtime boundaries.",
   "catalog.tutorial": "Getting started: a new page → Rust call",
+  "catalog.rustExample": "Rust command",
+  "catalog.typescriptExample": "TypeScript facade and page call",
   "catalog.tutorialHint":
     "These snippets are examples for you to implement, not executable actions. Reuse the existing route, command and error contracts.",
   "catalog.step.page": "Create a page and dictionary entries",

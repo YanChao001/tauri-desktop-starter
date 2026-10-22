@@ -1,14 +1,34 @@
 /** 背景设置与预览共用一份注册表，不依赖界面或语言 provider。 */
 export const BACKGROUNDS = [
   "plain",
+  "aurora",
+  "dune",
+  "inkwash",
   "starlight",
   "sakura",
   "moonlit",
   "botanical",
   "cloudscape",
+  "custom",
 ] as const;
 
 export type Background = (typeof BACKGROUNDS)[number];
+export type BuiltinBackground = Exclude<Background, "custom">;
+export const BUILTIN_BACKGROUNDS = BACKGROUNDS.filter(
+  (background): background is BuiltinBackground => background !== "custom",
+);
+
+export const BACKGROUND_STYLES = {
+  plain: "plain",
+  aurora: "cat-linework",
+  dune: "coffee-linework",
+  inkwash: "mountain-linework",
+  starlight: "linework",
+  sakura: "cloud-linework",
+  moonlit: "moon-linework",
+  botanical: "leaf-linework",
+  cloudscape: "paper-linework",
+} as const satisfies Record<BuiltinBackground, string>;
 
 export const BACKGROUND_INTENSITIES = ["subtle", "balanced", "strong"] as const;
 export type BackgroundIntensity = (typeof BACKGROUND_INTENSITIES)[number];
@@ -17,6 +37,22 @@ export const BACKGROUND_METADATA = {
   plain: {
     labelKey: "settings.bgPlain",
     descriptionKey: "settings.bgPlainDescription",
+  },
+  aurora: {
+    labelKey: "settings.bgAurora",
+    descriptionKey: "settings.bgAuroraDescription",
+  },
+  dune: {
+    labelKey: "settings.bgDune",
+    descriptionKey: "settings.bgDuneDescription",
+  },
+  inkwash: {
+    labelKey: "settings.bgInkwash",
+    descriptionKey: "settings.bgInkwashDescription",
+  },
+  custom: {
+    labelKey: "settings.bgCustom",
+    descriptionKey: "settings.bgCustomDescription",
   },
   starlight: {
     labelKey: "settings.bgStarlight",

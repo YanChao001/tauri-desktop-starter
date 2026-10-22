@@ -1,7 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MarkdownPanel, MediaPreview } from "@/features/media/content-panels";
 import { SidecarPanel, WebSocketPanel } from "@/features/media/realtime-panels";
 import { useI18n } from "@/providers/i18n";
+import "@/styles/experience.css";
 
 const MetricsChart = lazy(() =>
   import("@/features/media/metrics-chart").then((module) => ({
@@ -11,6 +13,10 @@ const MetricsChart = lazy(() =>
 
 export default function Media() {
   const { t } = useI18n();
+  const [view, setView] = useState("content");
+  const [visited, setVisited] = useState<ReadonlySet<string>>(
+    () => new Set(["content"]),
+  );
   return (
     <div className="studio-page space-y-5">
       <div className="studio-intro">
@@ -18,24 +24,68 @@ export default function Media() {
         <h2>{t("labs.media.title")}</h2>
         <p>{t("labs.media.description")}</p>
       </div>
-      <MarkdownPanel />
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        <MediaPreview />
-        <Suspense
-          fallback={
-            <div
-              role="status"
-              className="min-h-96 rounded-xl bg-card p-4 text-sm text-muted-foreground"
-            >
-              {t("labs.loading")}
-            </div>
-          }
+      <Tabs
+        value={view}
+        onValueChange={(next) => {
+          setView(next);
+          setVisited((current) => new Set([...current, next]));
+        }}
+        className="demo-page-tabs"
+      >
+        <TabsList aria-label={t("experience.media.tabs")}>
+          {(["content", "charts", "connections"] as const).map((id) => (
+            <TabsTrigger key={id} value={id}>
+              {t(`experience.media.${id}`)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent
+          value="content"
+          forceMount
+          hidden={view !== "content"}
+          className="demo-tab-panel space-y-5"
         >
-          <MetricsChart />
-        </Suspense>
-        <WebSocketPanel />
-        <SidecarPanel />
-      </div>
+          <MarkdownPanel />
+          <MediaPreview />
+        </TabsContent>
+        <TabsContent
+          value="charts"
+          forceMount
+          hidden={view !== "charts"}
+          className="demo-tab-panel"
+        >
+          {visited.has("charts") && (
+            <Suspense
+              fallback={
+                <div
+                  role="status"
+                  className="min-h-96 rounded-xl bg-card p-4 text-sm text-muted-foreground"
+                >
+                  {t("labs.loading")}
+                </div>
+              }
+            >
+              <MetricsChart />
+            </Suspense>
+          )}
+        </TabsContent>
+        <TabsContent
+          value="connections"
+          forceMount
+          hidden={view !== "connections"}
+          className="demo-tab-panel space-y-5"
+        >
+          <p className="text-sm text-muted-foreground">
+            {t("experience.media.connectionHint")}
+          </p>
+          {visited.has("connections") && (
+            <>
+              <WebSocketPanel />
+              <SidecarPanel />
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

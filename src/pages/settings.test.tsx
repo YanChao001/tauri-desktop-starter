@@ -40,6 +40,11 @@ vi.mock("@/lib/tauri", () => ({
   onSettingsChanged: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/wallpaper-library", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/wallpaper-library")>()),
+  listWallpaperLibrary: vi.fn().mockResolvedValue([]),
+  onWallpaperLibraryChanged: vi.fn().mockResolvedValue(() => {}),
+}));
 
 const geometry: desktop.WindowGeometry = {
   width: 1120,
@@ -166,7 +171,7 @@ describe("设置页", () => {
     const view = () => <SettingsView />;
     const { unmount } = render(view());
     expect(screen.getByRole("radio", { name: "轻盈" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("radio", { name: "樱花来信" }));
+    fireEvent.click(screen.getByRole("radio", { name: "云朵晴空" }));
     fireEvent.click(screen.getByRole("radio", { name: "鲜明" }));
     expect(document.documentElement).toHaveAttribute(
       "data-background",
@@ -178,7 +183,7 @@ describe("设置页", () => {
     );
     unmount();
     render(view());
-    expect(screen.getByRole("radio", { name: "樱花来信" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "云朵晴空" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "鲜明" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
     expect(screen.getByRole("radio", { name: "鲜明" })).toBeDisabled();

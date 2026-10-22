@@ -1,5 +1,5 @@
-import { useCallback, useId, useRef, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -31,9 +31,12 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   const { t } = useI18n();
   const { settings, update } = useSettings();
   const { execute } = useCommands();
+  const { pathname } = useLocation();
   const navigationId = useId();
   const drag = useRef<{ id: number; x: number; width: number } | null>(null);
   const [resizing, setResizing] = useState(false);
+  const [tooltip, setTooltip] = useState<string | null>(null);
+  const tooltipIntent = useRef<string | null>(null);
   const resizeHandle = useCallback((node: HTMLDivElement | null) => {
     if (!node) {
       drag.current = null;
@@ -42,6 +45,21 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   }, []);
   const collapsed = settings.sidebarCollapsed;
   const width = settings.sidebarWidth;
+  // 展开时的隐藏 Tooltip 不积累 open 状态；折叠、切页和调宽先清空提示。
+  useLayoutEffect(() => {
+    tooltipIntent.current = null;
+    setTooltip(null);
+  }, [collapsed, pathname, width]);
+  const tooltipChanged = (id: string, open: boolean) => {
+    if (open && (!collapsed || tooltipIntent.current !== id)) return;
+    setTooltip((current) => (open ? id : current === id ? null : current));
+  };
+  const trackTooltip = (id: string) => {
+    if (collapsed) tooltipIntent.current = id;
+  };
+  const leaveTooltip = (id: string) => {
+    if (tooltipIntent.current === id) tooltipIntent.current = null;
+  };
   const resize = (value: number) =>
     update({ sidebarWidth: clampSidebarWidth(value) });
   const groups = NAVIGATION_GROUPS.map((group) => ({
@@ -81,7 +99,15 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
       </div>
       <nav
         id="app-sidebar-navigation"
-        className="app-sidebar-navigation min-h-0 flex-1 overflow-y-auto"
+        className="app-sidebar-navigation app-scroll-region min-h-0 flex-1 overflow-y-auto"
+        onWheel={() => {
+          tooltipIntent.current = null;
+          setTooltip(null);
+        }}
+        onScroll={() => {
+          tooltipIntent.current = null;
+          setTooltip(null);
+        }}
       >
         {groups.map((group) => (
           <div
@@ -98,12 +124,20 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
             </p>
             <div className="space-y-0.5">
               {group.routes.map(({ path, labelKey, icon: Icon, exact }) => (
-                <Tooltip key={path}>
+                <Tooltip
+                  key={path}
+                  open={collapsed && tooltip === path}
+                  onOpenChange={(open) => tooltipChanged(path, open)}
+                >
                   <TooltipTrigger asChild>
                     <NavLink
                       to={path}
                       end={exact}
                       className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
+                      onPointerMove={() => trackTooltip(path)}
+                      onFocus={() => trackTooltip(path)}
+                      onPointerLeave={() => leaveTooltip(path)}
+                      onBlur={() => leaveTooltip(path)}
                     >
                       <Icon className="size-4 shrink-0" aria-hidden="true" />
                       <span className="app-sidebar-label min-w-0 flex-1 truncate">
@@ -111,7 +145,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
                       </span>
                     </NavLink>
                   </TooltipTrigger>
-                  {collapsed ? (
+                  {collapsed && tooltip === path ? (
                     <TooltipContent side="right" className="space-y-0.5">
                       <p className="text-[10px] opacity-65">
                         {t(group.labelKey)}
@@ -126,7 +160,10 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
         ))}
       </nav>
       <div className="app-sidebar-tools shrink-0">
-        <Tooltip>
+        <Tooltip
+          open={collapsed && tooltip === "commands"}
+          onOpenChange={(open) => tooltipChanged("commands", open)}
+        >
           <TooltipTrigger asChild>
             <button
               type="button"
@@ -134,6 +171,10 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
               aria-label={`${t("navContext.commands")} ${formatShortcut({ key: "k", primary: true })}`}
               aria-keyshortcuts={isMacOS() ? "Meta+K" : "Control+K"}
               onClick={() => void execute("command-palette")}
+              onPointerMove={() => trackTooltip("commands")}
+              onFocus={() => trackTooltip("commands")}
+              onPointerLeave={() => leaveTooltip("commands")}
+              onBlur={() => leaveTooltip("commands")}
             >
               <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
               <span className="app-sidebar-label min-w-0 flex-1 truncate text-left">
@@ -144,7 +185,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
               </kbd>
             </button>
           </TooltipTrigger>
-          {collapsed ? (
+          {collapsed && tooltip === "commands" ? (
             <TooltipContent side="right">
               {t("navContext.commands")} ·{" "}
               {formatShortcut({ key: "k", primary: true })}

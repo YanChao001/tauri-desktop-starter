@@ -62,4 +62,34 @@ describe("safe JSON code display", () => {
     expect(container.querySelector("pre")!.textContent).toBe(code);
     expect(container.querySelector("span, div div")).toBeNull();
   });
+
+  it("Rust 高亮始终以 React 文本渲染，不将源码中的 HTML 转成元素", () => {
+    const code = 'pub fn main() { println!(r#"<img src=x onerror=run()>"#); }';
+    const { container } = render(<CodeBlock code={code} language="rust" />);
+    expect(container.querySelector("code")).toHaveAttribute(
+      "data-language",
+      "rust",
+    );
+    expect(container.querySelector("pre")?.textContent).toBe(code);
+    expect(container.querySelector('[data-token="keyword"]')).toHaveTextContent(
+      "pub",
+    );
+    expect(container.querySelector("img, script")).toBeNull();
+  });
+
+  it("TypeScript 高亮保留原文，不执行看似 HTML 的源码", () => {
+    const code =
+      'export const markup: string = "</code><img src=x onerror=run()>";';
+    const { container } = render(
+      <CodeBlock code={code} language="typescript" />,
+    );
+    expect(container.querySelector("pre")?.textContent).toBe(code);
+    expect(container.querySelector('[data-token="keyword"]')).toHaveTextContent(
+      "export",
+    );
+    expect(container.querySelector('[data-token="string"]')).toHaveTextContent(
+      "<img",
+    );
+    expect(container.querySelector("img, script, iframe")).toBeNull();
+  });
 });

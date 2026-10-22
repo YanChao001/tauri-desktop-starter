@@ -23,7 +23,7 @@ describe("settings search metadata", () => {
       "fontSize",
     );
     expect(searchSettings("星星", createTranslator(zhCN))[0]?.id).toBe("skin");
-    expect(searchSettings("樱花", createTranslator(zhCN))[0]?.id).toBe("skin");
+    expect(searchSettings("云朵", createTranslator(zhCN))[0]?.id).toBe("skin");
     expect(searchSettings("sakura", createTranslator(en))[0]?.id).toBe("skin");
     expect(searchSettings("紧凑", createTranslator(zhCN))[0]?.id).toBe(
       "window",
@@ -42,6 +42,35 @@ describe("settings search metadata", () => {
       new Set(SETTINGS_SEARCH_ENTRIES.map((entry) => entry.anchor)).size,
     ).toBe(SETTINGS_SEARCH_ENTRIES.length);
   });
+  it("finds all eight styles and local image controls in both interface languages", () => {
+    for (const query of [
+      "猫咪涂鸦",
+      "咖啡时光",
+      "远山手记",
+      "星星手帐",
+      "云朵晴空",
+      "月相漫游",
+      "枝叶小笺",
+      "纸上飞行",
+      "添加壁纸",
+      "重命名壁纸",
+    ])
+      expect(searchSettings(query, createTranslator(zhCN))[0]?.id).toBe("skin");
+    for (const query of [
+      "cat doodles",
+      "coffee break",
+      "mountain notes",
+      "linework",
+      "cloud notes",
+      "moon orbits",
+      "leaf notes",
+      "paper flights",
+      "add wallpapers",
+      "PNG",
+    ])
+      expect(searchSettings(query, createTranslator(en))[0]?.id).toBe("skin");
+  });
+
   it("scrolls and transfers focus to the matching setting", () => {
     const target = document.createElement("section");
     target.id = "settings-language";

@@ -13,6 +13,9 @@ import type { AppRoute } from "@/routes";
 import { AppShell } from "./app-shell";
 
 const state = vi.hoisted(() => ({ appMode: "demo" }));
+vi.mock("@/providers/commands", () => ({
+  useCommands: () => ({ fullscreen: false, execute: vi.fn() }),
+}));
 vi.mock("@/providers/settings", () => ({
   useSettings: () => ({
     settings: {
@@ -102,17 +105,18 @@ describe("应用内容导航", () => {
     vi.unstubAllGlobals();
   });
 
-  it("切换页面时重置文档滚动并保留导航焦点", () => {
+  it("切换页面时只重置内容区滚动并保留导航焦点", () => {
     renderShell();
+    const main = screen.getByRole("main");
+    main.scrollTop = 500;
+    main.scrollLeft = 40;
     vi.mocked(window.scrollTo).mockClear();
     const settings = screen.getByRole("link", { name: "/settings" });
     settings.focus();
     fireEvent.click(settings);
-    expect(window.scrollTo).toHaveBeenCalledExactlyOnceWith({
-      top: 0,
-      left: 0,
-      behavior: "instant",
-    });
+    expect(main.scrollTop).toBe(0);
+    expect(main.scrollLeft).toBe(0);
+    expect(window.scrollTo).not.toHaveBeenCalled();
     expect(settings).toHaveFocus();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(
@@ -122,9 +126,12 @@ describe("应用内容导航", () => {
 
   it("同页查询参数变化时保留设置定位和滚动", () => {
     renderShell("/settings");
+    const main = screen.getByRole("main");
+    main.scrollTop = 240;
     vi.mocked(window.scrollTo).mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Focus setting" }));
     expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(main.scrollTop).toBe(240);
     expect(screen.getByRole("textbox", { name: "Page input" })).toHaveFocus();
   });
 

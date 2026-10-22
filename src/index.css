@@ -3,6 +3,7 @@
 @import "./styles/shadcn.css";
 @import "@fontsource-variable/geist";
 @import "./styles/showcase.css";
+@import "./styles/window-skins.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -26,6 +27,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -50,6 +52,10 @@
 }
 
 :root {
+  color-scheme: light;
+  --surface-base: oklch(1 0 0);
+  --surface-sidebar: oklch(0.985 0 0);
+  --surface-muted: oklch(0.97 0 0);
   --app-chrome-height: 40px;
   --app-font-sans: "Geist Variable", sans-serif;
   --background: oklch(1 0 0);
@@ -63,10 +69,11 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.52 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.52 0.21 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -87,6 +94,10 @@
 }
 
 .dark {
+  color-scheme: dark;
+  --surface-base: oklch(0.145 0 0);
+  --surface-sidebar: oklch(0.205 0 0);
+  --surface-muted: oklch(0.269 0 0);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -102,6 +113,7 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.145 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -112,12 +124,25 @@
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* 中性表面是基底；用户选择的强调色只为交互表面提供轻微色调。 */
+html[data-accent]:not([data-accent="neutral"]) {
+  --background: color-mix(in oklab, var(--primary) 2%, var(--surface-base));
+  --sidebar: color-mix(in oklab, var(--primary) 3%, var(--surface-sidebar));
+  --accent: color-mix(in oklab, var(--primary) 9%, var(--surface-base));
+  --sidebar-accent: color-mix(
+    in oklab,
+    var(--primary) 10%,
+    var(--surface-sidebar)
+  );
+  --sidebar-primary-foreground: var(--primary-foreground);
 }
 
 @layer base {
@@ -126,14 +151,13 @@
   }
   html {
     height: 100%;
-    overflow-x: clip;
-    scroll-padding-top: var(--app-chrome-height);
-    /* 保留原生边界回弹，同时禁止下拉刷新与横向历史导航。 */
-    overscroll-behavior: none contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
   body,
   #root {
-    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
   }
   body {
     @apply bg-background text-foreground;
@@ -158,7 +182,7 @@ html[data-accent="indigo"] {
 }
 html.dark[data-accent="indigo"] {
   --primary: oklch(0.64 0.2 277);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.64 0.2 277 / 60%);
   --sidebar-primary: oklch(0.64 0.2 277);
   --chart-1: oklch(0.64 0.2 277);
@@ -173,18 +197,18 @@ html[data-accent="blue"] {
 }
 html.dark[data-accent="blue"] {
   --primary: oklch(0.67 0.16 250);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.67 0.16 250 / 60%);
   --sidebar-primary: oklch(0.67 0.16 250);
   --chart-1: oklch(0.67 0.16 250);
 }
 
 html[data-accent="emerald"] {
-  --primary: oklch(0.55 0.14 160);
+  --primary: oklch(0.51 0.12 164);
   --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.55 0.14 160 / 60%);
-  --sidebar-primary: oklch(0.55 0.14 160);
-  --chart-1: oklch(0.55 0.14 160);
+  --ring: oklch(0.51 0.12 164 / 60%);
+  --sidebar-primary: oklch(0.51 0.12 164);
+  --chart-1: oklch(0.51 0.12 164);
 }
 html.dark[data-accent="emerald"] {
   --primary: oklch(0.69 0.13 160);
@@ -218,7 +242,7 @@ html[data-accent="rose"] {
 }
 html.dark[data-accent="rose"] {
   --primary: oklch(0.67 0.19 12);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.67 0.19 12 / 60%);
   --sidebar-primary: oklch(0.67 0.19 12);
   --chart-1: oklch(0.67 0.19 12);
@@ -233,7 +257,7 @@ html[data-accent="violet"] {
 }
 html.dark[data-accent="violet"] {
   --primary: oklch(0.66 0.21 300);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.66 0.21 300 / 60%);
   --sidebar-primary: oklch(0.66 0.21 300);
   --chart-1: oklch(0.66 0.21 300);
@@ -274,21 +298,15 @@ html[data-font-size="lg"] {
 /* 插画只铺在窗口底层；阅读表面与装饰分别调节，避免降低文字对比度。 */
 :root {
   --skin-strength: 1;
-  --skin-glow-opacity: 0.16;
-  --skin-fill-opacity: 0.46;
-  --skin-line-opacity: 0.3;
-  --skin-chrome-opacity: 52%;
-  --skin-sidebar-opacity: 42%;
-  --skin-card-opacity: 78%;
+  --skin-chrome-opacity: 20%;
+  --skin-sidebar-opacity: 26%;
+  --skin-card-opacity: 88%;
 }
 
 .dark {
-  --skin-glow-opacity: 0.2;
-  --skin-fill-opacity: 0.34;
-  --skin-line-opacity: 0.38;
-  --skin-chrome-opacity: 58%;
-  --skin-sidebar-opacity: 46%;
-  --skin-card-opacity: 82%;
+  --skin-chrome-opacity: 20%;
+  --skin-sidebar-opacity: 26%;
+  --skin-card-opacity: 92%;
 }
 
 html[data-background-intensity="subtle"] {
@@ -306,7 +324,8 @@ html[data-background="plain"] {
 .app-shell {
   position: relative;
   isolation: isolate;
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
 }
 /* 固定元素直接以视口定位，不随文档的原生边界回弹移动。 */
 .app-chrome {
@@ -329,7 +348,7 @@ html[data-background="plain"] {
 }
 .app-title-bar {
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--background) var(--skin-chrome-opacity),
     transparent
   );
@@ -340,22 +359,28 @@ html[data-background="plain"] {
   inset: var(--app-chrome-height) auto 0 0;
   z-index: 10;
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--sidebar) var(--skin-sidebar-opacity),
     transparent
   );
 }
+.app-scroll-region {
+  overscroll-behavior: none contain;
+}
 .app-main {
-  position: relative;
+  position: absolute;
+  inset: var(--app-chrome-height) 0 0 var(--app-sidebar-width);
   z-index: 1;
-  min-height: 100dvh;
-  margin-inline-start: var(--app-sidebar-width);
-  padding-top: var(--app-chrome-height);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 1.25rem;
   background: transparent;
 }
 .app-main [data-slot="card"] {
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--card) var(--skin-card-opacity),
     transparent
   );
@@ -367,58 +392,6 @@ html[data-background="plain"] {
     [data-slot="select-trigger"]
   ) {
   background-color: var(--background);
-}
-
-.pattern-artwork {
-  --skin-color: color-mix(in oklch, var(--primary) 48%, #a3b4da);
-  --skin-secondary: color-mix(in oklch, var(--primary) 30%, #c3cfee);
-  --skin-ink: color-mix(in oklch, var(--primary) 38%, #8393bd);
-  --skin-highlight: color-mix(in oklch, var(--primary) 12%, #cba760);
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background: var(--background);
-}
-.pattern-artwork[data-pattern="sakura"] {
-  --skin-color: color-mix(in oklch, var(--primary) 18%, #e7afc7);
-  --skin-secondary: color-mix(in oklch, var(--primary) 10%, #efb7cd);
-  --skin-ink: color-mix(in oklch, var(--primary) 20%, #b08192);
-  --skin-highlight: #d0ab76;
-}
-.pattern-artwork[data-pattern="moonlit"] {
-  --skin-color: color-mix(in oklch, var(--primary) 35%, #8da0d3);
-  --skin-secondary: color-mix(in oklch, var(--primary) 35%, #a2accd);
-  --skin-ink: color-mix(in oklch, var(--primary) 35%, #6d7aa6);
-  --skin-highlight: #dccca3;
-}
-.pattern-artwork[data-pattern="botanical"] {
-  --skin-color: color-mix(in oklch, var(--primary) 18%, #a9b69a);
-  --skin-secondary: color-mix(in oklch, var(--primary) 18%, #a6b998);
-  --skin-ink: color-mix(in oklch, var(--primary) 25%, #81917b);
-  --skin-highlight: #b8a585;
-}
-.pattern-artwork[data-pattern="cloudscape"] {
-  --skin-color: color-mix(in oklch, var(--primary) 22%, #afc8e5);
-  --skin-secondary: color-mix(in oklch, var(--background) 65%, #bfd2e8);
-  --skin-ink: color-mix(in oklch, var(--primary) 22%, #8aa6c8);
-  --skin-highlight: #e5c98d;
-}
-.skin-glow {
-  opacity: calc(var(--skin-glow-opacity) * var(--skin-strength));
-}
-.skin-fill {
-  opacity: calc(var(--skin-fill-opacity) * var(--skin-strength));
-}
-.skin-lines {
-  opacity: calc(var(--skin-line-opacity) * var(--skin-strength));
-}
-.pattern-artwork--preview {
-  --skin-strength: 1;
-  --skin-glow-opacity: 0.3;
-  --skin-fill-opacity: 0.8;
-  --skin-line-opacity: 0.7;
-  border-radius: inherit;
 }
 
 @media (prefers-contrast: more), (forced-colors: active) {
@@ -437,6 +410,9 @@ html[data-background="plain"] {
 html[data-motion="reduced"] {
   overscroll-behavior-y: none;
 }
+html[data-motion="reduced"] .app-scroll-region {
+  overscroll-behavior-y: none;
+}
 html[data-motion="reduced"] *,
 html[data-motion="reduced"] *::before,
 html[data-motion="reduced"] *::after {
@@ -447,7 +423,8 @@ html[data-motion="reduced"] *::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
+  html,
+  .app-scroll-region {
     overscroll-behavior-y: none;
   }
   *,
@@ -473,22 +450,64 @@ html[data-motion="reduced"] *::after {
   z-index: 2;
 }
 
-/* 桌面端滚动条细一点，别抢内容 */
+/* 原生滚动配合同一套无箭头细轨道；渐变只改变颜色，不改变布局宽度。 */
+@property --app-scrollbar-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.18;
+}
+.app-scroll-region {
+  --app-scrollbar-opacity: 0;
+  transition: --app-scrollbar-opacity 280ms ease 450ms;
+}
+.app-scroll-region:is(:hover, :focus-within) {
+  --app-scrollbar-opacity: 0.2;
+  transition-delay: 0ms;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
-  background-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background-color: color-mix(
+    in oklab,
+    var(--foreground) calc(var(--app-scrollbar-opacity) * 100%),
+    transparent
+  );
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in oklch, var(--foreground) 28%, transparent);
+  background-color: color-mix(in oklab, var(--foreground) 28%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .app-scroll-region {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--foreground) calc(var(--app-scrollbar-opacity) * 100%),
+        transparent
+      )
+      transparent;
+  }
+}
+@media (forced-colors: active) {
+  .app-scroll-region {
+    --app-scrollbar-opacity: 1;
+    scrollbar-color: auto;
+  }
 }
 
 /* 侧栏过渡不延迟指针拖动时的尺寸更新 */
@@ -496,7 +515,9 @@ html[data-motion="reduced"] *::after {
   transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .app-main {
-  transition: margin-inline-start 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    inset-inline-start 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    --app-scrollbar-opacity 280ms ease 450ms;
 }
 .app-shell:has(.app-sidebar[data-resizing="true"]) .app-main {
   transition: none;
@@ -524,7 +545,7 @@ html[data-motion="reduced"] *::after {
   }
 }
 
-/* JSON 通过 React 文本节点渲染，配色跟随应用主题 */
+/* 代码通过 React 文本节点渲染，配色跟随应用主题 */
 .code-block {
   --code-property: #4338ca;
   --code-string: #047857;
@@ -556,6 +577,24 @@ html[data-motion="reduced"] *::after {
 }
 .code-token--punctuation {
   color: var(--muted-foreground);
+}
+.code-token--keyword,
+.code-token--lifetime {
+  color: var(--code-boolean);
+}
+.code-token--type,
+.code-token--macro {
+  color: var(--code-number);
+}
+.code-token--function {
+  color: var(--code-property);
+}
+.code-token--comment {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.code-token--operator {
+  color: var(--code-null);
 }
 @media (forced-colors: active) {
   .code-token {

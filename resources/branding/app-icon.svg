@@ -6,58 +6,48 @@
   fill="none"
 >
   <defs>
-    <linearGradient
-      id="tile"
-      x1="35"
-      y1="20"
-      x2="228"
-      y2="245"
-      gradientUnits="userSpaceOnUse"
-    >
-      <stop stop-color="#6078EE" />
-      <stop offset=".52" stop-color="#6551D6" />
-      <stop offset="1" stop-color="#383B94" />
-    </linearGradient>
-    <linearGradient
-      id="paper"
-      x1="76"
-      y1="53"
-      x2="173"
-      y2="186"
-      gradientUnits="userSpaceOnUse"
-    >
-      <stop stop-color="#FFFFFF" />
-      <stop offset="1" stop-color="#E4E9FF" />
-    </linearGradient>
+    <clipPath id="tile">
+      <rect x="12" y="12" width="232" height="232" rx="54" />
+    </clipPath>
   </defs>
-  <rect x="12" y="12" width="232" height="232" rx="56" fill="url(#tile)" />
-  <rect
-    x="12.5"
-    y="12.5"
-    width="231"
-    height="231"
-    rx="55.5"
-    stroke="#FFFFFF"
-    stroke-opacity=".22"
-  />
-  <path
-    d="m54 95 88-27c11-3 20 2 24 13l28 89c3 10-2 20-13 23l-88 27c-11 3-21-2-24-13L41 119c-3-11 2-20 13-24Z"
-    fill="#C6D2FF"
-    fill-opacity=".42"
-  />
-  <path
-    d="M86 52h74l34 34v90c0 11-9 20-20 20H86c-11 0-20-9-20-20V72c0-11 9-20 20-20Z"
-    fill="url(#paper)"
-  />
-  <path d="M160 52v22c0 7 5 12 12 12h22l-34-34Z" fill="#BAC8FF" />
-  <path d="M89 105h72v49H89z" fill="#5E61CC" />
-  <path d="m89 154 26-28 18 18 12-13 16 23H89Z" fill="#C5D5FF" />
-  <path d="m160 105-26 49h27v-49h-1Z" fill="#9BAAF6" fill-opacity=".6" />
-  <path
-    d="M89 171h47"
-    stroke="#8A92C3"
-    stroke-width="7"
-    stroke-linecap="round"
-  />
-  <path d="m202 35 4 10 10 4-10 4-4 10-4-10-10-4 10-4 4-10Z" fill="#F0E9FF" />
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="#BCEBDD" />
+  <g clip-path="url(#tile)">
+    <g
+      transform="translate(-3.6 7.68) scale(0.94)"
+      stroke="#4C3630"
+      stroke-width="4.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M43 110C50 83 70 53 91 36c6-5 10-4 16 1l22 25Z" fill="#080A09" />
+      <path
+        d="M173 66c24-2 49-1 65 10 9 6 11 12 8 27-5 27-16 48-33 61l-8-57Z"
+        fill="#080A09"
+      />
+      <path d="M209 99c13-5 25-11 37-9-1 25-13 52-33 70Z" fill="#B0D998" />
+      <path d="M108 207c0 15-2 33-4 51h103c-4-21-14-42-29-55Z" fill="#080A09" />
+      <path
+        d="M108 216c-37-2-65-14-73-42-7-24-4-57 12-81 19-29 49-41 82-41 44-2 69 15 82 41 15 29 20 59 8 85-8 18-22 29-42 35"
+        fill="#080A09"
+      />
+      <path
+        d="m40 128 66 2c4 0 5 5 5 10v21c-1 23-11 39-32 39-25 0-41-17-42-42 0-12 1-21 3-30Z"
+        fill="#FFFFD0"
+      />
+      <path
+        d="m49 129 45 1-1 26c-1 17-8 28-21 28-16-1-25-13-25-31Z"
+        fill="#080A09"
+      />
+      <path
+        d="m123 131 75-4c8-1 10 2 11 10l1 22c0 28-16 48-43 48-26-1-46-17-48-44l-1-21c0-6 1-9 5-11Z"
+        fill="#FFFFD0"
+      />
+      <path
+        d="m134 131 59-3 1 23c0 21-9 35-27 36-20 0-32-13-34-32Z"
+        fill="#080A09"
+      />
+      <path d="M179 89c-2 8-3 20 4 23 10 4 15-7 11-23" stroke-width="4.2" />
+      <path d="m137 240 2 16m36-14 2 14" stroke-width="4" />
+    </g>
+  </g>
 </svg>

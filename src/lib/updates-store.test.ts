@@ -17,6 +17,8 @@ const status = (operationId = 1, available = true): UpdateStatus => ({
   configured: true,
   available,
   currentVersion: "1.0.0",
+  endpoint: "https://example.com/latest.json",
+  checkedAt: 1792656000000,
   version: available ? "2.0.0" : null,
   body: null,
   date: null,

@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { CodeBlock } from "@/components/code-block";
+import { normalizeCodeLanguage } from "@/lib/code-language";
 import type { WorkbenchDocument } from "@/lib/tauri";
 
 /** Markdown 只渲染 React 文本节点与固定元素，不执行 HTML 或加载远端资源。 */
@@ -9,10 +10,13 @@ export function MarkdownPreview({ content }: { content: string }) {
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? "";
     if (line.startsWith("```")) {
+      const language = normalizeCodeLanguage(line.slice(3));
       const code: string[] = [];
       while (++index < lines.length && !lines[index]?.startsWith("```"))
         code.push(lines[index] ?? "");
-      nodes.push(<CodeBlock key={index} code={code.join("\n")} />);
+      nodes.push(
+        <CodeBlock key={index} code={code.join("\n")} language={language} />,
+      );
       continue;
     }
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
@@ -77,7 +81,15 @@ export function DocumentPreview({
   return (
     <CodeBlock
       code={content}
-      language={document.kind === "json" ? "json" : "text"}
+      language={
+        document.kind === "json"
+          ? "json"
+          : /\.rs$/i.test(document.name)
+            ? "rust"
+            : /\.(?:ts|mts|cts)$/i.test(document.name)
+              ? "typescript"
+              : "text"
+      }
       className="max-h-[36rem] overflow-auto whitespace-pre-wrap break-words"
     />
   );

@@ -1,24 +1,24 @@
 import type { MotionMessages } from "./zh-motion";
 export const enMotion = {
-  "lab.eyebrow": "INTERACTIVE PLAYGROUND · 01",
-  "lab.title": "A little life, in every interaction.",
+  "lab.eyebrow": "MOTION / INTERACTION LAB",
+  "lab.title": "Give every interaction a little gravity.",
   "lab.subtitle":
-    "Shape the spring, explore the space, and play with light. Four experiments to make your own.",
+    "Four hands-on experiments. Drag, reshape, and flip. Put your imagination in motion.",
   "lab.scenes": "Choose a motion experiment",
   "lab.spring": "Spring physics",
   "lab.layout": "Shared space",
   "lab.tilt": "Light & touch",
   "lab.paths": "Stellar paths",
-  "lab.springTitle": "An orb with a personality",
+  "lab.springTitle": "Feel the spring in every landing",
   "lab.springHint":
-    "Send it to the other side, then tune the controls to feel a different kind of bounce.",
+    "Drag the orb and let go, or choose a landing point. Tune the controls to feel its inertia and bounce.",
   "lab.layoutTitle": "Let the focus flow",
   "lab.layoutHint":
     "Choose a card. The highlight and its content share a continuous sense of space.",
   "lab.tiltTitle": "Hold a little light",
   "lab.tiltHint":
     "Move your pointer or touch the card. You can also focus it, explore with arrow keys, and flip with Enter.",
-  "lab.pathsTitle": "Draw your own corner of the cosmos",
+  "lab.pathsTitle": "Let light follow the orbit",
   "lab.pathsHint":
     "Watch the paths appear. Change their pace, add stardust, or unleash a stellar burst.",
   "lab.pause": "Pause",
@@ -77,6 +77,12 @@ export const enMotion = {
   "lab.pathNote":
     "Paths draw themselves while stardust follows its orbit. Pause to hold the moment.",
   "lab.insight": "FIELD NOTES",
+  "lab.interactive": "INTERACTIVE CANVAS",
+  "lab.dragOrb":
+    "Drag the spring orb. Arrow keys choose a target; Enter launches.",
+  "lab.composition": "Composition",
+  "lab.layoutFan": "Focus fan",
+  "lab.layoutGrid": "Grid morph",
   "lab.footer":
     "Motion is feedback, and an invitation. Find the moment that feels right.",
 } satisfies MotionMessages;

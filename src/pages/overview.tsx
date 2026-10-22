@@ -15,6 +15,8 @@ import {
   WandSparklesIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { JourneyLauncher } from "@/features/journeys/journey-launcher";
+import { JOURNEYS, journeyLink } from "@/features/journeys/model";
 import { Button } from "@/components/ui/button";
 import { PatternArtwork } from "@/components/window-background";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
@@ -262,15 +264,15 @@ export default function Overview() {
           <p className="showroom-lede">{t("showroom.description")}</p>
           <div className="showroom-hero-actions">
             <Button asChild size="lg">
-              <Link to="/motion">
+              <Link to={journeyLink(JOURNEYS[0])}>
                 <SparklesIcon />
                 {t("showroom.start")}
                 <ArrowRightIcon />
               </Link>
             </Button>
             <Button asChild variant="ghost">
-              <Link to="/components">
-                {t("showroom.explore")}
+              <Link to="/motion">
+                {t("nav.motion")}
                 <ArrowDownRightIcon />
               </Link>
             </Button>
@@ -362,6 +364,7 @@ export default function Overview() {
           </div>
         </div>
       </section>
+      <JourneyLauncher />
       <section
         className="showroom-vibes studio-panel"
         aria-labelledby="showroom-vibes-heading"
@@ -414,94 +417,6 @@ export default function Overview() {
               <RotateCcwIcon />
             </Button>
           ) : null}
-        </div>
-      </section>
-      <section
-        className="showroom-discover"
-        aria-labelledby="showroom-discover-heading"
-      >
-        <div className="studio-section-heading">
-          <div>
-            <h3 id="showroom-discover-heading">{t("showroom.discover")}</h3>
-            <p>{t("showroom.discoverHint")}</p>
-          </div>
-          <ArrowDownRightIcon size={22} />
-        </div>
-        <div className="showroom-portals">
-          <Link className="showroom-portal studio-panel" to="/motion">
-            <div
-              className="showroom-portal-art showroom-portal-motion"
-              aria-hidden="true"
-            >
-              <div className="portal-orbit portal-orbit-one" />
-              <div className="portal-orbit portal-orbit-two" />
-              <span className="portal-orb" />
-              <span className="portal-orb-small" />
-            </div>
-            <span className="studio-eyebrow">{t("showroom.motionLabel")}</span>
-            <h4>{t("showroom.motionTitle")}</h4>
-            <p>{t("showroom.motionDescription")}</p>
-            <div className="showroom-portal-footer">
-              <span>{t("showroom.motionTag")}</span>
-              <ArrowRightIcon />
-            </div>
-          </Link>
-          <Link className="showroom-portal studio-panel" to="/components">
-            <div
-              className="showroom-portal-art showroom-portal-components"
-              aria-hidden="true"
-            >
-              <div className="portal-mini-card">
-                <span />
-                <i />
-                <i />
-                <b />
-              </div>
-              <div className="portal-mini-switch">
-                <span />
-              </div>
-              <div className="portal-mini-chip">
-                <CheckIcon size={12} />
-                <span />
-              </div>
-            </div>
-            <span className="studio-eyebrow">
-              {t("showroom.componentsLabel")}
-            </span>
-            <h4>{t("showroom.componentsTitle")}</h4>
-            <p>{t("showroom.componentsDescription")}</p>
-            <div className="showroom-portal-footer">
-              <span>{t("showroom.componentsTag")}</span>
-              <ArrowRightIcon />
-            </div>
-          </Link>
-          <Link className="showroom-portal studio-panel" to="/desktop">
-            <div
-              className="showroom-portal-art showroom-portal-desktop"
-              aria-hidden="true"
-            >
-              <div className="portal-native-window portal-native-back">
-                <i />
-                <span />
-                <span />
-              </div>
-              <div className="portal-native-window portal-native-front">
-                <i />
-                <span />
-                <span />
-              </div>
-              <span className="portal-connection">
-                <CheckIcon size={15} />
-              </span>
-            </div>
-            <span className="studio-eyebrow">{t("showroom.desktopLabel")}</span>
-            <h4>{t("showroom.desktopTitle")}</h4>
-            <p>{t("showroom.desktopDescription")}</p>
-            <div className="showroom-portal-footer">
-              <span>{t("showroom.desktopTag")}</span>
-              <ArrowRightIcon />
-            </div>
-          </Link>
         </div>
       </section>
       <div className="showroom-runtime-note">

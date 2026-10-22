@@ -19,6 +19,18 @@ describe("versioned settings model", () => {
     vi.spyOn(navigator, "languages", "get").mockReturnValue(["zh-CN"]);
   });
   afterEach(() => vi.restoreAllMocks());
+  it("defaults legacy startup update checks on and preserves an explicit opt-out", () => {
+    expect(
+      migrateSettings({ schemaVersion: 3, language: "en" }).autoCheckUpdates,
+    ).toBe(true);
+    expect(
+      migrateSettings({ schemaVersion: 3, autoCheckUpdates: false })
+        .autoCheckUpdates,
+    ).toBe(false);
+    expect(
+      normalizeSettingsPatch(DEFAULT_SETTINGS, { autoCheckUpdates: false }),
+    ).toEqual({ autoCheckUpdates: false });
+  });
 
   it("migrates legacy flat and v1 wrapped documents to the current complete shape", () => {
     expect(migrateSettings({ language: "en", background: "gradient" })).toEqual(
@@ -41,6 +53,48 @@ describe("versioned settings model", () => {
     expect(settingsDocument(DEFAULT_SETTINGS).schemaVersion).toBe(
       SETTINGS_VERSION,
     );
+  });
+
+  it("schema 2 升级保留偏好，导入图片随 schema 3 存档并可移除", () => {
+    const old = migrateSettings({
+      schemaVersion: 2,
+      language: "en",
+      background: "sakura",
+      theme: "dark",
+      sidebarWidth: 300,
+    });
+    expect(old).toMatchObject({
+      language: "en",
+      background: "sakura",
+      theme: "dark",
+      sidebarWidth: 300,
+      customBackground: null,
+    });
+    const customBackground = {
+      name: "sky.webp",
+      dataUrl: "data:image/webp;base64," + btoa("RIFF0000WEBP"),
+      fit: "cover" as const,
+    };
+    const custom = migrateSettings({
+      ...old,
+      background: "custom",
+      customBackground,
+    });
+    expect(migrateSettings(settingsDocument(custom))).toEqual(custom);
+    expect(settingsDocument(custom).schemaVersion).toBe(3);
+    expect(normalizeSettingsPatch(custom, { customBackground: null })).toEqual({
+      customBackground: null,
+      background: "plain",
+    });
+    expect(
+      migrateSettings({
+        background: "custom",
+        customBackground: {
+          name: "remote",
+          dataUrl: "https://example.com/a.png",
+        },
+      }),
+    ).toMatchObject({ background: "plain", customBackground: null });
   });
 
   it.each([null, [], "invalid", 5, { settings: [] }])(

@@ -5,6 +5,7 @@ use std::{
     sync::Mutex,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use specta::Type;
@@ -15,6 +16,7 @@ use crate::error::{ErrorCode, NativeError, NativeResult};
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
 const MAX_SETTINGS_SIZE: usize = 128 * 1024;
+const MAX_BACKGROUND_DATA_LENGTH: usize = 96 * 1024;
 
 /// 具名递归类型使 Rust 与 TypeScript 的 JSON 契约保持有限定义。
 /// serde_json::Number 保留传输过程中的整数值。
@@ -133,6 +135,61 @@ pub enum WindowPosition {
     Center,
 }
 
+pub(crate) fn validate_custom_background(value: &Value) -> NativeResult<()> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let invalid = || {
+        NativeError::new(
+            ErrorCode::InvalidArgument,
+            "Invalid custom background image",
+        )
+    };
+    let image = value.as_object().ok_or_else(invalid)?;
+    let name = image
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid)?;
+    if name.trim().is_empty()
+        || name.chars().count() > 120
+        || name.chars().any(char::is_control)
+        || image
+            .get("fit")
+            .is_some_and(|fit| !matches!(fit.as_str(), Some("cover" | "contain")))
+    {
+        return Err(invalid());
+    }
+    let data_url = image
+        .get("dataUrl")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid)?;
+    if data_url.len() > MAX_BACKGROUND_DATA_LENGTH {
+        return Err(NativeError::new(
+            ErrorCode::InputTooLong,
+            "Custom background image exceeds the supported size",
+        ));
+    }
+    let (encoded, webp) = data_url
+        .strip_prefix("data:image/webp;base64,")
+        .map(|encoded| (encoded, true))
+        .or_else(|| {
+            data_url
+                .strip_prefix("data:image/jpeg;base64,")
+                .map(|encoded| (encoded, false))
+        })
+        .ok_or_else(invalid)?;
+    let bytes = STANDARD.decode(encoded).map_err(|_| invalid())?;
+    let valid_header = if webp {
+        bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP")
+    } else {
+        bytes.starts_with(&[0xff, 0xd8, 0xff])
+    };
+    if !valid_header {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 fn validate_settings(settings: &Value) -> NativeResult<()> {
     let object = settings.as_object().ok_or_else(|| {
         NativeError::new(ErrorCode::InvalidArgument, "Settings must be a JSON object")
@@ -158,7 +215,10 @@ fn validate_settings(settings: &Value) -> NativeResult<()> {
     let future_schema = object
         .get("schemaVersion")
         .and_then(Value::as_f64)
-        .is_some_and(|version| version > 2.0);
+        .is_some_and(|version| version > 3.0);
+    if !future_schema && let Some(image) = object.get("customBackground") {
+        validate_custom_background(image)?;
+    }
     if !future_schema
         && object
             .get("windowPosition")
@@ -393,6 +453,81 @@ mod tests {
                 .is_err()
         );
         assert_eq!(fs::read(&store.path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn custom_background_is_bounded_versioned_and_preserved_after_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let store = SettingsStore::open(path.clone()).unwrap();
+        let image = json!({
+            "name": "sky.webp",
+            "dataUrl": format!("data:image/webp;base64,{}", STANDARD.encode(b"RIFF0000WEBP")),
+            "fit": "contain",
+        });
+        let committed = store
+            .save(
+                json!({"schemaVersion": 3, "background": "custom", "customBackground": image}),
+                0,
+            )
+            .unwrap();
+        assert_eq!(
+            SettingsStore::open(path).unwrap().snapshot().unwrap(),
+            committed
+        );
+        for data_url in [
+            "https://example.com/image.webp".to_string(),
+            "file:///image.webp".to_string(),
+            format!("data:image/svg+xml;base64,{}", STANDARD.encode(b"<svg/>")),
+            format!("data:image/webp;base64,{}", STANDARD.encode(b"<svg/>")),
+            "data:image/jpeg;base64,not-valid".to_string(),
+        ] {
+            let invalid = json!({"schemaVersion": 3, "customBackground": {"name": "invalid", "dataUrl": data_url, "fit": "cover"}});
+            assert_eq!(
+                store.save(invalid, 1).unwrap_err().code,
+                ErrorCode::InvalidArgument
+            );
+            assert_eq!(store.snapshot().unwrap(), committed);
+        }
+        let mut oversized = image.clone();
+        oversized["dataUrl"] = json!("A".repeat(MAX_BACKGROUND_DATA_LENGTH + 1));
+        assert_eq!(
+            store
+                .save(
+                    json!({"schemaVersion": 3, "customBackground": oversized}),
+                    1
+                )
+                .unwrap_err()
+                .code,
+            ErrorCode::InputTooLong
+        );
+        assert_eq!(store.snapshot().unwrap(), committed);
+        assert!(
+            store
+                .save(
+                    json!({"schemaVersion": 3, "background": "plain", "customBackground": null}),
+                    1
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn future_image_formats_remain_intact_for_frontend_future_version_protection() {
+        let settings =
+            json!({"schemaVersion": 4, "customBackground": {"futureImage": "new-format"}});
+        assert!(validate_settings(&settings).is_ok());
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let snapshot = SettingsStore::open(path.clone())
+            .unwrap()
+            .save(settings.clone(), 0)
+            .unwrap();
+        assert_eq!(
+            SettingsStore::open(path).unwrap().snapshot().unwrap(),
+            snapshot
+        );
+        assert_eq!(snapshot.settings, settings);
     }
 
     #[test]

@@ -164,7 +164,7 @@ export function collectUpdaterMetadata({
 
 export function mergeUpdaterMetadata(
   records,
-  { version, repository, now = new Date() },
+  { version, repository, now = new Date(), notes },
 ) {
   repositoryName(repository);
   if (!Array.isArray(records) || records.length !== Object.keys(TARGETS).length)
@@ -223,7 +223,10 @@ export function mergeUpdaterMetadata(
   }
   return {
     version,
-    notes: `Release v${version}`,
+    notes:
+      typeof notes === "string" && notes.trim()
+        ? notes.trim().slice(0, 8000)
+        : `Release v${version}`,
     pub_date: now.toISOString(),
     platforms: Object.fromEntries(
       Object.entries(platforms).sort(([a], [b]) => a.localeCompare(b)),
@@ -353,10 +356,6 @@ function main() {
   const files = readdirSync(source, { recursive: true }).filter((path) =>
     path.endsWith(".json"),
   );
-  const manifest = mergeUpdaterMetadata(
-    files.map((file) => json(join(source, file))),
-    { version, repository },
-  );
   const assets = JSON.parse(
     command(
       "gh",
@@ -367,7 +366,7 @@ function main() {
         "--repo",
         repository,
         "--json",
-        "assets,isDraft,tagName",
+        "assets,isDraft,tagName,body",
       ],
       root,
       { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" },
@@ -375,6 +374,10 @@ function main() {
   );
   if (!assets.isDraft || assets.tagName !== `v${version}`)
     throw new Error("更新元数据只能上传到本次版本的 draft Release");
+  const manifest = mergeUpdaterMetadata(
+    files.map((file) => json(join(source, file))),
+    { version, repository, notes: assets.body },
+  );
   const available = new Set(assets.assets.map((asset) => asset.url));
   for (const value of Object.values(manifest.platforms)) {
     if (!available.has(value.url) || !available.has(`${value.url}.sig`))

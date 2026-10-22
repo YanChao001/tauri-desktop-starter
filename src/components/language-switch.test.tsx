@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageSwitch } from "./language-switch";
 import { I18nProvider, useI18n } from "@/providers/i18n";
 import { SettingsProvider } from "@/providers/settings";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(
   Element.prototype,
@@ -18,9 +19,11 @@ function renderSwitches() {
   return render(
     <SettingsProvider>
       <I18nProvider>
-        <LanguageSwitch />
-        <LanguageSwitch compact />
-        <TranslatedContent />
+        <TooltipProvider>
+          <LanguageSwitch />
+          <LanguageSwitch compact />
+          <TranslatedContent />
+        </TooltipProvider>
       </I18nProvider>
     </SettingsProvider>,
   );

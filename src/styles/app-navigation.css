@@ -30,9 +30,7 @@ html[data-motion="reduced"] .app-route-enter {
 
 .app-sidebar-navigation {
   padding: 0 0.5rem 0.75rem;
-  overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
 }
 
 .app-sidebar-group + .app-sidebar-group {
@@ -78,12 +76,12 @@ html[data-motion="reduced"] .app-route-enter {
 }
 
 .app-sidebar-link:hover {
-  background: color-mix(in oklch, var(--sidebar-accent) 58%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 58%, transparent);
   color: var(--sidebar-foreground);
 }
 
 .app-sidebar-link[aria-current="page"] {
-  background: color-mix(in oklch, var(--sidebar-accent) 86%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
   color: var(--sidebar-foreground);
   font-weight: 500;
 }
@@ -107,7 +105,7 @@ html[data-motion="reduced"] .app-route-enter {
 .app-sidebar-command {
   min-height: 36px;
   border: 1px solid var(--sidebar-border);
-  background: color-mix(in oklch, var(--sidebar-accent) 22%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 22%, transparent);
   color: var(--muted-foreground);
   font-size: 0.72rem;
   transition:
@@ -116,7 +114,7 @@ html[data-motion="reduced"] .app-route-enter {
 }
 
 .app-sidebar-command:hover {
-  background: color-mix(in oklch, var(--sidebar-accent) 66%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 66%, transparent);
   color: var(--sidebar-foreground);
 }
 
@@ -215,6 +213,165 @@ html[data-motion="reduced"] .app-route-enter {
   border-radius: 50%;
   background: var(--primary);
   opacity: 0.65;
+}
+
+.app-title-menu-trigger {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  padding-inline: 0.65rem;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+.app-title-menu-trigger:is(:hover, [data-state="open"]),
+.app-title-language:is(:hover, [data-state="open"]) {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+.app-title-menu-trigger:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.app-title-language[data-size="sm"] {
+  height: 32px;
+}
+.settings-studio {
+  container: settings / inline-size;
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 1.25rem;
+}
+.settings-row-control {
+  min-width: 0;
+  max-width: 100%;
+  justify-self: end;
+}
+.skin-gallery {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.skin-gallery-card {
+  min-width: 0;
+}
+.wallpaper-library {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  background: color-mix(in oklab, var(--background) 45%, transparent);
+}
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: 0.75rem;
+}
+.wallpaper-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+}
+.wallpaper-card[data-selected="true"] {
+  border-color: var(--primary);
+}
+.wallpaper-thumbnail {
+  position: relative;
+  display: block;
+  aspect-ratio: 1.7;
+  overflow: hidden;
+  background: var(--muted);
+  cursor: pointer;
+}
+.wallpaper-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wallpaper-thumbnail:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.wallpaper-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 7rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+.custom-skin-check {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+@container settings (max-width: 620px) {
+  .skin-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container settings (max-width: 420px) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
+  }
+  .settings-row-control {
+    max-width: 100%;
+  }
+}
+
+.app-shell-immersive .app-chrome,
+.app-shell-immersive .app-sidebar,
+.app-shell-immersive .app-route-context {
+  display: none;
+}
+.app-shell-immersive .app-main {
+  inset: 0;
+}
+.immersive-exit {
+  position: fixed;
+  top: 0;
+  right: 1rem;
+  z-index: 30;
+  padding: 0.75rem 0.25rem;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.immersive-exit:is(:hover, :focus-within) {
+  opacity: 1;
+}
+.immersive-exit kbd {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+@media (hover: none), (forced-colors: active) {
+  .immersive-exit {
+    opacity: 1;
+  }
 }
 
 .app-sidebar[data-motion="reduced"] .app-sidebar-group-heading::before,

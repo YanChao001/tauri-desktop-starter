@@ -37,6 +37,49 @@ const config = {
 const PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDExMjgyNEJFMDZDREQ3QjAKUldTdzE4MEd2aVFvRVJNSlV1SVZldmFLWHlhMjdWSW9Sb3Rkdm10WklRYmFLbUtnWmhwcmJXSUMK";
 
+test("a derived identity does not inherit the template's update signing trust", (t) => {
+  for (const patch of [
+    { identifier: "com.example.new-app" },
+    { repositoryUrl: "https://github.com/example/derived" },
+  ]) {
+    const { root } = fixture(t);
+    writeFileSync(
+      join(root, "app.config.json"),
+      JSON.stringify({
+        ...config,
+        updates: {
+          endpoint: "https://example.com/latest.json",
+          publicKey: PUBLIC_KEY,
+        },
+      }),
+    );
+    applyInitialization(prepareInitialization(root, patch));
+    assert.equal(
+      JSON.parse(readFileSync(join(root, "app.config.json"), "utf8")).updates
+        .publicKey,
+      "",
+    );
+  }
+});
+
+test("an explicitly supplied update public key is preserved during derivation", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(
+    prepareInitialization(root, {
+      identifier: "com.example.new-app",
+      updates: {
+        endpoint: "https://example.com/latest.json",
+        publicKey: PUBLIC_KEY,
+      },
+    }),
+  );
+  assert.equal(
+    JSON.parse(readFileSync(join(root, "app.config.json"), "utf8")).updates
+      .publicKey,
+    PUBLIC_KEY,
+  );
+});
+
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "starter-init-test-"));
   t.after(() => {

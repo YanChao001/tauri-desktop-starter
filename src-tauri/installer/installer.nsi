@@ -81,13 +81,13 @@ Var StarterHeaderBitmap
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
 ; 品牌定制开始
-; 与 resources/branding 的折页 / 星辉插画共用明亮底色与蓝紫强调色。
+; 与 resources/branding 的薄荷猫咪图标和纸叶插画共用轻盈绿色。
 ; 保留原生向导、DPI 缩放、键盘导航与系统按钮，只定制视觉和排版。
 !define MUI_BGCOLOR "0xFFFFFF"
-!define MUI_TEXTCOLOR "0x24304B"
+!define MUI_TEXTCOLOR "0x243D35"
 !define MUI_HEADERIMAGE_RIGHT
 !define MUI_HEADER_TRANSPARENT_TEXT
-!define MUI_INSTFILESPAGE_COLORS "334155 F8FAFC"
+!define MUI_INSTFILESPAGE_COLORS "36544A F4FBF7"
 !define MUI_CUSTOMFUNCTION_GUIINIT StarterGuiInit
 !define MUI_CUSTOMFUNCTION_UNGUIINIT un.StarterGuiInit
 ; 品牌定制结束
@@ -178,9 +178,37 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
 
 ; 安装器页面按显示顺序声明
-; 使用 GDI HALFTONE 将三倍分辨率原图缩放到实际控件像素尺寸。
+; 页眉完整显示，侧栏铺满控件；字体与 DPI 改变字段比例时仍保持等比。
+; 输出为绘制宽、高、居中坐标；MulDiv 避免先除法造成的精度损失。
+!macro StarterFitBitmap WIDTH HEIGHT SOURCEWIDTH SOURCEHEIGHT MODE
+  StrCpy $R7 ${WIDTH}
+  System::Call 'KERNEL32::MulDiv(i ${WIDTH},i ${SOURCEHEIGHT},i ${SOURCEWIDTH})i.R8'
+  !if "${MODE}" == "cover"
+    ${If} $R8 < ${HEIGHT}
+  !else if "${MODE}" == "contain"
+    ${If} $R8 > ${HEIGHT}
+  !else
+    !error "Unsupported bitmap fit mode: ${MODE}"
+  !endif
+    StrCpy $R8 ${HEIGHT}
+    System::Call 'KERNEL32::MulDiv(i ${HEIGHT},i ${SOURCEWIDTH},i ${SOURCEHEIGHT})i.R7'
+  ${EndIf}
+  ${If} $R7 < 1
+    StrCpy $R7 1
+  ${EndIf}
+  ${If} $R8 < 1
+    StrCpy $R8 1
+  ${EndIf}
+  IntOp $R9 ${WIDTH} - $R7
+  IntOp $R9 $R9 / 2
+  IntOp $4 ${HEIGHT} - $R8
+  IntOp $4 $4 / 2
+!macroend
+
+; 使用 GDI HALFTONE 等比缩放原图，侧栏居中裁切装饰边缘以消除上下白边。
+; 目标明确使用 24 位 DIB，避免主题控件把 32 位 DDB 的未定义 alpha 当作透明图片。
 ; 保持 MUI 的布局和图片生命周期；加载失败时保留 MUI 已设置的图片。
-!macro StarterSetSharpBitmap CONTROL PATH RESULT
+!macro StarterSetSharpBitmap CONTROL PATH RESULT MODE
   System::Store "S"
   StrCpy $0 ${CONTROL}
   System::Call 'USER32::LoadImage(p0,t "${PATH}",i0,i0,i0,i0x2010)p.r1'
@@ -189,13 +217,13 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
     StrCpy $R6 0
     System::Call '*(i0,i0,i0,i0,i0,p0)p.r4'
     ${If} $4 P<> 0
-      System::Call 'GDI32::GetObject(pr1,i24,pr4)i.rR5'
+      System::Call 'GDI32::GetObject(pr1,i24,pr4)i.R5'
       System::Call '*$4(i,i.r5,i.r6)'
       System::Free $4
     ${EndIf}
     System::Call '*(i0,i0,i0,i0)p.r4'
     ${If} $4 P<> 0
-      System::Call 'USER32::GetClientRect(pr0,pr4)i.rR6'
+      System::Call 'USER32::GetClientRect(pr0,pr4)i.R6'
       System::Call '*$4(i,i,i.r2,i.r3)'
       System::Free $4
     ${EndIf}
@@ -205,33 +233,42 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
     ${AndIf} $6 > 0
     ${AndIf} $2 > 0
     ${AndIf} $3 > 0
-      System::Call 'USER32::GetDC(pr0)p.rR3'
-      System::Call 'GDI32::CreateCompatibleDC(prR3)p.r7'
-      System::Call 'GDI32::CreateCompatibleDC(prR3)p.r8'
-      System::Call 'GDI32::CreateCompatibleBitmap(prR3,ir2,ir3)p.r9'
+      System::Call 'USER32::GetDC(pr0)p.R3'
+      System::Call 'GDI32::CreateCompatibleDC(pR3)p.r7'
+      System::Call 'GDI32::CreateCompatibleDC(pR3)p.r8'
+      StrCpy $9 0
+      System::Call '*(i40,ir2,ir3,&i2 1,&i2 24,i0,i0,i0,i0,i0,i0)p.r4'
+      ${If} $4 P<> 0
+        System::Call 'GDI32::CreateDIBSection(pR3,pr4,i0,*p.R2,p0,i0)p.r9'
+        System::Free $4
+      ${EndIf}
       ${If} $R3 P<> 0
       ${AndIf} $7 P<> 0
       ${AndIf} $8 P<> 0
       ${AndIf} $9 P<> 0
-        System::Call 'GDI32::SelectObject(pr7,pr1)p.rR0'
-        System::Call 'GDI32::SelectObject(pr8,pr9)p.rR1'
+        System::Call 'GDI32::SelectObject(pr7,pr1)p.R0'
+        System::Call 'GDI32::SelectObject(pr8,pr9)p.R1'
         StrCpy $R4 0
         ${If} $R0 P<> 0
         ${AndIf} $R0 P<> -1
         ${AndIf} $R1 P<> 0
         ${AndIf} $R1 P<> -1
-          System::Call 'GDI32::SetStretchBltMode(pr8,i4)i.rR5'
-          System::Call 'GDI32::SetBrushOrgEx(pr8,i0,i0,p0)i.rR6'
+          !insertmacro StarterFitBitmap $2 $3 $5 $6 ${MODE}
+          System::Call 'GDI32::PatBlt(pr8,i0,i0,ir2,ir3,i0x00FF0062)i.R5'
+          System::Call 'GDI32::SetStretchBltMode(pr8,i4)i.R6'
           ${If} $R5 <> 0
           ${AndIf} $R6 <> 0
-            System::Call 'GDI32::StretchBlt(pr8,i0,i0,ir2,ir3,pr7,i0,i0,ir5,ir6,i0x00CC0020)i.rR4'
+            System::Call 'GDI32::SetBrushOrgEx(pr8,i0,i0,p0)i.R5'
+            ${If} $R5 <> 0
+              System::Call 'GDI32::StretchBlt(pr8,iR9,ir4,iR7,iR8,pr7,i0,i0,ir5,ir6,i0x00CC0020)i.R4'
+            ${EndIf}
           ${EndIf}
         ${EndIf}
-        System::Call 'GDI32::SelectObject(pr7,prR0)'
-        System::Call 'GDI32::SelectObject(pr8,prR1)'
+        System::Call 'GDI32::SelectObject(pr7,pR0)'
+        System::Call 'GDI32::SelectObject(pr8,pR1)'
         ${If} $R4 <> 0
           SendMessage $0 ${STM_SETIMAGE} ${IMAGE_BITMAP} $9 $R2
-          System::Call 'GDI32::DeleteObject(prR2)'
+          System::Call 'GDI32::DeleteObject(pR2)'
           StrCpy ${RESULT} $9
           StrCpy $9 0
         ${EndIf}
@@ -239,22 +276,60 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
       System::Call 'GDI32::DeleteObject(pr9)'
       System::Call 'GDI32::DeleteDC(pr7)'
       System::Call 'GDI32::DeleteDC(pr8)'
-      System::Call 'USER32::ReleaseDC(pr0,prR3)'
+      System::Call 'USER32::ReleaseDC(pr0,pR3)'
     ${EndIf}
     System::Call 'GDI32::DeleteObject(pr1)'
   ${EndIf}
   System::Store "L"
 !macroend
 
+; 以当前语言字体和 DPI 的对话框单位收紧页脚，保留各内容页的原生布局。
+; 标准 MUI 页脚为 29du；按钮上移 5du、窗口缩短 9du，得到 20du 页脚。
+; 14du 按钮上下各保留 3du，内容页与分隔线的位置不变。
+!macro StarterCompactFooter
+  System::Store "S"
+  System::Call '*(i0,i5,i0,i9)p.r0'
+  System::Call 'USER32::MapDialogRect(p $HWNDPARENT,pr0)i.r1'
+  ${If} $1 <> 0
+    System::Call '*$0(i,i.r8,i,i.r9)'
+    !insertmacro StarterMoveFooterButton 1
+    !insertmacro StarterMoveFooterButton 2
+    !insertmacro StarterMoveFooterButton 3
+    System::Call 'USER32::GetWindowRect(p $HWNDPARENT,pr0)i.r1'
+    ${If} $1 <> 0
+      System::Call '*$0(i.r2,i.r3,i.r4,i.r5)'
+      IntOp $4 $4 - $2
+      IntOp $5 $5 - $3
+      IntOp $5 $5 - $9
+      System::Call 'USER32::SetWindowPos(p $HWNDPARENT,p0,i0,i0,ir4,ir5,i0x16)'
+    ${EndIf}
+  ${EndIf}
+  System::Free $0
+  System::Store "L"
+!macroend
+
+!macro StarterMoveFooterButton ID
+  GetDlgItem $6 $HWNDPARENT ${ID}
+  System::Call 'USER32::GetWindowRect(pr6,pr0)i.r1'
+  ${If} $1 <> 0
+    System::Call 'USER32::MapWindowPoints(p0,p $HWNDPARENT,pr0,i2)'
+    System::Call '*$0(i.r2,i.r3)'
+    IntOp $3 $3 - $8
+    System::Call 'USER32::SetWindowPos(pr6,p0,ir2,ir3,i0,i0,i0x15)'
+  ${EndIf}
+!macroend
+
 Function StarterGuiInit
+  !insertmacro StarterCompactFooter
   !ifdef MUI_HEADERIMAGE
-    !insertmacro StarterSetSharpBitmap $mui.Header.Image "$PLUGINSDIR\modern-header.bmp" $StarterHeaderBitmap
+    !insertmacro StarterSetSharpBitmap $mui.Header.Image "$PLUGINSDIR\modern-header.bmp" $StarterHeaderBitmap contain
   !endif
 FunctionEnd
 
 Function un.StarterGuiInit
+  !insertmacro StarterCompactFooter
   !ifdef MUI_HEADERIMAGE
-    !insertmacro StarterSetSharpBitmap $mui.Header.Image "$PLUGINSDIR\modern-header.bmp" $StarterHeaderBitmap
+    !insertmacro StarterSetSharpBitmap $mui.Header.Image "$PLUGINSDIR\modern-header.bmp" $StarterHeaderBitmap contain
   !endif
 FunctionEnd
 
@@ -283,16 +358,16 @@ FunctionEnd
 ; 保留 MUI 按 DPI 换算的对话框单位布局，在显示前替换默认标题字体
 ; 字体变量与页面宏保持一致
 Function StarterWelcomeShow
-  !insertmacro StarterSetSharpBitmap $mui.WelcomePage.Image "$PLUGINSDIR\modern-wizard.bmp" $mui.WelcomePage.Image.Bitmap
+  !insertmacro StarterSetSharpBitmap $mui.WelcomePage.Image "$PLUGINSDIR\modern-wizard.bmp" $mui.WelcomePage.Image.Bitmap cover
   System::Call 'gdi32::DeleteObject(p $mui.WelcomePage.Title.Font)'
-  CreateFont $mui.WelcomePage.Title.Font "$(^Font)" "18" "700"
+  CreateFont $mui.WelcomePage.Title.Font "$(^Font)" "14" "600"
   SendMessage $mui.WelcomePage.Title ${WM_SETFONT} $mui.WelcomePage.Title.Font 1
   ; nsDialogs 标签不会继承主对话框按语言设置的字体
   Push $0
   SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $0
   SendMessage $mui.WelcomePage.Text ${WM_SETFONT} $0 1
   Pop $0
-  SetCtlColors $mui.WelcomePage.Text "566078" "FFFFFF"
+  SetCtlColors $mui.WelcomePage.Text "536B61" "FFFFFF"
 FunctionEnd
 
 ; 2. 许可证页面（配置许可证时显示）
@@ -557,9 +632,9 @@ Var AppStartMenuFolder
 !insertmacro MUI_PAGE_FINISH
 
 Function StarterFinishShow
-  !insertmacro StarterSetSharpBitmap $mui.FinishPage.Image "$PLUGINSDIR\modern-wizard.bmp" $mui.FinishPage.Image.Bitmap
+  !insertmacro StarterSetSharpBitmap $mui.FinishPage.Image "$PLUGINSDIR\modern-wizard.bmp" $mui.FinishPage.Image.Bitmap cover
   System::Call 'gdi32::DeleteObject(p $mui.FinishPage.Title.Font)'
-  CreateFont $mui.FinishPage.Title.Font "$(^Font)" "18" "700"
+  CreateFont $mui.FinishPage.Title.Font "$(^Font)" "14" "600"
   SendMessage $mui.FinishPage.Title ${WM_SETFONT} $mui.FinishPage.Title.Font 1
   Push $0
   SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $0
@@ -567,7 +642,7 @@ Function StarterFinishShow
   SendMessage $mui.FinishPage.Run ${WM_SETFONT} $0 1
   SendMessage $mui.FinishPage.ShowReadme ${WM_SETFONT} $0 1
   Pop $0
-  SetCtlColors $mui.FinishPage.Text "566078" "FFFFFF"
+  SetCtlColors $mui.FinishPage.Text "536B61" "FFFFFF"
 FunctionEnd
 
 Function RunMainBinary
@@ -632,7 +707,8 @@ FunctionEnd
 ; 页面宏引用独立的 LangString，避免覆盖 NSIS 内置翻译及重复定义警告。
 ; 新增安装语言时，同时补齐这四个字符串。
 !ifdef LANG_SIMPCHINESE
-  SetFont /LANG=${LANG_SIMPCHINESE} "Microsoft YaHei UI" 9
+  ; 中文使用自身字体度量，避免 Segoe UI 的窄字符宽度压缩向导与侧栏图片。
+  SetFont /LANG=${LANG_SIMPCHINESE} "Microsoft YaHei UI" 8
   LangString StarterWelcomeTitle ${LANG_SIMPCHINESE} "开始安装"
   LangString StarterWelcomeText ${LANG_SIMPCHINESE} "${PRODUCTNAME}$\r$\n版本 ${VERSION}$\r$\n$\r$\n接下来选择安装位置，即可将应用添加到这台电脑。$\r$\n$\r$\n$_CLICK"
   LangString StarterFinishTitle ${LANG_SIMPCHINESE} "安装完成"
@@ -640,7 +716,7 @@ FunctionEnd
 !endif
 
 !ifdef LANG_ENGLISH
-  SetFont /LANG=${LANG_ENGLISH} "Segoe UI" 9
+  SetFont /LANG=${LANG_ENGLISH} "Segoe UI" 8
   LangString StarterWelcomeTitle ${LANG_ENGLISH} "Ready to install"
   LangString StarterWelcomeText ${LANG_ENGLISH} "${PRODUCTNAME}$\r$\nVersion ${VERSION}$\r$\n$\r$\nChoose where to install the app on this computer.$\r$\n$\r$\n$_CLICK"
   LangString StarterFinishTitle ${LANG_ENGLISH} "Installation complete"

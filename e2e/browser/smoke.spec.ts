@@ -92,6 +92,13 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await page.getByRole("button", { name: "Run GET", exact: true }).click();
   const result = page.getByRole("region", { name: "Validated response" });
   await expect(result).toContainText('"source": "fixture"');
+  const json = result.locator('code[data-language="json"]');
+  await expect(
+    json.locator('[data-token="property"]').filter({ hasText: /^"source"$/ }),
+  ).toBeVisible();
+  await expect(
+    json.locator('[data-token="string"]').filter({ hasText: /^"fixture"$/ }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Read cache / fetch" }).click();
   await expect(
     page.getByText("Used fresh cached data without a new request."),
@@ -226,10 +233,14 @@ for (const route of ["network", "data-studio", "media", "catalog"]) {
   }, testInfo) => {
     await page.goto(`./#/${route}`);
     await expect(page.locator("main h2").first()).toBeVisible();
-    if (route === "media")
+    if (route === "media") {
+      await page
+        .getByRole("tab", { name: "Data visualization", exact: true })
+        .click();
       await expect(
         page.getByRole("img", { name: /One week of demo metrics/ }),
       ).toBeVisible();
+    }
     const result = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
@@ -289,12 +300,16 @@ for (const profile of [
     for (const route of ["catalog", "network", "data-studio", "media"]) {
       await page.goto(`./#/${route}`);
       await expect(page.locator("main h2").first()).toBeVisible();
-      if (route === "media")
+      if (route === "media") {
+        await page
+          .getByRole("tab", { name: /Data visualization|数据可视化/ })
+          .click();
         await expect(
           page.getByRole("img", {
             name: /One week of demo metrics|一周演示指标/,
           }),
         ).toBeVisible();
+      }
       await expect
         .poll(() =>
           page
@@ -307,6 +322,14 @@ for (const profile of [
         animations: "disabled",
       });
       if (route === "media" || route === "data-studio") {
+        await page
+          .getByRole("tab", {
+            name:
+              route === "media"
+                ? /Live connections|实时通信/
+                : /Conditional form|条件表单/,
+          })
+          .click();
         await page.locator("main form").last().scrollIntoViewIfNeeded();
         await page.screenshot({
           path: testInfo.outputPath(`${route}-${profile.name}-details.png`),

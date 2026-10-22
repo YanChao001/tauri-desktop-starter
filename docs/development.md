@@ -81,37 +81,39 @@ node scripts/doctor.mjs --json
 
 ## 常用命令
 
-| 命令                                       | 作用                                                            | 什么时候用                   |
-| ------------------------------------------ | --------------------------------------------------------------- | ---------------------------- |
-| `pnpm app:dev`                             | 启动完整桌面应用（含 Rust）                                     | 日常开发，需要系统能力时     |
-| `pnpm run doctor`                          | 实际检查工具与平台环境                                          | 首次启动、环境异常           |
-| `pnpm init:project`                        | 同步品牌、应用身份与精简默认模式                                | 派生新项目                   |
-| `pnpm bindings:generate`                   | 从 Rust 导出 TypeScript IPC 绑定                                | 修改命令或 DTO 后            |
-| `pnpm bindings:check`                      | 检查生成绑定未漂移                                              | 提交原生改动前               |
-| `pnpm test:e2e`                            | 隔离构建并运行真实桌面进程测试                                  | 改启动、窗口或 IPC 主链路后  |
-| `pnpm test:browser`                        | 测试已构建浏览器产物的子路径、交互、键盘与 axe                  | 浏览器部署前，需 Playwright  |
-| `pnpm dev`                                 | 只起 Vite（localhost:1420）                                     | 纯调样式，不想等 Rust 编译   |
-| `pnpm app:build`                           | 构建安装包并收集到版本化 `artifacts/`                           | 出测试包 / 发布              |
-| `pnpm app:portable`                        | 收集 Windows exe 与说明到版本化 `artifacts/`                    | 内测分发、免安装场景         |
-| `pnpm build`                               | 只构建前端 `dist/`                                              | 前端验证或原生构建前置       |
-| `pnpm preview`                             | 通过本地 HTTP 服务预览 `dist/`                                  | 检查前端构建结果，无原生能力 |
-| `pnpm build:web`                           | 构建浏览器演示到 `dist-web/`                                    | 在线演示发布                 |
-| `pnpm exec vite preview --outDir dist-web` | 通过本地 HTTP 服务预览浏览器演示                                | 检查演示构建与路由           |
-| `pnpm verify`                              | 格式、品牌一致性、lint、类型、前端/脚本测试、版本检查、前端构建 | 完整自查；日常按改动选择检查 |
-| `pnpm test`                                | 执行单元测试                                                    | 逻辑变更后                   |
-| `pnpm test:watch`                          | 测试监听模式                                                    | 边写边测                     |
-| `pnpm test:coverage`                       | 生成覆盖率报告                                                  | 想知道哪里没测到             |
-| `pnpm test:scripts`                        | Node 构建与版本脚本回归测试                                     | 修改脚本后                   |
-| `pnpm typecheck`                           | 类型检查，不产物                                                | 排查类型错误                 |
-| `pnpm lint`                                | ESLint                                                          | 排查越界与未使用变量         |
-| `pnpm lint:fix`                            | ESLint 自动修复                                                 | 批量修小问题                 |
-| `pnpm format`                              | Prettier 格式化                                                 | 提交前                       |
-| `pnpm clean:artifacts`                     | 只删 `artifacts/`，保留 Rust 编译缓存                           | 清理最终分发文件             |
-| `pnpm clean:temporary`                     | 清理固定临时产物与缓存，保留正式版本包和实际依赖                | 释放磁盘并继续保留分发结果   |
-| `pnpm clean`                               | 清理默认构建产物与缓存，见下节                                  | 磁盘吃紧、构建状态异常       |
-| `pnpm clean:all`                           | 连同 `node_modules` 一起删                                      | 依赖损坏，需要彻底重装       |
-| `pnpm version:set x.y.z`                   | 同步四处版本号                                                  | 发布时                       |
-| `pnpm version:check`                       | 检查配置、清单与锁文件的版本一致性                              | 修改版本或发布前             |
+| 命令                                       | 作用                                                            | 什么时候用                                           |
+| ------------------------------------------ | --------------------------------------------------------------- | ---------------------------------------------------- |
+| `pnpm app:dev`                             | 启动完整桌面应用（含 Rust）                                     | 日常开发，需要系统能力时                             |
+| `pnpm run doctor`                          | 实际检查工具与平台环境                                          | 首次启动、环境异常                                   |
+| `pnpm init:project`                        | 同步品牌、应用身份与精简默认模式                                | 派生新项目                                           |
+| `pnpm bindings:generate`                   | 从 Rust 导出 TypeScript IPC 绑定                                | 修改命令或 DTO 后                                    |
+| `pnpm bindings:check`                      | 检查生成绑定未漂移                                              | 提交原生改动前                                       |
+| `pnpm test:ui`                             | 构建浏览器产物并无头运行界面检查，不弹出测试窗口                | 日常样式、布局和交互回归                             |
+| `pnpm test:e2e --interactive`              | 隔离构建并运行真实桌面进程测试，会激活窗口                      | 独立 CI / 虚拟机或前台验收时段                       |
+| `pnpm docs:previews`                       | 同步已采集的 Windows 原生截图，不启动窗口                       | [更新 README 图片](./testing.md#readme-原生截图更新) |
+| `pnpm test:browser`                        | 测试已构建浏览器产物的子路径、交互、键盘与 axe                  | 浏览器部署前，需 Playwright                          |
+| `pnpm dev`                                 | 只起 Vite（localhost:1420）                                     | 纯调样式，不想等 Rust 编译                           |
+| `pnpm app:build`                           | 构建安装包并收集到版本化 `artifacts/`                           | 出测试包 / 发布                                      |
+| `pnpm app:portable`                        | 收集 Windows exe 与说明到版本化 `artifacts/`                    | 内测分发、免安装场景                                 |
+| `pnpm build`                               | 只构建前端 `dist/`                                              | 前端验证或原生构建前置                               |
+| `pnpm preview`                             | 通过本地 HTTP 服务预览 `dist/`                                  | 检查前端构建结果，无原生能力                         |
+| `pnpm build:web`                           | 构建浏览器演示到 `dist-web/`                                    | 在线演示发布                                         |
+| `pnpm exec vite preview --outDir dist-web` | 通过本地 HTTP 服务预览浏览器演示                                | 检查演示构建与路由                                   |
+| `pnpm verify`                              | 格式、品牌一致性、lint、类型、前端/脚本测试、版本检查、前端构建 | 完整自查；日常按改动选择检查                         |
+| `pnpm test`                                | 执行单元测试                                                    | 逻辑变更后                                           |
+| `pnpm test:watch`                          | 测试监听模式                                                    | 边写边测                                             |
+| `pnpm test:coverage`                       | 生成覆盖率报告                                                  | 想知道哪里没测到                                     |
+| `pnpm test:scripts`                        | Node 构建与版本脚本回归测试                                     | 修改脚本后                                           |
+| `pnpm typecheck`                           | 类型检查，不产物                                                | 排查类型错误                                         |
+| `pnpm lint`                                | ESLint                                                          | 排查越界与未使用变量                                 |
+| `pnpm lint:fix`                            | ESLint 自动修复                                                 | 批量修小问题                                         |
+| `pnpm format`                              | Prettier 格式化                                                 | 提交前                                               |
+| `pnpm clean:artifacts`                     | 只删 `artifacts/`，保留 Rust 编译缓存                           | 清理最终分发文件                                     |
+| `pnpm clean:temporary`                     | 清理固定临时产物与缓存，保留正式版本包和实际依赖                | 释放磁盘并继续保留分发结果                           |
+| `pnpm clean`                               | 清理默认构建产物与缓存，见下节                                  | 磁盘吃紧、构建状态异常                               |
+| `pnpm clean:all`                           | 连同 `node_modules` 一起删                                      | 依赖损坏，需要彻底重装                               |
+| `pnpm version:set x.y.z`                   | 同步四处版本号                                                  | 发布时                                               |
+| `pnpm version:check`                       | 检查配置、清单与锁文件的版本一致性                              | 修改版本或发布前                                     |
 
 ## 清理构建产物
 
@@ -268,7 +270,7 @@ pnpm install --frozen-lockfile
 
 Rust 依赖还需评估编译时间和目标平台兼容性。
 
-现有新增演示库的用途、锁定版本、许可证和懒加载边界集中在 [依赖与加载](./demo-modules.md#依赖与加载)。升级依赖时同步该记录；构建分块体积是输出证据，不是常驻内存或启动性能。
+现有演示库的用途、许可证和加载边界见 [依赖与加载](./demo-modules.md#依赖与加载)，精确版本读取锁文件。升级时核对这些边界，构建体积与运行性能分别测量。
 
 ## IDE 配置
 
@@ -286,6 +288,8 @@ Rust 依赖还需评估编译时间和目标平台兼容性。
 VS Code 资源管理器默认隐藏 `dist/`、`dist-web/` 与 `src-tauri/target/`，搜索和文件监听也排除这些生成目录；Vite 的开发监听同步排除浏览器演示输出。`artifacts/` 保持可见，便于查找最终分发文件；隐藏设置不改变实际构建路径。
 
 ## 浏览器演示构建与部署
+
+网页直接展示占满视口的桌面界面，顶部只有应用标题栏；窄屏页面选择入口位于同一标题栏，不附加宣传、下载或演示说明外壳。
 
 在线演示直接构建根 `index.html` 与 `src/`，共用页面、样式、路由、词典和矢量资源。展厅、数据工作室、本地网络 fixture、媒体和设置在浏览器中运行；指定 HTTPS / WSS 示例依赖外部服务。原生能力入口说明环境限制，系统调用受 `lib/tauri.ts` 检查约束。浏览器偏好写入当前站点的 localStorage，桌面设置、笔记及任务由 Rust 维护；fixture 不冒充原生持久化或远程账户。
 

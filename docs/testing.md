@@ -42,6 +42,22 @@ pnpm exec prettier --check docs/testing.md
 
 新增测试应说明要防止哪种实际回归。可逆的样式、文案调整通常用预览确认；不复制配置数组、不重复测试第三方库本身，也不为已经被类型检查约束的普通赋值增加测试。自定义组件的行为修复、数据持久化、并发和外部输入边界仍保留针对性回归。
 
+## 避免干扰本机桌面
+
+日常界面回归默认使用无头浏览器，鼠标、键盘和页面焦点操作在测试浏览器内部完成。不要为每次样式、翻译或布局修改重复打开真实桌面窗口。
+
+| 命令                          | 桌面影响与用途                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm test:ui`                | 先构建浏览器产物，再运行无头 Playwright；不显示浏览器窗口，适合用户继续工作时验证界面。 |
+| `pnpm e2e:build`              | 只构建隔离的原生测试程序，不启动应用窗口。                                              |
+| `pnpm test:e2e --interactive` | 显式运行真实桌面验收；会显示、激活和切换窗口，并验证最小化 / 恢复等行为。               |
+
+单独执行 `pnpm test:e2e` 或只带 `--skip-build` 会在构建、读取收据和创建进程之前退出，提示选择无头界面检查或显式的前台验收。CI 环境变量也不会自动绕过这个要求；仓库的独立 CI runner 使用 `--interactive` 保留原生覆盖。
+
+独立标识符和临时数据目录只隔离数据，不能隔离当前桌面的前台焦点。`windowsHide` 只隐藏子进程控制台，不隐藏应用 GUI，见 [Node.js 子进程选项](https://nodejs.org/api/child_process.html#child_processspawncommand-args-options)。无头浏览器由 [Playwright 的 headless 配置](https://playwright.dev/docs/test-use-options#other-options) 控制，仍可输出截图与 trace。
+
+真实窗口、原生 IPC 和安装器验收优先安排在独立 CI / 虚拟机，或用户明确安排的前台时段。未执行时如实列为待验证；浏览器通过不能代替原生结果。桌面截图需要原生窗口，本机用户仍在工作时沿用已有截图并标明更新待办，不通过反复最小化、移动窗口或删除生产代码中的焦点逻辑来伪造后台验收。
+
 ## 前端与脚本
 
 ```bash
@@ -69,10 +85,14 @@ pnpm verify
 以下场景按改动范围选用，不是每次迭代都要执行的清单。
 
 - 创意展厅：选择风格只改变局部预览；应用后核对主题、强调色、皮肤、强度与圆角；撤销恢复此前外观。检查暂停、命令面板入口和各导览目的地，精简首页不推广已隐藏的演示。
-- 交互场景：输入、选择与滑块真实更新预览；同页切换舞台保留编辑；演示协作者校验空值 / 格式 / 重复，角色修改和移除有结果；资料搜索、筛选、收藏、列表 / 网格与空态可用，模拟加载可取消。页面内数据不应被误写成原生持久化能力。
+- 交互场景：输入、选择与滑块真实更新预览；同页切换舞台保留编辑；协作者校验、角色修改和移除有结果；资料筛选、收藏、布局、空态与可取消加载可用，错误重试保留筛选与收藏。控件参照覆盖只读、禁用、错误关联和部分选择 / 全选，键盘可操作。
 - 动效实验室：参数、布局、倾斜和路径控制有实际反馈，Tab / 方向键 / Home / End 与焦点行为符合控件语义；重播与暂停按场景生效。减少动效后仍能使用输入、选择及阅读结果。
+- 体验导览与工作区：校验跨页 / 同页步骤、收起与精简过滤；工作区覆盖树键盘、右键菜单、焦点恢复、撤销、类型搜索多选、分栏与拖放移动。数据列显隐 / 调宽 / 详情和媒体标签切换保留输入。`e2e/browser/experience.spec.ts` 同时观察弹簧拖放与轨道流光在运行、暂停、离屏时的实际位置，并扫描四个动效场景的明暗主题。
 - 活动策略：分别模拟应用减少动效、系统偏好变化、暂停、文档隐藏、实际画布离屏及卸载。检查观察器与监听释放；CSS 动画、命令式播放和 Motion 布局都应验证，不能只断言一个 `data-active` 标记。
-- 导航与设置：分组、URL、演示 / 精简过滤和快捷入口一致；切页回到顶部且不抢焦点，同页设置搜索仍可聚焦；关于区折叠不影响其他设置，保存反馈保留。
+- 导航与设置：分组、URL、演示 / 精简过滤和快捷入口一致；切页只重置内容区，不抢焦点或改变侧栏位置，同页设置搜索仍可聚焦。菜单 / 语言选择框开关时内容宽度与背景位置稳定，滚动条位于标题栏下方，细轨道无箭头且离开后淡出。折叠不显示展开时残留的提示，连续聚焦 / 悬停时最多显示一条，切页和滚动后清除。关于区折叠不影响其他设置，成功安静、失败与重试仍可见。
+- 自定义背景：真实 PNG / JPEG / WebP 多选导入、去重、缩放与重编码，切换、重命名、填充方式和删除；损坏 / 超限 / 危险格式不替换当前图片，批次保留成功项；卸载或改选后晚到结果不改变当前背景。验证旧图片首次纳入图库、容量、损坏 / 未来图库拒写、刷新、原生双向多窗口同步和跨进程重启恢复，以及取消当前图片保留图库。浏览器需覆盖 IndexedDB 事务与跨标签页更新。
+- 风格画廊：核对八款疏朗手绘线稿；预览与实际加载同一 SVG 蒙版，明暗与强调色改变线条颜色，手动主题不被系统主题覆盖。暗色无固定青绿染色、光晕、模糊滤镜或发光投影。检查标题栏与侧栏能看清纹理，缩略主体不被裁断；内置线稿与纯黑 / 纯白自定义图片在最强背景档位下，正文、标题栏及侧栏仍有足够的阅读底色，次级文案达到 4.5:1 对比度。
+- 全屏沉浸：视图菜单、命令面板和 F11 共用实际全屏状态；进入后标题栏和侧栏隐藏，F11、Esc、顶部退出入口以及系统外部退出均能恢复布局，保留侧栏宽度 / 折叠偏好。拒绝全屏、快速重复操作与晚到订阅不留下伪全屏或泄漏。浏览器 Fullscreen API 测试不代替真实原生全屏验收。
 - 窗口尺寸：在真实桌面验证预设以逻辑像素标注，选择后立即应用并记忆；范围外预设禁用，标准预设随应用配置与可用工作区适配。手动拖动后显示实际尺寸，不误选其他预设；最大化 / 最小化 / 全屏时选择尺寸应先还原。模拟几何保存失败，确认错误与重试入口，保存成功提示必须等待持久化确认。
 - 启动位置：分别验证记住位置与居中策略的跨进程恢复，覆盖主 / 次窗口、多屏和原显示器不可用；居中发生在首次显示前，最大化 / 全屏状态正确恢复。切换策略不移动当前窗口，手动移动后重复激活仍保持原位。恢复默认设置覆盖已打开与已记忆窗口的尺寸，将策略恢复为记住位置并保留当前位置；偏好保存失败时保留确认框与错误。
 
@@ -114,24 +134,25 @@ IPC 改动后运行 `pnpm bindings:generate` 并提交生成文件；`bindings:c
 ## 浏览器生产构建冒烟
 
 ```bash
-pnpm build:web
 pnpm exec playwright install --only-shell chromium
-pnpm test:browser
+pnpm test:ui
 ```
 
-Linux CI 使用 `pnpm exec playwright install --with-deps --only-shell chromium` 准备系统库。[`playwright.config.ts`](../playwright.config.ts) 启动独立端口的 preview，刻意挂载在 `/desktop-demo/`，测试真实 `dist-web/`，不复用开发服务。结果及失败 trace / 截图在 `artifacts/browser/`，查看 trace 可用 `pnpm exec playwright show-trace <trace.zip>`。
+Linux CI 使用 `pnpm exec playwright install --with-deps --only-shell chromium` 准备系统库。`test:ui` 组合 `build:web` 与 `test:browser`；已构建本次源码时可单独执行 `pnpm test:browser`，定向复测可附加 `--grep`。[`playwright.config.ts`](../playwright.config.ts) 明确启用无头模式，启动独立端口的 preview，刻意挂载在 `/desktop-demo/`，测试真实 `dist-web/`，不复用开发服务。结果及失败 trace / 截图在 `artifacts/browser/`，查看 trace 可用 `pnpm exec playwright show-trace <trace.zip>`；交互 trace 查看器与 `--headed` 调试均属于有界面操作。
 
 [`smoke.spec.ts`](../e2e/browser/smoke.spec.ts) 覆盖子路径资源与 HashRouter 刷新、localStorage 偏好、无外部请求的网络 fixture、命令面板键盘、万条虚拟列表的末行与有限 DOM，以及明暗 / 中英 / 窄屏 / 880px 加宽侧栏下的溢出截图。axe 扫描指定演示页的 WCAG A / AA 问题；自动扫描通过不代表完整无障碍认证，仍需键盘、焦点、读屏和目标 WebView 复核。
+
+[`desktop-ui.spec.ts`](../e2e/browser/desktop-ui.spec.ts) 覆盖菜单、导航、滚动、提示与背景恢复；全部路由检查四组语言 / 主题 / 窗口下的溢出，并在明暗着色主题下扫描无障碍。控件回归检查七种强调色的主按钮及悬停对比度、部分选择样式、校验与原生控件明暗配色。真实桌面 [`desktop-ui.mjs`](../e2e/specs/desktop-ui.mjs) 验证窗口 / 跨窗口行为；文件输入夹具不代表已人工验收系统文件选择对话框。
 
 浏览器冒烟验证浏览器边界，不调用真实 Rust；桌面 E2E 与正式安装验收分别提供原生和分发证据。Pages 部署必须先通过这套生产构建冒烟。
 
 ## 真实桌面 E2E
 
 ```bash
-pnpm test:e2e
+pnpm test:e2e --interactive
 # 或分两步，适合复用刚生成的同一测试二进制
 pnpm e2e:build
-pnpm test:e2e --skip-build
+pnpm test:e2e --interactive --skip-build
 ```
 
 [`e2e/build.mjs`](../e2e/build.mjs) 使用当前 Rust host、独立 `src-tauri/target/e2e/` 缓存、debug / no-bundle 构建，以及 `e2e` Cargo feature 和 [测试配置](../src-tauri/tauri.e2e.conf.json)。测试程序不会归档到正式 `installers/` / `portable/`。
@@ -160,6 +181,27 @@ runner 直接启动内嵌 WebDriver 的测试程序，等待 `/status` 就绪，
 
 Linux CI 额外安装 WebKitGTK、Xvfb、DBus 与 Openbox，以提供真正的窗口管理；无桌面会话时，按 [`ci.yml` 的 `desktop-e2e` job](../.github/workflows/ci.yml) 准备依赖并运行其 DBus / Xvfb / Openbox 命令，单独加 `xvfb-run` 不能提供窗口管理器。macOS 保留系统红绿灯，窗口操作通过原生 API 验证。不能用 jsdom 通过或单个平台成功代替其他平台的真实结果。
 
+## README 原生截图更新
+
+中英文 README 共用的明暗预览，以及英文 README 引用的皮肤图库，由 [`ci.yml`](../.github/workflows/ci.yml) 的 `readme-previews` 任务更新：
+
+1. Windows 桌面 E2E 成功后，上传 `readme-previews-windows` 产物，保留 14 天；包含同轮采集的 `desktop-light.png`、`desktop-dark.png` 和 `desktop-skins-dark.png`。
+2. 相关源码、资源、依赖或截图流程推送到 `develop`，且整个质量门禁通过后，将这些图片同步到 `docs/assets/preview-light.png`、`preview-dark.png` 和 `skins-dark.png`，自动创建或更新 `docs/readme-previews` 分支到 `develop` 的 PR。实际截图一致时不创建新 PR。
+3. 若 `develop` 已有新提交，跳过旧提交的截图；仅文档或截图更新的推送不再次生成截图 PR，避免合并后循环更新。图片随截图 PR 合并生效，不直接推送保护分支。
+
+需要主动刷新时，在 Actions 的“持续集成”工作流中选择 `develop`，点击 **Run workflow**；这会重新运行完整 CI 并生成截图 PR。手动入口要求工作流已经存在于仓库默认分支，见 [GitHub 手动触发规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)。
+
+仓库 Settings → Actions → General → Workflow permissions 需启用 **Allow GitHub Actions to create and approve pull requests**。写权限仅授予截图同步任务的 `contents: write` 与 `pull-requests: write`，PR 事件不运行该任务，其余 CI 保持只读。PR 创建使用固定提交的 MIT 许可 [`peter-evans/create-pull-request`](https://github.com/peter-evans/create-pull-request)，仅在 CI 执行，不进入应用依赖和安装包；升级固定提交时检查上游变更。由 `GITHUB_TOKEN` 创建的 PR 按 GitHub 提示批准工作流后，仍须通过原有质量门禁和评审，见 [自动化触发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)。
+
+本地可下载上述产物并解压到 `artifacts/e2e/fresh/`；或在独立环境 / 已安排的前台时段，用当前源码完成 Windows 桌面 E2E。随后执行：
+
+```sh
+pnpm docs:previews          # 同步三张文档图片，不启动应用
+pnpm docs:previews --check  # 只检查与采集结果是否一致
+```
+
+[`readme-previews.mjs`](../scripts/readme-previews.mjs) 在写入前检查全部图片的 PNG 标识、窗口尺寸和明暗尺寸一致性；缺图或不合格时保留原图，提交中断则回滚已替换文件。同步只改三张约定图片，不重建应用。此检查依赖已采集的原生结果，不纳入常规 `pnpm verify`，也不能用浏览器截图冒充原生验收。
+
 ## 安装版与启动验收
 
 真实桌面 E2E 使用测试 feature 和 debug 构建，不能代替 release 安装包。修改启动、窗口生命周期、单实例、图标或安装配置后，在目标平台安装本次最终产物，至少验证：
@@ -180,7 +222,8 @@ Linux CI 额外安装 WebKitGTK、Xvfb、DBus 与 Openbox，以提供真正的�
 - `frontend`：冻结安装、品牌资源一致性、版本 / 脚本测试、格式、lint、类型、前端测试，以及桌面前端与浏览器演示的分别构建。
 - `browser-smoke`：构建浏览器产物，运行 Chromium 子路径 / 交互 / 无障碍冒烟，失败上传截图与 trace；Pages 部署另有相同门禁。
 - `rust`：三端 Clippy / Rust 测试；Windows 另跑格式和生成绑定检查。
-- `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志。
+- `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志，Windows 成功时另存 README 截图。
 - `quality-gate`：汇总全部检查，仅所有前置任务成功时通过；分支保护使用此项作为必需检查。
+- `readme-previews`：质量门禁通过后，为 `develop` 的相关源码推送或手动运行生成 [截图更新 PR](#readme-原生截图更新)；不参与应用测试门禁，也不直接改保护分支。
 
 CI 配置覆盖的目标平台，不等于当前开发机全部实测过。发布时仍需在目标平台检查安装 / 卸载、签名、自启动、托盘和真实版本升级，尤其不能用测试构建代替正式安装包验收。

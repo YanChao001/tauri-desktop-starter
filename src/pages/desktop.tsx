@@ -3,13 +3,8 @@ import { MonitorIcon, PowerIcon, PanelTopIcon } from "lucide-react";
 import { toast } from "sonner";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { SettingsPersistence } from "@/components/settings-persistence";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
+import { SettingRow } from "@/components/setting-row";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -87,70 +82,89 @@ export default function Desktop() {
       <ResourceError error={error} retry={() => void reload()} />
       <SettingsPersistence />
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <PowerIcon className="size-4" />
-            {t("desktop.autostart")}
-          </CardTitle>
-          <CardDescription>{t("desktop.autostartDescription")}</CardDescription>
-        </CardHeader>
         <CardContent>
-          <Switch
-            checked={data?.autostart ?? false}
-            disabled={loading || pending || !data?.autostartSupported}
-            onCheckedChange={(value) => void changeAutostart(value)}
-            aria-label={t("desktop.autostart")}
-          />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <PanelTopIcon className="size-4" />
-            {t("desktop.tray")}
-          </CardTitle>
-          <CardDescription>
-            {data?.trayAvailable
-              ? t("desktop.trayReady")
-              : t("desktop.trayUnavailable")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-start justify-between gap-6">
-          <div className="space-y-1">
-            <p className="text-sm">{t("desktop.background")}</p>
-            <p className="max-w-xl text-xs text-muted-foreground">
-              {t("desktop.backgroundDescription")}
-            </p>
-          </div>
-          <Switch
-            checked={settings.runInBackground}
-            disabled={
-              loading || (!data?.trayAvailable && !settings.runInBackground)
+          <SettingRow
+            label={
+              <span className="flex items-center gap-2">
+                <PowerIcon
+                  className="size-4 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                {t("desktop.autostart")}
+              </span>
             }
-            onCheckedChange={(value) => update({ runInBackground: value })}
-            aria-label={t("desktop.background")}
-          />
+            hint={t("desktop.autostartDescription")}
+          >
+            <Switch
+              checked={data?.autostart ?? false}
+              disabled={loading || pending || !data?.autostartSupported}
+              onCheckedChange={(value) => void changeAutostart(value)}
+              aria-label={t("desktop.autostart")}
+            />
+          </SettingRow>
         </CardContent>
       </Card>
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <MonitorIcon className="size-4" />
-            {t("desktop.windows")}
-          </CardTitle>
-          <CardDescription>{t("desktop.windowsDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Button
-            onClick={() => void openWindow()}
-            disabled={loading || pending}
-            data-testid="open-secondary-window"
+        <CardContent>
+          <SettingRow
+            label={
+              <span className="flex items-center gap-2">
+                <PanelTopIcon
+                  className="size-4 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                {t("desktop.background")}
+              </span>
+            }
+            hint={
+              <>
+                {t("desktop.backgroundDescription")}
+                <span className="mt-1 block">
+                  {data?.trayAvailable
+                    ? t("desktop.trayReady")
+                    : t("desktop.trayUnavailable")}
+                </span>
+              </>
+            }
           >
-            {t("desktop.openWindow")}
-          </Button>
-          {data?.secondaryOpen ? (
-            <Badge variant="secondary">{t("desktop.windowOpen")}</Badge>
-          ) : null}
+            <Switch
+              checked={settings.runInBackground}
+              disabled={
+                loading || (!data?.trayAvailable && !settings.runInBackground)
+              }
+              onCheckedChange={(value) => update({ runInBackground: value })}
+              aria-label={t("desktop.background")}
+            />
+          </SettingRow>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent>
+          <SettingRow
+            label={
+              <span className="flex items-center gap-2">
+                <MonitorIcon
+                  className="size-4 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                {t("desktop.windows")}
+              </span>
+            }
+            hint={t("desktop.windowsDescription")}
+          >
+            <div className="flex flex-col items-end gap-2">
+              <Button
+                onClick={() => void openWindow()}
+                disabled={loading || pending}
+                data-testid="open-secondary-window"
+              >
+                {t("desktop.openWindow")}
+              </Button>
+              {data?.secondaryOpen ? (
+                <Badge variant="secondary">{t("desktop.windowOpen")}</Badge>
+              ) : null}
+            </div>
+          </SettingRow>
         </CardContent>
       </Card>
     </NativePage>

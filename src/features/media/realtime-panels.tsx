@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CodeBlock } from "@/components/code-block";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,6 +10,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { isTauri, runDemoSidecar, websocketConnect } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
@@ -130,20 +138,23 @@ export function WebSocketPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            aria-label={t("labs.network.mode")}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
+          <Select
             disabled={state !== "disconnected"}
             value={mode}
-            onChange={(event) => {
-              setMode(event.target.value === "wss" ? "wss" : "fixture");
+            onValueChange={(value) => {
+              setMode(value === "wss" ? "wss" : "fixture");
               setLog([]);
               setError(null);
             }}
           >
-            <option value="fixture">{t("labs.socket.local")}</option>
-            <option value="wss">{t("labs.socket.live")}</option>
-          </select>
+            <SelectTrigger aria-label={t("labs.network.mode")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectItem value="fixture">{t("labs.socket.local")}</SelectItem>
+              <SelectItem value="wss">{t("labs.socket.live")}</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             disabled={state !== "disconnected"}
             onClick={() => void connect()}
@@ -285,13 +296,12 @@ export function SidecarPanel() {
             {nativeErrorText(error, t)}
           </p>
         ) : null}
-        <pre
-          tabIndex={0}
+        <CodeBlock
           aria-label={t("labs.media.preview")}
-          className="max-h-56 overflow-auto rounded-md bg-muted p-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {output ? JSON.stringify(output, null, 2) : t("labs.idle")}
-        </pre>
+          code={output ? JSON.stringify(output, null, 2) : t("labs.idle")}
+          language={output ? "json" : "text"}
+          className="max-h-56 rounded-md bg-muted p-3"
+        />
       </CardContent>
     </Card>
   );

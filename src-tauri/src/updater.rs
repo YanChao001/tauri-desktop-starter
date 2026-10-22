@@ -5,7 +5,7 @@ use std::{
         Mutex,
         atomic::{AtomicBool, AtomicI32, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,8 @@ pub struct UpdateStatus {
     pub configured: bool,
     pub available: bool,
     pub current_version: String,
+    pub endpoint: Option<String>,
+    pub checked_at: Option<f64>,
     pub version: Option<String>,
     pub body: Option<String>,
     pub date: Option<String>,
@@ -200,6 +202,8 @@ impl UpdateManager {
             configured: false,
             available: false,
             current_version: app.package_info().version.to_string(),
+            endpoint: None,
+            checked_at: None,
             version: None,
             body: None,
             date: None,
@@ -209,8 +213,9 @@ impl UpdateManager {
             return Ok(status);
         };
         status.configured = true;
+        status.endpoint = Some(policy.endpoint.clone());
         let endpoint = validate_policy(&policy)?;
-        let update = app
+        let updater = app
             .updater_builder()
             .pubkey(&policy.public_key)
             .endpoints(vec![endpoint])
@@ -226,12 +231,22 @@ impl UpdateManager {
                     "Cannot configure the update client",
                     e,
                 )
-            })?
-            .check()
-            .await
-            .map_err(|e| {
-                NativeError::operation(ErrorCode::UpdateCheckFailed, "Cannot check for updates", e)
             })?;
+        // 检查有独立超时；下载仍保留构建器的 300 秒预算。
+        let update = tokio::time::timeout(Duration::from_secs(20), updater.check())
+            .await
+            .map_err(|error| {
+                NativeError::operation(
+                    ErrorCode::UpdateCheckTimeout,
+                    "Update check timed out",
+                    error,
+                )
+            })?
+            .map_err(check_error)?;
+        status.checked_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|duration| duration.as_secs_f64() * 1000.0);
         if let Some(update) = update {
             status.available = true;
             status.version = Some(update.version.clone());
@@ -348,6 +363,19 @@ impl UpdateManager {
     }
 }
 
+fn check_error(error: tauri_plugin_updater::Error) -> NativeError {
+    use tauri_plugin_updater::Error;
+    let code = match &error {
+        Error::ReleaseNotFound => ErrorCode::UpdateFeedUnavailable,
+        Error::TargetNotFound(_) | Error::TargetsNotFound(_) => {
+            ErrorCode::UpdatePlatformUnavailable
+        }
+        Error::Reqwest(reason) if reason.is_timeout() => ErrorCode::UpdateCheckTimeout,
+        _ => ErrorCode::UpdateCheckFailed,
+    };
+    NativeError::operation(code, "Cannot check for updates", error)
+}
+
 fn validate_policy(policy: &UpdatePolicy) -> NativeResult<Url> {
     bounded_text(&policy.endpoint, 4096, "Update endpoint")?;
     bounded_text(&policy.public_key, 8192, "Update public key")?;
@@ -449,6 +477,22 @@ mod tests {
             endpoint: endpoint.into(),
             public_key: "deployment-owned-public-key".into(),
         }
+    }
+
+    #[test]
+    fn missing_release_and_platform_keep_distinct_recoverable_errors() {
+        let missing = check_error(tauri_plugin_updater::Error::ReleaseNotFound);
+        assert_eq!(missing.code, ErrorCode::UpdateFeedUnavailable);
+        assert!(missing.retryable);
+        let unsupported = check_error(tauri_plugin_updater::Error::TargetsNotFound(vec![
+            "windows-aarch64".into(),
+        ]));
+        assert_eq!(unsupported.code, ErrorCode::UpdatePlatformUnavailable);
+        assert!(unsupported.retryable);
+        assert_eq!(
+            check_error(tauri_plugin_updater::Error::EmptyEndpoints).code,
+            ErrorCode::UpdateCheckFailed
+        );
     }
 
     #[test]

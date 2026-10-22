@@ -6,7 +6,9 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { CodeBlock } from "@/components/code-block";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -16,6 +18,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
 import { isTauri, nativeHttpRequest } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
@@ -169,42 +178,58 @@ function NetworkLab() {
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="request-mode">{t("labs.network.mode")}</Label>
-              <select
-                id="request-mode"
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              <Select
                 value={mode}
                 disabled={busy}
-                onChange={(event) => {
-                  setMode(event.target.value === "https" ? "https" : "fixture");
+                onValueChange={(value) => {
+                  setMode(value === "https" ? "https" : "fixture");
                   mutation.reset();
                   setNotice(null);
                 }}
               >
-                <option value="fixture">{t("labs.fixture")}</option>
-                <option value="https" disabled={!isTauri()}>
-                  {t("labs.live")}
-                </option>
-              </select>
+                <SelectTrigger id="request-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  <SelectItem value="fixture">{t("labs.fixture")}</SelectItem>
+                  <SelectItem value="https" disabled={!isTauri()}>
+                    {t("labs.live")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="request-fault">{t("labs.network.fault")}</Label>
-              <select
-                id="request-fault"
+              <Select
                 value={fault}
                 disabled={mode !== "fixture" || busy}
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                onChange={(event) => {
-                  setFault(event.target.value as FixtureFault);
+                onValueChange={(value) => {
+                  setFault(value as FixtureFault);
                   mutation.reset();
                   setNotice(null);
                 }}
               >
-                <option value="none">{t("labs.network.normal")}</option>
-                <option value="flaky">{t("labs.network.flaky")}</option>
-                <option value="server">{t("labs.network.server")}</option>
-                <option value="timeout">{t("labs.network.timeout")}</option>
-                <option value="invalid">{t("labs.network.invalid")}</option>
-              </select>
+                <SelectTrigger id="request-fault" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  <SelectItem value="none">
+                    {t("labs.network.normal")}
+                  </SelectItem>
+                  <SelectItem value="flaky">
+                    {t("labs.network.flaky")}
+                  </SelectItem>
+                  <SelectItem value="server">
+                    {t("labs.network.server")}
+                  </SelectItem>
+                  <SelectItem value="timeout">
+                    {t("labs.network.timeout")}
+                  </SelectItem>
+                  <SelectItem value="invalid">
+                    {t("labs.network.invalid")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="request-timeout">
@@ -227,10 +252,11 @@ function NetworkLab() {
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={simulatedOffline}
-              onChange={(event) => setSimulatedOffline(event.target.checked)}
+              onCheckedChange={(checked) =>
+                setSimulatedOffline(checked === true)
+              }
             />
             {t("labs.network.offline")}
           </label>
@@ -345,12 +371,15 @@ function NetworkLab() {
             <h3 className="mb-2 text-sm font-medium">
               {t("labs.network.response")}
             </h3>
-            <pre
-              tabIndex={0}
-              className="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {JSON.stringify(mutation.data ?? query.data ?? null, null, 2)}
-            </pre>
+            <CodeBlock
+              code={JSON.stringify(
+                mutation.data ?? query.data ?? null,
+                null,
+                2,
+              )}
+              language="json"
+              className="max-h-72 rounded-md bg-muted p-3"
+            />
           </section>
         </CardContent>
       </Card>

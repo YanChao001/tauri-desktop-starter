@@ -17,9 +17,11 @@ import type { AppCommand } from "@/commands/types";
 import { SettingsPersistence } from "@/components/settings-persistence";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useTaskNotifications } from "@/hooks/use-task-notifications";
+import { useStartupUpdates } from "@/hooks/use-startup-updates";
 export function DesktopEffects() {
   useWorkspace();
   useTaskNotifications();
+  useStartupUpdates();
   const { settings } = useSettings();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();

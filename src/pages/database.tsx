@@ -12,8 +12,17 @@ import { BackupPanel } from "@/components/database/backup-panel";
 import { ConflictPanel } from "@/components/database/conflict-panel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -498,22 +507,26 @@ export default function Database() {
         >
           {t("data.trash")}
         </Button>
-        <label className="ml-auto flex items-center gap-2 text-sm">
-          {t("data.sort")}
-          <select
-            className="rounded-md border border-input bg-background p-2"
+        <div className="ml-auto flex items-center gap-2 text-sm">
+          <Label htmlFor="notes-sort">{t("data.sort")}</Label>
+          <Select
             value={sort}
-            onChange={(event) => {
-              setSort(event.target.value);
+            onValueChange={(value) => {
+              setSort(value);
               setOffset(0);
               setSelected(new Set());
             }}
           >
-            <option value="updated-desc">{t("data.newest")}</option>
-            <option value="updated-asc">{t("data.oldest")}</option>
-            <option value="title-asc">{t("data.byTitle")}</option>
-          </select>
-        </label>
+            <SelectTrigger id="notes-sort">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectItem value="updated-desc">{t("data.newest")}</SelectItem>
+              <SelectItem value="updated-asc">{t("data.oldest")}</SelectItem>
+              <SelectItem value="title-asc">{t("data.byTitle")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       {selected.size ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background p-3">
@@ -574,16 +587,15 @@ export default function Database() {
               <ul className="space-y-1">
                 {notes.map((note) => (
                   <li key={note.id} className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      className="ml-2 size-4 shrink-0 accent-primary"
+                    <Checkbox
+                      className="ml-2"
                       aria-label={t("data.selectNote", { title: note.title })}
                       checked={selected.has(note.id)}
                       disabled={pending}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setSelected((current) => {
                           const next = new Set(current);
-                          if (event.target.checked) next.add(note.id);
+                          if (checked === true) next.add(note.id);
                           else next.delete(note.id);
                           return next;
                         })
@@ -674,7 +686,7 @@ export default function Database() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="note-body">{t("database.bodyLabel")}</Label>
-                <textarea
+                <Textarea
                   id="note-body"
                   data-testid="note-body"
                   maxLength={65536}
@@ -689,7 +701,6 @@ export default function Database() {
                     })
                   }
                   placeholder={t("database.bodyPlaceholder")}
-                  className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 />
                 {bodyTooLong ? (
                   <p

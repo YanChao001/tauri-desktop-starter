@@ -7,36 +7,57 @@
 >
   <defs>
     <linearGradient
-      id="background"
-      x1="0"
+      id="morning"
+      x1="20"
       y1="0"
-      x2="164"
+      x2="145"
       y2="314"
       gradientUnits="userSpaceOnUse"
     >
-      <stop stop-color="#EFF1FF" />
-      <stop offset=".58" stop-color="#F7F5FF" />
-      <stop offset="1" stop-color="#E8EEFF" />
+      <stop stop-color="#F3FFF9" />
+      <stop offset=".62" stop-color="#DDF8EE" />
+      <stop offset="1" stop-color="#C8F2E4" />
     </linearGradient>
     <linearGradient
       id="ribbon"
-      x1="8"
-      y1="215"
-      x2="170"
-      y2="288"
+      x1="-20"
+      y1="230"
+      x2="180"
+      y2="310"
       gradientUnits="userSpaceOnUse"
     >
-      <stop stop-color="#6C7CE6" />
-      <stop offset="1" stop-color="#9E8AE2" />
+      <stop stop-color="#7EE0B9" />
+      <stop offset="1" stop-color="#29BDA2" />
     </linearGradient>
   </defs>
-  <path fill="url(#background)" d="M0 0h164v314H0z" />
-  <path d="m-44 242 164-83 74 130-164 83-74-130Z" fill="#D3DCFC" />
-  <path d="m-31 269 154-90 58 103-154 90-58-103Z" fill="url(#ribbon)" />
-  <path d="m35 231 88-52 58 103-97-44-49-7Z" fill="#B9B9F1" />
-  <path d="m-31 269 66-38 49 7-22 49-93-18Z" fill="#C7D2FF" />
-  <path d="m84 238 97 44-119 5 22-49Z" fill="#E3E6FF" />
-  <path d="m27 44 3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z" fill="#A6AFE5" />
-  <path d="m136 142 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#A499D8" />
-  <image href="app-icon.svg" x="31" y="83" width="102" height="102" />
+  <path fill="url(#morning)" d="M0 0h164v314H0z" />
+  <circle cx="-9" cy="30" r="74" fill="#FFFFFF" fill-opacity=".62" />
+  <path d="M-19 184C37 148 88 167 130 208s62 61 93 45v90H-19Z" fill="#B8EEDB" />
+  <path
+    d="M-28 250C25 191 74 194 106 240s42 50 81 24v76H-28Z"
+    fill="url(#ribbon)"
+  />
+  <path
+    d="M-28 261C25 202 74 205 106 251s42 50 81 24"
+    stroke="#F5FFF9"
+    stroke-width="1.5"
+    stroke-opacity=".85"
+  />
+  <path
+    d="M35 318c2-58 36-96 86-117-3 53-31 92-86 117Z"
+    fill="#F3FFF6"
+    fill-opacity=".8"
+  />
+  <path d="M43 315c19-46 42-75 70-104" stroke="#58B997" />
+  <path d="M124 314c-19-38-11-69 18-91 19 38 13 70-18 91Z" fill="#95E5C4" />
+  <path d="M126 306l15-71" stroke="#3FAF8F" />
+  <circle cx="135" cy="39" r="5" fill="#91DFC2" />
+  <circle cx="29" cy="163" r="3" fill="#FFFFFF" />
+  <path
+    d="M124 173v12m-6-6h12"
+    stroke="#53B99C"
+    stroke-width="1.5"
+    stroke-linecap="round"
+  />
+  <image href="app-icon.svg" x="30" y="60" width="104" height="104" />
 </svg>

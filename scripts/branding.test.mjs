@@ -54,7 +54,7 @@ test("installer vectors use their shared mark and keep WiX text regions white", 
     assert.equal(rendered.height, height);
     if (source === "installer-wix-dialog.svg") {
       for (let y = 0; y < height; y++) {
-        for (let x = 164; x < width; x++) {
+        for (let x = 123; x < width; x++) {
           assert.deepEqual(
             [...pixels.subarray((y * width + x) * 4, (y * width + x + 1) * 4)],
             [255, 255, 255, 255],
@@ -63,8 +63,8 @@ test("installer vectors use their shared mark and keep WiX text regions white", 
       }
     }
     if (source === "installer-wix-banner.svg") {
-      for (let y = 0; y < 53; y++) {
-        for (let x = 0; x < 426; x++) {
+      for (let y = 0; y < 40; y++) {
+        for (let x = 0; x < 319; x++) {
           assert.deepEqual(
             [...pixels.subarray((y * width + x) * 4, (y * width + x + 1) * 4)],
             [255, 255, 255, 255],
@@ -118,12 +118,28 @@ test("Tauri platform outputs retain all sizes and reproducible ICO/ICNS layers",
   const asset = (name) =>
     plan.find(({ path }) => basename(path) === name).contents;
   const ico = asset("icon.ico");
-  for (const { target, width, height } of INSTALLER_IMAGES) {
+  for (const {
+    target,
+    width,
+    height,
+    scale = INSTALLER_BITMAP_SCALE,
+  } of INSTALLER_IMAGES) {
     const bitmap = asset(target);
-    assert.equal(bitmap.readInt32LE(18), width * INSTALLER_BITMAP_SCALE);
-    assert.equal(bitmap.readInt32LE(22), height * INSTALLER_BITMAP_SCALE);
+    assert.equal(bitmap.readInt32LE(18), width * scale);
+    assert.equal(bitmap.readInt32LE(22), height * scale);
     assert.equal(bitmap.readUInt16LE(28), 24);
     assert.equal(bitmap.readUInt32LE(30), 0);
+  }
+  for (const [name, controlWidth, controlHeight] of [
+    ["wix-banner.bmp", 370, 44],
+    ["wix-dialog.bmp", 370, 234],
+  ]) {
+    const bitmap = asset(name);
+    assert.equal(
+      bitmap.readInt32LE(18) * controlHeight,
+      bitmap.readInt32LE(22) * controlWidth,
+      `${name} must match the WiX control aspect ratio`,
+    );
   }
   const sizes = Array.from(
     { length: ico.readUInt16LE(4) },

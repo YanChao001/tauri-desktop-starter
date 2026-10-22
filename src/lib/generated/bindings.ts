@@ -8,6 +8,25 @@ export const commands = {
     typedError<string, NativeError>(
       __TAURI_INVOKE("greet", { name, language }),
     ),
+  listWallpapers: (
+    legacy: {
+      name: string;
+      dataUrl: string;
+    } | null,
+  ) =>
+    typedError<Wallpaper[], NativeError>(
+      __TAURI_INVOKE("list_wallpapers", { legacy }),
+    ),
+  addWallpaper: (input: WallpaperInput) =>
+    typedError<Wallpaper, NativeError>(
+      __TAURI_INVOKE("add_wallpaper", { input }),
+    ),
+  renameWallpaper: (id: string, name: string) =>
+    typedError<Wallpaper, NativeError>(
+      __TAURI_INVOKE("rename_wallpaper", { id, name }),
+    ),
+  removeWallpaper: (id: string) =>
+    typedError<null, NativeError>(__TAURI_INVOKE("remove_wallpaper", { id })),
   loadSettingsSnapshot: () =>
     typedError<SettingsSnapshot, NativeError>(
       __TAURI_INVOKE("load_settings_snapshot"),
@@ -348,6 +367,9 @@ export type ErrorCode =
   | "UPDATE_NOT_CONFIGURED"
   | "UPDATE_BUSY"
   | "UPDATE_CHECK_FAILED"
+  | "UPDATE_CHECK_TIMEOUT"
+  | "UPDATE_FEED_UNAVAILABLE"
+  | "UPDATE_PLATFORM_UNAVAILABLE"
   | "UPDATE_DOWNLOAD_FAILED"
   | "UPDATE_INSTALL_FAILED"
   | "WINDOW_ERROR"
@@ -484,9 +506,22 @@ export type UpdateStatus = {
   configured: boolean;
   available: boolean;
   currentVersion: string;
+  endpoint: string | null;
+  checkedAt: number | null;
   version: string | null;
   body: string | null;
   date: string | null;
+};
+
+export type Wallpaper = {
+  id: string;
+  name: string;
+  dataUrl: string;
+};
+
+export type WallpaperInput = {
+  name: string;
+  dataUrl: string;
 };
 
 export type WindowGeometry = {

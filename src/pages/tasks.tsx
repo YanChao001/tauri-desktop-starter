@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { nativeErrorText } from "@/lib/native-error";
 import {
   isTauri,
@@ -147,35 +154,43 @@ export default function Tasks() {
           </Button>
           <div className="min-w-48 flex-1 space-y-1">
             <Label htmlFor="task-directory">{t("tasks.directory")}</Label>
-            <select
-              id="task-directory"
-              value={directoryId}
+            <Select
+              value={directoryId || "__none__"}
               disabled={pending !== null}
-              onChange={(event) => setDirectoryId(event.target.value)}
-              className="h-9 w-full rounded-md border bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
+              onValueChange={(value) =>
+                setDirectoryId(value === "__none__" ? "" : value)
+              }
             >
-              <option value="">{t("tasks.noDirectory")}</option>
-              {directories.map((directory) => (
-                <option key={directory.id} value={directory.id}>
-                  {directory.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="task-directory" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="__none__">
+                  {t("tasks.noDirectory")}
+                </SelectItem>
+                {directories.map((directory) => (
+                  <SelectItem key={directory.id} value={directory.id}>
+                    {directory.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label htmlFor="task-kind">{t("tasks.kind")}</Label>
-            <select
-              id="task-kind"
+            <Select
               value={kind}
               disabled={pending !== null}
-              onChange={(event) =>
-                setKind(event.target.value as WorkbenchTaskKind)
-              }
-              className="h-9 rounded-md border bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
+              onValueChange={(value) => setKind(value as WorkbenchTaskKind)}
             >
-              <option value="scan">{t("tasks.scan")}</option>
-              <option value="sha256">{t("tasks.sha256")}</option>
-            </select>
+              <SelectTrigger id="task-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="scan">{t("tasks.scan")}</SelectItem>
+                <SelectItem value="sha256">{t("tasks.sha256")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Button
             disabled={
