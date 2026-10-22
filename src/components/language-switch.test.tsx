@@ -1,3 +1,4 @@
+import { STORAGE_KEY } from "@/lib/settings-model";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageSwitch } from "./language-switch";
@@ -67,9 +68,9 @@ describe("LanguageSwitch", () => {
     expect(englishSelectors[1]).toHaveTextContent("EN");
     expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
     expect(document.documentElement.lang).toBe("en");
-    expect(
-      JSON.parse(window.localStorage.getItem("tauri-starter:settings")!),
-    ).toMatchObject({ language: "en" });
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject(
+      { language: "en" },
+    );
 
     unmount();
     renderSwitches();

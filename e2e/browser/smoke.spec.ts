@@ -2,7 +2,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { writeFile } from "node:fs/promises";
+import appConfig from "../../app.config.json" with { type: "json" };
 
+const SETTINGS_KEY = `${appConfig.browserStorageNamespace}:settings`;
 const browserFailures = new WeakMap<Page, string[]>();
 test.beforeEach(({ page }) => {
   const failures: string[] = [];
@@ -61,10 +63,10 @@ test("browser preferences survive a real page reload in localStorage", async ({
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
     .poll(() =>
-      page.evaluate(() => {
-        const raw = globalThis.localStorage.getItem("tauri-starter:settings");
+      page.evaluate((key) => {
+        const raw = globalThis.localStorage.getItem(key);
         return raw ? (JSON.parse(raw).theme as unknown) : null;
-      }),
+      }, SETTINGS_KEY),
     )
     .toBe("dark");
   await page.reload();
@@ -291,12 +293,15 @@ for (const profile of [
     page,
   }, testInfo) => {
     await page.setViewportSize({ width: profile.width, height: 900 });
-    await page.addInitScript((settings) => {
-      globalThis.localStorage.setItem(
-        "tauri-starter:settings",
-        JSON.stringify({ schemaVersion: 2, motion: "reduced", ...settings }),
-      );
-    }, profile);
+    await page.addInitScript(
+      ({ key, settings }) => {
+        globalThis.localStorage.setItem(
+          key,
+          JSON.stringify({ schemaVersion: 2, motion: "reduced", ...settings }),
+        );
+      },
+      { key: SETTINGS_KEY, settings: profile },
+    );
     for (const route of ["catalog", "network", "data-studio", "media"]) {
       await page.goto(`./#/${route}`);
       await expect(page.locator("main h2").first()).toBeVisible();

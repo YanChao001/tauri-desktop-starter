@@ -2,8 +2,9 @@
 import { Buffer } from "node:buffer";
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import appConfig from "../../app.config.json" with { type: "json" };
 
-const KEY = "tauri-starter:settings";
+const KEY = `${appConfig.browserStorageNamespace}:settings`;
 const routes = [
   "/",
   "/catalog",
@@ -24,19 +25,22 @@ const routes = [
   "/settings",
 ];
 async function seed(page: Page, settings: Record<string, unknown> = {}) {
-  await page.addInitScript((value) => {
-    if (!localStorage.getItem("tauri-starter:settings"))
-      localStorage.setItem(
-        "tauri-starter:settings",
-        JSON.stringify({
-          schemaVersion: 3,
-          language: "en",
-          theme: "light",
-          motion: "reduced",
-          ...value,
-        }),
-      );
-  }, settings);
+  await page.addInitScript(
+    ({ key, value }) => {
+      if (!localStorage.getItem(key))
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            schemaVersion: 3,
+            language: "en",
+            theme: "light",
+            motion: "reduced",
+            ...value,
+          }),
+        );
+    },
+    { key: KEY, value: settings },
+  );
 }
 
 for (const theme of ["light", "dark"]) {
@@ -978,8 +982,9 @@ test("full screen menu and F11 share real fullscreen state and restore the sideb
   await expect(page.locator(".app-shell")).not.toHaveClass(
     /app-shell-immersive/,
   );
-  const settings = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("tauri-starter:settings")!),
+  const settings = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!),
+    KEY,
   );
   expect(settings.sidebarCollapsed).toBe(true);
   expect(settings.sidebarWidth).toBe(280);

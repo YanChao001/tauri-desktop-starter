@@ -6,6 +6,7 @@ compile_error!(
     "The e2e WebDriver service requires a debug/test profile and must not be included in release builds"
 );
 
+mod app_config;
 #[cfg(windows)]
 mod autostart;
 pub mod bindings;
@@ -168,7 +169,7 @@ pub fn run() {
         let arguments: Vec<String> = std::env::args().skip(1).collect();
         let has_link = arguments
             .iter()
-            .any(|argument| argument.starts_with("tdemo:"));
+            .any(|argument| system_commands::deep_link_route(argument).is_some());
         system_commands::activate(
             app.handle(),
             arguments,

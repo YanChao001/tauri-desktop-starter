@@ -29,6 +29,9 @@ const config = {
   author: "Example",
   repositoryUrl: "https://github.com/example/app",
   docsUrl: "https://example.com/docs",
+  homepageUrl: "https://example.com",
+  browserStorageNamespace: "starter",
+  integration: { deepLinkScheme: "old-app", fileExtension: "old-app" },
   defaultMode: "demo",
   updates: { endpoint: "", publicKey: "" },
 };
@@ -54,10 +57,9 @@ test("a derived identity does not inherit the template's update signing trust", 
       }),
     );
     applyInitialization(prepareInitialization(root, patch));
-    assert.equal(
-      JSON.parse(readFileSync(join(root, "app.config.json"), "utf8")).updates
-        .publicKey,
-      "",
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(root, "app.config.json"), "utf8")).updates,
+      { endpoint: "", publicKey: "" },
     );
   }
 });
@@ -89,6 +91,7 @@ function fixture(t) {
   });
   mkdirSync(join(root, "src-tauri", "src"), { recursive: true });
   mkdirSync(join(root, "src-tauri", "src", "bin"));
+  mkdirSync(join(root, ".signpath"));
   const files = {
     "app.config.json": JSON.stringify(config),
     "package.json": JSON.stringify({
@@ -123,6 +126,12 @@ function fixture(t) {
     "src-tauri/src/bin/verify-updater.rs":
       "fn main() { old_app_lib::update_signature::verify_manifest() }\n",
     "index.html": "<html><head><title>Starter</title></head></html>\n",
+    "README.md":
+      "# Starter\n\n[主页](https://example.com) · [文档](https://example.com/docs) · [发行记录](https://github.com/example/app/releases)\n",
+    "README.en.md":
+      "# Starter\n\n[Releases](https://github.com/example/app/releases)\n",
+    ".signpath/artifact-configuration.xml":
+      '<pe-file product-name="Starter" />\n',
   };
   for (const [path, content] of Object.entries(files))
     writeFileSync(join(root, path), content);
@@ -170,7 +179,176 @@ test("dry-run plans consistent identities without writing or changing version/si
     "io.acme.desk.e2e",
   );
   assert.match(read("index.html"), /Acme &amp; Desk/);
+  assert.match(read("README.md"), /^# Acme & Desk/);
+  assert.match(
+    read(".signpath/artifact-configuration.xml"),
+    /product-name="Acme &amp; Desk"/,
+  );
+  const brand = JSON.parse(read("app.config.json"));
+  assert.equal(brand.browserStorageNamespace, "io.acme.desk");
+  assert.deepEqual(brand.integration, {
+    deepLinkScheme: "acme-desk",
+    fileExtension: "acme-desk",
+  });
+  const native = JSON.parse(read("src-tauri/tauri.conf.json"));
+  assert.deepEqual(native.plugins["deep-link"].desktop.schemes, ["acme-desk"]);
+  assert.equal(
+    native.bundle.fileAssociations[0].mimeType,
+    "application/x-acme-desk",
+  );
   assert.equal(checkVersions(root), "0.1.0");
+  assert.equal(prepareInitialization(root).changes.length, 0);
+});
+
+test("repository derivation drops inherited links and updater endpoint unless explicitly supplied", (t) => {
+  const { root } = fixture(t);
+  const plan = prepareInitialization(root, {
+    repositoryUrl: "https://github.com/acme/desk",
+  });
+  assert.equal(plan.config.docsUrl, "https://github.com/acme/desk");
+  assert.equal(plan.config.homepageUrl, "https://github.com/acme/desk");
+  assert.equal(plan.config.updates.endpoint, "");
+  applyInitialization(plan);
+  assert.match(
+    readFileSync(join(root, "README.md"), "utf8"),
+    /https:\/\/github.com\/acme\/desk\/releases/,
+  );
+  assert.doesNotMatch(
+    readFileSync(join(root, "README.md"), "utf8"),
+    /https:\/\/example.com/,
+  );
+  const explicit = prepareInitialization(root, {
+    repositoryUrl: "https://github.com/acme/new-desk",
+    homepageUrl: "https://acme.example/",
+    docsUrl: "https://acme.example/help",
+  });
+  assert.equal(explicit.config.homepageUrl, "https://acme.example/");
+  assert.equal(explicit.config.docsUrl, "https://acme.example/help");
+});
+
+test("identity-only derivation isolates browser data and system registrations", (t) => {
+  const { root } = fixture(t);
+  const plan = prepareInitialization(root, { identifier: "io.acme.desk" });
+  assert.equal(plan.config.browserStorageNamespace, "io.acme.desk");
+  assert.deepEqual(plan.config.integration, {
+    deepLinkScheme: "io-acme-desk",
+    fileExtension: "io-acme-desk",
+  });
+  const explicit = prepareInitialization(root, {
+    identifier: "io.acme.desk",
+    browserStorageNamespace: "existing-product",
+    integration: { deepLinkScheme: "acme", fileExtension: "acme-doc" },
+  });
+  assert.equal(explicit.config.browserStorageNamespace, "existing-product");
+  assert.deepEqual(explicit.config.integration, {
+    deepLinkScheme: "acme",
+    fileExtension: "acme-doc",
+  });
+});
+
+test("changing an updater endpoint requires explicitly re-establishing signing trust", (t) => {
+  const { root } = fixture(t);
+  writeFileSync(
+    join(root, "app.config.json"),
+    JSON.stringify({
+      ...config,
+      updates: {
+        endpoint: "https://example.com/old.json",
+        publicKey: PUBLIC_KEY,
+      },
+    }),
+  );
+  const plan = prepareInitialization(root, {
+    updates: { endpoint: "https://example.com/new.json" },
+  });
+  assert.equal(plan.config.updates.publicKey, "");
+  assert.equal(plan.config.updates.endpoint, "https://example.com/new.json");
+});
+
+test("configuration synchronization detects drift and preserves the original copyright year", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(prepareInitialization(root));
+  const path = join(root, "src-tauri/tauri.conf.json");
+  const native = JSON.parse(readFileSync(path, "utf8"));
+  native.bundle.copyright = "© 2020 Example";
+  native.plugins["deep-link"].desktop.schemes = [];
+  writeFileSync(path, JSON.stringify(native));
+  const plan = prepareInitialization(root);
+  const fixed = JSON.parse(
+    plan.changes.find((change) => change.path === "src-tauri/tauri.conf.json")
+      .content,
+  );
+  assert.equal(fixed.bundle.copyright, "© 2020 Example");
+  assert.deepEqual(fixed.plugins["deep-link"].desktop.schemes, ["old-app"]);
+  applyInitialization(plan);
+  assert.equal(prepareInitialization(root).changes.length, 0);
+});
+
+test("invalid or conflicting integration names fail before changing files", (t) => {
+  const { root, files } = fixture(t);
+  for (const patch of [
+    { integration: null },
+    { integration: { unknown: "x" } },
+    { integration: { deepLinkScheme: "https" } },
+    { integration: { deepLinkScheme: "MixedCase" } },
+    { integration: { fileExtension: "../escape" } },
+    { integration: { fileExtension: "json" } },
+    { browserStorageNamespace: "shared:key" },
+    { homepageUrl: "http://example.com" },
+    { packageName: "con" },
+    { packageName: "com1" },
+  ])
+    assert.throws(() => prepareInitialization(root, patch));
+  for (const [path, content] of Object.entries(files))
+    assert.equal(readFileSync(join(root, path), "utf8"), content);
+});
+
+test("derivation preserves extra registrations and updates inherited platform identities", (t) => {
+  const { root } = fixture(t);
+  const path = join(root, "src-tauri/tauri.macos.conf.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      productName: config.name,
+      identifier: config.identifier,
+      plugins: {
+        "deep-link": {
+          desktop: {
+            schemes: ["old-app", "extra-protocol"],
+            name: "Extra metadata",
+          },
+        },
+      },
+      bundle: {
+        fileAssociations: [
+          { ext: ["unrelated"], name: "Unrelated format" },
+          { ext: ["old-app", "existing-doc"], role: "Editor" },
+        ],
+      },
+    }),
+  );
+  applyInitialization(
+    prepareInitialization(root, {
+      name: "Acme",
+      identifier: "io.acme.desk",
+      packageName: "acme-desk",
+    }),
+  );
+  const native = JSON.parse(readFileSync(path, "utf8"));
+  assert.equal(native.productName, "Acme");
+  assert.equal(native.identifier, "io.acme.desk");
+  assert.deepEqual(native.plugins["deep-link"].desktop, {
+    schemes: ["acme-desk", "extra-protocol"],
+    name: "Extra metadata",
+  });
+  assert.deepEqual(native.bundle.fileAssociations[0], {
+    ext: ["unrelated"],
+    name: "Unrelated format",
+  });
+  assert.deepEqual(native.bundle.fileAssociations[1].ext, [
+    "acme-desk",
+    "existing-doc",
+  ]);
   assert.equal(prepareInitialization(root).changes.length, 0);
 });
 

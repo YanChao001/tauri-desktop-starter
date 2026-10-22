@@ -13,15 +13,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+const args = process.argv.slice(2);
+if (args.some((arg) => arg !== "--interactive"))
+  throw new Error("用法: pnpm test:installer --interactive");
+
 function nsisFixture(t) {
+  if (!args.includes("--interactive")) {
+    t.skip(
+      "Native installer executable tests require pnpm test:installer --interactive in an isolated environment",
+    );
+    return undefined;
+  }
   const compiler =
     process.platform === "win32" && process.env.LOCALAPPDATA
       ? join(process.env.LOCALAPPDATA, "tauri", "NSIS", "makensis.exe")
       : "";
-  if (!compiler || !existsSync(compiler)) {
-    t.skip("Requires the Windows NSIS toolchain cached by Tauri");
-    return undefined;
-  }
+  assert.ok(
+    compiler && existsSync(compiler),
+    "Requires Windows and the NSIS toolchain cached by a Tauri NSIS build",
+  );
   const base = realpathSync(tmpdir());
   const fixture = mkdtempSync(join(base, "starter-installer-test-"));
   t.after(() => {

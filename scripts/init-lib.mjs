@@ -16,6 +16,9 @@ const FIELDS = new Set([
   "author",
   "repositoryUrl",
   "docsUrl",
+  "homepageUrl",
+  "browserStorageNamespace",
+  "integration",
   "defaultMode",
   "updates",
 ]);
@@ -68,9 +71,12 @@ export function validateAppConfig(config) {
   if (
     typeof config.packageName !== "string" ||
     !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(config.packageName) ||
+    /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(config.packageName) ||
     config.packageName.length > 64
   )
-    throw new Error("packageName 必须是小写 kebab-case（最多 64 字符）");
+    throw new Error(
+      "packageName 必须是小写 kebab-case（最多 64 字符），不能使用 Windows 设备名称",
+    );
   if (
     typeof config.identifier !== "string" ||
     !/^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9-]*){2,}$/.test(
@@ -83,6 +89,84 @@ export function validateAppConfig(config) {
     throw new Error("defaultMode 必须是 demo 或 minimal");
   https(config.repositoryUrl, "repositoryUrl");
   https(config.docsUrl, "docsUrl");
+  https(config.homepageUrl, "homepageUrl");
+  if (
+    typeof config.browserStorageNamespace !== "string" ||
+    !/^[A-Za-z][A-Za-z0-9.-]{0,199}$/.test(config.browserStorageNamespace)
+  )
+    throw new Error(
+      "browserStorageNamespace 必须是 1–200 位字母、数字、点或连字符，且以字母开头",
+    );
+  if (
+    !object(config.integration) ||
+    Object.keys(config.integration).some(
+      (key) => !["deepLinkScheme", "fileExtension"].includes(key),
+    )
+  )
+    throw new Error("integration 仅允许 deepLinkScheme 与 fileExtension");
+  for (const key of ["deepLinkScheme", "fileExtension"])
+    if (
+      typeof config.integration[key] !== "string" ||
+      !/^[a-z][a-z0-9-]{0,63}$/.test(config.integration[key])
+    )
+      throw new Error(
+        `integration.${key} 必须是 1–64 位小写字母、数字或连字符，且以字母开头`,
+      );
+  if (
+    [
+      "http",
+      "https",
+      "ws",
+      "wss",
+      "about",
+      "blob",
+      "file",
+      "ftp",
+      "mailto",
+      "tel",
+      "data",
+      "javascript",
+      "tauri",
+      "asset",
+      "ipc",
+    ].includes(config.integration.deepLinkScheme)
+  )
+    throw new Error("integration.deepLinkScheme 不能占用系统或 WebView 协议");
+  if (
+    [
+      "exe",
+      "com",
+      "bat",
+      "cmd",
+      "msi",
+      "ps1",
+      "lnk",
+      "url",
+      "txt",
+      "json",
+      "md",
+      "markdown",
+      "log",
+      "csv",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "webp",
+      "svg",
+      "pdf",
+      "html",
+      "tsv",
+      "rs",
+      "ts",
+      "js",
+      "css",
+      "toml",
+      "yaml",
+      "yml",
+    ].includes(config.integration.fileExtension)
+  )
+    throw new Error("integration.fileExtension 必须使用应用专用扩展名");
   if (
     !object(config.updates) ||
     Object.keys(config.updates).some(
@@ -184,7 +268,7 @@ function json(value, path = "app.config.json") {
       path,
     ],
     {
-      input: JSON.stringify(value),
+      input: JSON.stringify(value, null, 2),
       encoding: "utf8",
       cwd: join(import.meta.dirname, ".."),
       windowsHide: true,
@@ -219,16 +303,42 @@ export function prepareInitialization(
   const current = validateAppConfig(JSON.parse(read("app.config.json")));
   if (patch.updates !== undefined && !object(patch.updates))
     throw new Error("updates 必须是对象");
+  if (patch.integration !== undefined && !object(patch.integration))
+    throw new Error("integration 必须是对象");
+  const identityChanged =
+    patch.identifier !== undefined && patch.identifier !== current.identifier;
+  const repositoryChanged =
+    patch.repositoryUrl !== undefined &&
+    patch.repositoryUrl !== current.repositoryUrl;
+  const endpointChanged =
+    patch.updates?.endpoint !== undefined &&
+    patch.updates.endpoint !== current.updates.endpoint;
+  const derivedName =
+    patch.packageName && patch.packageName !== current.packageName
+      ? patch.packageName
+      : (patch.identifier ?? current.identifier)
+          .toLowerCase()
+          .replaceAll(".", "-");
   const next = validateAppConfig({
     ...current,
+    ...(repositoryChanged
+      ? { docsUrl: patch.repositoryUrl, homepageUrl: patch.repositoryUrl }
+      : {}),
+    ...(identityChanged ? { browserStorageNamespace: patch.identifier } : {}),
     ...patch,
+    integration: {
+      ...current.integration,
+      ...(identityChanged
+        ? { deepLinkScheme: derivedName, fileExtension: derivedName }
+        : {}),
+      ...patch.integration,
+    },
     updates: {
       ...current.updates,
-      ...((patch.repositoryUrl &&
-        patch.repositoryUrl !== current.repositoryUrl) ||
-      (patch.identifier && patch.identifier !== current.identifier)
-        ? { publicKey: "" }
+      ...(identityChanged || repositoryChanged
+        ? { endpoint: "", publicKey: "" }
         : {}),
+      ...(endpointChanged ? { publicKey: "" } : {}),
       ...patch.updates,
     },
     ...(minimal ? { defaultMode: "minimal" } : {}),
@@ -239,7 +349,7 @@ export function prepareInitialization(
   pkg.description = next.description;
   pkg.author = next.author;
   pkg.repository = { type: "git", url: next.repositoryUrl };
-  pkg.homepage = next.docsUrl;
+  pkg.homepage = next.homepageUrl;
   outputs.set("package.json", json(pkg, "package.json"));
   const manifest = read("src-tauri/Cargo.toml");
   parseToml(manifest);
@@ -314,16 +424,74 @@ export function prepareInitialization(
   )) {
     const path = `src-tauri/${file}`;
     const config = JSON.parse(read(path));
+    if (config.productName === current.name) config.productName = next.name;
+    if (config.identifier === current.identifier)
+      config.identifier = next.identifier;
     if (file === "tauri.conf.json") {
       config.productName = next.name;
       config.identifier = next.identifier;
       config.bundle ??= {};
       config.bundle.shortDescription = next.description;
       config.bundle.publisher = next.author;
-      config.bundle.homepage = next.docsUrl;
-      config.bundle.copyright = `© ${new Date().getUTCFullYear()} ${next.author}`;
-    } else if (file === "tauri.e2e.conf.json")
+      config.bundle.homepage = next.homepageUrl;
+      if (current.author !== next.author || !config.bundle.copyright)
+        config.bundle.copyright = `© ${new Date().getUTCFullYear()} ${next.author}`;
+    } else if (file === "tauri.e2e.conf.json") {
       config.identifier = `${next.identifier}.e2e`;
+      config.productName = `${next.shortName} E2E`;
+    }
+    if (file === "tauri.conf.json" || config.plugins?.["deep-link"]?.desktop) {
+      config.plugins ??= {};
+      config.plugins["deep-link"] ??= {};
+      const desktop = config.plugins["deep-link"].desktop ?? {};
+      if (
+        !object(desktop) ||
+        (desktop.schemes !== undefined && !Array.isArray(desktop.schemes))
+      )
+        throw new Error("deep-link.desktop 必须使用含 schemes 数组的对象配置");
+      config.plugins["deep-link"].desktop = {
+        ...desktop,
+        schemes: [
+          ...new Set([
+            ...(desktop.schemes ?? []).map((scheme) =>
+              scheme === current.integration.deepLinkScheme
+                ? next.integration.deepLinkScheme
+                : scheme,
+            ),
+            next.integration.deepLinkScheme,
+          ]),
+        ],
+      };
+    }
+    if (file === "tauri.conf.json" || config.bundle?.fileAssociations) {
+      config.bundle ??= {};
+      const associations = config.bundle.fileAssociations ?? [];
+      const previous = associations.find((entry) =>
+        entry.ext?.includes(current.integration.fileExtension),
+      );
+      const association = {
+        ...previous,
+        ext: [
+          ...new Set([
+            ...(previous?.ext ?? []).map((extension) =>
+              extension === current.integration.fileExtension
+                ? next.integration.fileExtension
+                : extension,
+            ),
+            next.integration.fileExtension,
+          ]),
+        ],
+        name: `${next.name} Document`,
+        description: `UTF-8 ${next.name} document`,
+        role: "Editor",
+        mimeType: `application/x-${next.integration.fileExtension}`,
+      };
+      config.bundle.fileAssociations = previous
+        ? associations.map((entry) =>
+            entry === previous ? association : entry,
+          )
+        : [...associations, association];
+    }
     if (Array.isArray(config.app?.windows))
       for (const window of config.app.windows)
         if (window.label === "main") window.title = next.name;
@@ -339,6 +507,42 @@ export function prepareInitialization(
       `<title>${html(next.name)}</title>`,
     ),
   );
+  for (const path of ["README.md", "README.en.md"]) {
+    if (!existsSync(join(root, path))) continue;
+    const content = read(path);
+    // 只同步 README 标题和已知品牌链接，保留正文、相对链接及历史示例。
+    const links = [
+      [current.docsUrl, next.docsUrl],
+      [current.homepageUrl, next.homepageUrl],
+      [current.repositoryUrl, next.repositoryUrl],
+    ].sort(([left], [right]) => right.length - left.length);
+    const updated = content
+      .replace(/^# [^\r\n]+/, `# ${next.name}`)
+      .replace(/\]\((https:\/\/[^\s)]+)\)/g, (match, url) => {
+        const replacement = links.find(
+          ([before]) =>
+            url === before ||
+            (before === current.repositoryUrl && url.startsWith(`${before}/`)),
+        );
+        return replacement
+          ? `](${replacement[1]}${url.slice(replacement[0].length)})`
+          : match;
+      });
+    outputs.set(path, updated);
+  }
+  const signpath = ".signpath/artifact-configuration.xml";
+  if (existsSync(join(root, signpath))) {
+    const content = read(signpath);
+    if ([...content.matchAll(/\bproduct-name="[^"]*"/g)].length !== 1)
+      throw new Error("SignPath 配置必须恰有一个 product-name 限制");
+    outputs.set(
+      signpath,
+      content.replace(
+        /\bproduct-name="[^"]*"/,
+        `product-name="${html(next.name)}"`,
+      ),
+    );
+  }
   // 提交前再次解析完整目标文件，尤其是 TOML 引号/转义后的语法。
   for (const [path, content] of outputs) {
     if (path.endsWith(".json")) JSON.parse(content);

@@ -64,12 +64,12 @@ pnpm init:project --config ../my-app.json
 # 如需精简初始界面，两条命令均添加 --minimal
 ```
 
-随后替换品牌 SVG、深链 scheme 和文件扩展名，配置实际安全报告渠道、签名和更新密钥。真实移除功能按 [裁剪配方](./docs/demo-modules.md#实际裁剪模块) 同步清理调用方、IPC、依赖、权限、翻译与测试。
+初始化同时同步深链、文件关联、浏览器存储隔离和品牌链接；用 `pnpm config:check` 检查派生配置一致性。随后替换品牌 SVG，配置实际安全报告渠道、签名和更新密钥。真实移除功能按 [裁剪配方](./docs/demo-modules.md#实际裁剪模块) 同步清理调用方、IPC、依赖、权限、翻译与测试。
 
 ## 验证
 
 ```sh
-pnpm verify       # 格式、品牌、lint、类型、前端 / 脚本测试、版本、前端构建
+pnpm verify       # 格式、身份配置、品牌资源、lint、类型、前端 / 脚本测试、版本、前端构建
 pnpm test:ui      # 浏览器生产构建、交互和无障碍检查
 pnpm bindings:check
 ```

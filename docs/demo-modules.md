@@ -286,6 +286,6 @@ pnpm build:web
 
 ## 派生系统身份
 
-`app.config.json` 初始化品牌和应用标识后，还需为深链 scheme、文件扩展名、MIME 与文件格式选择独立名称：修改 `tauri.conf.json` 的 deep-link / fileAssociations、`system_commands.rs` 参数解析、`workbench.rs` 类型识别，并同步界面示例、词典、测试和文档。发布后更改会影响已有系统登记与用户文件，需设计迁移或重新关联；只修改应用名不能避免抢占原模板的 `tdemo` / `.tdemo`。
+`app.config.json` 的 `integration` 统一管理深链协议与应用专属扩展名，初始化脚本同步安装注册和 MIME，原生解析、文件工作台及界面示例直接消费配置，见 [项目初始化](./development.md#项目初始化)。专属文件仍使用 UTF-8 JSON；更改文件内容格式时同步工作台校验与回归。发布后更改协议或扩展名会影响已有系统登记与用户文件，需设计迁移或重新关联。
 
 正式签名、远程 OAuth / 服务端权限、生产数据恢复、平台安装关联和性能均按实际验收记录；此处的可操作演示与自动测试不替代这些证据。

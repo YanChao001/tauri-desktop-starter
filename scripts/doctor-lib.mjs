@@ -210,7 +210,7 @@ export function diagnose(
       "桌面会话",
       display,
       display ? "已设置 DISPLAY / WAYLAND_DISPLAY" : "当前无图形显示服务",
-      "桌面运行需要图形会话；CI E2E 使用 xvfb-run -a pnpm test:e2e。",
+      "桌面运行需要图形会话；CI E2E 使用 xvfb-run -a pnpm test:e2e --interactive。",
       false,
     );
   } else

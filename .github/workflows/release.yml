@@ -257,6 +257,10 @@ jobs:
           path: ${{ steps.updater-metadata.outputs.metadata-file }}
           if-no-files-found: error
 
+      - name: 独立 Windows runner 验证安装器绘制
+        if: matrix.platform == 'windows-latest' && contains(steps.tauri.outputs.artifactPaths, '-setup.exe')
+        run: pnpm test:installer --interactive
+
       - name: 归档本次分发产物
         id: collect
         env:

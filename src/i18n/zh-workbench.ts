@@ -23,6 +23,7 @@ export const zhWorkbench = {
   "workbench.reveal": "在文件管理器中显示",
   "workbench.reload": "查看磁盘版本",
   "workbench.close": "关闭文件",
+  "workbench.clearOpenErrors": "清除文件错误",
   "workbench.drop":
     "将文本、JSON、Markdown 或 PNG / JPEG / GIF / WebP 图片拖入窗口，也可使用打开按钮。",
   "workbench.limits":

@@ -13,6 +13,17 @@ import {
   type AppSettings,
 } from "./settings-model";
 
+vi.mock("@/config/app", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/config/app")>();
+  return {
+    ...original,
+    APP_CONFIG: {
+      ...original.APP_CONFIG,
+      browserStorageNamespace: "tauri-starter",
+    },
+  };
+});
+
 describe("versioned settings model", () => {
   beforeEach(() => {
     localStorage.clear();

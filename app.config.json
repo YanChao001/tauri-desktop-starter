@@ -8,6 +8,12 @@
   "author": "Tauri Desktop Starter contributors",
   "repositoryUrl": "https://github.com/YanChao001/tauri-desktop-starter",
   "docsUrl": "https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/README.md",
+  "homepageUrl": "https://yanchao001.github.io/tauri-desktop-starter/",
+  "browserStorageNamespace": "tauri-starter",
+  "integration": {
+    "deepLinkScheme": "tdemo",
+    "fileExtension": "tdemo"
+  },
   "defaultMode": "demo",
   "updates": {
     "endpoint": "https://github.com/YanChao001/tauri-desktop-starter/releases/latest/download/latest.json",

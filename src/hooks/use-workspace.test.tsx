@@ -5,6 +5,10 @@ import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import * as native from "@/lib/tauri";
 import type { Activation, Workspace } from "@/lib/tauri";
 import { useWorkspace } from "./use-workspace";
+import {
+  createWorkbenchEditor,
+  workbenchEditor,
+} from "@/components/workbench/editor-store";
 
 const router = vi.hoisted(() => ({ navigate: vi.fn(), pathname: "/" }));
 vi.mock("react-router-dom", async (importOriginal) => ({
@@ -23,6 +27,12 @@ vi.mock("@/routes", () => ({
   ].map((path) => ({ path })),
 }));
 vi.mock("@/lib/report-error", () => ({ reportClientError: vi.fn() }));
+vi.mock("@/components/workbench/editor-store", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/workbench/editor-store")
+  >()),
+  workbenchEditor: { openActivation: vi.fn() },
+}));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   getCurrentWindowLabel: vi.fn(),
@@ -33,7 +43,9 @@ vi.mock("@/lib/tauri", () => ({
   onSystemNotification: vi.fn(),
   saveWorkspaceRoute: vi.fn(),
   recoveryStatus: vi.fn(),
+  loadWorkbenchDocument: vi.fn(),
 }));
+let editor = createWorkbenchEditor();
 let activation: ((value: Activation) => void) | undefined;
 let route: ((value: string) => void) | undefined;
 let notification: (() => void) | undefined;
@@ -46,7 +58,21 @@ function deferred<T>() {
   return { promise, resolve };
 }
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  editor = createWorkbenchEditor();
+  vi.mocked(workbenchEditor.openActivation).mockImplementation(
+    editor.openActivation,
+  );
+  vi.mocked(native.loadWorkbenchDocument).mockImplementation(async (id) => ({
+    id,
+    name: "example.tdemo",
+    path: `C:/chosen/${id}/example.tdemo`,
+    kind: "json",
+    content: "{}",
+    previewUrl: null,
+    revision: "first",
+    bytes: 2,
+  }));
   router.pathname = "/";
   vi.mocked(useLocation).mockImplementation(
     () => ({ pathname: router.pathname }) as ReturnType<typeof useLocation>,
@@ -84,6 +110,18 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+const associated = (
+  id: number,
+  resourceIds: string[],
+  route = "/workbench",
+): Activation => ({
+  id,
+  resourceIds,
+  route,
+  source: "single-instance",
+  files: resourceIds.map(() => "note.json"),
+  errors: [],
+});
 
 describe("workspace lifecycle", () => {
   it("ignores callbacks delivered after unmount and releases all listeners", async () => {
@@ -97,6 +135,8 @@ describe("workspace lifecycle", () => {
         source: "single-instance",
         route: "/workbench",
         files: [],
+        resourceIds: [],
+        errors: [],
       });
       route?.("/database");
       notification?.();
@@ -109,12 +149,26 @@ describe("workspace lifecycle", () => {
     const initial = deferred<Workspace>();
     vi.mocked(native.getWorkspace).mockReturnValue(initial.promise);
     vi.mocked(native.getActivationSnapshot).mockResolvedValue([
-      { id: 1, source: "startup", route: "/settings", files: [] },
+      {
+        id: 1,
+        source: "startup",
+        route: "/settings",
+        files: [],
+        resourceIds: [],
+        errors: [],
+      },
     ]);
     renderHook(useWorkspace);
     await waitFor(() => expect(native.getWorkspace).toHaveBeenCalled());
     act(() =>
-      activation?.({ id: 2, source: "deep-link", route: "/tasks", files: [] }),
+      activation?.({
+        id: 2,
+        source: "deep-link",
+        route: "/tasks",
+        files: [],
+        resourceIds: [],
+        errors: [],
+      }),
     );
     expect(router.navigate).toHaveBeenLastCalledWith("/tasks");
     await act(async () =>
@@ -137,11 +191,25 @@ describe("workspace lifecycle", () => {
 
   it("keeps an activation delivered during subscription ahead of the initialization snapshot", async () => {
     vi.mocked(native.onActivation).mockImplementation(async (handler) => {
-      handler({ id: 2, source: "deep-link", route: "/tasks", files: [] });
+      handler({
+        id: 2,
+        source: "deep-link",
+        route: "/tasks",
+        files: [],
+        resourceIds: [],
+        errors: [],
+      });
       return stops[0]!;
     });
     vi.mocked(native.getActivationSnapshot).mockResolvedValue([
-      { id: 1, source: "startup", route: "/settings", files: [] },
+      {
+        id: 1,
+        source: "startup",
+        route: "/settings",
+        files: [],
+        resourceIds: [],
+        errors: [],
+      },
     ]);
     renderHook(useWorkspace);
     await waitFor(() => expect(native.getWorkspace).toHaveBeenCalled());
@@ -215,6 +283,8 @@ describe("workspace lifecycle", () => {
         source: "startup",
         route: "/workbench",
         files: ["example.tdemo"],
+        resourceIds: [],
+        errors: [],
       },
     ]);
     renderHook(useWorkspace);
@@ -240,6 +310,8 @@ describe("workspace lifecycle", () => {
         source: "startup",
         route: "/workbench",
         files: ["sample.tdemo"],
+        resourceIds: [],
+        errors: [],
       },
     ]);
     const view = renderHook(
@@ -270,7 +342,14 @@ describe("workspace lifecycle", () => {
     const initial = deferred<Workspace>();
     vi.mocked(native.getWorkspace).mockReturnValue(initial.promise);
     vi.mocked(native.onActivation).mockImplementationOnce(async (handler) => {
-      handler({ id: 2, source: "deep-link", route: "/tasks", files: [] });
+      handler({
+        id: 2,
+        source: "deep-link",
+        route: "/tasks",
+        files: [],
+        resourceIds: [],
+        errors: [],
+      });
       return stops[0]!;
     });
     const view = renderHook(
@@ -344,5 +423,119 @@ describe("workspace lifecycle", () => {
     const stop = vi.fn();
     await act(async () => registration.resolve(stop));
     expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("opens cold-start associated resources even before the workbench has ever mounted", async () => {
+    vi.mocked(native.getActivationSnapshot).mockResolvedValue([
+      associated(1, ["cold-a", "cold-b"]),
+    ]);
+    renderHook(useWorkspace);
+    await waitFor(() => expect(editor.getSnapshot().entries).toHaveLength(2));
+    expect(
+      vi.mocked(native.loadWorkbenchDocument).mock.calls.map(([id]) => id),
+    ).toEqual(["cold-a", "cold-b"]);
+    expect(router.navigate).toHaveBeenLastCalledWith("/workbench");
+  });
+
+  it("consumes hot activations from another page once across duplicate events and snapshots", async () => {
+    const workspace = deferred<Workspace>();
+    vi.mocked(native.getWorkspace).mockReturnValue(workspace.promise);
+    const value = associated(3, ["hot"]);
+    vi.mocked(native.getActivationSnapshot).mockResolvedValue([value]);
+    router.pathname = "/settings";
+    const view = renderHook(useWorkspace);
+    await waitFor(() => expect(native.getWorkspace).toHaveBeenCalled());
+    act(() => activation?.(value));
+    await waitFor(() => expect(editor.getSnapshot().entries).toHaveLength(1));
+    editor.close("hot");
+    router.pathname = "/tasks";
+    view.rerender();
+    act(() => activation?.(value));
+    await act(async () =>
+      workspace.resolve({
+        routes: { main: "/settings" },
+        secondaryOpen: false,
+      }),
+    );
+    expect(native.loadWorkbenchDocument).toHaveBeenCalledExactlyOnceWith("hot");
+    expect(editor.getSnapshot().entries).toHaveLength(0);
+    expect(router.navigate).toHaveBeenCalledExactlyOnceWith("/workbench");
+  });
+
+  it("loads every unseen older activation without letting an out-of-order event replace newer navigation", async () => {
+    renderHook(useWorkspace);
+    await waitFor(() => expect(native.saveWorkspaceRoute).toHaveBeenCalled());
+    act(() => activation?.(associated(5, [], "/tasks")));
+    act(() => activation?.(associated(4, ["older"])));
+    await waitFor(() => expect(editor.getSnapshot().entries).toHaveLength(1));
+    expect(router.navigate).toHaveBeenCalledExactlyOnceWith("/tasks");
+    expect(native.loadWorkbenchDocument).toHaveBeenCalledExactlyOnceWith(
+      "older",
+    );
+  });
+
+  it("recovers files from a delayed snapshot without taking navigation back from the user", async () => {
+    const snapshot = deferred<Activation[]>();
+    vi.mocked(native.getActivationSnapshot).mockReturnValue(snapshot.promise);
+    const view = renderHook(useWorkspace);
+    await waitFor(() =>
+      expect(native.getActivationSnapshot).toHaveBeenCalled(),
+    );
+    router.pathname = "/tasks";
+    view.rerender();
+    await act(async () => snapshot.resolve([associated(1, ["restored"])]));
+    await waitFor(() => expect(editor.getSnapshot().entries).toHaveLength(1));
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps accepted file loads across StrictMode replay while ignoring callbacks from its discarded subscription", async () => {
+    const reading = deferred<native.WorkbenchDocument>();
+    vi.mocked(native.loadWorkbenchDocument).mockReturnValue(reading.promise);
+    const value = associated(8, ["strict"]);
+    let stale!: (value: Activation) => void;
+    vi.mocked(native.onActivation).mockImplementationOnce(async (handler) => {
+      stale = handler;
+      handler(value);
+      return stops[0]!;
+    });
+    vi.mocked(native.getActivationSnapshot).mockResolvedValue([value]);
+    const view = renderHook(useWorkspace, { reactStrictMode: true });
+    await waitFor(() =>
+      expect(native.loadWorkbenchDocument).toHaveBeenCalledExactlyOnceWith(
+        "strict",
+      ),
+    );
+    expect(native.onActivation).toHaveBeenCalledTimes(2);
+    act(() => stale(associated(9, ["ignored"])));
+    router.pathname = "/settings";
+    view.rerender();
+    await act(async () =>
+      reading.resolve({
+        id: "strict",
+        name: "note.json",
+        path: "C:/selected/note.json",
+        kind: "json",
+        content: "{}",
+        previewUrl: null,
+        revision: "first",
+        bytes: 2,
+      }),
+    );
+    expect(editor.getSnapshot().entries).toHaveLength(1);
+    expect(native.loadWorkbenchDocument).toHaveBeenCalledOnce();
+    expect(router.navigate).toHaveBeenCalledExactlyOnceWith("/workbench");
+  });
+
+  it("leaves associated files and main-window activations out of secondary windows", async () => {
+    vi.mocked(native.getCurrentWindowLabel).mockResolvedValue("secondary");
+    vi.mocked(native.getActivationSnapshot).mockResolvedValue([
+      associated(1, ["main-only"]),
+    ]);
+    renderHook(useWorkspace);
+    await waitFor(() => expect(native.saveWorkspaceRoute).toHaveBeenCalled());
+    act(() => activation?.(associated(2, ["also-main-only"])));
+    await act(async () => {});
+    expect(native.loadWorkbenchDocument).not.toHaveBeenCalled();
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 });

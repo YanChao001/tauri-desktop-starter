@@ -351,12 +351,28 @@ export default function Workbench() {
           {conflict ? t("workbench.conflict") : nativeErrorText(error, t)}
         </p>
       ) : null}
-      {dropErrors.length ? (
-        <ul role="alert" className="rounded-lg border p-3 text-sm">
-          {dropErrors.map((message, index) => (
-            <li key={index}>{message}</li>
-          ))}
-        </ul>
+      {dropErrors.length || state.activationErrors.length ? (
+        <div className="space-y-2 rounded-lg border p-3 text-sm">
+          <ul role="alert">
+            {[...dropErrors, ...state.activationErrors].map((reason, index) => (
+              <li key={index}>
+                {typeof reason === "string"
+                  ? reason
+                  : nativeErrorText(reason, t)}
+              </li>
+            ))}
+          </ul>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setDropErrors([]);
+              workbenchEditor.clearActivationErrors();
+            }}
+          >
+            {t("workbench.clearOpenErrors")}
+          </Button>
+        </div>
       ) : null}
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(12rem,1fr)_minmax(0,4fr)]">
         <aside className="space-y-4">

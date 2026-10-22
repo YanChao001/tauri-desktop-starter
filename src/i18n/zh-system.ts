@@ -24,7 +24,7 @@ export const zhSystem = {
   "system.readClipboard": "读取文本",
   "system.deepLink": "深链接与文件关联",
   "system.deepLinkHelp":
-    "安装版支持 tdemo://open?route=/database 链接和 .tdemo 文件。冷启动与重复启动的输入显示在下面；文件内容由文件工作台校验。",
+    "安装版支持 {deepLink} 链接和 .{extension} 文件。冷启动与重复启动的输入显示在下面；文件内容由文件工作台校验。",
   "system.events": "启动与激活记录",
   "system.empty": "尚未收到激活事件。",
   "system.window": "打开独立笔记窗口",

@@ -49,8 +49,8 @@
     "fileAssociations": [
       {
         "ext": ["tdemo"],
-        "name": "Desktop Demo Document",
-        "description": "UTF-8 desktop demo document",
+        "name": "Tauri Desktop Starter Document",
+        "description": "UTF-8 Tauri Desktop Starter document",
         "role": "Editor",
         "mimeType": "application/x-tdemo"
       }

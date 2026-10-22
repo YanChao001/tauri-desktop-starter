@@ -12,7 +12,7 @@
 
 ## 签名范围
 
-- Windows x64 的 **NSIS 安装包**：`Tauri Desktop Starter_<version>_x64-setup.exe`；
+- Windows x64 的 **NSIS 安装包**：`<产品名>_<version>_x64-setup.exe`，产品名由 [`app.config.json`](../app.config.json) 的 `name` 定义；
 - 当前配置只签 NSIS 安装包外层，安装后的应用二进制与 MSI 不在此签名范围；需要嵌套签名时须一并修改 artifact 配置、工作流产物收集和验证；
 - WebView2、Rust / npm 依赖等第三方组件不使用本项目的签名额度。
 
@@ -42,7 +42,7 @@ build job 的 `build-installers-<target>` 是 SignPath 处理前的归档；最�
 
 `.signpath/artifact-configuration.xml` 强制安装包满足：
 
-- `ProductName = Tauri Desktop Starter`
+- `ProductName` 与 [`app.config.json`](../app.config.json) 的 `name` 一致，初始化时同步到 artifact 配置
 - `ProductVersion` 与 `FileVersion` 等于本次 tag 的版本号
 
 版本号不一致时 SignPath 拒绝签名，避免签错包。
