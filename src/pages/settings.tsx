@@ -562,7 +562,7 @@ export default function Settings() {
           <div
             role="group"
             aria-label={t("settings.windowSize")}
-            className="grid grid-cols-2 gap-2 xl:grid-cols-4"
+            className="window-preset-grid grid grid-cols-2 gap-2"
           >
             {visiblePresets.map((preset) => {
               const unavailable =

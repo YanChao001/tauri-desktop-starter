@@ -246,6 +246,11 @@ html[data-motion="reduced"] .app-route-enter {
 .settings-studio {
   container: settings / inline-size;
 }
+@container settings (min-width: 60rem) {
+  .window-preset-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .settings-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
