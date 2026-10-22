@@ -19,10 +19,12 @@ concurrency:
 
 jobs:
   validate:
-    name: 校验发布代码
+    name: 校验代码并准备发布草稿
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+    outputs:
+      release-id: ${{ steps.release.outputs.release-id }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -36,6 +38,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      - name: 创建或复用唯一的发布草稿
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-lib.mjs draft
 
   build:
     name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
@@ -205,14 +212,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: "v__VERSION__"
-          releaseBody: |
-            安装包与分发文件见下方 Assets。使用说明见仓库 README。
-
-            [Code signing policy](https://github.com/${{ github.repository }}/blob/v__VERSION__/docs/code-signing-policy.md)：签名范围、服务状态与隐私说明。签名结果以下载文件的实际验证为准。
-          releaseDraft: true
-          prerelease: ${{ steps.version.outputs.prerelease }}
+          releaseId: ${{ needs.validate.outputs.release-id }}
           # 各平台先验证自己的签名，最后由单一 job 汇总，避免矩阵并发覆盖 latest.json。
           uploadUpdaterJson: false
           uploadUpdaterSignatures: ${{ steps.updater.outputs.enabled == 'true' }}
@@ -297,7 +297,7 @@ jobs:
 
   publish-updater:
     name: 汇总全部平台的自动更新清单
-    needs: build
+    needs: [validate, build]
     if: needs.build.outputs.updater-enabled == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -314,6 +314,7 @@ jobs:
         id: manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.validate.outputs.release-id }}
           UPDATER_METADATA_DIR: updater-metadata
         run: node scripts/release-lib.mjs merge
       - uses: actions/upload-artifact@v7
@@ -330,7 +331,7 @@ jobs:
   # 仓库密钥：SIGNPATH_API_TOKEN
   sign-windows:
     name: 签名 Windows 安装包（未配置 SignPath 时跳过）
-    needs: build
+    needs: [validate, build]
     if: vars.SIGNPATH_ORGANIZATION_ID != ''
     runs-on: windows-latest
     steps:
@@ -428,22 +429,16 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.validate.outputs.release-id }}
         run: |
-          $releaseJson = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName
-          if ($LASTEXITCODE -ne 0) { throw "读取本次 Release 状态失败" }
-          $release = $releaseJson | ConvertFrom-Json
-          if (-not $release.isDraft -or $release.tagName -ne $env:TAG) {
-            throw "签名产物只能替换本次版本的 draft Release 资产"
-          }
           $uploadDir = Join-Path $env:RUNNER_TEMP "signed-release-assets"
           New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
-          $uploads = @()
           foreach ($file in Get-ChildItem signed -Filter *.exe -Recurse -File) {
             # 与 tauri-action 的 ghAssetName 规则一致，保证覆盖同一个 Release 资产。
             $assetName = $file.Name.Trim() -replace '[^a-zA-Z0-9_-]', '.' -replace '\.\.', '.'
             $destination = Join-Path $uploadDir $assetName
             Copy-Item -LiteralPath $file.FullName -Destination $destination
-            $uploads += $destination
           }
-          gh release upload $env:TAG @uploads --repo $env:GITHUB_REPOSITORY --clobber
+          $env:RELEASE_ASSET_DIR = $uploadDir
+          node scripts/release-lib.mjs upload
           if ($LASTEXITCODE -ne 0) { throw "上传签名后的安装包失败" }

@@ -5,10 +5,12 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
   collectUpdaterMetadata,
+  ensureDraftRelease,
   mergeUpdaterMetadata,
   releaseAssetName,
   resolveReleaseAssets,
   updaterReleasePlan,
+  uploadReleaseAsset,
 } from "./release-lib.mjs";
 
 const repository = "owner/starter";
@@ -19,6 +21,71 @@ const brand = {
     publicKey: "public-key",
   },
 };
+
+test("one draft is created before builds and its ID is reused on reruns", () => {
+  const options = {
+    version: "1.2.3-beta.1+build",
+    repository,
+    commit: "abc123",
+  };
+  const requests = [];
+  let draft;
+  const request = (args, body) => {
+    requests.push(args);
+    if (!body) return [[{ tag_name: "v1.2.2" }], draft ? [draft] : []];
+    assert.equal(body.target_commitish, options.commit);
+    assert.equal(body.draft, true);
+    assert.equal(body.prerelease, true);
+    draft = { id: 42, ...body };
+    return draft;
+  };
+  assert.equal(ensureDraftRelease(options, request), 42);
+  assert.equal(ensureDraftRelease(options, request), 42);
+  assert.equal(requests.filter((args) => args.includes("POST")).length, 1);
+});
+
+test("duplicate, published or mismatched-source releases stop before builds or uploads", () => {
+  const draft = {
+    id: 42,
+    tag_name: `v${version}`,
+    draft: true,
+    target_commitish: "abc123",
+  };
+  for (const releases of [
+    [draft, { ...draft, id: 43 }],
+    [{ ...draft, draft: false }],
+    [{ ...draft, target_commitish: "other-commit" }],
+  ]) {
+    const requests = [];
+    assert.throws(() =>
+      ensureDraftRelease({ version, repository, commit: "abc123" }, (args) => {
+        requests.push(args);
+        return [releases];
+      }),
+    );
+    assert.equal(requests.length, 1);
+  }
+});
+
+test("replacement assets upload by release ID even when the tag has other drafts", () => {
+  const requests = [];
+  uploadReleaseAsset(
+    "/metadata/latest.json",
+    { id: 42, assets: [{ id: 81, name: "latest.json" }] },
+    repository,
+    (args) => requests.push(args),
+  );
+  assert.deepEqual(requests[0], [
+    `repos/${repository}/releases/assets/81`,
+    "--method",
+    "DELETE",
+  ]);
+  assert.equal(
+    requests[1][0],
+    `https://uploads.github.com/repos/${repository}/releases/42/assets?name=latest.json`,
+  );
+  assert.equal(requests[1].at(-1), "/metadata/latest.json");
+});
 
 test("updater release requires a complete key pair, matching repository and compatible signing order", () => {
   assert.deepEqual(
@@ -86,8 +153,8 @@ function draftRelease() {
       ),
     },
     release: {
-      isDraft: true,
-      tagName: `v${version}`,
+      draft: true,
+      tag_name: `v${version}`,
       assets: files.flatMap(([label, name]) =>
         ["", ".sig"].map((extension) => ({
           name: name + extension,
@@ -141,10 +208,10 @@ test("manifest publication rejects missing signatures, unfinished or ambiguous a
       release.assets.push({ ...release.assets[0] });
     },
     (release) => {
-      release.isDraft = false;
+      release.draft = false;
     },
     (release) => {
-      release.tagName = "v1.2.2";
+      release.tag_name = "v1.2.2";
     },
   ];
   for (const change of invalid) {
