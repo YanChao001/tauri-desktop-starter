@@ -76,4 +76,11 @@ export async function captureReadmePreviews(bounds) {
   await browser.waitUntil(() =>
     browser.execute((width) => Math.abs(innerWidth - width) <= 1, target.width),
   );
+  // 设置页会在 resize 后防抖刷新原生尺寸；先等其完成，避免菜单检查拿到旧布局。
+  await browser.waitUntil(async () =>
+    (await $("#settings-window [aria-live=polite]").getText()).includes(
+      `${target.width} × ${target.height}`,
+    ),
+  );
+  await settledAppearance({ theme: "dark" });
 }

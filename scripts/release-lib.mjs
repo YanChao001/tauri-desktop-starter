@@ -70,17 +70,14 @@ export function updaterReleasePlan({
   };
 }
 
-// 与 tauri-action@v1 默认 ghAssetName 一致，包含 .app 归档的特殊命名。
+// tauri-action@v1 请求上传的名称；最终名称由 GitHub 返回，不能预猜其空格替换规则。
 export function releaseAssetName(path, { productName, version, target }) {
   let name = basename(path.replaceAll("\\", "/"));
   if (name.endsWith(".app.tar.gz") || name.endsWith(".app.tar.gz.sig")) {
     const arch = target === "aarch64-apple-darwin" ? "aarch64" : "x64";
     name = `${productName}_${version}_${arch}.app.tar.gz${name.endsWith(".sig") ? ".sig" : ""}`;
   }
-  return name
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]/g, ".")
-    .replace(/\.\./g, ".");
+  return name.trim();
 }
 
 function artifactKind(path, platform) {
@@ -234,6 +231,59 @@ export function mergeUpdaterMetadata(
   };
 }
 
+/** 草稿可能使用临时下载 URL；以已上传资产的真实名称生成正式 tag 的 URL。 */
+export function resolveReleaseAssets(
+  manifest,
+  release,
+  { version, repository },
+) {
+  repositoryName(repository);
+  if (!release.isDraft || release.tagName !== `v${version}`)
+    throw new Error("更新元数据只能上传到本次版本的 draft Release");
+  const prefix = `https://github.com/${repository}/releases/download/${encodeURIComponent(`v${version}`)}/`;
+  const find = (requested) => {
+    const matches = release.assets.filter(
+      (asset) => asset.name === requested || asset.label === requested,
+    );
+    if (matches.length !== 1)
+      throw new Error(`Release 缺少或存在重名的更新包或签名资产：${requested}`);
+    const asset = matches[0];
+    if (
+      asset.state !== "uploaded" ||
+      !(asset.size > 0) ||
+      typeof asset.name !== "string" ||
+      !asset.name ||
+      /[/\\]/.test(asset.name) ||
+      [...asset.name].some((character) => {
+        const code = character.charCodeAt(0);
+        return code < 32 || code === 127;
+      }) ||
+      asset.name === "." ||
+      asset.name === ".."
+    )
+      throw new Error(`Release 资产尚未就绪或名称无效：${requested}`);
+    return asset;
+  };
+  return {
+    ...manifest,
+    platforms: Object.fromEntries(
+      Object.entries(manifest.platforms).map(([platform, value]) => {
+        if (!value.url.startsWith(prefix))
+          throw new Error(
+            "更新产物 URL 必须指向本次仓库与 tag 的 Release 资产",
+          );
+        const requested = decodeURIComponent(value.url.slice(prefix.length));
+        const asset = find(requested);
+        find(`${requested}.sig`);
+        return [
+          platform,
+          { ...value, url: `${prefix}${encodeURIComponent(asset.name)}` },
+        ];
+      }),
+    ),
+  };
+}
+
 function command(binary, args, root, options = {}) {
   const result = spawnSync(binary, args, {
     cwd: root,
@@ -372,17 +422,18 @@ function main() {
       { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" },
     ),
   );
-  if (!assets.isDraft || assets.tagName !== `v${version}`)
-    throw new Error("更新元数据只能上传到本次版本的 draft Release");
-  const manifest = mergeUpdaterMetadata(
-    files.map((file) => json(join(source, file))),
-    { version, repository, notes: assets.body },
+  const manifest = resolveReleaseAssets(
+    mergeUpdaterMetadata(
+      files.map((file) => json(join(source, file))),
+      {
+        version,
+        repository,
+        notes: assets.body,
+      },
+    ),
+    assets,
+    { version, repository },
   );
-  const available = new Set(assets.assets.map((asset) => asset.url));
-  for (const value of Object.values(manifest.platforms)) {
-    if (!available.has(value.url) || !available.has(`${value.url}.sig`))
-      throw new Error(`Release 缺少更新包或签名资产：${value.url}`);
-  }
   mkdirSync(destination, { recursive: true });
   const file = join(destination, "latest.json");
   writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
