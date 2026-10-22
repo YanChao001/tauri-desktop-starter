@@ -107,6 +107,12 @@ failed to bundle project: `CONNECT proxy failed: proxy server responded 502`
 
 只缺 WiX 时可暂时只构建 NSIS：`pnpm app:build --bundles nsis`。NSIS 自身下载失败时，改目标不会修复该依赖；可用 `pnpm app:portable` 先验证不经过打包器的应用构建。
 
+## Linux CI 安装依赖耗时过长
+
+先区分 `apt-get update`、包下载和解包耗时。日志若在 `azure.archive.ubuntu.com` 出现大量 `Ign`，随后切到 `archive.ubuntu.com` 才迅速下载，说明时间消耗在首选镜像等待和重试，而非应用编译。每个 GitHub 托管 job 使用新虚拟机，pnpm / Rust 缓存不包含这些系统包。
+
+[CI](../.github/workflows/ci.yml) 与 [发布工作流](../.github/workflows/release.yml) 为当前 Ubuntu 22.04 runner 的 APT 镜像列表设置官方 HTTPS 源，并限制连接 / 数据等待、重试及安装步骤总时长；仍保留原有依赖和签名验证。调整 runner 镜像后复核其源配置，失败时检查具体下载错误，不用取消检查或扩大重试次数掩盖网络问题。
+
 ## cargo 报 linker not found
 
 **现象**：
