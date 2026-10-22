@@ -35,6 +35,9 @@ jobs:
       - name: 验证品牌资源与 SVG 源一致
         run: pnpm branding:check
 
+      - name: 验证 README 截图格式与尺寸
+        run: pnpm docs:previews:check
+
       - name: 版本一致性与发布脚本回归
         run: |
           node scripts/version.mjs check
@@ -227,101 +230,3 @@ jobs:
               exit 1
             fi
           done
-
-  readme-previews:
-    name: 同步 README 原生截图
-    needs: quality-gate
-    # 只有本仓库 develop 的成功构建能写入截图分支，PR 测试始终只读。
-    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-
-      - name: 判断是否需要刷新截图
-        id: inputs
-        env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            git diff --name-only "$BEFORE" "$GITHUB_SHA" -- \
-              src public resources src-tauri e2e app.config.json index.html \
-              package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc \
-              tsconfig.json tsconfig.node.json vite.config.ts wdio.conf.mjs \
-              scripts/readme-previews.mjs scripts/fs-utils.mjs .github/workflows/ci.yml \
-              > "$RUNNER_TEMP/readme-preview-inputs.txt"
-            if [[ -s "$RUNNER_TEMP/readme-preview-inputs.txt" ]]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "没有影响界面的改动，跳过截图 PR。"
-            fi
-          fi
-
-      - name: 下载本次 Windows 验收截图
-        if: steps.inputs.outputs.changed == 'true'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: readme-previews-windows
-          path: artifacts/e2e/fresh
-
-      - name: 校验并同步原生截图
-        if: steps.inputs.outputs.changed == 'true'
-        run: node scripts/readme-previews.mjs
-
-      - name: 确认 develop 仍指向本次验收代码
-        if: steps.inputs.outputs.changed == 'true'
-        id: current
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq .object.sha)
-          if [[ "$head" == "$GITHUB_SHA" ]]; then
-            echo "matches=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "matches=false" >> "$GITHUB_OUTPUT"
-            echo "develop 已有更新，跳过本次旧截图，等待最新 CI。"
-          fi
-
-      - name: 创建或更新截图 PR
-        if: steps.current.outputs.matches == 'true'
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
-        with:
-          token: ${{ github.token }}
-          base: develop
-          branch: docs/readme-previews
-          add-paths: |
-            docs/assets/preview-light.png
-            docs/assets/preview-dark.png
-            docs/assets/skins-dark.png
-          commit-message: "docs(readme): 更新 Windows 原生界面截图"
-          title: "docs(readme): 更新 Windows 原生界面截图"
-          body: |
-            ## 变更内容
-
-            同步 README 明暗主题预览与英文 README 引用的皮肤图库截图。
-
-            ## 变更原因
-
-            使用 develop 最新通过 CI 的 Windows 原生窗口截图，保持文档预览与界面一致。
-
-            ## 验证结果
-
-            来源提交：${{ github.sha }}。
-            [本次 CI](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) 的前端、浏览器、Rust 与三端桌面 E2E 均已通过；截图格式和窗口尺寸已检查。
-
-            ## 影响范围
-
-            仅修改三张文档图片，不涉及应用权限、打包配置、依赖或用户数据。请检查截图效果，并按 GitHub 提示批准自动 PR 的工作流后走常规评审合并。

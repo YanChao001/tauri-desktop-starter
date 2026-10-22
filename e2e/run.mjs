@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { buildE2E, readE2EBuild, root } from "./build.mjs";
 import { parseE2EOptions } from "./run-options.mjs";
+import { updateReadmePreviews } from "../scripts/readme-previews.mjs";
 import {
   spawnOwned,
   stopOwned,
@@ -25,7 +26,7 @@ let preserveData = false;
 const cancellation = new AbortController();
 const interrupt = () => cancellation.abort(new Error("桌面测试已中断"));
 try {
-  const { skipBuild } = parseE2EOptions(process.argv.slice(2));
+  const { skipBuild, phases } = parseE2EOptions(process.argv.slice(2));
   const binary = skipBuild ? readE2EBuild() : await buildE2E();
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
@@ -39,7 +40,7 @@ try {
       updates: { endpoint: "", publicKey: "" },
     }),
   );
-  for (const phase of ["fresh", "persisted", "centered"]) {
+  for (const phase of phases) {
     const port = await new Promise((done, fail) => {
       const socket = createServer();
       socket.once("error", fail);
@@ -86,6 +87,10 @@ try {
       await stopOwned(runner);
       await stopOwned(app);
     }
+  }
+  if (phases.includes("previews")) {
+    const changed = updateReadmePreviews(root);
+    console.log(`README 原生截图已采集并同步：${changed.length} 个文件更新。`);
   }
 } catch (error) {
   console.error(error.message);

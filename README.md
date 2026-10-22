@@ -10,7 +10,7 @@ Tauri 2 + React 19 + TypeScript 桌面应用基座。默认保留完整、可操
 | ------------------------------------------------ | ----------------------------------------------- |
 | ![展厅亮色主题](./docs/assets/preview-light.png) | ![展厅暗色主题](./docs/assets/preview-dark.png) |
 
-以上为隔离 Windows 桌面构建的原生截图，由 [截图更新流程](./docs/testing.md#readme-原生截图更新) 通过 PR 同步；界面改动与截图更新 PR 可能分批合入。皮肤资源见 [说明](./resources/skins/README.md)。
+以上为隔离 Windows 桌面构建的原生截图，按 [截图更新流程](./docs/testing.md#readme-原生截图更新) 在本地采集并随功能 PR 提交，发布时随代码进入 `main`。皮肤资源见 [说明](./resources/skins/README.md)。
 
 ## 快速开始
 

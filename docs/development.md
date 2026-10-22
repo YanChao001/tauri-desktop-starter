@@ -90,7 +90,9 @@ node scripts/doctor.mjs --json
 | `pnpm bindings:check`                      | 检查生成绑定未漂移                                              | 提交原生改动前                                       |
 | `pnpm test:ui`                             | 构建浏览器产物并无头运行界面检查，不弹出测试窗口                | 日常样式、布局和交互回归                             |
 | `pnpm test:e2e --interactive`              | 隔离构建并运行真实桌面进程测试，会激活窗口                      | 独立 CI / 虚拟机或前台验收时段                       |
+| `pnpm docs:capture --interactive`          | 在 Windows 隔离窗口中采集三张 README 截图并同步                 | 界面改动后、提交 PR 前，需安排前台时段               |
 | `pnpm docs:previews`                       | 同步已采集的 Windows 原生截图，不启动窗口                       | [更新 README 图片](./testing.md#readme-原生截图更新) |
+| `pnpm docs:previews:check`                 | 检查已提交截图的格式和尺寸，不启动窗口                          | CI 或提交前快速检查                                  |
 | `pnpm test:browser`                        | 测试已构建浏览器产物的子路径、交互、键盘与 axe                  | 浏览器部署前，需 Playwright                          |
 | `pnpm dev`                                 | 只起 Vite（localhost:1420）                                     | 纯调样式，不想等 Rust 编译                           |
 | `pnpm app:build`                           | 构建安装包并收集到版本化 `artifacts/`                           | 出测试包 / 发布                                      |
@@ -99,7 +101,7 @@ node scripts/doctor.mjs --json
 | `pnpm preview`                             | 通过本地 HTTP 服务预览 `dist/`                                  | 检查前端构建结果，无原生能力                         |
 | `pnpm build:web`                           | 构建浏览器演示到 `dist-web/`                                    | 在线演示发布                                         |
 | `pnpm exec vite preview --outDir dist-web` | 通过本地 HTTP 服务预览浏览器演示                                | 检查演示构建与路由                                   |
-| `pnpm verify`                              | 格式、品牌一致性、lint、类型、前端/脚本测试、版本检查、前端构建 | 完整自查；日常按改动选择检查                         |
+| `pnpm verify`                              | 格式、品牌和截图检查、lint、类型、前端/脚本测试、版本、前端构建 | 完整自查；日常按改动选择检查                         |
 | `pnpm test`                                | 执行单元测试                                                    | 逻辑变更后                                           |
 | `pnpm test:watch`                          | 测试监听模式                                                    | 边写边测                                             |
 | `pnpm test:coverage`                       | 生成覆盖率报告                                                  | 想知道哪里没测到                                     |

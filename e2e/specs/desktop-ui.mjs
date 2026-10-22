@@ -1,48 +1,16 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { browser, $, $$ } from "@wdio/globals";
 import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
+import {
+  patchSettings,
+  screenshot,
+  settledAppearance,
+} from "../appearance.mjs";
+import { captureReadmePreviews } from "../readme-previews.mjs";
 
-async function patchSettings(patch) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const snapshot = await invoke("load_settings_snapshot");
-    assert.equal(snapshot.ok, true);
-    const result = await invoke("save_settings_snapshot", {
-      settings: { ...snapshot.value.settings, ...patch, schemaVersion: 3 },
-      expectedRevision: snapshot.value.revision,
-    });
-    if (result.ok) return result.value;
-    assert.equal(result.failure.code, "SETTINGS_CONFLICT");
-  }
-  throw new Error("Native preferences did not settle");
-}
-async function settledAppearance(expected) {
-  await browser.waitUntil(() =>
-    browser.execute((values) => {
-      const root = document.documentElement;
-      return Object.entries(values).every(([key, value]) =>
-        key === "theme"
-          ? root.classList.contains(
-              value === "system"
-                ? matchMedia("(prefers-color-scheme: dark)").matches
-                  ? "dark"
-                  : "light"
-                : value,
-            )
-          : key === "language"
-            ? root.lang === (value === "zh" ? "zh-CN" : "en")
-            : root.dataset[key] === String(value),
-      );
-    }, expected),
-  );
-  await browser.execute(async () => {
-    await document.fonts.ready;
-    await new Promise((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(resolve)),
-    );
-  });
-}
 function geometry() {
   return browser.execute(() => {
     const rect = (selector) => {
@@ -60,18 +28,27 @@ function geometry() {
     };
   });
 }
-async function screenshot(name) {
-  await browser.execute(async () => {
-    await Promise.all(
-      [...document.querySelectorAll(".skin-scene")].map((element) => {
-        const image = new Image();
-        image.src = getComputedStyle(element).maskImage.slice(5, -2);
-        return image.decode();
-      }),
-    );
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-  });
-  await browser.saveScreenshot(join("artifacts", "e2e", "fresh", name));
+
+function settingsLayout() {
+  return browser.execute(() =>
+    [
+      ...document.querySelectorAll(
+        ".settings-studio > *, .skin-gallery > *, #settings-window [data-window-preset], .wallpaper-library > *, #settings-about > *",
+      ),
+    ].map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        tag: element.tagName,
+        id: element.id,
+        className: element.className,
+        text: element.textContent?.trim().slice(0, 80),
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      };
+    }),
+  );
 }
 
 export function desktopUiChecks() {
@@ -87,6 +64,7 @@ export function desktopUiChecks() {
       await patchSettings({ motion: "full", sidebarCollapsed: false });
       await navigate("/settings");
       await settledAppearance({ motion: "full" });
+      await $(".wallpaper-library[aria-busy=false]").waitForExist();
       for (const selector of ["main", ".app-sidebar-navigation"]) {
         const result = await browser.execute(async (target) => {
           const viewport = document.querySelector(target);
@@ -136,108 +114,55 @@ export function desktopUiChecks() {
     const original = (await invoke("load_settings_snapshot")).value.settings;
     const originalWindow = (await invoke("get_window_geometry")).value;
     try {
-      const size = await invoke("set_window_size", {
-        width: Math.min(
-          originalWindow.maxWidth,
-          Math.max(originalWindow.minWidth, 1280),
-        ),
-        height: Math.min(
-          originalWindow.maxHeight,
-          Math.max(originalWindow.minHeight, 840),
-        ),
-      });
-      assert.equal(size.ok, true);
-      await patchSettings({
-        language: "zh",
-        theme: "light",
-        accent: "emerald",
-        background: "aurora",
-        motion: "reduced",
-        sidebarCollapsed: false,
-        sidebarWidth: 224,
-        menuBar: true,
-        fontSize: "md",
-      });
-      await settledAppearance({
-        language: "zh",
-        theme: "light",
-        background: "aurora",
-      });
-      await navigate("/");
-      await $("[data-testid=showroom]").waitForDisplayed();
-      await $("[data-sonner-toast]").waitForExist({ reverse: true });
-      await browser.execute(async () => {
-        document.activeElement?.blur();
-        document.querySelector("main").scrollTop = 0;
-        document.querySelector(".app-sidebar-navigation").scrollTop = 0;
-        await new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        );
-      });
-      assert.equal((await geometry()).scrollTop, 0);
-      await screenshot("desktop-light.png");
-      await patchSettings({ theme: "dark" });
-      await settledAppearance({ theme: "dark" });
-      await screenshot("desktop-dark.png");
-      await navigate("/settings");
-      await $(".skin-gallery").waitForDisplayed();
-      await screenshot("desktop-settings.png");
-      const galleryWidth = Math.max(
-        originalWindow.minWidth,
-        Math.min(1120, size.value.width),
-      );
-      const gallerySize = await invoke("set_window_size", {
-        width: galleryWidth,
-        height: size.value.height,
-      });
-      assert.equal(gallerySize.ok, true);
-      await browser.waitUntil(() =>
-        browser.execute(
-          (width) => Math.abs(innerWidth - width) <= 1,
-          galleryWidth,
-        ),
-      );
-      await browser.execute(async () => {
-        const main = document.querySelector("main");
-        const gallery = document.querySelector(".skin-gallery");
-        document.activeElement?.blur();
-        main.scrollTop +=
-          gallery.getBoundingClientRect().top -
-          main.getBoundingClientRect().top -
-          16;
-        document.querySelector(".app-sidebar-navigation").scrollTop = 0;
-        await new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        );
-      });
-      await screenshot("desktop-skins-dark.png");
-      await patchSettings({ theme: "light" });
-      await settledAppearance({ theme: "light" });
-      await screenshot("desktop-skins-light.png");
-      await patchSettings({ theme: "dark" });
-      await settledAppearance({ theme: "dark" });
-      await invoke("set_window_size", {
-        width: size.value.width,
-        height: size.value.height,
-      });
-      await browser.waitUntil(() =>
-        browser.execute(
-          (width) => Math.abs(innerWidth - width) <= 1,
-          size.value.width,
-        ),
-      );
+      await captureReadmePreviews(originalWindow);
       await browser.execute(() => {
         document.querySelector("main").scrollTop = 180;
       });
-      const before = await geometry();
+      // WebKit 在调整窗口并滚动后仍可能重排容器；以连续稳定的布局作为菜单基线。
+      let before;
+      let stable = 0;
+      await browser.waitUntil(
+        async () => {
+          const current = await geometry();
+          stable = isDeepStrictEqual(current, before) ? stable + 1 : 0;
+          before = current;
+          return stable >= 3;
+        },
+        {
+          interval: 100,
+          timeoutMsg:
+            "Settings layout did not settle before opening native menus",
+        },
+      );
       assert.equal(before.main.y, before.chrome.height);
       assert.equal(before.rootScrollTop, 0);
+      const beforeLayout = await settingsLayout();
       for (const menu of await $$(".app-title-menu-trigger")) {
         // 桌面驱动的 element.click 只发 DOM click；菜单同时以键盘入口验证。
         await browser.execute((element) => element.focus(), menu);
         await browser.keys("ArrowDown");
         await $("[role=menu]").waitForDisplayed();
-        assert.deepEqual(await geometry(), before);
+        const after = await geometry();
+        if (!isDeepStrictEqual(after, before))
+          writeFileSync(
+            join(
+              "artifacts",
+              "e2e",
+              process.env.STARTER_E2E_PHASE,
+              "menu-layout.json",
+            ),
+            JSON.stringify(
+              {
+                before,
+                after,
+                beforeLayout,
+                afterLayout: await settingsLayout(),
+              },
+              null,
+              2,
+            ),
+          );
+        assert.deepEqual(after, before);
         await browser.keys("Escape");
         await $("[role=menu]").waitForExist({ reverse: true });
         assert.deepEqual(await geometry(), before);

@@ -434,9 +434,11 @@ describe("Real Tauri desktop", () => {
     );
     assert.equal(await $("#window-width").isExisting(), false);
     assert.equal(await $("#window-height").isExisting(), false);
-    await $(
+    const preset = await $(
       `[data-window-preset='${compactFits ? "compact" : "standard"}']`,
-    ).click();
+    );
+    await preset.waitForEnabled();
+    await preset.click();
     await browser.waitUntil(async () => {
       const result = await invoke("get_window_geometry");
       return (
@@ -454,7 +456,9 @@ describe("Real Tauri desktop", () => {
     const position = await browser.execute(async () =>
       window.__TAURI__.window.getCurrentWindow().outerPosition(),
     );
-    await $("[data-window-position=center]").click();
+    const centered = await $("[data-window-position=center]");
+    await centered.waitForEnabled();
+    await centered.click();
     await browser.waitUntil(
       async () =>
         (await invoke("load_settings_snapshot")).value.settings
