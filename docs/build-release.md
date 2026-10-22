@@ -328,7 +328,7 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 默认 `/releases/latest/` 通道只分发正式版；GitHub 不将 draft 或 prerelease 设为 latest，见 [GitHub Release 规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。预发布包仍可单独下载；需要测试更新通道时，另行设计端点、版本比较与发布校验，不能假定给 tag 加 `beta` 就会进入默认更新通道。
 
-发布内部接口在 [`release-lib.mjs`](../scripts/release-lib.mjs)（`prepare / collect / merge`）；版本 / 签名验证入口在 [`verify-updater.rs`](../src-tauri/src/bin/verify-updater.rs)。签名覆盖版本号，手工签名也需使用匹配的 `--app-version`，不能把旧签名用于不同版本的清单。
+发布内部接口在 [`release-lib.mjs`](../scripts/release-lib.mjs)（`draft / prepare / collect / merge / upload`）；版本 / 签名验证入口在 [`verify-updater.rs`](../src-tauri/src/bin/verify-updater.rs)。签名覆盖版本号，手工签名也需使用匹配的 `--app-version`，不能把旧签名用于不同版本的清单。
 
 ### 运行时策略与安装行为
 
@@ -355,7 +355,7 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 `.github/workflows/ci.yml` 执行格式、lint、类型、单元测试、Rust 编译与独立的三端真实桌面 E2E job。
 出正式包由 `.github/workflows/release.yml` 负责，推送 `v*` tag 或手动触发均可运行。tag 触发会核对 tag 与项目版本；手动触发按所选 ref 构建，并以项目版本关联 `v<version>` Release。正式发布应选择已合入 `main` 的发布提交及对应 tag，不能以手动触发绕过分支评审。
 
-发布流程先由 `validate` job 执行冻结安装和 `pnpm verify`，通过后才进入各平台构建；PFX 签名验证按配置检查实际启用的 NSIS / MSI 产物，缺失或签名无效会失败。
+发布流程先由 `validate` job 执行冻结安装和 `pnpm verify`，通过后创建或复用唯一的同版本草稿，将 Release ID 传给全部平台、更新清单与可选的签名上传步骤。后续步骤按 ID 上传，矩阵任务不再各自查找和创建草稿；已有同标签的多个 Release、已公开版本或草稿源码提交不匹配时，在构建前失败。PFX 签名验证按配置检查实际启用的 NSIS / MSI 产物，缺失或签名无效会失败。
 
 构建矩阵覆盖：
 
@@ -367,7 +367,7 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 产物以 **draft Release** 上传，人工确认后再发布。
 
-某个平台或后续验证失败时，其他平台可能已把资产上传到 draft；此时不能发布部分成功的草稿。先确认失败原因与该 tag 的源码：无需改代码时可重跑失败任务，完成后重新核对全部目标、签名和更新元数据；需要改代码时使用新版本和新 tag。已公开版本不得通过重跑工作流替换资产，后置的 draft 检查不代表整个构建上传阶段都禁止覆盖。
+某个平台或后续验证失败时，其他平台可能已把资产上传到 draft；此时不能发布部分成功的草稿。先确认失败原因与该 tag 的源码：无需改代码时可重跑失败任务，完成后重新核对全部目标、签名和更新元数据；需要改代码时使用新版本和新 tag。若旧工作流已生成同标签的多个草稿，先备份元数据与待迁移文件，按资产 ID 下载、校验哈希，归并到一个草稿并保留原始上传标签；核对完整后再删除重复草稿、重跑汇总。已公开版本不得通过重跑工作流替换资产。
 
 工作流另将 `tauri-action` 本次返回的产物收集到同一套 `artifacts/<version>/<target>/installers/` 结构，生成清单并上传为 `build-installers-<target>`。这是 build 阶段的归档，尚未经过可选的 SignPath 后签名；启用 SignPath 后，签名 job 会重新生成签名文件的清单，上传 `signed-installers-x86_64-pc-windows-msvc` 并覆盖 draft Release 的 NSIS 资产。需要 SignPath 签名包时，使用签名 job 的归档或完成签名后的 Release。
 

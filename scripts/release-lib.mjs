@@ -35,6 +35,69 @@ function repositoryName(value) {
   return value;
 }
 
+function assertDraftRelease(release, version) {
+  if (!release.draft || release.tag_name !== `v${version}`)
+    throw new Error("资产只能上传到本次版本的 draft Release");
+}
+
+/** 由单一 job 创建或复用草稿，再把 ID 传给所有并行构建。 */
+export function ensureDraftRelease({ version, repository, commit }, request) {
+  const endpoint = `repos/${repositoryName(repository)}/releases`;
+  const releases = request([
+    `${endpoint}?per_page=100`,
+    "--paginate",
+    "--slurp",
+  ])
+    .flat()
+    .filter((release) => release.tag_name === `v${version}`);
+  if (releases.length > 1)
+    throw new Error(`v${version} 存在多个 Release，请先归并草稿资产再重跑`);
+  if (releases.length === 1) {
+    const release = releases[0];
+    assertDraftRelease(release, version);
+    if (release.target_commitish !== commit)
+      throw new Error("草稿的源码提交与本次发布不一致，请使用新版本和新 tag");
+    return release.id;
+  }
+  const release = request([endpoint, "--method", "POST"], {
+    tag_name: `v${version}`,
+    target_commitish: commit,
+    name: `v${version}`,
+    body: `安装包与分发文件见下方 Assets。使用说明见仓库 README。\n\n[Code signing policy](https://github.com/${repository}/blob/v${version}/docs/code-signing-policy.md)：签名范围、服务状态与隐私说明。签名结果以下载文件的实际验证为准。`,
+    draft: true,
+    prerelease: version.split("+")[0].includes("-"),
+  });
+  return release.id;
+}
+
+function readDraftRelease({ repository, version, releaseId }, request) {
+  if (!/^[1-9]\d*$/.test(releaseId ?? ""))
+    throw new Error("RELEASE_ID 必须来自本次准备草稿的 job");
+  const release = request([`repos/${repository}/releases/${releaseId}`]);
+  assertDraftRelease(release, version);
+  return release;
+}
+
+export function uploadReleaseAsset(file, release, repository, request) {
+  const name = basename(file);
+  const existing = release.assets.find((asset) => asset.name === name);
+  if (existing)
+    request([
+      `repos/${repository}/releases/assets/${existing.id}`,
+      "--method",
+      "DELETE",
+    ]);
+  return request([
+    `https://uploads.github.com/repos/${repository}/releases/${release.id}/assets?name=${encodeURIComponent(name)}`,
+    "--method",
+    "POST",
+    "--header",
+    "Content-Type: application/octet-stream",
+    "--input",
+    file,
+  ]);
+}
+
 export function updaterReleasePlan({
   brand,
   privateKey,
@@ -238,8 +301,7 @@ export function resolveReleaseAssets(
   { version, repository },
 ) {
   repositoryName(repository);
-  if (!release.isDraft || release.tagName !== `v${version}`)
-    throw new Error("更新元数据只能上传到本次版本的 draft Release");
+  assertDraftRelease(release, version);
   const prefix = `https://github.com/${repository}/releases/download/${encodeURIComponent(`v${version}`)}/`;
   const find = (requested) => {
     const matches = release.assets.filter(
@@ -307,17 +369,43 @@ function main() {
   const mode = process.argv[2];
   if (
     process.argv.length !== 3 ||
-    !["prepare", "collect", "merge"].includes(mode)
+    !["draft", "prepare", "collect", "merge", "upload"].includes(mode)
   )
     throw new Error(
-      "用法: node scripts/release-lib.mjs <prepare|collect|merge>",
+      "用法: node scripts/release-lib.mjs <draft|prepare|collect|merge|upload>",
     );
   const version = checkVersions(
     root,
     process.env.GITHUB_REF?.match(/^refs\/tags\/(.+)$/)?.[1],
   );
   const brand = json(join(root, "app.config.json"));
-  const repository = process.env.GITHUB_REPOSITORY;
+  const repository = repositoryName(process.env.GITHUB_REPOSITORY);
+  const request = (args, body) => {
+    const result = command(
+      "gh",
+      ["api", ...args, ...(body === undefined ? [] : ["--input", "-"])],
+      root,
+      {
+        stdio: ["pipe", "pipe", "inherit"],
+        encoding: "utf8",
+        input: body === undefined ? undefined : JSON.stringify(body),
+      },
+    );
+    return result.trim() ? JSON.parse(result) : undefined;
+  };
+  if (mode === "draft") {
+    const commit = command("git", ["rev-parse", "HEAD"], root, {
+      stdio: ["ignore", "pipe", "inherit"],
+      encoding: "utf8",
+    }).trim();
+    const releaseId = ensureDraftRelease(
+      { version, repository, commit },
+      request,
+    );
+    output("release-id", releaseId);
+    console.log(`全部平台将上传到 draft Release ${releaseId}`);
+    return;
+  }
   if (mode === "prepare") {
     const plan = updaterReleasePlan({
       brand,
@@ -398,6 +486,17 @@ function main() {
     console.log(`已验证并记录 ${target} 更新元数据`);
     return;
   }
+  const release = readDraftRelease(
+    { repository, version, releaseId: process.env.RELEASE_ID },
+    request,
+  );
+  if (mode === "upload") {
+    const directory = process.env.RELEASE_ASSET_DIR;
+    if (!directory) throw new Error("缺少 RELEASE_ASSET_DIR");
+    for (const name of readdirSync(directory))
+      uploadReleaseAsset(join(directory, name), release, repository, request);
+    return;
+  }
   const source = resolve(
     process.env.UPDATER_METADATA_DIR ?? "updater-metadata",
   );
@@ -406,50 +505,22 @@ function main() {
   const files = readdirSync(source, { recursive: true }).filter((path) =>
     path.endsWith(".json"),
   );
-  const assets = JSON.parse(
-    command(
-      "gh",
-      [
-        "release",
-        "view",
-        `v${version}`,
-        "--repo",
-        repository,
-        "--json",
-        "assets,isDraft,tagName,body",
-      ],
-      root,
-      { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" },
-    ),
-  );
   const manifest = resolveReleaseAssets(
     mergeUpdaterMetadata(
       files.map((file) => json(join(source, file))),
       {
         version,
         repository,
-        notes: assets.body,
+        notes: release.body,
       },
     ),
-    assets,
+    release,
     { version, repository },
   );
   mkdirSync(destination, { recursive: true });
   const file = join(destination, "latest.json");
   writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
-  command(
-    "gh",
-    [
-      "release",
-      "upload",
-      `v${version}`,
-      file,
-      "--repo",
-      repository,
-      "--clobber",
-    ],
-    root,
-  );
+  uploadReleaseAsset(file, release, repository, request);
   output("manifest-file", file);
   console.log("已一次性汇总全部平台并上传 latest.json 到 draft Release");
 }
