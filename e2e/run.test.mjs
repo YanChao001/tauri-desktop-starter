@@ -5,15 +5,45 @@ import test from "node:test";
 import { parseE2EOptions } from "./run-options.mjs";
 
 test("desktop runs require an explicit foreground choice, including reused builds", () => {
-  for (const args of [[], ["--skip-build"]])
+  for (const args of [
+    [],
+    ["--skip-build"],
+    ["--previews"],
+    ["--previews", "--skip-build"],
+  ])
     assert.throws(() => parseE2EOptions(args), /默认不启动/);
-  assert.deepEqual(parseE2EOptions(["--interactive"]), { skipBuild: false });
+  const phases = ["fresh", "persisted", "centered"];
+  assert.deepEqual(parseE2EOptions(["--interactive"]), {
+    skipBuild: false,
+    phases,
+  });
   assert.deepEqual(parseE2EOptions(["--interactive", "--skip-build"]), {
     skipBuild: true,
+    phases,
   });
   assert.deepEqual(parseE2EOptions(["--skip-build", "--interactive"]), {
     skipBuild: true,
+    phases,
   });
+});
+
+test("preview capture selects only its own phase on Windows", () => {
+  assert.deepEqual(parseE2EOptions(["--previews", "--interactive"], "win32"), {
+    skipBuild: false,
+    phases: ["previews"],
+  });
+  assert.deepEqual(
+    parseE2EOptions(["--previews", "--interactive", "--skip-build"], "win32"),
+    {
+      skipBuild: true,
+      phases: ["previews"],
+    },
+  );
+  for (const platform of ["linux", "darwin"])
+    assert.throws(
+      () => parseE2EOptions(["--previews", "--interactive"], platform),
+      /Windows/,
+    );
 });
 
 test("invalid foreground flags fail without enabling the desktop runner", () => {
@@ -21,7 +51,12 @@ test("invalid foreground flags fail without enabling the desktop runner", () => 
     assert.throws(() => parseE2EOptions(args), /用法/);
 });
 
-for (const args of [[], ["--skip-build"]]) {
+for (const args of [
+  [],
+  ["--skip-build"],
+  ["--previews"],
+  ["--previews", "--skip-build"],
+]) {
   test(`the CLI refuses ${args.join(" ") || "a default run"} before build lookup or launch`, () => {
     const result = spawnSync(
       process.execPath,

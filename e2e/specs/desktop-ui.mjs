@@ -3,46 +3,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $, $$ } from "@wdio/globals";
 import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
+import {
+  patchSettings,
+  screenshot,
+  settledAppearance,
+} from "../appearance.mjs";
+import { captureReadmePreviews } from "../readme-previews.mjs";
 
-async function patchSettings(patch) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const snapshot = await invoke("load_settings_snapshot");
-    assert.equal(snapshot.ok, true);
-    const result = await invoke("save_settings_snapshot", {
-      settings: { ...snapshot.value.settings, ...patch, schemaVersion: 3 },
-      expectedRevision: snapshot.value.revision,
-    });
-    if (result.ok) return result.value;
-    assert.equal(result.failure.code, "SETTINGS_CONFLICT");
-  }
-  throw new Error("Native preferences did not settle");
-}
-async function settledAppearance(expected) {
-  await browser.waitUntil(() =>
-    browser.execute((values) => {
-      const root = document.documentElement;
-      return Object.entries(values).every(([key, value]) =>
-        key === "theme"
-          ? root.classList.contains(
-              value === "system"
-                ? matchMedia("(prefers-color-scheme: dark)").matches
-                  ? "dark"
-                  : "light"
-                : value,
-            )
-          : key === "language"
-            ? root.lang === (value === "zh" ? "zh-CN" : "en")
-            : root.dataset[key] === String(value),
-      );
-    }, expected),
-  );
-  await browser.execute(async () => {
-    await document.fonts.ready;
-    await new Promise((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(resolve)),
-    );
-  });
-}
 function geometry() {
   return browser.execute(() => {
     const rect = (selector) => {
@@ -60,20 +27,6 @@ function geometry() {
     };
   });
 }
-async function screenshot(name) {
-  await browser.execute(async () => {
-    await Promise.all(
-      [...document.querySelectorAll(".skin-scene")].map((element) => {
-        const image = new Image();
-        image.src = getComputedStyle(element).maskImage.slice(5, -2);
-        return image.decode();
-      }),
-    );
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-  });
-  await browser.saveScreenshot(join("artifacts", "e2e", "fresh", name));
-}
-
 export function desktopUiChecks() {
   it("keeps wheel tails native without replaying edge animations in WebView2", async function () {
     if (
@@ -136,96 +89,7 @@ export function desktopUiChecks() {
     const original = (await invoke("load_settings_snapshot")).value.settings;
     const originalWindow = (await invoke("get_window_geometry")).value;
     try {
-      const size = await invoke("set_window_size", {
-        width: Math.min(
-          originalWindow.maxWidth,
-          Math.max(originalWindow.minWidth, 1280),
-        ),
-        height: Math.min(
-          originalWindow.maxHeight,
-          Math.max(originalWindow.minHeight, 840),
-        ),
-      });
-      assert.equal(size.ok, true);
-      await patchSettings({
-        language: "zh",
-        theme: "light",
-        accent: "emerald",
-        background: "aurora",
-        motion: "reduced",
-        sidebarCollapsed: false,
-        sidebarWidth: 224,
-        menuBar: true,
-        fontSize: "md",
-      });
-      await settledAppearance({
-        language: "zh",
-        theme: "light",
-        background: "aurora",
-      });
-      await navigate("/");
-      await $("[data-testid=showroom]").waitForDisplayed();
-      await $("[data-sonner-toast]").waitForExist({ reverse: true });
-      await browser.execute(async () => {
-        document.activeElement?.blur();
-        document.querySelector("main").scrollTop = 0;
-        document.querySelector(".app-sidebar-navigation").scrollTop = 0;
-        await new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        );
-      });
-      assert.equal((await geometry()).scrollTop, 0);
-      await screenshot("desktop-light.png");
-      await patchSettings({ theme: "dark" });
-      await settledAppearance({ theme: "dark" });
-      await screenshot("desktop-dark.png");
-      await navigate("/settings");
-      await $(".skin-gallery").waitForDisplayed();
-      await screenshot("desktop-settings.png");
-      const galleryWidth = Math.max(
-        originalWindow.minWidth,
-        Math.min(1120, size.value.width),
-      );
-      const gallerySize = await invoke("set_window_size", {
-        width: galleryWidth,
-        height: size.value.height,
-      });
-      assert.equal(gallerySize.ok, true);
-      await browser.waitUntil(() =>
-        browser.execute(
-          (width) => Math.abs(innerWidth - width) <= 1,
-          galleryWidth,
-        ),
-      );
-      await browser.execute(async () => {
-        const main = document.querySelector("main");
-        const gallery = document.querySelector(".skin-gallery");
-        document.activeElement?.blur();
-        main.scrollTop +=
-          gallery.getBoundingClientRect().top -
-          main.getBoundingClientRect().top -
-          16;
-        document.querySelector(".app-sidebar-navigation").scrollTop = 0;
-        await new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        );
-      });
-      await screenshot("desktop-skins-dark.png");
-      await patchSettings({ theme: "light" });
-      await settledAppearance({ theme: "light" });
-      await screenshot("desktop-skins-light.png");
-      await patchSettings({ theme: "dark" });
-      await settledAppearance({ theme: "dark" });
-      await invoke("set_window_size", {
-        width: size.value.width,
-        height: size.value.height,
-      });
-      await browser.waitUntil(() =>
-        browser.execute(
-          (width) => Math.abs(innerWidth - width) <= 1,
-          size.value.width,
-        ),
-      );
+      await captureReadmePreviews(originalWindow);
       await browser.execute(() => {
         document.querySelector("main").scrollTop = 180;
       });

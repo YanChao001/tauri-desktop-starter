@@ -10,15 +10,14 @@ const PREVIEWS = [
 ];
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-function readScreenshot(root, name) {
-  const path = `artifacts/e2e/fresh/${name}`;
+function readScreenshot(root, path) {
   let file;
   try {
     file = projectFile(root, path);
   } catch (error) {
     if (error.code === "ENOENT")
       throw new Error(
-        `缺少原生截图：${path}。请先完成 Windows 桌面 E2E，或下载 CI 的 readme-previews-windows 产物。`,
+        `缺少截图：${path}。请运行 pnpm docs:capture --interactive，或将 CI 的 readme-previews-windows 产物下载到 artifacts/e2e/previews/ 后运行 pnpm docs:previews。`,
         { cause: error },
       );
     throw error;
@@ -44,14 +43,28 @@ function readScreenshot(root, name) {
   return { content, width, height };
 }
 
-/** 只同步约定的原生截图；先验证全部输入，避免缺图时更新到一半。 */
-export function updateReadmePreviews(root, { check = false } = {}) {
-  const screenshots = PREVIEWS.map(([source]) => readScreenshot(root, source));
+function checkWindowSizes(screenshots) {
   if (
     screenshots[0].width !== screenshots[1].width ||
     screenshots[0].height !== screenshots[1].height
   )
     throw new Error("README 明暗截图的窗口尺寸不一致，请重新采集同一轮截图。");
+}
+
+/** 只检查已提交图片的格式和尺寸，不要求采集产物，也不判断画面是否过时。 */
+export function validateReadmePreviews(root) {
+  const screenshots = PREVIEWS.map(([, destination]) =>
+    readScreenshot(root, `docs/assets/${destination}`),
+  );
+  checkWindowSizes(screenshots);
+}
+
+/** 只同步约定的原生截图；先验证全部输入，避免缺图时更新到一半。 */
+export function updateReadmePreviews(root, { check = false } = {}) {
+  const screenshots = PREVIEWS.map(([source]) =>
+    readScreenshot(root, `artifacts/e2e/previews/${source}`),
+  );
+  checkWindowSizes(screenshots);
   const changes = PREVIEWS.map(([, destination], index) => {
     const path = `docs/assets/${destination}`;
     return {
@@ -74,13 +87,21 @@ if (
 ) {
   try {
     const args = process.argv.slice(2);
-    if (args.some((arg) => !["--check", "--help", "-h"].includes(arg)))
-      throw new Error("用法: pnpm docs:previews [--check]");
+    if (
+      args.some(
+        (arg) => !["--check", "--validate", "--help", "-h"].includes(arg),
+      ) ||
+      (args.includes("--check") && args.includes("--validate"))
+    )
+      throw new Error("用法: pnpm docs:previews [--check | --validate]");
     if (args.includes("--help") || args.includes("-h"))
       console.log(
-        "将 artifacts/e2e/fresh/ 的 Windows 原生截图同步到 docs/assets/。--check 只检查，不写文件；此命令不启动应用。",
+        "将 artifacts/e2e/previews/ 的 Windows 原生截图同步到 docs/assets/。--check 比较采集结果，不写文件；--validate 只检查 docs/assets/ 图片格式和尺寸。此命令不启动应用。",
       );
-    else {
+    else if (args.includes("--validate")) {
+      validateReadmePreviews(resolve(import.meta.dirname, ".."));
+      console.log("README 截图格式与尺寸检查通过。");
+    } else {
       const changed = updateReadmePreviews(resolve(import.meta.dirname, ".."), {
         check: args.includes("--check"),
       });
