@@ -38,7 +38,7 @@ pnpm exec vitest related --run src/lib/settings-sync.ts
 pnpm exec prettier --check docs/testing.md
 ```
 
-已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、品牌一致性、lint、类型、前端 / 脚本测试、版本检查与桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
+已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、品牌一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查与桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
 
 新增测试应说明要防止哪种实际回归。可逆的样式、文案调整通常用预览确认；不复制配置数组、不重复测试第三方库本身，也不为已经被类型检查约束的普通赋值增加测试。自定义组件的行为修复、数据持久化、并发和外部输入边界仍保留针对性回归。
 
@@ -46,11 +46,12 @@ pnpm exec prettier --check docs/testing.md
 
 日常界面回归默认使用无头浏览器，鼠标、键盘和页面焦点操作在测试浏览器内部完成。不要为每次样式、翻译或布局修改重复打开真实桌面窗口。
 
-| 命令                          | 桌面影响与用途                                                                          |
-| ----------------------------- | --------------------------------------------------------------------------------------- |
-| `pnpm test:ui`                | 先构建浏览器产物，再运行无头 Playwright；不显示浏览器窗口，适合用户继续工作时验证界面。 |
-| `pnpm e2e:build`              | 只构建隔离的原生测试程序，不启动应用窗口。                                              |
-| `pnpm test:e2e --interactive` | 显式运行真实桌面验收；会显示、激活和切换窗口，并验证最小化 / 恢复等行为。               |
+| 命令                              | 桌面影响与用途                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm test:ui`                    | 先构建浏览器产物，再运行无头 Playwright；不显示浏览器窗口，适合用户继续工作时验证界面。 |
+| `pnpm e2e:build`                  | 只构建隔离的原生测试程序，不启动应用窗口。                                              |
+| `pnpm test:e2e --interactive`     | 显式运行真实桌面验收；会显示、激活和切换窗口，并验证最小化 / 恢复等行为。               |
+| `pnpm docs:capture --interactive` | Windows 原生截图采集并同步；会显示和调整窗口，只运行三个 README 场景。                  |
 
 单独执行 `pnpm test:e2e` 或只带 `--skip-build` 会在构建、读取收据和创建进程之前退出，提示选择无头界面检查或显式的前台验收。CI 环境变量也不会自动绕过这个要求；仓库的独立 CI runner 使用 `--interactive` 保留原生覆盖。
 
@@ -183,24 +184,28 @@ Linux CI 额外安装 WebKitGTK、Xvfb、DBus 与 Openbox，以提供真正的�
 
 ## README 原生截图更新
 
-中英文 README 共用的明暗预览，以及英文 README 引用的皮肤图库，由 [`ci.yml`](../.github/workflows/ci.yml) 的 `readme-previews` 任务更新：
+中英文 README 共用的明暗预览，以及英文 README 引用的皮肤图库，随影响画面的功能 PR 一起提交；合入 `develop` 后随正常发布进入 `main`。不在功能合入后再等待独立截图 PR，也不改写已发布标签。
 
-1. Windows 桌面 E2E 成功后，上传 `readme-previews-windows` 产物，保留 14 天；包含同轮采集的 `desktop-light.png`、`desktop-dark.png` 和 `desktop-skins-dark.png`。
-2. 相关源码、资源、依赖或截图流程推送到 `develop`，且整个质量门禁通过后，将这些图片同步到 `docs/assets/preview-light.png`、`preview-dark.png` 和 `skins-dark.png`，自动创建或更新 `docs/readme-previews` 分支到 `develop` 的 PR。实际截图一致时不创建新 PR。
-3. 若 `develop` 已有新提交，跳过旧提交的截图；仅文档或截图更新的推送不再次生成截图 PR，避免合并后循环更新。图片随截图 PR 合并生效，不直接推送保护分支。
-
-需要主动刷新时，在 Actions 的“持续集成”工作流中选择 `develop`，点击 **Run workflow**；这会重新运行完整 CI 并生成截图 PR。手动入口要求工作流已经存在于仓库默认分支，见 [GitHub 手动触发规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)。
-
-仓库 Settings → Actions → General → Workflow permissions 需启用 **Allow GitHub Actions to create and approve pull requests**。写权限仅授予截图同步任务的 `contents: write` 与 `pull-requests: write`，PR 事件不运行该任务，其余 CI 保持只读。PR 创建使用固定提交的 MIT 许可 [`peter-evans/create-pull-request`](https://github.com/peter-evans/create-pull-request)，仅在 CI 执行，不进入应用依赖和安装包；升级固定提交时检查上游变更。由 `GITHUB_TOKEN` 创建的 PR 按 GitHub 提示批准工作流后，仍须通过原有质量门禁和评审，见 [自动化触发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)。
-
-本地可下载上述产物并解压到 `artifacts/e2e/fresh/`；或在独立环境 / 已安排的前台时段，用当前源码完成 Windows 桌面 E2E。随后执行：
+在 Windows 独立环境或已安排的前台时段执行：
 
 ```sh
-pnpm docs:previews          # 同步三张文档图片，不启动应用
-pnpm docs:previews --check  # 只检查与采集结果是否一致
+pnpm docs:capture --interactive
+pnpm docs:previews:check
+git diff --stat -- docs/assets
 ```
 
-[`readme-previews.mjs`](../scripts/readme-previews.mjs) 在写入前检查全部图片的 PNG 标识、窗口尺寸和明暗尺寸一致性；缺图或不合格时保留原图，提交中断则回滚已替换文件。同步只改三张约定图片，不重建应用。此检查依赖已采集的原生结果，不纳入常规 `pnpm verify`，也不能用浏览器截图冒充原生验收。
+`docs:capture` 默认构建当前源码，使用独立应用标识符和临时数据，只运行展厅明暗主题、深色皮肤图库三个场景，不执行完整 E2E 的持久化、重启或窗口生命周期验收。采集成功后自动将 `artifacts/e2e/previews/` 中的三张 PNG 同步到 `docs/assets/preview-light.png`、`preview-dark.png` 和 `skins-dark.png`，并清理本次进程与临时数据。应检查画面后将图片与功能一起提交；画面没有变化时无需刷新。仅刚用当前源码完成 `pnpm e2e:build` 时才可追加 `--skip-build`，不能复用旧源码的 exe。
+
+不能使用本机前台时，可复用同一版界面代码已通过的 Windows CI 截图。[`ci.yml`](../.github/workflows/ci.yml) 的 Windows 桌面 E2E 成功后上传 `readme-previews-windows`，保留 14 天，包含同轮采集的 `desktop-light.png`、`desktop-dark.png` 和 `desktop-skins-dark.png`。核对来源提交并将产物解压到 `artifacts/e2e/previews/`，再执行：
+
+```sh
+pnpm docs:previews          # 同步三张图片，不构建或启动应用
+pnpm docs:previews --check  # 只比较文档图片与本轮采集结果
+```
+
+CI 保留截图产物并通过 `pnpm docs:previews:check` 检查已提交图片的 PNG 格式、窗口尺寸和明暗尺寸一致性；此检查也纳入 `pnpm verify`，不要求存在采集产物。它不能判断画面是否过时，需在 PR 中核对界面与图片。CI 不提交图片、不创建截图分支或 PR，无需为此授予写权限。源码变化后应先验证更新后的 CI 截图，再在同一个功能 PR 中补交图片；不依赖像素逐字节比较判断跨环境画面一致。
+
+[`readme-previews.mjs`](../scripts/readme-previews.mjs) 在写入前验证全部输入，缺图或不合格时保留原图，提交中断则回滚已替换文件。不能用浏览器截图冒充原生验收；本机前台未获安排且无适用产物时，将更新列为待办。
 
 ## 安装版与启动验收
 
@@ -219,11 +224,10 @@ pnpm docs:previews --check  # 只检查与采集结果是否一致
 
 [`ci.yml`](../.github/workflows/ci.yml) 分开执行：
 
-- `frontend`：冻结安装、品牌资源一致性、版本 / 脚本测试、格式、lint、类型、前端测试，以及桌面前端与浏览器演示的分别构建。
+- `frontend`：冻结安装、品牌资源一致性、README 截图格式与尺寸、版本 / 脚本测试、格式、lint、类型、前端测试，以及桌面前端与浏览器演示的分别构建。
 - `browser-smoke`：构建浏览器产物，运行 Chromium 子路径 / 交互 / 无障碍冒烟，失败上传截图与 trace；Pages 部署另有相同门禁。
 - `rust`：三端 Clippy / Rust 测试；Windows 另跑格式和生成绑定检查。
 - `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志，Windows 成功时另存 README 截图。
 - `quality-gate`：汇总全部检查，仅所有前置任务成功时通过；分支保护使用此项作为必需检查。
-- `readme-previews`：质量门禁通过后，为 `develop` 的相关源码推送或手动运行生成 [截图更新 PR](#readme-原生截图更新)；不参与应用测试门禁，也不直接改保护分支。
 
 CI 配置覆盖的目标平台，不等于当前开发机全部实测过。发布时仍需在目标平台检查安装 / 卸载、签名、自启动、托盘和真实版本升级，尤其不能用测试构建代替正式安装包验收。

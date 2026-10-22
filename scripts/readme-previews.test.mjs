@@ -17,7 +17,10 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
 import { applyFileChanges } from "./fs-utils.mjs";
-import { updateReadmePreviews } from "./readme-previews.mjs";
+import {
+  updateReadmePreviews,
+  validateReadmePreviews,
+} from "./readme-previews.mjs";
 
 const FILES = [
   ["desktop-light.png", "preview-light.png"],
@@ -42,11 +45,11 @@ function fixture(t) {
     assert.equal(dirname(root), resolve(tmpdir()));
     rmSync(root, { recursive: true, force: true });
   });
-  mkdirSync(join(root, "artifacts/e2e/fresh"), { recursive: true });
+  mkdirSync(join(root, "artifacts/e2e/previews"), { recursive: true });
   mkdirSync(join(root, "docs/assets"), { recursive: true });
   for (const [index, [source, destination]] of FILES.entries()) {
     writeFileSync(
-      join(root, "artifacts/e2e/fresh", source),
+      join(root, "artifacts/e2e/previews", source),
       index ? DARK : LIGHT,
     );
     writeFileSync(join(root, "docs/assets", destination), OLD);
@@ -98,13 +101,10 @@ test("missing, truncated, non-PNG and undersized inputs leave every preview unch
     png("#000", 128, 84),
   ]) {
     const root = fixture(t);
-    const path = join(root, "artifacts/e2e/fresh/desktop-skins-dark.png");
+    const path = join(root, "artifacts/e2e/previews/desktop-skins-dark.png");
     if (invalid === undefined) unlinkSync(path);
     else writeFileSync(path, invalid);
-    assert.throws(
-      () => updateReadmePreviews(root),
-      /缺少原生截图|完整的 PNG|尺寸/,
-    );
+    assert.throws(() => updateReadmePreviews(root), /缺少截图|完整的 PNG|尺寸/);
     assert.deepEqual(images(root), [OLD, OLD, OLD]);
   }
 });
@@ -112,11 +112,49 @@ test("missing, truncated, non-PNG and undersized inputs leave every preview unch
 test("light and dark captures must use the same window size", (t) => {
   const root = fixture(t);
   writeFileSync(
-    join(root, "artifacts/e2e/fresh/desktop-dark.png"),
+    join(root, "artifacts/e2e/previews/desktop-dark.png"),
     png("#000", 1024, 768),
   );
   assert.throws(() => updateReadmePreviews(root), /窗口尺寸不一致/);
   assert.deepEqual(images(root), [OLD, OLD, OLD]);
+});
+
+test("committed image validation works without captures and never writes files", (t) => {
+  const root = fixture(t);
+  unlinkSync(join(root, "artifacts/e2e/previews/desktop-light.png"));
+  const before = images(root);
+  const modified = FILES.map(
+    ([, name]) => lstatSync(join(root, "docs/assets", name)).mtimeMs,
+  );
+  validateReadmePreviews(root);
+  assert.deepEqual(images(root), before);
+  assert.deepEqual(
+    FILES.map(([, name]) => lstatSync(join(root, "docs/assets", name)).mtimeMs),
+    modified,
+  );
+});
+
+test("committed image validation rejects missing, invalid and mismatched images", (t) => {
+  for (const invalid of [
+    undefined,
+    DARK.subarray(0, -8),
+    Buffer.from("not PNG"),
+    png("#000", 128, 84),
+    png("#000", 1024, 768),
+  ]) {
+    const root = fixture(t);
+    const path = join(root, "docs/assets/preview-dark.png");
+    if (invalid === undefined) unlinkSync(path);
+    else writeFileSync(path, invalid);
+    assert.throws(
+      () => validateReadmePreviews(root),
+      /缺少截图|完整的 PNG|尺寸/,
+    );
+    assert.deepEqual(
+      readFileSync(join(root, "docs/assets/preview-light.png")),
+      OLD,
+    );
+  }
 });
 
 test("sync rejects destination directory links outside the project", (t) => {
@@ -205,9 +243,13 @@ test("CLI rejects unknown arguments and explains missing captures without starti
     );
   assert.equal(run("--help").status, 0);
   assert.equal(run("--typo").status, 1);
-  unlinkSync(join(root, "artifacts/e2e/fresh/desktop-dark.png"));
+  assert.equal(run("--check", "--validate").status, 1);
+  unlinkSync(join(root, "artifacts/e2e/previews/desktop-dark.png"));
+  const validation = run("--validate");
+  assert.equal(validation.status, 0, validation.stderr);
+  assert.match(validation.stdout, /检查通过/);
   const result = run();
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /缺少原生截图/);
+  assert.match(result.stderr, /缺少截图/);
   assert.deepEqual(images(root), [OLD, OLD, OLD]);
 });

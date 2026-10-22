@@ -320,7 +320,7 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 4. 正常打 tag 发布。工作流用临时配置启用 `bundle.createUpdaterArtifacts: true`，生成 Tauri v2 更新产物；本地默认构建仍不额外产出更新签名。每个平台收集后，用独立 Rust 验证器核对最终文件字节、公钥、`.sig` 与签名绑定的版本，随后上传平台元数据。
 
-5. 构建完成后由单独 job 合并四个目标的元数据，核对 draft Release 中的实际资产并上传唯一的 `latest.json`，避免矩阵任务互相覆盖。清单使用 Release 正文作为版本说明（最多 8000 字符），没有正文时回落到版本标题。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+5. 构建完成后由单独 job 合并四个目标的元数据，按名称或上传标签核对 draft Release 中的实际资产，用 GitHub 返回的真实文件名生成正式 tag 的下载 URL，再上传唯一的 `latest.json`，避免矩阵任务互相覆盖。不能用草稿的临时下载 URL 判断正式地址是否存在，也不预猜空格等字符的重命名结果。清单使用 Release 正文作为版本说明（最多 8000 字符），没有正文时回落到版本标题。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
 
 早期未配置公钥的客户端不会访问更新源，常规交付需先手动安装带公钥的版本作为后续升级起点；受控部署也可通过可信配置文件迁移。首轮正式验收用两个不同版本验证发现、下载、验签及安装，不用同版本安装或仅生成清单代替升级验证。Windows 便携版应用内安装更新会转为 NSIS 安装版；保留便携形态时从发行页手动下载并替换 EXE。
 
@@ -409,7 +409,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 - [ ] 系统集成使用派生项目自己的 scheme / 扩展名，验证安装版深链、文件关联冷 / 热启动及通知、快捷键、凭据权限；未测平台明确记录
 - [ ] 涉及数据格式变更时，按 [数据与恢复验证](./testing.md#数据与恢复验证) 记录支持升级的历史版本、迁移失败状态及恢复演练结果
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
-- [ ] `release/*` 已通过 PR 合入 `main` 和 `develop`，在 `main` 对应合并提交打 tag `vX.Y.Z`
+- [ ] `release/*` 已通过 PR 合入 `main`，在对应发布提交打 tag `vX.Y.Z`；再通过 `main` → `develop` 的回流 PR 同步发布历史，见 [Git 发布流程](./conventions/git-workflow.md#发布流程)
 - [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布
 - [ ] 发布公告与更新说明同步给使用方
 

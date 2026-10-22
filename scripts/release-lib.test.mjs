@@ -7,6 +7,7 @@ import {
   collectUpdaterMetadata,
   mergeUpdaterMetadata,
   releaseAssetName,
+  resolveReleaseAssets,
   updaterReleasePlan,
 } from "./release-lib.mjs";
 
@@ -37,7 +38,7 @@ test("updater release requires a complete key pair, matching repository and comp
   assert.equal(JSON.stringify(plan).includes("private"), false);
 });
 
-test("release asset names match tauri-action v1 including versioned macOS archives", () => {
+test("requested upload names preserve spaces and include the macOS version and architecture", () => {
   const common = {
     productName: "Tauri Desktop Starter",
     version,
@@ -45,22 +46,115 @@ test("release asset names match tauri-action v1 including versioned macOS archiv
   };
   assert.equal(
     releaseAssetName("/bundle/macos/Tauri Desktop Starter.app.tar.gz", common),
-    "Tauri.Desktop.Starter_1.2.3_aarch64.app.tar.gz",
+    "Tauri Desktop Starter_1.2.3_aarch64.app.tar.gz",
   );
   assert.equal(
     releaseAssetName("/bundle/macos/Tauri Desktop Starter.app.tar.gz.sig", {
       ...common,
       target: "x86_64-apple-darwin",
     }),
-    "Tauri.Desktop.Starter_1.2.3_x64.app.tar.gz.sig",
+    "Tauri Desktop Starter_1.2.3_x64.app.tar.gz.sig",
   );
   assert.equal(
     releaseAssetName(
       "C:\\bundle\\nsis\\Tauri Desktop Starter_1.2.3_x64-setup.exe",
       common,
     ),
-    "Tauri.Desktop.Starter_1.2.3_x64-setup.exe",
+    "Tauri Desktop Starter_1.2.3_x64-setup.exe",
   );
+});
+
+function draftRelease() {
+  const prefix = `https://github.com/${repository}/releases/download/v${version}/`;
+  const app = "Tauri Desktop Starter_1.2.3_aarch64.app.tar.gz";
+  const setup = "Tauri Desktop Starter_1.2.3_x64-setup.exe";
+  const files = [
+    [app, app],
+    [setup, setup.replaceAll(" ", ".")],
+  ];
+  return {
+    manifest: {
+      version,
+      platforms: Object.fromEntries(
+        ["darwin-aarch64", "windows-x86_64"].map((key, index) => [
+          key,
+          {
+            signature: `verified-signature-${index}`,
+            url: `${prefix}${encodeURIComponent(files[index][0])}`,
+          },
+        ]),
+      ),
+    },
+    release: {
+      isDraft: true,
+      tagName: `v${version}`,
+      assets: files.flatMap(([label, name]) =>
+        ["", ".sig"].map((extension) => ({
+          name: name + extension,
+          label: label + extension,
+          // 草稿 API 的真实返回形态：临时 tag，部分名称保留空格。
+          url: `https://github.com/${repository}/releases/download/untagged-temporary/${encodeURIComponent(name + extension)}`,
+          state: "uploaded",
+          size: 100,
+        })),
+      ),
+    },
+    prefix,
+  };
+}
+
+test("draft assets resolve by upload label or name into published URLs without guessing sanitization", () => {
+  const { manifest, release, prefix } = draftRelease();
+  release.assets[0].label = ""; // 名称本身匹配时不要求上传标签。
+  const resolved = resolveReleaseAssets(manifest, release, {
+    version,
+    repository,
+  });
+  assert.equal(
+    resolved.platforms["darwin-aarch64"].url,
+    prefix + "Tauri%20Desktop%20Starter_1.2.3_aarch64.app.tar.gz",
+  );
+  assert.equal(
+    resolved.platforms["windows-x86_64"].url,
+    prefix + "Tauri.Desktop.Starter_1.2.3_x64-setup.exe",
+  );
+  assert.equal(
+    resolved.platforms["windows-x86_64"].signature,
+    "verified-signature-1",
+  );
+  assert.equal(JSON.stringify(resolved).includes("untagged-"), false);
+  assert.match(manifest.platforms["windows-x86_64"].url, /%20/);
+});
+
+test("manifest publication rejects missing signatures, unfinished or ambiguous assets and the wrong release", () => {
+  const invalid = [
+    (release) => {
+      release.assets.splice(1, 1);
+    },
+    (release) => {
+      release.assets[0].state = "new";
+    },
+    (release) => {
+      release.assets[0].size = 0;
+    },
+    (release) => {
+      release.assets.push({ ...release.assets[0] });
+    },
+    (release) => {
+      release.isDraft = false;
+    },
+    (release) => {
+      release.tagName = "v1.2.2";
+    },
+  ];
+  for (const change of invalid) {
+    const { manifest, release } = draftRelease();
+    change(release);
+    assert.throws(
+      () => resolveReleaseAssets(manifest, release, { version, repository }),
+      /缺少|重名|未就绪|draft/,
+    );
+  }
 });
 
 function fixture(t) {
