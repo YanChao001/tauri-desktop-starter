@@ -21,17 +21,17 @@ gitGraph
   checkout main
   merge release/1.1.0 tag: "v1.1.0"
   checkout develop
-  merge release/1.1.0
+  merge main
 ```
 
-| 分支                     | 用途                                 | 从哪来    | 合到哪             | 生命周期   |
-| ------------------------ | ------------------------------------ | --------- | ------------------ | ---------- |
-| `main`                   | 生产代码，每次合并都对应一个发布标签 | —         | —                  | 永久       |
-| `develop`                | 集成分支，日常开发的合并目标         | `main`    | —                  | 永久       |
-| `feature/<issue>-<slug>` | 新功能                               | `develop` | `develop`          | 合并后删除 |
-| `fix/<issue>-<slug>`     | 普通缺陷修复                         | `develop` | `develop`          | 合并后删除 |
-| `release/<x.y.z>`        | 发布准备，只修 bug、只改版本号       | `develop` | `main` + `develop` | 发布后删除 |
-| `hotfix/<x.y.z>`         | 线上紧急修复                         | `main`    | `main` + `develop` | 发布后删除 |
+| 分支                     | 用途                                 | 从哪来    | 合到哪                             | 生命周期   |
+| ------------------------ | ------------------------------------ | --------- | ---------------------------------- | ---------- |
+| `main`                   | 生产代码，每次合并都对应一个发布标签 | —         | —                                  | 永久       |
+| `develop`                | 集成分支，日常开发的合并目标         | `main`    | —                                  | 永久       |
+| `feature/<issue>-<slug>` | 新功能                               | `develop` | `develop`                          | 合并后删除 |
+| `fix/<issue>-<slug>`     | 普通缺陷修复                         | `develop` | `develop`                          | 合并后删除 |
+| `release/<x.y.z>`        | 发布修复、版本和必要发布配置         | `develop` | `main`，再由 `main` 回流 `develop` | 发布后删除 |
+| `hotfix/<x.y.z>`         | 线上紧急修复                         | `main`    | `main`，再由 `main` 回流 `develop` | 发布后删除 |
 
 **分支命名**：全小写，单词用连字符；功能 / 普通修复分支有 issue 时带上编号，发布 / 紧急修复分支使用版本号。
 
@@ -137,14 +137,16 @@ docs: 补充发布流程中的签名说明
 
 ## 合并方式
 
-| 合并路径                        | 命令                              | 说明                                              |
-| ------------------------------- | --------------------------------- | ------------------------------------------------- |
-| `feature/*` → `develop`         | `git merge --no-ff feature/xxx`   | 保留合并节点，便于整块回滚                        |
-| `release/*` → `main`            | `git merge --no-ff release/x.y.z` | 同上，并在合并后打 tag                            |
-| `release/*` → `develop`         | 同上                              | 把发布期间的修复带回集成分支                      |
-| `hotfix/*` → `main` / `develop` | 同上                              | 两处都要合，漏了 develop 会导致下个版本回退该修复 |
+| 合并路径                | 命令                              | 说明                                             |
+| ----------------------- | --------------------------------- | ------------------------------------------------ |
+| `feature/*` → `develop` | `git merge --no-ff feature/xxx`   | 保留合并节点，便于整块回滚                       |
+| `release/*` → `main`    | `git merge --no-ff release/x.y.z` | 同上，并在合并后打 tag                           |
+| `hotfix/*` → `main`     | `git merge --no-ff hotfix/x.y.z`  | 发布紧急修复，并在合并后打 tag                   |
+| `main` → `develop`      | `git merge --no-ff main`          | 发布后回流正式发布提交、修复和版本，保留共同祖先 |
 
-合并前需 CI 通过、无冲突并完成适用评审；普通特性分支同步最新 `develop`，发布和紧急修复分支不改写共享历史，两处合入后再删除远端分支。合并目标继续推进时需重新确认差异和 CI，rebase 不保证后续永远无冲突。
+合并前需 CI 通过、无冲突并完成适用评审；普通特性分支同步最新 `develop`，发布和紧急修复分支不改写共享历史。发布按 `release/*`（或 `hotfix/*`）→ `main` → `develop` 顺序走 PR，回流完成后再删除短期分支。不要将同一发布分支分别合入两条长期分支：那样虽可得到相同文件，却未将 `main` 的正式发布提交带回 `develop`。
+
+若发布期间 `develop` 已推进，导致直接从 `main` 回流的 PR 无法满足其同步要求，从最新 `develop` 创建 `sync/release-x.y.z`，合并 `origin/main`、处理实际冲突后向 `develop` 开 PR；不为同步而直接修改保护分支。发布与回流的取舍见 [ADR 0005](../adr/0005-gitflow-release-backmerge.md)。
 
 团队协作和外部贡献默认至少由 1 位非作者批准。单维护者自己的变更保留 PR、自审记录和 CI 结果；GitHub 不支持作者批准自己的 PR，应按实际维护者数量设置分支规则。仓库已启用的保护要求仍须满足，不以文档代替审批或临时绕过保护。
 
@@ -197,16 +199,19 @@ git push -u origin develop
 
 分支规范通过服务端保护规则落实，新建仓库后由管理员完成以下设置：
 
-| 设置         | 值                                               |
-| ------------ | ------------------------------------------------ |
-| 默认分支     | `develop`                                        |
-| 保护分支     | `main`、`develop`                                |
-| 合并前要求   | `质量门禁` 通过；按上文维护者规模配置非作者评审  |
-| 允许强推     | 关闭                                             |
-| 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致）     |
-| 合并后       | 特性分支可删除；发布与紧急修复分支两处合入后删除 |
+| 设置         | 值                                                               |
+| ------------ | ---------------------------------------------------------------- |
+| 默认分支     | `develop`                                                        |
+| 保护分支     | `main`、`develop`                                                |
+| 合并前要求   | `质量门禁` 通过；按上文维护者规模配置非作者评审                  |
+| 分支同步要求 | `develop` 要求来源分支最新；`main` 不要求来源分支包含最新 `main` |
+| 允许强推     | 关闭                                                             |
+| 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致）                     |
+| 合并后       | 特性分支可删除；发布与紧急修复分支两处合入后删除                 |
 
 GitHub 路径：Settings → Branches → Add branch protection rule。
+
+`main` 使用必需状态检查的宽松模式，仍须通过 `质量门禁`，不豁免管理员或允许强推。PR 的 CI 默认检出合并结果；发布前核对已验证的来源和目标 SHA，目标 `main` 推进后重新验证，不沿用旧基线结果。这样无需为了满足祖先关系，提前向 `release/*` 补入不改变文件的合并。两种状态检查模式的区别见 [GitHub 说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)。
 
 分支保护、默认分支、允许的合并方式都是服务端设置，本地仓库无法携带；创建派生仓库时由管理员配置，换开发机器无需重设现有仓库规则。
 
@@ -260,17 +265,19 @@ git log v1.1.1..HEAD --oneline
 
 # 4. 此分支仅做修复与必要的版本、发布调整，不引入新功能
 
-# 5. 推送发布分支，分别向 main、develop 开 PR（保留 merge commit）
+# 5. 推送发布分支，向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
 git push -u origin release/1.2.0
-# 等两个 PR 的 CI 和审批通过后合并；main / develop 保持保护，不直接 push
 
-# 6. 两个 PR 合并后，在 main 的发布合并提交上打标签
+# 6. 在 main 的正式发布提交上打标签
 git switch main
 git pull --ff-only
 git tag -a v1.2.0 -m "v1.2.0"
 git push origin v1.2.0
 
-# 7. 删除发布分支
+# 7. 从 main 向 develop 开回流 PR，CI 和适用评审通过后保留 merge commit 合并
+# develop 若已推进，按「合并方式」一节使用 sync 分支处理
+
+# 8. 回流完成后删除发布分支
 git fetch origin
 git branch -d release/1.2.0
 git push origin --delete release/1.2.0
@@ -286,13 +293,14 @@ git pull --ff-only
 git switch -c hotfix/1.1.1
 # 修 bug，自检，提交
 git push -u origin hotfix/1.1.1
-# 分别向 main 与 develop 开 PR，CI 和审批通过后合并两处
+# 先向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
 
 # main PR 合并后，在对应合并提交打标签
 git switch main
 git pull --ff-only
 git tag -a v1.1.1 -m "v1.1.1"
 git push origin v1.1.1
+# 再从 main 向 develop 开回流 PR，通过检查和适用评审后合并
 ```
 
 判断标准：**只有线上故障才走 hotfix**。还没发布的 bug 一律回 develop 走正常流程。
@@ -306,4 +314,4 @@ git push origin v1.1.1
 - 提交 `node_modules`、`dist`、`src-tauri/target`
 - 提交任何密钥、证书、`.env`
 - 在同一 PR 混入与目标无关的重构或功能；为完成目标所必需的重构需说明关系
-- 把 `release/*` 只合到 `main` 不合回 `develop`
+- 发布后遗漏 `main` → `develop` 的回流
