@@ -1,6 +1,6 @@
 [package]
 name = "tauri-desktop-starter"
-version = "0.1.0"
+version = "0.1.1"
 description = "A complete desktop application starter"
 authors = ["Tauri Desktop Starter contributors"]
 license = "MIT"
