@@ -119,7 +119,7 @@ export const enFeatures = {
     "Check, download and install signature-verified updates. The Windows installer closes the app and may restart it automatically; other platforms can restart after installation.",
   "updates.installConfirmTitle": "Save your work before installing",
   "updates.installConfirmDescription":
-    "Save notes in every window first. The Windows installer closes the app and may restart it automatically; other platforms can restart after installation. Unsaved edits may be lost.",
+    "Unsaved work in every window is checked again before installation. On Windows the installer closes the app and may reopen it. A portable Windows app becomes an installed app; download manually to keep it portable.",
   "updates.check": "Check for updates",
   "updates.checking": "Checking…",
   "updates.latest": "You are using the latest version",
@@ -133,10 +133,25 @@ export const enFeatures = {
   "updates.releaseNotes": "Release notes",
   "updates.notConfigured":
     "The update signing public key is not configured. Complete deployment using the release guide before checking for updates.",
-  "updates.configuration": "Update deployment",
+  "updates.configuration": "Update preferences",
   "updates.configurationDescription":
-    "The release endpoint and signing public key come from the app configuration and can be overridden by deployment.json in the user configuration directory.",
+    "Get stable releases and verify the update package's origin and integrity before installation.",
+  "updates.autoCheck": "Check for updates on startup",
+  "updates.autoCheckHint":
+    "Check in the background after startup and notify you of new versions. You choose when to download and install.",
+  "updates.viewUpdate": "View update",
+  "updates.releases": "View GitHub releases",
+  "updates.lastChecked": "Last successful check: {time}",
+  "updates.idle":
+    "Updates have not been checked yet. Select Check for updates to get the current status.",
+  "updates.checkTimeout":
+    "The update check timed out. Check your connection and retry, or download from GitHub releases.",
+  "updates.feedUnavailable":
+    "The update source has not provided an available update manifest yet. Retry later or view installers on GitHub releases.",
+  "updates.platformUnavailable":
+    "This release has no update for your system and installation type. View available packages on GitHub releases.",
   "updates.endpoint": "Release source",
+  "updates.endpointDisabled": "Updates are disabled for this deployment",
   "updates.keyConfigured": "Signing public key configured",
   "updates.keyMissing": "Signing public key required",
   "errors.VALIDATION": "Please check the input and try again",

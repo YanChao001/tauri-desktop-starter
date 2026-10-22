@@ -97,7 +97,9 @@ describe("interactive motion laboratory", () => {
     expect(screen.getByText(zhMotion["lab.reducedHint"])).toBeVisible();
     await user.click(screen.getByRole("button", { name: "送到另一侧" }));
     await user.click(screen.getByRole("tab", { name: "光影触感" }));
-    const card = screen.getByRole("button", { name: zhMotion["lab.tiltCard"] });
+    const card = screen.getByRole("button", {
+      name: new RegExp(zhMotion["lab.cardFront"]),
+    });
     card.focus();
     await user.keyboard("{Enter}");
     expect(card).toHaveAttribute("aria-pressed", "true");

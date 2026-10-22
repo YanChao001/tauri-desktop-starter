@@ -4,13 +4,15 @@ import {
   motion,
   useMotionValue,
   useTransform,
+  useMotionValueEvent,
   type MotionValue,
 } from "motion/react";
 import { SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n } from "@/providers/i18n";
 import { useOrbit, usePlaybackGate, type Playback } from "./playback";
-import { Notes, RangeControl, type SceneProps } from "./shared";
+import { Notes, RangeControl, StageGuides, type SceneProps } from "./shared";
 const TRACKS = [
   "M96 224C126 98 260 48 378 102S572 156 538 240C504 312 324 258 206 194S130 92 96 224",
   "M124 78C294 10 528 90 510 192S296 302 188 238S74 138 124 78",
@@ -53,6 +55,33 @@ function Stardust({
     />
   );
 }
+function Trail({
+  path,
+  phase,
+  index,
+}: {
+  path: string;
+  phase: MotionValue<number>;
+  index: number;
+}) {
+  const pathRef = useRef<SVGPathElement>(null);
+  useMotionValueEvent(phase, "change", (value) => {
+    if (pathRef.current)
+      pathRef.current.style.strokeDashoffset = String(
+        -value / 3.6 - (index * 100) / 3,
+      );
+  });
+  return (
+    <path
+      ref={pathRef}
+      d={path}
+      pathLength={100}
+      strokeDasharray="13 87"
+      strokeDashoffset={(-index * 100) / 3}
+      className={`lab-orbit-trail lab-path-${index}`}
+    />
+  );
+}
 export function PathScene({ active, reduced, replay, stageRef }: SceneProps) {
   const { t } = useI18n();
   const [duration, setDuration] = useState(4);
@@ -86,6 +115,7 @@ export function PathScene({ active, reduced, replay, stageRef }: SceneProps) {
   return (
     <>
       <div className="lab-stage lab-path-stage" ref={stageRef}>
+        <StageGuides label={t("lab.paths")} />
         <svg
           viewBox="0 0 640 320"
           className="lab-artwork"
@@ -105,6 +135,9 @@ export function PathScene({ active, reduced, replay, stageRef }: SceneProps) {
               className={`lab-drawn-path lab-path-${index}`}
             />
           ))}
+          {TRACKS.map((path, index) => (
+            <Trail key={path} path={path} index={index} phase={phase} />
+          ))}
           <g>
             {Array.from(
               { length: burst ? Math.min(60, density * 2) : density },
@@ -119,6 +152,8 @@ export function PathScene({ active, reduced, replay, stageRef }: SceneProps) {
             )}
           </g>
           <circle cx="320" cy="158" r="42" className="lab-path-core" />
+          <circle cx="320" cy="158" r="53" className="lab-path-core-ring" />
+          <circle cx="320" cy="158" r="65" className="lab-path-core-ring" />
           <path
             d="M320 132L327 151L346 158L327 165L320 184L313 165L294 158L313 151Z"
             className="lab-path-star"
@@ -157,10 +192,9 @@ export function PathScene({ active, reduced, replay, stageRef }: SceneProps) {
           />
         </div>
         <label className="lab-loop">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={loop}
-            onChange={(event) => setLoop(event.target.checked)}
+            onCheckedChange={(checked) => setLoop(checked === true)}
           />
           <span>{t("lab.loop")}</span>
         </label>

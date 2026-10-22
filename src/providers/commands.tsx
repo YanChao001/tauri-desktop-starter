@@ -14,6 +14,8 @@ import {
   BookOpenIcon,
   CommandIcon,
   CopyIcon,
+  ExpandIcon,
+  MinimizeIcon,
   MonitorIcon,
   MoonIcon,
   PanelLeftIcon,
@@ -31,6 +33,7 @@ import { matchesShortcut } from "@/commands/shortcuts";
 import { SETTINGS_SEARCH_ENTRIES } from "@/commands/settings-search";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
+import { useFullscreen } from "@/hooks/use-fullscreen";
 import { copyText } from "@/lib/clipboard";
 import { nativeErrorText } from "@/lib/native-error";
 import {
@@ -52,6 +55,7 @@ type CommandsContextValue = {
   setPaletteOpen: (open: boolean) => void;
   aboutOpen: boolean;
   setAboutOpen: (open: boolean) => void;
+  fullscreen: boolean;
 };
 
 const CommandsContext = createContext<CommandsContextValue | null>(null);
@@ -65,6 +69,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
     themeToggle.current = toggle;
   }, [toggle]);
   const t = useLatestTranslator();
+  const { fullscreen, change: changeFullscreen } = useFullscreen();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [extensions, setExtensions] = useState<
@@ -124,6 +129,24 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         labelKey: "title.toggleMenu",
         group: "appearance",
         run: () => update({ menuBar: !settings.menuBar }),
+      },
+      {
+        id: "toggle-fullscreen",
+        labelKey: fullscreen ? "title.exitFullscreen" : "title.fullscreen",
+        group: "window",
+        icon: fullscreen ? MinimizeIcon : ExpandIcon,
+        shortcuts: [{ key: "F11", allowInEditable: true }],
+        available: () => isTauri() || !!document.fullscreenEnabled,
+        run: () => changeFullscreen(),
+      },
+      {
+        id: "exit-fullscreen",
+        labelKey: "title.exitFullscreen",
+        group: "window",
+        icon: MinimizeIcon,
+        shortcuts: [{ key: "Escape", allowInEditable: true }],
+        available: () => fullscreen,
+        run: () => changeFullscreen(false),
       },
       {
         id: "toggle-theme",
@@ -258,6 +281,8 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
     ],
     [
       navigate,
+      fullscreen,
+      changeFullscreen,
       resolvedTheme,
       setTheme,
       settings.appMode,
@@ -330,8 +355,9 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
       setPaletteOpen,
       aboutOpen,
       setAboutOpen,
+      fullscreen,
     }),
-    [commands, execute, register, paletteOpen, aboutOpen],
+    [commands, execute, register, paletteOpen, aboutOpen, fullscreen],
   );
   return (
     <CommandsContext.Provider value={value}>

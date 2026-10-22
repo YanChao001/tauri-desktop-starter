@@ -1,0 +1,267 @@
+.experience-routes {
+  container-type: inline-size;
+  min-width: 0;
+}
+.experience-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.8rem 2rem;
+  margin-bottom: 1.2rem;
+}
+.experience-heading h3 {
+  margin-top: 0.45rem;
+  font-size: clamp(1.25rem, 3cqi, 1.65rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+.experience-heading > p {
+  max-width: 32rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.8;
+}
+.experience-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+.experience-route {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklab, var(--card) 96%, transparent);
+  transition:
+    border-color 180ms,
+    background 180ms;
+}
+.experience-route:hover {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+.experience-route:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.experience-route-top {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--primary);
+}
+.experience-route-top > svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.experience-route-top > span {
+  margin-left: auto;
+  font-family: monospace;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+.experience-route h4 {
+  margin-top: 1.2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.experience-route > p {
+  margin: 0.5rem 0 1.3rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.8;
+}
+.experience-route-bottom {
+  margin-top: auto;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+.experience-route-bottom svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+.experience-route-bottom span:last-child {
+  margin-left: auto;
+}
+@container (min-width: 900px) {
+  .experience-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container (max-width: 400px) {
+  .experience-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.journey-guide {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.2rem 0.7rem;
+  border: 1px solid color-mix(in oklab, var(--primary) 25%, var(--border));
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  min-width: 0;
+}
+.journey-guide-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.journey-guide-heading > svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.journey-guide-heading > a {
+  margin-left: auto;
+}
+.journey-guide-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem 1.5rem;
+  padding-block: 0.35rem 0.9rem;
+}
+.journey-guide-body > div:first-child {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.journey-guide h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.journey-guide p {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  line-height: 1.8;
+}
+.journey-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.journey-guide-progress {
+  display: flex;
+  gap: 0.4rem;
+}
+.journey-guide-progress span {
+  height: 3px;
+  flex: 1;
+  background: var(--muted);
+  border-radius: 3px;
+}
+.journey-guide-progress [data-current="true"] {
+  background: var(--primary);
+}
+.demo-page-tabs {
+  width: 100%;
+  min-width: 0;
+  gap: 1.25rem;
+}
+.demo-page-tabs > [data-slot="tabs-list"] {
+  max-width: 100%;
+  height: auto;
+  min-height: 2.5rem;
+  flex-wrap: wrap;
+}
+.demo-page-tabs [data-slot="tabs-trigger"] {
+  min-height: 2rem;
+  white-space: normal;
+}
+.demo-tab-panel[hidden] {
+  display: none;
+}
+.demo-tab-panel {
+  min-width: 0;
+}
+.native-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+.native-flow li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  padding: 0.9rem;
+  min-width: 0;
+}
+.native-flow li > span {
+  display: block;
+  font: 0.7rem monospace;
+  color: var(--muted-foreground);
+  margin-bottom: 0.8rem;
+}
+.native-flow strong {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.7;
+}
+.native-journey-preview {
+  container-type: inline-size;
+  display: block;
+  min-height: 0;
+}
+.demo-resize-handle {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  flex-shrink: 0;
+  width: 8px;
+  z-index: 2;
+  background: var(--border);
+  outline-offset: -2px;
+}
+.demo-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+}
+.demo-resize-handle:hover,
+.demo-resize-handle:focus-visible {
+  background: var(--primary);
+  outline: 2px solid var(--ring);
+}
+.record-column-handle {
+  position: absolute;
+  right: 0;
+  top: 0.5rem;
+  bottom: 0.5rem;
+}
+.record-column-handle > .demo-resize-handle {
+  height: 100%;
+  width: 4px;
+  background: transparent;
+}
+.record-column-handle > .demo-resize-handle:is(:hover, :focus-visible) {
+  background: var(--primary);
+}
+@container (max-width: 600px) {
+  .native-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .native-flow li {
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+  }
+  .native-flow li > span {
+    margin: 0;
+  }
+}

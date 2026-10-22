@@ -111,7 +111,7 @@ export const zhFeatures = {
     "检查、下载并安装经过签名验证的新版本。Windows 安装器会关闭应用，并可能自动重启；其他平台可在安装后选择重启。",
   "updates.installConfirmTitle": "安装更新前请保存内容",
   "updates.installConfirmDescription":
-    "请先保存所有窗口的笔记。Windows 安装器将关闭应用，并可能自动重启；其他平台安装完成后可选择重启。未保存的编辑可能丢失。",
+    "安装前会再次确认所有窗口的未保存工作。Windows 安装器将关闭应用，并可能自动重启。便携版会转为安装版；保留便携形态请从发行页手动下载。",
   "updates.check": "检查更新",
   "updates.checking": "正在检查…",
   "updates.latest": "当前已是最新版本",
@@ -125,10 +125,24 @@ export const zhFeatures = {
   "updates.releaseNotes": "版本说明",
   "updates.notConfigured":
     "更新签名公钥尚未配置，请按发布文档完成部署后检查更新。",
-  "updates.configuration": "更新部署",
+  "updates.configuration": "更新偏好",
   "updates.configurationDescription":
-    "发布地址和签名公钥来自应用品牌配置，可由用户配置目录下的 deployment.json 覆盖。",
+    "获取稳定版更新，安装前验证更新包的来源与完整性。",
+  "updates.autoCheck": "启动时检查更新",
+  "updates.autoCheckHint":
+    "应用就绪后在后台检查，发现新版本时提醒；下载和安装由你确认。",
+  "updates.viewUpdate": "查看更新",
+  "updates.releases": "查看 GitHub 发行版本",
+  "updates.lastChecked": "最近成功检查：{time}",
+  "updates.idle": "尚未检查更新，点击“检查更新”获取当前状态。",
+  "updates.checkTimeout":
+    "检查更新超时，请检查网络后重试，也可前往 GitHub 发行页下载。",
+  "updates.feedUnavailable":
+    "更新源尚未提供可用的更新清单。请稍后重试，或前往 GitHub 发行页查看安装包。",
+  "updates.platformUnavailable":
+    "此版本尚未提供适合当前系统与安装类型的更新包，请前往 GitHub 发行页查看。",
   "updates.endpoint": "发布源",
+  "updates.endpointDisabled": "当前部署未启用更新来源",
   "updates.keyConfigured": "签名公钥已配置",
   "updates.keyMissing": "等待配置签名公钥",
   "errors.VALIDATION": "输入内容无效，请检查后重试",

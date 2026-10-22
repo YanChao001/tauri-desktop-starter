@@ -17,6 +17,7 @@ export async function buildE2E() {
     cwd: root,
     env,
     encoding: "utf8",
+    windowsHide: true,
   })
     .match(/^host: (.+)$/m)?.[1]
     ?.trim();
@@ -26,7 +27,12 @@ export async function buildE2E() {
     execFileSync(
       "cargo",
       ["metadata", "--no-deps", "--format-version", "1", "--locked"],
-      { cwd: join(root, "src-tauri"), env, encoding: "utf8" },
+      {
+        cwd: join(root, "src-tauri"),
+        env,
+        encoding: "utf8",
+        windowsHide: true,
+      },
     ),
   );
   const pkg = metadata.packages.find(
@@ -56,7 +62,7 @@ export async function buildE2E() {
         "--config",
         "src-tauri/tauri.e2e.conf.json",
       ],
-      { cwd: root, env, stdio: "inherit" },
+      { cwd: root, env, stdio: "inherit", windowsHide: true },
     );
     child.once("error", fail);
     child.once("exit", (code) =>
@@ -83,7 +89,9 @@ export async function buildE2E() {
 
 export function readE2EBuild() {
   if (!existsSync(receiptPath))
-    throw new Error("请先运行 pnpm e2e:build，或直接运行 pnpm test:e2e。");
+    throw new Error(
+      "请先运行 pnpm e2e:build，或显式运行 pnpm test:e2e --interactive。",
+    );
   const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
   const expected = join(targetDirectory, receipt.target, "debug");
   if (

@@ -1,12 +1,17 @@
 use tauri_specta::{Builder, collect_commands};
 
 use crate::commands;
+use crate::wallpaper_commands;
 use crate::{data_commands, lifecycle, recovery, system_commands, workbench_commands};
 
 pub fn builder() -> Builder<tauri::Wry> {
     Builder::new()
         .commands(collect_commands![
             commands::greet,
+            wallpaper_commands::list_wallpapers,
+            wallpaper_commands::add_wallpaper,
+            wallpaper_commands::rename_wallpaper,
+            wallpaper_commands::remove_wallpaper,
             commands::load_settings_snapshot,
             commands::save_settings_snapshot,
             commands::list_notes,

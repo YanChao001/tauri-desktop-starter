@@ -1,14 +1,28 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { isTauri, openExternal } from "@/lib/tauri";
 
+/** 组件主动打开外链与全局兜底共用错误反馈和最新语言。 */
+export function useOpenExternal(): (url: string) => void {
+  const t = useLatestTranslator();
+  return useCallback(
+    (url: string) => {
+      void openExternal(url).catch((error: unknown) => {
+        console.error("打开外链失败", error);
+        toast.error(t("common.openFailed"));
+      });
+    },
+    [t],
+  );
+}
+
 /**
- * 拦截页面上所有 http(s) 链接，交给系统浏览器打开。
- * 桌面应用里直接在 WebView 中跳转外部站点是最常见的体验事故。
+ * 为未使用 ExternalLink 的 http(s) 链接提供原生打开兜底。
+ * 组件已处理的点击不会重复打开，外部页面不进入当前可信 WebView。
  */
 export function useExternalLinks(): void {
-  const t = useLatestTranslator();
+  const open = useOpenExternal();
   useEffect(() => {
     // 普通浏览器保留链接目标、修饰键和中键的原生导航语义。
     if (!isTauri()) return;
@@ -29,11 +43,7 @@ export function useExternalLinks(): void {
       if (!/^(https?:|\/\/)/i.test(href)) return;
       if (anchor.protocol !== "https:" && anchor.protocol !== "http:") return;
       event.preventDefault();
-      openExternal(anchor.href).catch((error: unknown) => {
-        // 权限被拒、没有默认浏览器等情况：给出可操作的提示，而不是静默失败
-        console.error("打开外链失败", error);
-        toast.error(t("common.openFailed"));
-      });
+      open(anchor.href);
     };
 
     document.addEventListener("click", handler);
@@ -42,5 +52,5 @@ export function useExternalLinks(): void {
       document.removeEventListener("click", handler);
       document.removeEventListener("auxclick", handler);
     };
-  }, [t]);
+  }, [open]);
 }

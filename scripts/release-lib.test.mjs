@@ -142,8 +142,22 @@ test("a single manifest requires all four targets and rejects stale, duplicate o
     repository,
     version,
     now: new Date("2026-01-02T00:00:00Z"),
+    notes: "  ## Improvements\n\nReal release notes.  ",
   });
   assert.equal(manifest.pub_date, "2026-01-02T00:00:00.000Z");
+  assert.equal(manifest.notes, "## Improvements\n\nReal release notes.");
+  assert.equal(
+    mergeUpdaterMetadata(records, {
+      repository,
+      version,
+      notes: "x".repeat(9000),
+    }).notes.length,
+    8000,
+  );
+  assert.equal(
+    mergeUpdaterMetadata(records, { repository, version, notes: "  " }).notes,
+    `Release v${version}`,
+  );
   assert.equal(Object.keys(manifest.platforms).length, 8);
   assert.throws(
     () => mergeUpdaterMetadata(records.slice(1), { repository, version }),

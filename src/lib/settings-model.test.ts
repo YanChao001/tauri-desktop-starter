@@ -19,6 +19,18 @@ describe("versioned settings model", () => {
     vi.spyOn(navigator, "languages", "get").mockReturnValue(["zh-CN"]);
   });
   afterEach(() => vi.restoreAllMocks());
+  it("defaults legacy startup update checks on and preserves an explicit opt-out", () => {
+    expect(
+      migrateSettings({ schemaVersion: 3, language: "en" }).autoCheckUpdates,
+    ).toBe(true);
+    expect(
+      migrateSettings({ schemaVersion: 3, autoCheckUpdates: false })
+        .autoCheckUpdates,
+    ).toBe(false);
+    expect(
+      normalizeSettingsPatch(DEFAULT_SETTINGS, { autoCheckUpdates: false }),
+    ).toEqual({ autoCheckUpdates: false });
+  });
 
   it("migrates legacy flat and v1 wrapped documents to the current complete shape", () => {
     expect(migrateSettings({ language: "en", background: "gradient" })).toEqual(

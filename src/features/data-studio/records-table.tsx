@@ -17,6 +17,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -25,6 +26,28 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ResizeHandle } from "@/components/resize-handle";
+import { SlidersHorizontalIcon, ArrowUpRightIcon } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
 import {
   archiveDemoRecords,
@@ -46,11 +69,25 @@ const features = tableFeatures({
   paginatedRowModel: createPaginatedRowModel(),
 });
 const column = createColumnHelper<typeof features, DemoRecord>();
+const DATA_COLUMNS = ["name", "email", "team", "status", "budget"] as const;
+const INITIAL_WIDTHS: Record<string, number> = {
+  selection: 44,
+  name: 145,
+  email: 220,
+  team: 130,
+  status: 110,
+  budget: 120,
+  details: 56,
+};
 
 export function RecordsTable() {
   const { t, language } = useI18n();
   const [records, setRecords] = useState(createDemoRecords);
   const [virtual, setVirtual] = useState(false);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const [widths, setWidths] = useState(INITIAL_WIDTHS);
+  const [detail, setDetail] = useState<DemoRecord | null>(null);
+  const detailOrigin = useRef<HTMLButtonElement | null>(null);
   const [batch, setBatch] = useState<{
     success: number;
     failed: number;
@@ -62,23 +99,27 @@ export function RecordsTable() {
         column.display({
           id: "selection",
           header: ({ table }) => (
-            <input
-              type="checkbox"
+            <Checkbox
               aria-label={t("labs.data.selectAll")}
-              checked={table.getIsAllRowsSelected()}
-              ref={(element) => {
-                if (element)
-                  element.indeterminate = table.getIsSomeRowsSelected();
-              }}
-              onChange={table.getToggleAllRowsSelectedHandler()}
+              checked={
+                table.getIsAllRowsSelected()
+                  ? true
+                  : table.getIsSomeRowsSelected()
+                    ? "indeterminate"
+                    : false
+              }
+              onCheckedChange={(checked) =>
+                table.toggleAllRowsSelected(checked === true)
+              }
             />
           ),
           cell: ({ row }) => (
-            <input
-              type="checkbox"
+            <Checkbox
               aria-label={t("labs.data.selectRow", { id: row.original.id })}
               checked={row.getIsSelected()}
-              onChange={row.getToggleSelectedHandler()}
+              onCheckedChange={(checked) =>
+                row.toggleSelected(checked === true)
+              }
             />
           ),
         }),
@@ -107,6 +148,27 @@ export function RecordsTable() {
               maximumFractionDigits: 2,
             }).format(getValue()),
           sortFn: "basic",
+        }),
+        column.display({
+          id: "details",
+          header: () => (
+            <span className="sr-only">{t("experience.table.detailTitle")}</span>
+          ),
+          cell: ({ row }) => (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t("experience.table.details", {
+                id: row.original.id,
+              })}
+              onClick={(event) => {
+                detailOrigin.current = event.currentTarget;
+                setDetail(row.original);
+              }}
+            >
+              <ArrowUpRightIcon />
+            </Button>
+          ),
         }),
       ]),
     [t, language],
@@ -175,16 +237,42 @@ export function RecordsTable() {
             }}
           />
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={virtual}
-              onChange={(event) => {
-                setVirtual(event.target.checked);
+              onCheckedChange={(checked) => {
+                setVirtual(checked === true);
                 scroll.current?.scrollTo?.({ top: 0 });
               }}
             />
             {t("labs.data.virtual")}
           </label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline">
+                <SlidersHorizontalIcon />
+                {t("experience.table.columns")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="space-y-3" align="end">
+              {DATA_COLUMNS.map((id) => (
+                <Label key={id}>
+                  <Checkbox
+                    disabled={id === "name"}
+                    checked={!hidden.has(id)}
+                    onCheckedChange={(checked) =>
+                      setHidden((current) => {
+                        const next = new Set(current);
+                        if (checked === true) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      })
+                    }
+                  />
+                  {t(`labs.data.${id}`)}
+                </Label>
+              ))}
+            </PopoverContent>
+          </Popover>
           <Button
             variant="outline"
             disabled={!selected.length}
@@ -211,47 +299,80 @@ export function RecordsTable() {
           style={virtual ? { height: 440 } : undefined}
         >
           <table
-            className="w-full min-w-[40rem] text-left text-sm"
+            className="min-w-full table-fixed text-left text-sm"
+            style={{
+              width: Object.entries(widths).reduce(
+                (total, [id, width]) => total + (hidden.has(id) ? 0 : width),
+                0,
+              ),
+            }}
             aria-rowcount={table.getFilteredRowModel().rows.length + 1}
           >
+            <colgroup>
+              {Object.entries(widths)
+                .filter(([id]) => !hidden.has(id))
+                .map(([id, width]) => (
+                  <col key={id} style={{ width }} />
+                ))}
+            </colgroup>
             <thead className="sticky top-0 z-10 bg-card">
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
-                  {group.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      scope="col"
-                      className="h-11 border-b px-3 text-xs font-medium"
-                      aria-sort={
-                        header.column.getCanSort()
-                          ? header.column.getIsSorted() === "asc"
-                            ? "ascending"
-                            : header.column.getIsSorted() === "desc"
-                              ? "descending"
-                              : "none"
-                          : undefined
-                      }
-                    >
-                      {header.column.getCanSort() ? (
-                        <button
-                          type="button"
-                          className="inline-flex min-h-9 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={header.column.getToggleSortingHandler()}
-                        >
-                          <table.FlexRender header={header} />
-                          <span aria-hidden="true">
-                            {header.column.getIsSorted() === "asc"
-                              ? "↑"
+                  {group.headers
+                    .filter((header) => !hidden.has(header.column.id))
+                    .map((header) => (
+                      <th
+                        key={header.id}
+                        scope="col"
+                        className="relative h-11 border-b px-3 text-xs font-medium"
+                        aria-sort={
+                          header.column.getCanSort()
+                            ? header.column.getIsSorted() === "asc"
+                              ? "ascending"
                               : header.column.getIsSorted() === "desc"
-                                ? "↓"
-                                : "↕"}
+                                ? "descending"
+                                : "none"
+                            : undefined
+                        }
+                      >
+                        {header.column.getCanSort() ? (
+                          <button
+                            type="button"
+                            className="inline-flex min-h-9 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            <table.FlexRender header={header} />
+                            <span aria-hidden="true">
+                              {header.column.getIsSorted() === "asc"
+                                ? "↑"
+                                : header.column.getIsSorted() === "desc"
+                                  ? "↓"
+                                  : "↕"}
+                            </span>
+                          </button>
+                        ) : (
+                          <table.FlexRender header={header} />
+                        )}
+                        {DATA_COLUMNS.some((id) => id === header.column.id) && (
+                          <span className="record-column-handle">
+                            <ResizeHandle
+                              label={t("experience.table.width", {
+                                name: String(header.column.columnDef.header),
+                              })}
+                              value={widths[header.column.id] ?? 160}
+                              min={100}
+                              max={400}
+                              onChange={(width) =>
+                                setWidths((current) => ({
+                                  ...current,
+                                  [header.column.id]: width,
+                                }))
+                              }
+                            />
                           </span>
-                        </button>
-                      ) : (
-                        <table.FlexRender header={header} />
-                      )}
-                    </th>
-                  ))}
+                        )}
+                      </th>
+                    ))}
                 </tr>
               ))}
             </thead>
@@ -259,7 +380,7 @@ export function RecordsTable() {
               {virtual && first && first.start > 0 ? (
                 <tr aria-hidden="true">
                   <td
-                    colSpan={columns.length}
+                    colSpan={columns.length - hidden.size}
                     style={{ height: first.start }}
                   />
                 </tr>
@@ -279,17 +400,20 @@ export function RecordsTable() {
                   style={{ height: 48 }}
                   data-state={row.getIsSelected() ? "selected" : undefined}
                 >
-                  {row.getAllCells().map((cell) => (
-                    <td key={cell.id} className="whitespace-nowrap px-3 py-2">
-                      <table.FlexRender cell={cell} />
-                    </td>
-                  ))}
+                  {row
+                    .getAllCells()
+                    .filter((cell) => !hidden.has(cell.column.id))
+                    .map((cell) => (
+                      <td key={cell.id} className="truncate px-3 py-2">
+                        <table.FlexRender cell={cell} />
+                      </td>
+                    ))}
                 </tr>
               ))}
               {virtual && last && virtualizer.getTotalSize() > last.end ? (
                 <tr aria-hidden="true">
                   <td
-                    colSpan={columns.length}
+                    colSpan={columns.length - hidden.size}
                     style={{ height: virtualizer.getTotalSize() - last.end }}
                   />
                 </tr>
@@ -297,7 +421,7 @@ export function RecordsTable() {
               {!rows.length ? (
                 <tr>
                   <td
-                    colSpan={columns.length}
+                    colSpan={columns.length - hidden.size}
                     className="p-6 text-center text-muted-foreground"
                   >
                     {t("labs.data.empty")}
@@ -317,20 +441,21 @@ export function RecordsTable() {
               })}
             </p>
             <div className="flex items-center gap-2">
-              <select
-                className="h-9 rounded-md border bg-background px-2 text-sm"
-                aria-label={t("labs.data.pageSize")}
-                value={table.state.pagination.pageSize}
-                onChange={(event) =>
-                  table.setPageSize(Number(event.target.value))
-                }
+              <Select
+                value={String(table.state.pagination.pageSize)}
+                onValueChange={(value) => table.setPageSize(Number(value))}
               >
-                {[20, 50, 100].map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-label={t("labs.data.pageSize")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {[20, 50, 100].map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"
@@ -351,6 +476,45 @@ export function RecordsTable() {
           </div>
         ) : null}
       </CardContent>
+      <Dialog
+        open={detail !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetail(null);
+        }}
+      >
+        <DialogContent
+          closeLabel={t("common.close")}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (detailOrigin.current?.isConnected) detailOrigin.current.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("experience.table.detailTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("experience.table.detailHint")}
+            </DialogDescription>
+          </DialogHeader>
+          {detail && (
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
+              <dt>ID</dt>
+              <dd>{detail.id}</dd>
+              {DATA_COLUMNS.map((id) => (
+                <div key={id} className="contents">
+                  <dt className="text-muted-foreground">
+                    {t(`labs.data.${id}`)}
+                  </dt>
+                  <dd className="break-words">
+                    {id === "team" || id === "status"
+                      ? t(`labs.data.${detail[id]}`)
+                      : detail[id]}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

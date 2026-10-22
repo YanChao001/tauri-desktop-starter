@@ -457,6 +457,12 @@ pub fn initialize(paths: &DataPaths) -> NativeResult<InitializedStorage> {
 }
 
 impl RecoveryState {
+    pub fn wallpaper_path(&self) -> PathBuf {
+        self.temporary.as_ref().map_or_else(
+            || self.paths.data.join("wallpapers.json"),
+            |directory| directory.path().join("wallpapers.json"),
+        )
+    }
     pub fn workbench_root(&self) -> PathBuf {
         self.temporary.as_ref().map_or_else(
             || self.paths.data.join("workbench"),

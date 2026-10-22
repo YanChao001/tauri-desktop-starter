@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ResourceLibrary } from "@/components/showcase/resource-library";
+import { ControlStates } from "@/components/showcase/control-states";
 import Components from "./components";
 
 const notifications = vi.hoisted(() => ({
@@ -57,6 +58,74 @@ describe("交互组件舞台", () => {
     cleanup();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("控件状态展示保留校验输入，支持只读与部分选择的键盘操作", async () => {
+    const user = userEvent.setup();
+    render(<ControlStates />);
+    const notes = screen.getByRole("textbox", { name: "playground.notes" });
+    await user.type(notes, "Keep this draft");
+    await user.click(
+      screen.getByRole("button", { name: "playground.validate" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "playground.titleRequired",
+    );
+    expect(notes).toHaveValue("Keep this draft");
+    await user.type(
+      screen.getByRole("textbox", { name: "playground.requiredTitle" }),
+      "Review",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "playground.validate" }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "playground.validated",
+    );
+    expect(
+      screen.getByRole("textbox", { name: "playground.readOnly" }),
+    ).toHaveAttribute("readonly");
+    expect(
+      screen.getByRole("textbox", { name: "playground.disabled" }),
+    ).toBeDisabled();
+    const all = screen.getByRole("checkbox", { name: "playground.selectAll" });
+    expect(all).toBePartiallyChecked();
+    all.focus();
+    await user.keyboard(" ");
+    expect(all).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "playground.optionCode" }),
+    ).toBeChecked();
+    await user.keyboard(" ");
+    expect(
+      screen.getByRole("checkbox", { name: "playground.optionDesign" }),
+    ).not.toBeChecked();
+  });
+
+  it("资料错误重试保留筛选与收藏，并恢复加载结果", () => {
+    vi.useFakeTimers();
+    render(<ResourceLibrary active />);
+    const search = screen.getByRole("textbox", { name: "playground.search" });
+    fireEvent.change(search, { target: { value: "prismTitle" } });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "playground.favoritesOnly" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "playground.tryError" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "playground.errorTitle",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "playground.retry" }));
+    expect(screen.getByRole("progressbar")).toBeVisible();
+    act(() => vi.advanceTimersByTime(750));
+    expect(screen.getByText("playground.prismTitle")).toBeVisible();
+    expect(search).toHaveValue("prismTitle");
+    expect(
+      screen.getByRole("checkbox", { name: "playground.favoritesOnly" }),
+    ).toBeChecked();
+    expect(screen.getByText("playground.resultCount 1")).toBeVisible();
   });
 
   it("输入、滑块、署名和配色联动预览，切换舞台保留修改，重置恢复初始状态", async () => {

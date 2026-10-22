@@ -1,3 +1,4 @@
+import { zhExperience } from "./zh-experience";
 import { zhFeatures } from "./zh-features";
 import { zhShowroom } from "./zh-showroom";
 import { zhComponents } from "./zh-components";
@@ -22,6 +23,7 @@ export const zhCN = {
   ...zhLabs,
   ...zhCatalog,
   ...zhRecovery,
+  ...zhExperience,
   "nav.overview": "创意展厅",
   "nav.components": "交互场景",
   "nav.motion": "动效实验室",
@@ -151,17 +153,17 @@ export const zhCN = {
   "bridge.note":
     "新增命令需在 bindings.rs 中注册，再运行 pnpm bindings:generate 更新前端调用契约。",
   "settings.bgPlainDescription": "干净底色，让内容成为焦点",
-  "settings.bgAurora": "流动抽象",
-  "settings.bgAuroraDescription": "薄荷与雾紫的流线交汇，轻盈而自由",
-  "settings.bgDune": "极简几何",
-  "settings.bgDuneDescription": "圆、拱门与色块，陶土暖色中的包豪斯秩序",
-  "settings.bgInkwash": "东方水墨",
-  "settings.bgInkwashDescription": "淡墨远山、一叶扁舟与朱红落日，留白如纸",
-  "settings.bgCustom": "我的背景",
+  "settings.bgAurora": "猫咪涂鸦",
+  "settings.bgAuroraDescription": "圆耳小猫与轻巧爪印，留一点慵懒的陪伴",
+  "settings.bgDune": "咖啡时光",
+  "settings.bgDuneDescription": "热咖啡、可颂和弯弯的蒸汽线条",
+  "settings.bgInkwash": "远山手记",
+  "settings.bgInkwashDescription": "几笔山峰和小屋，把安静画在纸边",
+  "settings.bgCustom": "我的壁纸",
   "settings.bgCustomDescription": "把喜欢的图片留在自己的工作空间",
   "settings.customImageHint":
-    "导入喜欢的图片作为窗口背景，仅在本机处理和保存。",
-  "settings.importBackground": "导入背景图片",
+    "可多选导入、切换、重命名和删除；图片仅在本机保存。",
+  "settings.importBackground": "添加壁纸",
   "settings.replaceBackground": "更换图片",
   "settings.removeBackground": "移除背景图片",
   "settings.backgroundFit": "图片显示方式",
@@ -169,24 +171,22 @@ export const zhCN = {
   "settings.backgroundContain": "完整显示",
   "settings.imageFormats":
     "支持 PNG、JPEG、WebP，原图最大 10MB；会自动优化大小。",
-  "settings.imageProcessing": "正在优化背景图片…",
+  "settings.imageProcessing": "正在保存壁纸…",
   "settings.imageTypeError": "请选择 PNG、JPEG 或 WebP 图片。",
   "settings.imageSizeError":
     "图片过大，请选择不超过 10MB、4000 万像素的图片，或先缩小后重试。",
   "settings.imageDecodeError":
     "无法读取这张图片，请确认文件有效，或换一张重试。",
-  "settings.bgStarlight": "未来星图",
-  "settings.bgStarlightDescription": "星座连线、行星与精密图表，安静的太空蓝图",
-  "settings.bgSakura": "日系动漫",
-  "settings.bgSakuraDescription": "樱花、春风与放学归来的少女，定格一帧春日",
-  "settings.bgMoonlit": "复古像素",
-  "settings.bgMoonlitDescription":
-    "方块月亮、阶梯山峦与像素小猫，重温八位机夜晚",
-  "settings.bgBotanical": "植物手绘",
-  "settings.bgBotanicalDescription": "细线叶脉、柔绿枝叶与植物标本般的自然气息",
-  "settings.bgCloudscape": "立体剪纸",
-  "settings.bgCloudscapeDescription":
-    "层叠纸云、清晰切边与折纸飞机，轻柔而有纵深",
+  "settings.bgStarlight": "星星手帐",
+  "settings.bgStarlightDescription": "线描水印 · 几颗随手画的星星，安静而轻巧",
+  "settings.bgSakura": "云朵晴空",
+  "settings.bgSakuraDescription": "蓬松云团与小太阳，像随手画下的好天气",
+  "settings.bgMoonlit": "月相漫游",
+  "settings.bgMoonlitDescription": "弯月与环形星球，散落在页边的小宇宙",
+  "settings.bgBotanical": "枝叶小笺",
+  "settings.bgBotanicalDescription": "伸展的枝叶和小花，轻盈的植物速写",
+  "settings.bgCloudscape": "纸上飞行",
+  "settings.bgCloudscapeDescription": "纸飞机与信封，用虚线记下飞行轨迹",
   "settings.backgroundIntensity": "皮肤强度",
   "settings.backgroundIntensityDescription": "调整装饰的醒目程度，文字始终清晰",
   "settings.intensitySubtle": "轻盈",
@@ -194,10 +194,25 @@ export const zhCN = {
   "settings.intensityStrong": "鲜明",
   "settings.skinGallery": "外观皮肤",
   "settings.skinGalleryDescription":
-    "八种不同的视觉风格，为整个窗口选一种喜欢的氛围",
+    "八款轻盈的手绘线条，颜色随明暗主题与主题色变化",
   "settings.activeSkin": "当前皮肤",
-  "settings.skinLightweight": "轻量插画皮肤",
+  "settings.skinLightweight": "手绘线条纹理",
   "settings.languageDescription": "即时切换界面语言，并记住你的选择",
+  "settings.libraryCount": "{count} / {max} 张",
+  "settings.libraryEmpty": "添加喜欢的图片，建立自己的壁纸收藏",
+  "settings.libraryFull": "图库最多保存 24 张壁纸，请先删除不需要的图片。",
+  "settings.libraryError": "壁纸未能保存或读取，已有图片已保留。请重试。",
+  "settings.chooseWallpaper": "使用壁纸：{name}",
+  "settings.deleteWallpaper": "删除壁纸：{name}",
+  "settings.renameWallpaper": "重命名壁纸：{name}",
+  "settings.renameWallpaperTitle": "重命名壁纸",
+  "settings.renameWallpaperHint": "只修改图库中的名称，不会修改原始文件。",
+  "settings.wallpaperName": "壁纸名称",
+  "settings.currentWallpaper": "已选图片：{name}",
+  "settings.clearWallpaper": "取消图片背景",
+  "title.fullscreen": "全屏沉浸",
+  "title.exitFullscreen": "退出全屏",
+  "title.fullscreenHint": "F11 或 Esc 退出全屏，恢复原有布局",
 } as const;
 
 export type MessageKey = keyof typeof zhCN;

@@ -319,9 +319,10 @@ describe("native note editor", () => {
       ),
     );
     expect(await screen.findByText("Note 51")).toBeVisible();
-    fireEvent.change(screen.getByRole("combobox", { name: "Sort" }), {
-      target: { value: "title-asc" },
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Sort" }), {
+      key: "Enter",
     });
+    fireEvent.click(screen.getByRole("option", { name: "Title" }));
     await waitFor(() =>
       expect(native.queryNotes).toHaveBeenCalledWith(
         expect.objectContaining({ offset: 0, sort: "title-asc" }),

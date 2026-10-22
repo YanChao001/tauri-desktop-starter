@@ -100,6 +100,10 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
       <nav
         id="app-sidebar-navigation"
         className="app-sidebar-navigation app-scroll-region min-h-0 flex-1 overflow-y-auto"
+        onWheel={() => {
+          tooltipIntent.current = null;
+          setTooltip(null);
+        }}
         onScroll={() => {
           tooltipIntent.current = null;
           setTooltip(null);

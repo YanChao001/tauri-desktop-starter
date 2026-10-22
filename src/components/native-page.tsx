@@ -1,17 +1,71 @@
 import type { ReactNode } from "react";
-import {
-  AlertCircleIcon,
-  MonitorIcon,
-  DatabaseIcon,
-  LayersIcon,
-  ArrowRightIcon,
-} from "lucide-react";
-import { Link } from "react-router-dom";
+import { AlertCircleIcon, LayersIcon, ArrowRightIcon } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useI18n } from "@/providers/i18n";
+import { useI18n, type DictKey } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { isTauri } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
+import "@/styles/experience.css";
+
+const PREVIEWS: Record<string, readonly DictKey[]> = {
+  "/workbench": [
+    "experience.preview.workbench.1",
+    "experience.preview.workbench.2",
+    "experience.preview.workbench.3",
+  ],
+  "/tasks": [
+    "experience.preview.tasks.1",
+    "experience.preview.tasks.2",
+    "experience.preview.tasks.3",
+  ],
+  "/database": [
+    "experience.preview.database.1",
+    "experience.preview.database.2",
+    "experience.preview.database.3",
+  ],
+  "/desktop": [
+    "experience.preview.desktop.1",
+    "experience.preview.desktop.2",
+    "experience.preview.desktop.3",
+  ],
+  "/system": [
+    "experience.preview.system.1",
+    "experience.preview.system.2",
+    "experience.preview.system.3",
+  ],
+  "/diagnostics": [
+    "experience.preview.diagnostics.1",
+    "experience.preview.diagnostics.2",
+    "experience.preview.diagnostics.3",
+  ],
+  "/updates": [
+    "experience.preview.updates.1",
+    "experience.preview.updates.2",
+    "experience.preview.updates.3",
+  ],
+  "/recovery": [
+    "experience.preview.recovery.1",
+    "experience.preview.recovery.2",
+    "experience.preview.recovery.3",
+  ],
+};
+
+function NativeFlow() {
+  const { pathname } = useLocation();
+  const { t } = useI18n();
+  const steps = PREVIEWS[pathname] ?? PREVIEWS["/desktop"]!;
+  return (
+    <ol className="native-flow">
+      {steps.map((step, index) => (
+        <li key={step}>
+          <span>0{index + 1}</span>
+          <strong>{t(step)}</strong>
+        </li>
+      ))}
+    </ol>
+  );
+}
 function NativePreviewActions() {
   const { settings } = useSettings();
   const { t } = useI18n();
@@ -19,15 +73,13 @@ function NativePreviewActions() {
   return (
     <div className="studio-native-actions">
       <Button asChild>
-        <Link to={minimal ? "/" : "/components"}>
-          {t(minimal ? "showroom.workspace" : "studio.nativeCta")}
+        <Link to={minimal ? "/" : "/catalog"}>
+          {t(minimal ? "showroom.workspace" : "experience.previewOpen")}
           <ArrowRightIcon />
         </Link>
       </Button>
       <Button asChild variant="ghost">
-        <Link to={minimal ? "/settings" : "/motion"}>
-          {t(minimal ? "nav.settings" : "studio.nativeMotion")}
-        </Link>
+        <Link to="/settings">{t("nav.settings")}</Link>
       </Button>
     </div>
   );
@@ -51,23 +103,11 @@ export function NativePage({
       {isTauri() ? (
         children
       ) : (
-        <section className="studio-panel studio-native-preview">
-          <div className="studio-native-art" aria-hidden="true">
-            <div>
-              <MonitorIcon size={32} />
-            </div>
-            <div>
-              <DatabaseIcon size={32} />
-            </div>
-          </div>
+        <section className="studio-panel studio-native-preview native-journey-preview">
           <div className="studio-native-copy">
-            <h3>{t("studio.nativeTitle")}</h3>
-            <p>{t("studio.nativeDescription")}</p>
-            <div className="studio-native-tags">
-              <span>{t("studio.nativeWindow")}</span>
-              <span>{t("studio.nativeData")}</span>
-              <span>{t("studio.nativeSystem")}</span>
-            </div>
+            <h3>{t("experience.previewTitle")}</h3>
+            <p>{t("experience.previewHint")}</p>
+            <NativeFlow />
             <NativePreviewActions />
           </div>
           <p className="studio-native-note">

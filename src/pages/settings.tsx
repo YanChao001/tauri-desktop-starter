@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckIcon,
   ExternalLinkIcon,
@@ -19,6 +13,7 @@ import { LanguageSwitch } from "@/components/language-switch";
 import { SkinPicker } from "@/components/skin-picker";
 import { SettingsSearch } from "@/components/settings-search";
 import { SettingsPersistence } from "@/components/settings-persistence";
+import { SettingRow } from "@/components/setting-row";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,7 +77,7 @@ const ACCENT_COLORS: Record<Accent, string> = {
   neutral: "oklch(0.205 0 0)",
   indigo: "oklch(0.51 0.23 277)",
   blue: "oklch(0.55 0.19 250)",
-  emerald: "oklch(0.55 0.14 160)",
+  emerald: "oklch(0.51 0.12 164)",
   amber: "oklch(0.76 0.16 80)",
   rose: "oklch(0.56 0.22 12)",
   violet: "oklch(0.53 0.24 300)",
@@ -100,32 +95,6 @@ const LINKS = [
   { label: "shadcn/ui", url: "https://ui.shadcn.com/" },
   { label: "Tailwind CSS", url: "https://tailwindcss.com/" },
 ];
-
-function SettingRow({
-  id,
-  label,
-  hint,
-  children,
-}: {
-  id?: string;
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      id={id}
-      tabIndex={id ? -1 : undefined}
-      className="settings-row rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="min-w-0 space-y-0.5">
-        <p className="text-sm">{label}</p>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      </div>
-      <div className="settings-row-control">{children}</div>
-    </div>
-  );
-}
 
 export default function Settings() {
   const { t } = useI18n();

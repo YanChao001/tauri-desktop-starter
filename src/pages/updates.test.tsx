@@ -25,6 +25,14 @@ const ui = vi.hoisted(() => ({
   status: null as UpdateStatus | null,
   progress: null as UpdateProgress | null,
   error: null as unknown,
+  autoCheckUpdates: true,
+  updatePreferences: vi.fn(),
+}));
+vi.mock("@/providers/settings", () => ({
+  useSettings: () => ({
+    settings: { autoCheckUpdates: ui.autoCheckUpdates },
+    update: ui.updatePreferences,
+  }),
 }));
 vi.mock("@/lib/tauri", () => ({ isTauri: () => true, relaunchApp: vi.fn() }));
 vi.mock("@/lib/updates-store", () => ({
@@ -59,6 +67,8 @@ const available: UpdateStatus = {
   configured: true,
   available: true,
   currentVersion: "1.0.0",
+  endpoint: "https://updates.example.com/latest.json",
+  checkedAt: 1792656000000,
   version: "2.0.0",
   body: "Release notes",
   date: null,
@@ -72,9 +82,44 @@ describe("updater controls", () => {
       status: null,
       progress: null,
       error: null,
+      autoCheckUpdates: true,
     });
   });
   afterEach(cleanup);
+  it("persists the startup preference and shows the effective source and last successful check", () => {
+    ui.phase = "ready";
+    ui.status = available;
+    render(<Updates />);
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Check for updates on startup" }),
+    );
+    expect(ui.updatePreferences).toHaveBeenCalledWith({
+      autoCheckUpdates: false,
+    });
+    fireEvent.click(screen.getByText("Release source"));
+    expect(
+      screen.getByText("https://updates.example.com/latest.json"),
+    ).toBeVisible();
+    expect(screen.getByText(/Last successful check:/)).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "View GitHub releases" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/YanChao001/tauri-desktop-starter/releases",
+    );
+  });
+  it("distinguishes an unpublished feed from a current version and keeps retry available", () => {
+    ui.phase = "error";
+    ui.error = { code: "UPDATE_FEED_UNAVAILABLE" };
+    render(<Updates />);
+    expect(
+      screen.getByText(/has not provided an available update manifest/),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("You are using the latest version"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
   it("checks, installs and locks controls while reporting bounded download progress", () => {
     ui.phase = "ready";
     ui.status = available;

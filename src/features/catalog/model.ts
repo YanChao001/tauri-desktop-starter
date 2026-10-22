@@ -112,7 +112,7 @@ export function pageSource(path: string) {
   return `src/pages/${path === "/" ? "overview" : path.slice(1)}.tsx`;
 }
 
-export const ipcExample = `// src-tauri/src/commands.rs — example to implement
+export const rustIpcExample = `// src-tauri/src/commands.rs — example to implement
 #[tauri::command]
 #[specta::specta]
 pub fn lab_echo(input: String) -> NativeResult<String> {
@@ -123,9 +123,9 @@ pub fn lab_echo(input: String) -> NativeResult<String> {
 }
 
 // Register commands::lab_echo in bindings.rs collect_commands!, then:
-// pnpm bindings:generate
+// pnpm bindings:generate`;
 
-// src/lib/tauri.ts — named facade
+export const typescriptIpcExample = `// src/lib/tauri.ts — named facade
 export function labEcho(input: string): Promise<string> {
   return callNative((commands) => commands.labEcho(input));
 }

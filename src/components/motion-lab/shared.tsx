@@ -6,6 +6,19 @@ export type SceneProps = {
   replay: number;
   stageRef: RefObject<HTMLDivElement | null>;
 };
+export function StageGuides({ label }: { label: string }) {
+  const { t } = useI18n();
+  return (
+    <div className="lab-stage-guides" aria-hidden="true">
+      <span>{label}</span>
+      <span>{t("lab.interactive")}</span>
+      <i />
+      <i />
+      <i />
+      <i />
+    </div>
+  );
+}
 export function RangeControl({
   label,
   value,

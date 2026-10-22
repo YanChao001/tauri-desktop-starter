@@ -7,13 +7,15 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { WebSocketPanel } from "./realtime-panels";
+import type { DemoWorkerOutput } from "@/lib/generated/bindings";
+import { SidecarPanel, WebSocketPanel } from "./realtime-panels";
 
 const native = vi.hoisted(() => ({
+  isTauri: vi.fn(() => false),
   websocketConnect: vi.fn(),
   runDemoSidecar: vi.fn(),
 }));
-vi.mock("@/lib/tauri", () => ({ ...native, isTauri: () => false }));
+vi.mock("@/lib/tauri", () => native);
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
@@ -23,6 +25,39 @@ vi.mock("@/providers/i18n", async () => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  native.isTauri.mockReturnValue(false);
+});
+
+it("后台程序输出按 JSON 高亮，未运行提示保留纯文本", async () => {
+  native.isTauri.mockReturnValue(true);
+  const result: DemoWorkerOutput = {
+    stdout: "<script>hello</script>",
+    stderr: "",
+    exitCode: 0,
+  };
+  native.runDemoSidecar.mockResolvedValue(result);
+  const { container } = render(<SidecarPanel />);
+  expect(
+    container.querySelector('code[data-language="text"]'),
+  ).toHaveTextContent("Not run yet");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Run controlled worker" }),
+  );
+  await waitFor(() =>
+    expect(
+      container.querySelector('code[data-language="json"]'),
+    ).not.toBeNull(),
+  );
+  const code = container.querySelector('code[data-language="json"]');
+  expect(code?.textContent).toBe(JSON.stringify(result, null, 2));
+  expect(code?.querySelector('[data-token="property"]')).toHaveTextContent(
+    '"stdout"',
+  );
+  expect(code?.querySelector('[data-token="string"]')).toHaveTextContent(
+    "<script>hello</script>",
+  );
+  expect(code?.querySelector('[data-token="number"]')).toHaveTextContent("0");
+  expect(container.querySelector("script")).toBeNull();
 });
 
 it("connects, echoes and disconnects locally without opening a WebSocket", async () => {
@@ -56,9 +91,8 @@ it("closes a late external connection after the user has disconnected", async ()
     close: vi.fn().mockResolvedValue(undefined),
   };
   render(<WebSocketPanel />);
-  fireEvent.change(screen.getByLabelText("Request source"), {
-    target: { value: "wss" },
-  });
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "External WSS" }));
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
   expect(screen.getByRole("status")).toHaveTextContent("Connecting");
   fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
@@ -75,9 +109,8 @@ it("reports an external connection failure and allows another attempt", async ()
     new Error("Remote service unavailable"),
   );
   render(<WebSocketPanel />);
-  fireEvent.change(screen.getByLabelText("Request source"), {
-    target: { value: "wss" },
-  });
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "External WSS" }));
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Remote service unavailable",

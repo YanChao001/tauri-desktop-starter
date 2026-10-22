@@ -136,7 +136,11 @@ describe("settings synchronization", () => {
     await env.sync.start();
     expect(env.latest()).toMatchObject({
       status: "saved",
-      settings: { accent: "neutral", language: "en", theme: "dark" },
+      settings: {
+        accent: DEFAULT_SETTINGS.accent,
+        language: "en",
+        theme: "dark",
+      },
     });
     expect(env.backend.save).toHaveBeenCalledOnce();
     env.sync.stop();

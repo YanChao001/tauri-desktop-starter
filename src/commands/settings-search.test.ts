@@ -23,7 +23,7 @@ describe("settings search metadata", () => {
       "fontSize",
     );
     expect(searchSettings("星星", createTranslator(zhCN))[0]?.id).toBe("skin");
-    expect(searchSettings("樱花", createTranslator(zhCN))[0]?.id).toBe("skin");
+    expect(searchSettings("云朵", createTranslator(zhCN))[0]?.id).toBe("skin");
     expect(searchSettings("sakura", createTranslator(en))[0]?.id).toBe("skin");
     expect(searchSettings("紧凑", createTranslator(zhCN))[0]?.id).toBe(
       "window",
@@ -44,27 +44,28 @@ describe("settings search metadata", () => {
   });
   it("finds all eight styles and local image controls in both interface languages", () => {
     for (const query of [
-      "流动抽象",
-      "极简几何",
-      "东方水墨",
-      "未来星图",
-      "日系动漫",
-      "复古像素",
-      "植物手绘",
-      "立体剪纸",
-      "导入背景图片",
+      "猫咪涂鸦",
+      "咖啡时光",
+      "远山手记",
+      "星星手帐",
+      "云朵晴空",
+      "月相漫游",
+      "枝叶小笺",
+      "纸上飞行",
+      "添加壁纸",
+      "重命名壁纸",
     ])
       expect(searchSettings(query, createTranslator(zhCN))[0]?.id).toBe("skin");
     for (const query of [
-      "fluid",
-      "geometric",
-      "inkwash",
-      "starmap",
-      "anime",
-      "pixel",
-      "botanical",
-      "papercut",
-      "import background image",
+      "cat doodles",
+      "coffee break",
+      "mountain notes",
+      "linework",
+      "cloud notes",
+      "moon orbits",
+      "leaf notes",
+      "paper flights",
+      "add wallpapers",
       "PNG",
     ])
       expect(searchSettings(query, createTranslator(en))[0]?.id).toBe("skin");

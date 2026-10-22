@@ -20,6 +20,9 @@ it("uses stable selection through filtering and retains failed bulk records", ()
   render(<RecordsTable />);
   fireEvent.click(screen.getByLabelText("Select record 2"));
   fireEvent.click(screen.getByLabelText("Select record 7"));
+  expect(
+    screen.getByRole("checkbox", { name: "Select all filtered records" }),
+  ).toBePartiallyChecked();
   fireEvent.click(screen.getByRole("button", { name: "Archive selected" }));
   expect(screen.getByRole("status")).toHaveTextContent("1 succeeded, 1 failed");
   expect(screen.getByLabelText("Select record 7")).toBeChecked();

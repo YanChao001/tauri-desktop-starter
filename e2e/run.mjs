@@ -1,9 +1,16 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { buildE2E, readE2EBuild, root } from "./build.mjs";
+import { parseE2EOptions } from "./run-options.mjs";
 import {
   spawnOwned,
   stopOwned,
@@ -18,16 +25,20 @@ let preserveData = false;
 const cancellation = new AbortController();
 const interrupt = () => cancellation.abort(new Error("桌面测试已中断"));
 try {
-  const args = process.argv.slice(2);
-  if (args.some((arg) => arg !== "--skip-build"))
-    throw new Error("用法: pnpm test:e2e [--skip-build]");
-  const binary = args.includes("--skip-build")
-    ? readE2EBuild()
-    : await buildE2E();
+  const { skipBuild } = parseE2EOptions(process.argv.slice(2));
+  const binary = skipBuild ? readE2EBuild() : await buildE2E();
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
   const temporaryBase = realpathSync(tmpdir());
   dataRoot = mkdtempSync(join(temporaryBase, "starter-e2e-"));
+  // 测试部署显式关闭真实更新源，避免启动检查访问生产 GitHub。
+  mkdirSync(join(dataRoot, "config"));
+  writeFileSync(
+    join(dataRoot, "config", "deployment.json"),
+    JSON.stringify({
+      updates: { endpoint: "", publicKey: "" },
+    }),
+  );
   for (const phase of ["fresh", "persisted", "centered"]) {
     const port = await new Promise((done, fail) => {
       const socket = createServer();

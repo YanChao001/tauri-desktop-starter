@@ -15,6 +15,7 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL,
+    headless: true,
     locale: "en-US",
     reducedMotion: "reduce",
     colorScheme: "light",

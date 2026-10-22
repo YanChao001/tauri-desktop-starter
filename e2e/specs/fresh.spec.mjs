@@ -12,7 +12,6 @@ import {
   navigate,
   observeLifecycle,
   ready,
-  selectHtmlOption,
   placeNearWorkAreaCorner,
   recordWindowPlacement,
   windowPlacement,
@@ -615,12 +614,16 @@ describe("Real Tauri desktop", () => {
       assert.equal((await invoke("list_notes", { search })).value.length, 251);
       await navigate("/database");
       await $("input[type=search]").setValue(search);
-      assert.equal(
-        await selectHtmlOption("main select", "title-asc"),
-        "title-asc",
+      await $("#notes-sort").click();
+      const titleOption = $(
+        "//*[@role='option' and normalize-space(.)='Title']",
       );
+      await titleOption.waitForDisplayed();
+      await titleOption.click();
+      await $("[role=listbox]").waitForExist({ reverse: true });
+      assert.equal(await $("#notes-sort").getText(), "Title");
       await browser.waitUntil(async () =>
-        $(`input[aria-label='Select ${search}000']`).isExisting(),
+        $(`[role=checkbox][aria-label='Select ${search}000']`).isExisting(),
       );
       for (let page = 0; page <= 5; page += 1) {
         const range = `${page * 50 + 1}–${Math.min((page + 1) * 50, 251)} of 251`;
@@ -641,7 +644,9 @@ describe("Real Tauri desktop", () => {
         if (page < 5) await $("button=Next").click();
       }
       assert.equal(
-        await $(`input[aria-label='Select ${search}250']`).isExisting(),
+        await $(
+          `[role=checkbox][aria-label='Select ${search}250']`,
+        ).isExisting(),
         true,
       );
       assert.equal(await $("button=Next").isEnabled(), false);
@@ -746,10 +751,10 @@ describe("Real Tauri desktop", () => {
     } catch (error) {
       const state = await browser.execute(() => ({
         route: location.hash,
-        sort: document.querySelector("main select")?.value,
+        sort: document.querySelector("#notes-sort")?.textContent,
         search: document.querySelector("main input[type=search]")?.value,
         selectedNotes: [
-          ...document.querySelectorAll("main input[type=checkbox][aria-label]"),
+          ...document.querySelectorAll("main [role=checkbox][aria-label]"),
         ].map((input) => input.getAttribute("aria-label")),
         page: document.querySelector("main")?.textContent,
       }));

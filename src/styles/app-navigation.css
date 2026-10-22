@@ -30,7 +30,6 @@ html[data-motion="reduced"] .app-route-enter {
 
 .app-sidebar-navigation {
   padding: 0 0.5rem 0.75rem;
-  overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
@@ -77,12 +76,12 @@ html[data-motion="reduced"] .app-route-enter {
 }
 
 .app-sidebar-link:hover {
-  background: color-mix(in oklch, var(--sidebar-accent) 58%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 58%, transparent);
   color: var(--sidebar-foreground);
 }
 
 .app-sidebar-link[aria-current="page"] {
-  background: color-mix(in oklch, var(--sidebar-accent) 86%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
   color: var(--sidebar-foreground);
   font-weight: 500;
 }
@@ -106,7 +105,7 @@ html[data-motion="reduced"] .app-route-enter {
 .app-sidebar-command {
   min-height: 36px;
   border: 1px solid var(--sidebar-border);
-  background: color-mix(in oklch, var(--sidebar-accent) 22%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 22%, transparent);
   color: var(--muted-foreground);
   font-size: 0.72rem;
   transition:
@@ -115,7 +114,7 @@ html[data-motion="reduced"] .app-route-enter {
 }
 
 .app-sidebar-command:hover {
-  background: color-mix(in oklch, var(--sidebar-accent) 66%, transparent);
+  background: color-mix(in oklab, var(--sidebar-accent) 66%, transparent);
   color: var(--sidebar-foreground);
 }
 
@@ -267,25 +266,56 @@ html[data-motion="reduced"] .app-route-enter {
 .skin-gallery-card {
   min-width: 0;
 }
-.custom-skin-panel {
+.wallpaper-library {
   display: grid;
-  grid-template-columns: 9rem minmax(0, 1fr);
-  align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
   padding: 1rem;
-  background: color-mix(in oklch, var(--background) 45%, transparent);
+  background: color-mix(in oklab, var(--background) 45%, transparent);
 }
-.custom-skin-preview {
-  position: relative;
+.wallpaper-grid {
   display: grid;
-  aspect-ratio: 1.2;
-  place-items: center;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: 0.75rem;
+}
+.wallpaper-card {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  background: var(--background);
+}
+.wallpaper-card[data-selected="true"] {
+  border-color: var(--primary);
+}
+.wallpaper-thumbnail {
+  position: relative;
+  display: block;
+  aspect-ratio: 1.7;
+  overflow: hidden;
   background: var(--muted);
+  cursor: pointer;
+}
+.wallpaper-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wallpaper-thumbnail:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.wallpaper-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 7rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
 }
 .custom-skin-check {
   position: absolute;
@@ -312,11 +342,35 @@ html[data-motion="reduced"] .app-route-enter {
   .settings-row-control {
     max-width: 100%;
   }
-  .custom-skin-panel {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .custom-skin-preview {
-    aspect-ratio: 2;
+}
+
+.app-shell-immersive .app-chrome,
+.app-shell-immersive .app-sidebar,
+.app-shell-immersive .app-route-context {
+  display: none;
+}
+.app-shell-immersive .app-main {
+  inset: 0;
+}
+.immersive-exit {
+  position: fixed;
+  top: 0;
+  right: 1rem;
+  z-index: 30;
+  padding: 0.75rem 0.25rem;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.immersive-exit:is(:hover, :focus-within) {
+  opacity: 1;
+}
+.immersive-exit kbd {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+@media (hover: none), (forced-colors: active) {
+  .immersive-exit {
+    opacity: 1;
   }
 }
 

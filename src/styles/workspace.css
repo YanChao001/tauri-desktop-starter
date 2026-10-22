@@ -1,0 +1,140 @@
+.workspace-showcase {
+  min-width: 0;
+}
+.workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.workspace-count {
+  display: grid;
+  place-items: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  font-size: 0.7rem;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--foreground);
+}
+.workspace-demo {
+  display: grid;
+  grid-template-columns: var(--resource-width) 8px minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  min-height: 23rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+.workspace-tree-panel {
+  min-width: 0;
+  padding: 0.7rem 0.45rem;
+  background: color-mix(in oklab, var(--muted) 40%, var(--card));
+}
+.workspace-panel-label {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  margin: 0.4rem 0.5rem 0.8rem;
+}
+.workspace-node {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  text-align: left;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.workspace-node[data-leaf="true"] {
+  padding-left: 0.9rem;
+}
+.workspace-node > svg {
+  height: 0.9rem;
+  width: 0.9rem;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.workspace-node > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.workspace-node:hover {
+  background: var(--muted);
+}
+.workspace-node[aria-selected="true"] {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+}
+.workspace-node:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.workspace-node .workspace-drag-grip {
+  width: 0.65rem;
+  opacity: 0.6;
+}
+.workspace-editor {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workspace-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  font: 0.75rem var(--font-mono, monospace);
+}
+.workspace-editor-bar > span {
+  overflow-wrap: anywhere;
+}
+.workspace-editor .workspace-textarea {
+  min-height: 18rem;
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  resize: vertical;
+  padding: 1.2rem;
+  font: 0.8rem/1.85 var(--font-mono, monospace);
+  background: var(--card);
+}
+.workspace-editor .workspace-textarea:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+.workspace-editor-footer {
+  border-top: 1px solid var(--border);
+  padding: 0.6rem 0.9rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+}
+.workspace-empty,
+.workspace-help {
+  padding: 0.7rem 0.4rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.8;
+}
+@container (max-width: 520px) {
+  .workspace-demo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-demo > .demo-resize-handle {
+    display: none;
+  }
+  .workspace-tree-panel {
+    max-height: 15rem;
+    overflow: auto;
+    border-bottom: 1px solid var(--border);
+  }
+}

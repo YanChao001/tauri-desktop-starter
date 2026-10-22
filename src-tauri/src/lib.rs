@@ -23,6 +23,8 @@ mod storage;
 mod system_commands;
 pub mod update_signature;
 mod updater;
+mod wallpaper_commands;
+mod wallpapers;
 mod window_geometry;
 mod workbench;
 mod workbench_commands;
@@ -142,6 +144,9 @@ pub fn run() {
         let initialized = recovery::initialize(&paths)?;
         let workbench = workbench::WorkbenchState::open(initialized.recovery.workbench_root())?;
         let system = system_commands::SystemState::open(paths.config.join("workspace.json"));
+        app.manage(wallpapers::WallpaperStore::new(
+            initialized.recovery.wallpaper_path(),
+        ));
         app.manage(paths);
         app.manage(initialized.recovery);
         app.manage(initialized.settings);

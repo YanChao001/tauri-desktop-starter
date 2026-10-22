@@ -3,10 +3,7 @@ export const zhCatalog = {
   "catalog.title": "从体验到自己的桌面应用",
   "catalog.description":
     "按真实路由浏览能力、运行边界和源码。先选择一条体验路线，再通过页面、门面与 Rust 命令完成一次小改动。",
-  "catalog.runtimeBrowser":
-    "当前为浏览器预览：本地交互可直接体验，原生页面提供桌面入口说明。",
-  "catalog.runtimeNative":
-    "当前为桌面应用：原生功能使用当前用户环境；外部网络、权限和发布配置仍可能不可用。",
+  "catalog.runtimeBrowser": "浏览器预览中，系统功能需在桌面应用中使用。",
   "catalog.native": "真实原生能力",
   "catalog.local": "本地界面 / fixture",
   "catalog.external": "需要外部服务或配置",
@@ -21,13 +18,12 @@ export const zhCatalog = {
   "catalog.docs": "对应文档",
   "catalog.hidden": "精简模式隐藏的演示入口",
   "catalog.empty": "没有匹配的能力。",
-  "catalog.journey": "选择体验路线",
-  "catalog.journeyHint":
-    "路线复用应用导航分组；每个入口都打开当前应用中的实际页面。",
   "catalog.modules": "模块与能力边界",
-  "catalog.overview": "预览、应用与撤销窗口风格，观察受控动效。",
-  "catalog.components": "操作表单、反馈、筛选与收藏场景；数据属于当前页面。",
-  "catalog.motion": "调节弹簧、布局、路径与倾斜；支持减少动效与暂停。",
+  "catalog.overview": "选择四条体验路线，预览、应用与撤销窗口风格。",
+  "catalog.components":
+    "体验表单、反馈、收藏与工作区：资源树、右键菜单、拖放排序、类型多选与分栏；数据仅在本页。",
+  "catalog.motion":
+    "拖动弹簧球、切换布局、翻转倾斜卡片与轨道流光；支持减少动效与暂停。",
   "catalog.bridge": "调用真实 Rust 命令，观察成功结果和结构化错误。",
   "catalog.desktop": "测试窗口、托盘、后台运行和多窗口设置同步。",
   "catalog.database": "原生笔记查询、版本冲突、草稿、批量操作与备份恢复。",
@@ -42,12 +38,16 @@ export const zhCatalog = {
   "catalog.system": "主动测试系统剪贴板、通知、全局快捷键和桌面集成。",
   "catalog.network":
     "本地请求故障场景、缓存与会话；可选 HTTPS 和系统凭据存储。",
-  "catalog.dataStudio": "一万条本地记录的虚拟化、批量部分失败和复杂表单。",
-  "catalog.media": "安全 Markdown、本地媒体和图表；可选 WSS 与受控 worker。",
+  "catalog.dataStudio":
+    "万条记录筛选与虚拟化、列显隐与调宽、详情、批量部分失败和条件表单。",
+  "catalog.media":
+    "按内容、图表、连接分区体验 Markdown、本地媒体、可选 WSS 与受控 worker。",
   "catalog.catalog":
     "按当前路由发现功能，查看源码，并完成页面到 IPC 的上手练习。",
   "catalog.generic": "查看当前页面与架构文档确认运行边界。",
   "catalog.tutorial": "上手练习：新增页面 → 调用 Rust",
+  "catalog.rustExample": "Rust 命令",
+  "catalog.typescriptExample": "TypeScript 门面与页面调用",
   "catalog.tutorialHint":
     "以下代码是待你实现的示例，不会直接执行。复用现有项目结构，避免另建一套路由、命令或错误协议。",
   "catalog.step.page": "建立页面与词典",
