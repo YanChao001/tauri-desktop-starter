@@ -38,7 +38,7 @@ pnpm app:build
 | 平台    | 产物                               | 说明                               |
 | ------- | ---------------------------------- | ---------------------------------- |
 | Windows | `nsis/*.exe`                       | 当前配置按用户安装，无需管理员权限 |
-| Windows | `msi/*.msi`                        | 适合企业分发                       |
+| Windows | `msi/*.msi`                        | 所有用户安装，提权提示遵循系统策略 |
 | macOS   | `dmg/*.dmg`、`macos/*.app`         |                                    |
 | Linux   | `deb/*.deb`、`appimage/*.AppImage` |                                    |
 | Linux   | `rpm/*.rpm`                        | RPM 系发行版分发                   |
@@ -106,7 +106,9 @@ pnpm app:portable --skip-build # 复用已有构建；确认源码与版本后�
 
 ### 安装器外观
 
-应用图标、标题栏图标、网页 favicon 与安装器插画统一由 [`resources/branding/`](../resources/branding/) 的 SVG 源维护。修改 SVG 后执行：
+应用图标、标题栏图标、网页 favicon 与安装器插画统一由 [`resources/branding/`](../resources/branding/) 的 SVG 源维护。
+
+可切换的窗口背景属于独立装饰资源，源文件与参考来源在 [resources/skins/](../resources/skins/README.md)。前端直接加载这些 SVG，不参与图标和安装器位图生成。修改品牌 SVG 后执行：
 
 ```bash
 pnpm branding:generate  # 生成全部平台图标和安装器图片
@@ -115,7 +117,7 @@ pnpm branding:check     # 只检查是否与源文件一致，不改正式输出
 
 `app-icon.svg` 是共用标志，前端和 favicon 直接使用它；四份 `installer-*.svg` 引用同一标志，再增加各自画布的装饰与留白。图形不依赖系统字体、嵌入位图或网络图片。品牌名称、版本与中英文安装文案由配置和原生文字控件显示，图片中不写死这些内容。
 
-[`scripts/branding.mjs`](../scripts/branding.mjs) 调用 resvg 按三倍分辨率直接渲染安装器 SVG、编码 24 位 BMP，并使用项目锁定的 Tauri CLI 生成完整的系统图标尺寸。ICO 与 ICNS 的层顺序经过规范化，避免重复生成产生无意义差异。无需 Python、Pillow 或手动逐张导出。
+[`scripts/branding.mjs`](../scripts/branding.mjs) 调用 resvg 直接渲染安装器 SVG、编码 24 位 BMP，并使用项目锁定的 Tauri CLI 生成完整的系统图标尺寸。NSIS 按设计像素的三倍渲染，WiX 按原生 installer unit 的四倍渲染，保持位图和控件宽高比一致。ICO 与 ICNS 的层顺序经过规范化，避免重复生成产生无意义差异。无需 Python、Pillow 或手动逐张导出。
 
 | SVG 源                                        | 使用位置                             | 生成产物                                               |
 | --------------------------------------------- | ------------------------------------ | ------------------------------------------------------ |
@@ -139,22 +141,23 @@ NSIS 与 MSI 的生成文件路径配置在 `tauri.conf.json > bundle.windows`�
 | NSIS   | `nsis.sidebarImage`    | 164×314    | 492×942      | 欢迎页 / 完成页侧栏   |
 | NSIS   | `nsis.installerIcon`   | ICO 多尺寸 | —            | 安装器图标            |
 | NSIS   | `nsis.uninstallerIcon` | ICO 多尺寸 | —            | 卸载器图标            |
-| WiX    | `wix.bannerPath`       | 493×58     | 1479×174     | 内页顶部横幅          |
-| WiX    | `wix.dialogImagePath`  | 493×312    | 1479×936     | 欢迎 / 完成对话框背景 |
+| WiX    | `wix.bannerPath`       | 370×44 IU  | 1480×176     | 内页顶部横幅          |
+| WiX    | `wix.dialogImagePath`  | 370×234 IU | 1480×936     | 欢迎 / 完成对话框背景 |
 
 要点：
 
-- 位图用 24 位 BMP（不要带 alpha），配色与主界面一致（neutral + indigo 强调色）。
-- NSIS 页眉、欢迎页和完成页按控件的实际像素尺寸，用 GDI `HALFTONE` 缩放三倍分辨率原图，避免默认缩放产生锯齿或放大低分辨率图像。MUI 继续负责对话框布局与侧栏图片释放；加载失败时保留其默认图片。修改后需检查实际安装界面，包括高 DPI 显示器；图中仍不放小字。
-- **WiX 会在位图之上叠加自己的文字控件**（`WixUI_InstallDir`，dlu→px 为 4/3），画图必须避开：
-  - banner（493×58）：标题文字 x 20–287 / y 8–28，描述文字 x 33–406 / y 31–51 ⇒ 图形放右侧（x > 290）或底部条带（y > 52）。
-  - dialog（493×312）：标题与描述文字都在右侧 x 180–473 / y 27–187 ⇒ 主视觉放左侧（x < 180）或底部（y > 190）。
+- 位图用 24 位 BMP（不要带 alpha），配色与主界面一致，采用薄荷绿、柔白和黑猫轮廓，正文区域保持干净留白。
+- NSIS 图片用 GDI `HALFTONE` 等比缩放：页眉完整显示并居中，欢迎页 / 完成页侧栏等比铺满，居中裁切装饰边缘，避免中文字体度量产生上下白边。侧栏标志需完整保留。缩放目标也必须是显式的 24 位 DIB；`CreateCompatibleBitmap` 可能生成带未定义 alpha 的 32 位 DDB，被主题控件复制成透明图片。只有绘制成功才替换图片，失败时保留 MUI 默认图片；侧栏仍由 MUI 释放。中文字体和 DPI 会改变字段比例，需检查实际安装界面，包括高 DPI 显示器；图中仍不放小字。
+- **WiX 会在位图之上叠加自己的文字控件**（`WixUI_InstallDir`）。IU 是 Windows Installer 界面单位，不是 Win32 对话框单位；标准 banner 控件为 370×44 IU，背景为 370×234 IU。位图直接按这些比例生成，避免常见的 493×58 近似尺寸产生额外拉伸。绘图需避开：
+  - banner：标题文字 x 15–215 / y 6–21，描述文字 x 25–305 / y 23–38 ⇒ 图形放右侧（x > 320）或底部条带（y > 40）。
+  - dialog：标题与描述文字都在右侧 x 135–355 / y 20–140 ⇒ 主视觉放左侧（x < 123）或底部（y > 143）。
   - 压到文字就是"图标错位"。MSI 实测布局可从 WiX 工具集 `WixUIExtension.dll` 内嵌 objects XML 提取。
 - 所有位图通过 `pnpm branding:generate` 生成；重新 `pnpm app:build` 才会更新安装包内的资源。
+- MSI 使用 [`installer/wix-ui.wxs`](../src-tauri/installer/wix-ui.wxs) 将 `PrepareDlg` 显示条件置为假，保留后台准备工作，首次窗口直接进入欢迎页。`wix.fragmentPaths` 和 `componentGroupRefs` 必须配合保留，否则片段不会链接进安装包；不需要复制整份上游模板。提权仍由 Windows Installer 处理，排查见 [MSI 权限提示](./troubleshooting.md#msi-没有弹出管理员权限确认)。
 - 页脚文字来自 `bundle.copyright`；留空时 NSIS 会回退成 "Nullsoft Install System vX"。
 - 安装语言由 `nsis.languages` 决定，中文系统会命中 `SimpChinese`；MSI 界面语言由 `wix.language` 控制（当前 `zh-CN`）。
 - 模板自带 `src-tauri/installer/installer.nsi`，欢迎页 / 完成页的文案与配色在“品牌定制”标记之间，使用独立 `LangString` 并通过页面宏引用，不覆盖 NSIS 内置翻译。
-  - 页眉标志在右侧，为标题和说明留出空间；中英文分别使用 Windows 自带的 Microsoft YaHei UI / Segoe UI。标题与正文分级，保留原生步骤、键盘导航及 DPI 缩放。
+  - 页眉标志在右侧，为标题和说明留出空间；中文使用 Microsoft YaHei UI，英文使用 Segoe UI，正文为 8pt、标题为 14pt，保持整套向导一致缩放。NSIS 页脚从 29du 收紧到 20du，按钮上移 5du、窗口缩短 9du，14du 按钮上下各留 3du；通过 `MapDialogRect` 按当前语言字体与 DPI 换算，不裁切内容页。`scripts/installer-layout.test.mjs` 静默验证生产模板的等比缩放、侧栏铺满和标志可见范围，并用无桌面表面的消息窗口子控件检查主题控件的实际像素、位图所有权及失败回退；不激活窗口。实际 Windows / 高 DPI 界面仍需按桌面干扰边界验收。
   - 新增安装语言时，要为自定义文案补齐对应语言的 `LangString`，并实际编译检查，不能假设自定义键会自动回落到内置翻译。
 - **升级 Tauri 后**：对照同版本官方 NSIS 模板合并更新，保留“品牌定制”各段的配色、页面宏引用、高清位图加载和语言字符串，并复核 WebView2 临时路径、执行引号和文件关联修复是否已被上游覆盖。不要整份沿用旧模板。自定义 MSI 模板同理，对应 `wix.template`。
 
@@ -180,7 +183,7 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 
 #### SignPath Foundation
 
-仓库侧已经接好，剩下的是 SignPath 的申请与参数配置。
+仓库侧保留可选集成，本次申请尚未获批，状态见 [代码签名策略](./code-signing-policy.md#状态)。以下为申请与启用方法；配置存在不表示已获得签名资格。
 
 申请要求以 [SignPath Foundation 条款](https://signpath.org/terms) 为准，主要包括：
 
@@ -288,11 +291,15 @@ spctl --assess --type exec --verbose=3 "/path/to/My App.app"
 
 ## 自动更新
 
-模板已注册 Rust updater 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，重启由 Rust `AppHandle::restart` 执行。默认源为当前模板的 GitHub Releases 地址，`app.config.json > updates.publicKey` 为空时显示未配置，不请求网络；派生项目须同时修改仓库地址和更新端点。
+模板已注册 Rust updater 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，重启由 Rust `AppHandle::restart` 执行。本仓库已配置自己的更新公钥，默认源为本项目 GitHub Releases；CI 私钥与口令存于仓库 Secrets。是否能更新还取决于公开 Release 是否包含有效清单、签名和更高版本，不能从公钥已配置推断服务器已就绪。
+
+主窗口设置加载完成、页面可见后延迟检查一次；`autoCheckUpdates` 默认为 `true`，可在更新页关闭，并沿用设置 revision 与跨窗口同步。旧设置缺少此字段时使用默认值，不改变 schema 3；派生项目改变仓库地址或应用标识符时，初始化脚本清空继承的更新公钥，显式提供新公钥时才保留。浏览器不进行原生检查。
+
+后台检查失败不弹窗、不跳转；发现新版本时提示查看，下载和安装均需用户确认。检查超时为 20 秒，下载仍有独立的 300 秒预算；更新页区分更新源不可用、检查超时和缺少当前平台更新包，提供重试、最近成功检查时间与 GitHub 发行页入口。受控部署覆盖后的有效端点以原生检查结果为准。
 
 ### 配置公钥与发布签名
 
-1. 在仓库外生成并保管更新密钥，私钥离线备份，公钥可提交：
+1. 首次为项目配置时，在仓库外生成并保管更新密钥，私钥离线备份，公钥可提交。已有更新通道不要覆盖旧密钥；换钥须先安排客户端迁移，见 [密钥管理](./security.md#密钥与证书)：
 
 ```bash
 pnpm tauri signer generate -w ~/.tauri/my-app.key
@@ -313,7 +320,11 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 4. 正常打 tag 发布。工作流用临时配置启用 `bundle.createUpdaterArtifacts: true`，生成 Tauri v2 更新产物；本地默认构建仍不额外产出更新签名。每个平台收集后，用独立 Rust 验证器核对最终文件字节、公钥、`.sig` 与签名绑定的版本，随后上传平台元数据。
 
-5. 构建完成后由单独 job 合并四个目标的元数据，核对 draft Release 中的实际资产并上传唯一的 `latest.json`，避免矩阵任务互相覆盖。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+5. 构建完成后由单独 job 合并四个目标的元数据，核对 draft Release 中的实际资产并上传唯一的 `latest.json`，避免矩阵任务互相覆盖。清单使用 Release 正文作为版本说明（最多 8000 字符），没有正文时回落到版本标题。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+
+早期未配置公钥的客户端不会访问更新源，常规交付需先手动安装带公钥的版本作为后续升级起点；受控部署也可通过可信配置文件迁移。首轮正式验收用两个不同版本验证发现、下载、验签及安装，不用同版本安装或仅生成清单代替升级验证。Windows 便携版应用内安装更新会转为 NSIS 安装版；保留便携形态时从发行页手动下载并替换 EXE。
+
+本机加密私钥与口令副本应保存在仓库外，限制目录读取权限。Windows DPAPI 口令副本绑定当前账户和机器，不能代替 [两份离线备份](./security.md#密钥与证书)；迁移或重装前，在本机解密口令并通过可信密码管理器 / 离线介质备份，禁止将明文口令写入日志、Git 或聊天。
 
 默认 `/releases/latest/` 通道只分发正式版；GitHub 不将 draft 或 prerelease 设为 latest，见 [GitHub Release 规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。预发布包仍可单独下载；需要测试更新通道时，另行设计端点、版本比较与发布校验，不能假定给 tag 加 `beta` 就会进入默认更新通道。
 

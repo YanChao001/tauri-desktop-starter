@@ -8,7 +8,7 @@ The desktop app includes SQLite pagination, drafts, backups and recovery; a file
 
 ## Desktop windows
 
-Captured from an isolated Windows desktop build of the current source.
+Captured from an isolated Windows desktop build and refreshed through the [screenshot update workflow](./docs/testing.md#readme-原生截图更新). UI and screenshot updates may land in separate pull requests.
 
 | Light                                                    | Dark                                                   |
 | -------------------------------------------------------- | ------------------------------------------------------ |

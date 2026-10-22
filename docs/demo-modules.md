@@ -2,41 +2,55 @@
 
 本文用于体验现有模块、跟做新增页面到原生命令的完整链路，并为派生项目移除不需要的能力。运行结构见 [架构说明](./architecture.md)，安全边界见 [安全规范](./security.md)，验证分层见 [测试规范](./testing.md)。
 
+## 演示目标与验收边界
+
+默认提供尽可能完整、可操作的功能样本，使用时按产品需求评估和裁剪。增加展示应补齐实际工作流或缺失状态，复用现有服务与控件；不以静态卡片宣称尚未实现的账户、云同步或后台能力。
+
+页面内演示、原生存储与外部服务分别标明边界。退出协商、版本冲突、合作取消和未来版本拒写以 [架构说明](./architecture.md) 为准；权限与输入校验见 [安全规范](./security.md)。
+
+按 [测试规范](./testing.md) 验证成功、空、加载、错误 / 重试、取消与输入保留。浏览器覆盖子路径、中英 / 明暗 / 窄屏、键盘与无障碍；原生 IPC、多窗口、恢复与重启需独立桌面验证。正式安装、卸载、系统授权、关联、签名与真实更新使用目标平台最终安装包验收。
+
 ## 体验现有模块
 
 默认模式保留完整 demo。设置中的 `minimal` 和初始化的 `--minimal` 只过滤展示与命令，不删除路由源码、依赖、IPC、插件或权限，也不代表安装包已经缩小。
 
-| 用户工作流                                                              | 入口与源码                                            | 数据与验证边界                                                                                         |
-| ----------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 搜索能力，打开页面、源码与文档                                          | `/catalog`；`features/catalog/`                       | 按本地、原生、外部服务区分；源码链接不是额外下载或执行入口                                             |
-| 创建笔记，另开窗口制造版本冲突，回收 / 恢复，再导出和恢复备份           | `/database`；`database.rs`、`data_commands.rs`        | 真实 SQLite、按窗口持久草稿、全量逻辑 JSON；恢复前留安全备份                                           |
-| 打开 / 拖入文本与图片，编辑后由外部程序改磁盘，再处理冲突               | `/workbench`；`components/workbench/`、`workbench.rs` | 原生授权、原子保存、草稿保留；文本可导入 SQLite 笔记副本，原文件与脏稿保留；图片只读，另存取消不丢编辑 |
-| 选目录，提交扫描与 SHA-256，离页后查看，取消 / 重试 / 导出              | `/tasks`；`workbench.rs`                              | Rust 实际任务、2 执行 + 10 排队、合作取消；重启中断需重新运行                                          |
-| 发送通知、读写剪贴板、登记冲突快捷键、恢复独立窗口                      | `/system`；`system_commands.rs`、`use-workspace.ts`   | 实际系统能力，权限与 OS 服务可能拒绝；关联 / 深链需安装版验收                                          |
-| 用本地 fixture 操作 GET / POST、缓存、超时、取消和离线，再切 HTTPS      | `/network`；`features/network/`                       | fixture 明确为本地；真实端点受白名单限制；会话非 OAuth，凭据项独立存系统服务                           |
-| 筛选万条记录、切分页 / 虚拟滚动、多选后演示部分失败；填写条件表单与明细 | `/data-studio`；`features/data-studio/`               | 本地生成数据与故障示例，不写 SQLite，不代表服务端事务                                                  |
-| 输入 Markdown、预览本地媒体、查看图表、WSS 回显与固定 worker            | `/media`；`features/media/`                           | 不执行 Markdown HTML；本地附件不上传，WSS 依赖外部服务，worker 不接受任意命令                          |
-| 在隔离测试目录制造启动存储错误，预览备份并安排重启恢复                  | `/recovery`；`recovery.rs`、`recovery-gate.tsx`       | 原件归档、临时工作区与恢复日志；未来版本拒绝降级覆盖，不在真实用户目录演练                             |
+从首页或能力目录选择交互创作、文件到笔记、后台任务、数据可靠性路线，可按跨页步骤体验。导览不会代替实际操作或标记成功；浏览器中的原生页面提供对应流程说明，真实结果需在桌面应用查看。
 
-展厅、控件、动效、设置、诊断和更新均有独立入口。控件舞台的数据属于页面演示；浏览器中的原生说明不伪造 IPC 成功。退出协商可以保存、放弃或取消，长任务的保存表示等待，放弃表示取消并等待退出。
+| 用户工作流                                                                       | 入口与源码                                            | 数据与验证边界                                                                                         |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 预览、应用和撤销风格；拖动弹簧球、切换卡片布局、翻转倾斜卡和调整轨道             | `/`、`/motion`；`showcase/`、`motion-lab/`            | 局部预览不写设置，应用后可撤销；减少动效、离屏与文档隐藏时降级或暂停                                   |
+| 体验表单、反馈与收藏，检查只读 / 禁用 / 校验 / 部分选择及错误重试                | `/components`；`components/showcase/`                 | 页面内演示，无邮件投递或原生持久化；同页切换保留输入                                                   |
+| 浏览资源树、右键重命名 / 复制 / 删除、撤销、拖放排序和跨目录移动、调整分栏       | `/components` 工作区；`workspace-studio.tsx`          | 页面内样本，搜索多选过滤类型；支持键盘树导航、菜单与排序，不读写磁盘                                   |
+| 搜索能力，打开页面、源码与文档                                                   | `/catalog`；`features/catalog/`                       | 按本地、原生、外部服务区分；源码链接不是额外下载或执行入口                                             |
+| 创建笔记，另开窗口制造版本冲突，回收 / 恢复，再导出和恢复备份                    | `/database`；`database.rs`、`data_commands.rs`        | 真实 SQLite、按窗口持久草稿、全量逻辑 JSON；恢复前留安全备份                                           |
+| 打开 / 拖入文本与图片，编辑后由外部程序改磁盘，再处理冲突                        | `/workbench`；`components/workbench/`、`workbench.rs` | 原生授权、原子保存、草稿保留；文本可导入 SQLite 笔记副本，原文件与脏稿保留；图片只读，另存取消不丢编辑 |
+| 选目录，提交扫描与 SHA-256，离页后查看，取消 / 重试 / 导出                       | `/tasks`；`workbench.rs`                              | Rust 实际任务、2 执行 + 10 排队、合作取消；重启中断需重新运行                                          |
+| 发送通知、读写剪贴板、登记冲突快捷键、恢复独立窗口                               | `/system`；`system_commands.rs`、`use-workspace.ts`   | 实际系统能力，权限与 OS 服务可能拒绝；关联 / 深链需安装版验收                                          |
+| 用本地 fixture 操作 GET / POST、缓存、超时、取消和离线，再切 HTTPS               | `/network`；`features/network/`                       | fixture 明确为本地；真实端点受白名单限制；会话非 OAuth，凭据项独立存系统服务                           |
+| 筛选万条记录、分页 / 虚拟滚动、调列宽 / 显隐列、详情与批量部分失败；切换条件表单 | `/data-studio`；`features/data-studio/`               | 本地生成数据与故障示例，不写 SQLite，不代表服务端事务                                                  |
+| 按内容 / 图表 / 连接标签体验 Markdown、媒体预览、图表、WSS 回显与固定 worker     | `/media`；`features/media/`                           | 同页切换保留状态，离页释放资源；不执行 Markdown HTML，附件不上传，外部连接主动开启                     |
+| 在隔离测试目录制造启动存储错误，预览备份并安排重启恢复                           | `/recovery`；`recovery.rs`、`recovery-gate.tsx`       | 原件归档、临时工作区与恢复日志；未来版本拒绝降级覆盖，不在真实用户目录演练                             |
+
+窗口、IPC、设置、诊断和更新还分别位于 `/desktop`、`/bridge`、`/settings`、`/diagnostics`、`/updates`；应用内能力目录提供各页源码与文档链接。浏览器中的原生入口说明环境限制，不伪造 IPC 成功。
 
 ## 依赖与加载
 
-以下版本与许可来自当前安装包的 `package.json`、Cargo registry 的包 manifest 及仓库锁文件；它们是该锁定版本的事实，升级时一并复核。版本范围以 [package.json](../package.json) / [Cargo.toml](../src-tauri/Cargo.toml) 为准，许可证义务还需按实际分发内容核对。
+精确版本以 [pnpm-lock.yaml](../pnpm-lock.yaml) / [Cargo.lock](../src-tauri/Cargo.lock) 为准，声明范围见 [package.json](../package.json) / [Cargo.toml](../src-tauri/Cargo.toml)。下表只维护用途与许可；分发时按实际包含内容核对义务。
 
-| 依赖                                                             | 当前版本                      | 许可                                                | 用途                            |
-| ---------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- | ------------------------------- |
-| TanStack Query / Table / Virtual                                 | 5.104.4 / 9.3.1 / 3.14.21     | MIT                                                 | 网络缓存、表格状态、虚拟滚动    |
-| React Hook Form / resolvers / Zod                                | 7.90.0 / 6.0.0 / 4.6.7        | MIT                                                 | 复杂表单及运行时 schema         |
-| react-markdown / remark-gfm                                      | 10.1.0 / 4.0.1                | MIT                                                 | 媒体页 Markdown / GFM           |
-| Recharts                                                         | 3.10.1                        | MIT                                                 | 本地指标图表                    |
-| JS clipboard-manager / global-shortcut / http / notification     | 2.5.0 / 2.4.1 / 2.8.3 / 2.7.0 | MIT OR Apache-2.0                                   | 门面的系统插件调用              |
-| Rust dialog / notification / clipboard-manager / global-shortcut | 2.8.3 / 2.7.0 / 2.5.0 / 2.4.1 | Apache-2.0 OR MIT                                   | 原生文件选择与系统能力          |
-| Rust deep-link / http / shell                                    | 2.6.2 / 2.8.3 / 2.5.0         | Apache-2.0 OR MIT                                   | 激活参数、受限请求、固定 worker |
-| walkdir / sha2 / keyring                                         | 2.5.0 / 0.10.9 / 4.2.0        | Unlicense/MIT；MIT OR Apache-2.0；MIT OR Apache-2.0 | 目录遍历、哈希、系统凭据        |
-| Playwright Test / axe Playwright                                 | 1.64.1 / 4.14.0               | Apache-2.0 / MPL-2.0                                | 开发 / CI 的浏览器和无障碍测试  |
+| 依赖                              | 许可                                                | 用途                                                     |
+| --------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| TanStack Query / Table / Virtual  | MIT                                                 | 缓存、表格状态与虚拟滚动                                 |
+| React Hook Form / resolvers / Zod | MIT                                                 | 复杂表单与运行时 schema                                  |
+| react-markdown / remark-gfm       | MIT                                                 | 安全 Markdown / GFM                                      |
+| lowlight / highlight.js           | MIT / BSD-3-Clause                                  | TypeScript 文本高亮                                      |
+| Recharts                          | MIT                                                 | 本地指标图表                                             |
+| Tauri 系统插件                    | MIT OR Apache-2.0                                   | 原生文件、通知、剪贴板、快捷键、深链、HTTP 与固定 worker |
+| walkdir / sha2 / keyring          | Unlicense/MIT；MIT OR Apache-2.0；MIT OR Apache-2.0 | 遍历、哈希与凭据                                         |
+| Playwright / axe Playwright       | Apache-2.0 / MPL-2.0                                | 浏览器及无障碍检查                                       |
 
 页面在 `routes.tsx` 中使用 `lazy`；表格 / 表单、Query、Markdown 和图表跟随对应页面加载，门面中的 JS 插件按调用动态导入。Rust 插件仍在应用启动组装，前端懒加载不会减少原生依赖编译或安装包体积。WSS 使用标准 WebSocket，由门面和 CSP 限制，没有额外安装 websocket 插件。
+
+TypeScript 高亮使用 lowlight / highlight.js，仅引入核心和 TypeScript 语法，随使用 `CodeBlock` 的懒加载页面加载，不引入全语言包或自动扫描 DOM。它们只处理本地文本，没有原生权限或平台依赖；输出语法树转换为 React 文本 token。许可证原文保存在 [代码高亮许可](../public/licenses/code-highlighting.txt)，由 Vite 复制到网页与桌面内嵌前端资源中。
 
 比较体积时执行同一配置的 `pnpm build` / `pnpm build:web`，区分入口、路由块、共享块、原始与 gzip 大小；不能把各块总和当作首屏下载量，也不能由压缩体积推导常驻内存或启动耗时。性能采样方法见 [安装版与启动验收](./testing.md#安装版与启动验收)。
 
@@ -133,6 +147,7 @@ import { useEffect, useRef, useState } from "react";
 import { NativePage } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { nativeErrorText } from "@/lib/native-error";
 import { summarizeText, type TextSummary } from "@/lib/tauri";
 import { useI18n } from "@/providers/i18n";
@@ -183,7 +198,6 @@ export default function TextTools() {
         <Label htmlFor="summary-text">{t("textTools.input")}</Label>
         <textarea
           id="summary-text"
-          className="w-full rounded-md border bg-background p-3"
           rows={6}
           value={text}
           disabled={pending}
@@ -246,7 +260,7 @@ pnpm bindings:check
 pnpm build:web
 ```
 
-再运行桌面 `pnpm app:dev` 验证实际 IPC、输入保留、中英与键盘；浏览器确认显示环境说明。共享路由、Provider 或事件变化时按 [验证范围](./testing.md#日常验证范围) 扩大检查。不要把 mock 成功当作原生能力实测。
+在独立环境或安排的前台时段运行桌面 `pnpm app:dev` 验证实际 IPC、输入保留、中英与键盘；日常先用无头浏览器确认环境说明。共享路由、Provider 或事件变化时按 [验证范围](./testing.md#日常验证范围) 扩大检查。不要把 mock 成功当作原生能力实测。
 
 ## 实际裁剪模块
 
@@ -262,7 +276,7 @@ pnpm build:web
 
 ### 删除自动更新器
 
-1. 移除 `/updates`、检查更新命令 / 菜单 / 首页 / 能力目录入口及 `DesktopEffects` 的更新订阅；清理 `updates-store.ts`、门面更新函数 / DTO / 事件和对应词典、测试。
+1. 移除 `/updates`、检查更新命令 / 菜单 / 首页 / 能力目录入口及 `DesktopEffects` 的更新订阅和 `useStartupUpdates`；清理 `updates-store.ts`、`autoCheckUpdates` 设置字段、门面更新函数 / DTO / 事件和对应词典、测试。
 2. 从 `commands.rs` / `bindings.rs` 删除更新检查、快照、下载安装命令和显式 UpdateProgress 类型注册；从 `lib.rs` 移除 `UpdateManager` 状态、插件和 updater 模块，调整诊断与生命周期的安装更新分支。保留关闭 / 退出 / 重启和未保存工作协调。
 3. 删除 Rust `tauri-plugin-updater` 及仅为更新验签使用的 `minisign-verify`、`update_signature.rs`、`verify-updater` binary 前先核对所有调用方。本项目没有前端 updater 插件依赖；不要删仍被系统能力使用的插件。清理 `tauri.conf.json` 的 updater 配置；品牌初始化 schema 若仍要求 `updates`，保留空端点 / 公钥，或同步修改其解析 / 测试，不能只删 JSON 字段。
 4. 调整 `.github/workflows/release.yml`、`scripts/release-lib.mjs` 及相关测试：不再生成或上传更新元数据 / 签名，不调用更新验签 binary，移除 updater 专用 Secrets / 条件检查。Authenticode、macOS 签名公证、普通安装包归档和哈希清单仍是独立分发职责。

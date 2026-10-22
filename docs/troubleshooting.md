@@ -69,6 +69,21 @@
 3. 检查桌面和开始菜单快捷方式是否指向当前安装 exe，以及图标来源是否为该 exe 的索引 0。NSIS 模板已显式设置图标并刷新 Shell 图标缓存。
 4. 只有确认 exe 嵌入图标已更新、快捷方式来源正确而 Explorer 仍旧显示时，再处理图标缓存或重新固定任务栏入口；不先清空全局缓存或重启 Explorer 来掩盖旧二进制。
 
+## MSI 没有弹出管理员权限确认
+
+当前 MSI 为所有用户安装（`ALLUSERS=1`），由 Windows Installer 在执行安装时处理提权；显示欢迎页不要求立即弹出 UAC。NSIS 则按当前用户安装，无需管理员权限。
+
+若 MSI 全程没有提示，先核对启动进程是否已提权、是否由企业策略部署，再只读检查系统策略：
+
+```powershell
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' |
+  Select-Object EnableLUA, ConsentPromptBehaviorAdmin, PromptOnSecureDesktop
+```
+
+`EnableLUA=1` 且 `ConsentPromptBehaviorAdmin=0` 表示管理员提权不提示，不能据此判断安装器没有申请权限。需要恢复提示时，通过 Windows UAC 设置或组织策略调整，应用与构建脚本不修改全局安全策略。取值见 [Microsoft UAC 配置](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration#user-account-control-configuration)。
+
+双击 MSI 后先短暂显示准备窗口、消失再进入欢迎页，来自 WiX 的 `PrepareDlg`。本项目通过 [安装器 UI 片段](../src-tauri/installer/wix-ui.wxs) 跳过其显示；重新打包后检查最终 MSI 的 `InstallUISequence` 中该行条件为 `0`。应用启动窗口闪现需另按 [启动排查](#启动慢或重复启动后卡死) 定位。
+
 ## WebView2 缺失
 
 **现象**：启动报错 `WebView2 runtime not found`，或窗口空白且无报错。
@@ -114,14 +129,7 @@ error: linker `link.exe` not found
 
 ## 端口 1420 被占用
 
-```powershell
-netstat -ano | findstr :1420
-Get-Process -Id <pid>
-# 确认是自己的开发进程后再停止
-Stop-Process -Id <pid>
-```
-
-`vite.config.ts` 里 `strictPort: true` 使开发服务在端口占用时直接失败。更换端口时需同步 Vite、Tauri 和 VS Code 调试任务，按 [开发指南 · 端口被占用](./development.md#端口被占用) 修改并重启。
+Vite 开启 `strictPort`，不会自动改端口。先确认占用进程归属，只停止自己的任务；查占用命令及需要同步修改的配置见 [开发指南](./development.md#端口被占用)。
 
 ## invoke 报 command not found
 
@@ -281,7 +289,7 @@ HTTPS / WSS 示例依赖指定外部服务，可能受网络或服务状态影�
 
 ## E2E 无法连接或窗口操作超时
 
-使用 `pnpm test:e2e`，不要直接把正式 exe 交给驱动。测试构建必须包含 `e2e` feature、独立 `.e2e` 标识和测试 overlay；runner 等内嵌服务 `/status` 就绪后才连接动态端口。源码 / 配置改动后重新 `pnpm e2e:build`，不要继续复用旧收据。
+日常界面回归使用 `pnpm test:ui`，不显示测试窗口。真实桌面验收需显式运行 `pnpm test:e2e --interactive`；它会激活和切换窗口，应安排在独立 CI / 虚拟机或可占用桌面的时段，见 [桌面干扰边界](./testing.md#避免干扰本机桌面)。不要直接把正式 exe 交给驱动。测试构建必须包含 `e2e` feature、独立 `.e2e` 标识和测试 overlay；runner 等内嵌服务 `/status` 就绪后才连接动态端口。源码 / 配置改动后重新 `pnpm e2e:build`，不要继续复用旧收据。
 
 先查看 `artifacts/e2e/` 的截图和日志。Linux 无图形会话时需要 Xvfb、DBus 和窗口管理器，macOS 使用内嵌 provider；具体环境与命令见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。只管理本次测试进程和临时目录，勿用清理真实用户数据解决测试隔离问题。
 
