@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { browser, $, $$ } from "@wdio/globals";
 import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
 import {
@@ -93,7 +94,22 @@ export function desktopUiChecks() {
       await browser.execute(() => {
         document.querySelector("main").scrollTop = 180;
       });
-      const before = await geometry();
+      // WebKit 在调整窗口并滚动后仍可能重排容器；以连续稳定的布局作为菜单基线。
+      let before;
+      let stable = 0;
+      await browser.waitUntil(
+        async () => {
+          const current = await geometry();
+          stable = isDeepStrictEqual(current, before) ? stable + 1 : 0;
+          before = current;
+          return stable >= 3;
+        },
+        {
+          interval: 100,
+          timeoutMsg:
+            "Settings layout did not settle before opening native menus",
+        },
+      );
       assert.equal(before.main.y, before.chrome.height);
       assert.equal(before.rootScrollTop, 0);
       for (const menu of await $$(".app-title-menu-trigger")) {
