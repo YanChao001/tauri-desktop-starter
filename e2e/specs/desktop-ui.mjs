@@ -272,19 +272,33 @@ export function desktopUiChecks() {
         async () =>
           (await $("#app-sidebar").getAttribute("data-collapsed")) === "true",
       );
+      await $("[data-slot=tooltip-content]").waitForExist({ reverse: true });
       assert.equal((await $$("[data-slot=tooltip-content]")).length, 0);
       await $("button[aria-label='Expand sidebar']").click();
+      await $("[data-slot=tooltip-content]").waitForExist({ reverse: true });
       assert.equal((await $$("[data-slot=tooltip-content]")).length, 0);
 
       await navigate("/desktop");
       await $("[data-testid=open-secondary-window]").waitForEnabled();
       for (const width of [880, 1120]) {
-        const resized = await invoke("set_window_size", { width, height: 740 });
-        assert.equal(resized.ok, true);
+        // CI 工作区可能小于预设尺寸，沿用原生服务报告的可用范围。
+        const target = {
+          width: Math.min(
+            originalWindow.maxWidth,
+            Math.max(originalWindow.minWidth, width),
+          ),
+          height: Math.min(
+            originalWindow.maxHeight,
+            Math.max(originalWindow.minHeight, 740),
+          ),
+        };
+        const resized = await invoke("set_window_size", target);
+        assert.equal(resized.ok, true, JSON.stringify(resized));
+        // macOS 的原生尺寸事件可能晚于命令返回，等待请求目标而非旧快照。
         await browser.waitUntil(() =>
           browser.execute(
             (expected) => Math.abs(innerWidth - expected) <= 1,
-            resized.value.width,
+            target.width,
           ),
         );
         for (const language of ["zh", "en"]) {

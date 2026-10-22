@@ -121,32 +121,6 @@ export async function navigate(path) {
   );
 }
 
-/** 当前桌面驱动的 option.click() 只调用 DOM click，不实现原生 select 选择。 */
-export function selectHtmlOption(selector, value) {
-  return browser.execute(
-    (target, selected) => {
-      const select = document.querySelector(target);
-      if (
-        !(select instanceof HTMLSelectElement) ||
-        ![...select.options].some((option) => option.value === selected)
-      )
-        throw new Error(
-          `Select option is unavailable: ${target} / ${selected}`,
-        );
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-      ).set;
-      setter.call(select, selected);
-      select.dispatchEvent(new Event("input", { bubbles: true }));
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-      return select.value;
-    },
-    selector,
-    value,
-  );
-}
-
 export async function language(locale) {
   const trigger = await $("button[aria-description][role=combobox]");
   await trigger.click();
