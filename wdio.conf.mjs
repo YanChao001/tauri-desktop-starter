@@ -9,7 +9,7 @@ if (
   Number(process.env.STARTER_E2E_PORT) > 65535 ||
   !["fresh", "persisted", "centered"].includes(process.env.STARTER_E2E_PHASE)
 )
-  throw new Error("请通过 pnpm test:e2e 运行隔离的桌面测试。");
+  throw new Error("请通过 pnpm test:e2e --interactive 运行隔离的桌面测试。");
 const outputDir = resolve("artifacts", "e2e", process.env.STARTER_E2E_PHASE);
 mkdirSync(outputDir, { recursive: true });
 
