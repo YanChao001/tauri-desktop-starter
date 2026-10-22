@@ -76,4 +76,20 @@ describe("safe JSON code display", () => {
     );
     expect(container.querySelector("img, script")).toBeNull();
   });
+
+  it("TypeScript 高亮保留原文，不执行看似 HTML 的源码", () => {
+    const code =
+      'export const markup: string = "</code><img src=x onerror=run()>";';
+    const { container } = render(
+      <CodeBlock code={code} language="typescript" />,
+    );
+    expect(container.querySelector("pre")?.textContent).toBe(code);
+    expect(container.querySelector('[data-token="keyword"]')).toHaveTextContent(
+      "export",
+    );
+    expect(container.querySelector('[data-token="string"]')).toHaveTextContent(
+      "<img",
+    );
+    expect(container.querySelector("img, script, iframe")).toBeNull();
+  });
 });

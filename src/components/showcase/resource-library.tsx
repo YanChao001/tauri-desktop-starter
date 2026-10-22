@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowUpRightIcon,
+  TriangleAlertIcon,
   Grid2x2Icon,
   ListIcon,
   SearchIcon,
@@ -111,6 +112,7 @@ export function ResourceLibrary({ active }: { active: boolean }) {
   const [layout, setLayout] = useState("grid");
   const [selected, setSelected] = useState<Resource | null>(null);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [progress, setProgress] = useState(0);
   useEffect(() => {
     if (!loading) return;
@@ -234,20 +236,34 @@ export function ResourceLibrary({ active }: { active: boolean }) {
             {t("playground.resultCount", { count: resources.length })}
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            if (loading) setLoading(false);
-            else {
-              setProgress(0);
-              setLoading(true);
-            }
-          }}
-        >
-          {loading ? <XIcon /> : <SparklesIcon />}
-          {t(loading ? "playground.cancelLoading" : "playground.tryLoading")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setLoading(false);
+              setFailed(true);
+            }}
+          >
+            <TriangleAlertIcon />
+            {t("playground.tryError")}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setFailed(false);
+              if (loading) setLoading(false);
+              else {
+                setProgress(0);
+                setLoading(true);
+              }
+            }}
+          >
+            {loading ? <XIcon /> : <SparklesIcon />}
+            {t(loading ? "playground.cancelLoading" : "playground.tryLoading")}
+          </Button>
+        </div>
       </div>
       <div className="library-results" aria-busy={loading}>
         {loading ? (
@@ -269,6 +285,22 @@ export function ResourceLibrary({ active }: { active: boolean }) {
                 </div>
               ))}
             </div>
+          </div>
+        ) : failed ? (
+          <div className="library-empty" role="alert">
+            <TriangleAlertIcon aria-hidden="true" />
+            <h4>{t("playground.errorTitle")}</h4>
+            <p>{t("playground.errorDescription")}</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFailed(false);
+                setProgress(0);
+                setLoading(true);
+              }}
+            >
+              {t("playground.retry")}
+            </Button>
           </div>
         ) : resources.length === 0 ? (
           <div className="library-empty">

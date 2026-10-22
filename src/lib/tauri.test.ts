@@ -12,11 +12,15 @@ import {
   revealWindow,
   resetWindowGeometry,
   setWindowSize,
+  isWindowFullscreen,
+  setWindowFullscreen,
 } from "./tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const events = vi.hoisted(() => ({
   label: "main",
+  fullscreen: vi.fn(),
+  setFullscreen: vi.fn(),
   listen:
     vi.fn<
       (
@@ -28,8 +32,58 @@ const events = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: events.listen }));
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ label: events.label }),
+  getCurrentWindow: () => ({
+    label: events.label,
+    isFullscreen: events.fullscreen,
+    setFullscreen: events.setFullscreen,
+  }),
 }));
+
+describe("全屏门面", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    Reflect.deleteProperty(document, "fullscreenElement");
+    Reflect.deleteProperty(document, "exitFullscreen");
+    Reflect.deleteProperty(document.documentElement, "requestFullscreen");
+    vi.clearAllMocks();
+  });
+  it("原生模式查询并设置当前窗口，错误保持可见", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    events.fullscreen.mockResolvedValue(true);
+    expect(await isWindowFullscreen()).toBe(true);
+    events.setFullscreen.mockResolvedValue(undefined);
+    await setWindowFullscreen(false);
+    expect(events.setFullscreen).toHaveBeenCalledWith(false);
+    events.setFullscreen.mockRejectedValueOnce(new Error("denied"));
+    await expect(setWindowFullscreen(true)).rejects.toThrow("denied");
+  });
+  it("浏览器进入与退出使用真实 API，未支持时不伪造全屏状态", async () => {
+    expect(await isWindowFullscreen()).toBe(false);
+    const enter = vi.fn().mockResolvedValue(undefined);
+    const exit = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document.documentElement, "requestFullscreen", {
+      value: enter,
+      configurable: true,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      value: exit,
+      configurable: true,
+    });
+    await setWindowFullscreen(true);
+    expect(enter).toHaveBeenCalledOnce();
+    Object.defineProperty(document, "fullscreenElement", {
+      value: document.documentElement,
+      configurable: true,
+    });
+    expect(await isWindowFullscreen()).toBe(true);
+    await setWindowFullscreen(false);
+    expect(exit).toHaveBeenCalledOnce();
+    expect(events.setFullscreen).not.toHaveBeenCalled();
+  });
+});
 
 describe("当前窗口事件契约", () => {
   afterEach(() => {

@@ -1,22 +1,53 @@
 import {
   useEffect,
+  useId,
+  useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
-import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useSpring,
+  useTransform,
+} from "motion/react";
 import { MoveUpRightIcon, RotateCcwIcon, SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
-import { Notes, RangeControl, type SceneProps } from "./shared";
+import { Notes, RangeControl, StageGuides, type SceneProps } from "./shared";
+import { usePlaybackGate, type Playback } from "./playback";
 export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
   const { t } = useI18n();
+  const instructions = useId();
   const [strength, setStrength] = useState(15);
   const [flipped, setFlipped] = useState(false);
   const horizontal = useMotionValue(0);
   const vertical = useMotionValue(0);
   const x = useSpring(horizontal, { stiffness: 220, damping: 26 });
   const y = useSpring(vertical, { stiffness: 220, damping: 26 });
+  const flipAngle = useMotionValue(0);
+  const rotationY = useTransform(() => x.get() + flipAngle.get());
+  const flipControl = useRef<Playback | null>(null);
+  const playing = usePlaybackGate(flipControl, active);
+  useEffect(() => {
+    if (reduced || !active) {
+      flipAngle.jump(reduced ? 0 : flipped ? 180 : 0);
+      return;
+    }
+    const control = animate(flipAngle, flipped ? 180 : 0, {
+      type: "spring",
+      stiffness: 160,
+      damping: 24,
+    });
+    flipControl.current = control;
+    if (!playing.current) control.pause();
+    return () => {
+      control.stop();
+      flipControl.current = null;
+    };
+  }, [flipped, reduced, active, flipAngle, playing]);
   const glareX = useTransform(x, (value) => `${50 + value / 2}%`);
   const glareY = useTransform(y, (value) => `${50 + value / 2}%`);
   const reset = () => {
@@ -83,11 +114,15 @@ export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
   return (
     <>
       <div className="lab-stage lab-tilt-stage" ref={stageRef}>
+        <StageGuides label={t("lab.tilt")} />
         <div className="lab-tilt-halo" />
+        <span className="sr-only" id={instructions}>
+          {t("lab.tiltCard")}
+        </span>
         <motion.button
           type="button"
           className="lab-tilt-card"
-          aria-label={t("lab.tiltCard")}
+          aria-describedby={instructions}
           aria-pressed={flipped}
           onClick={() => setFlipped((value) => !value)}
           onPointerMove={point}
@@ -106,7 +141,7 @@ export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
           onBlur={reset}
           onKeyDown={key}
           style={{
-            rotateY: reduced ? 0 : x,
+            rotateY: reduced ? 0 : rotationY,
             rotateX: reduced ? 0 : y,
             transformPerspective: 900,
           }}
@@ -116,22 +151,31 @@ export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
             aria-hidden="true"
             style={{ left: glareX, top: glareY }}
           />
-          <span className="lab-card-edition">
-            {t("lab.cardEdition")}
-            <SparklesIcon />
-          </span>
-          <span className="lab-hologram" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="lab-tilt-message" aria-live="polite">
-            {t(flipped ? "lab.cardBack" : "lab.cardFront")}
-          </span>
-          <span className="lab-card-signature">
-            {t("lab.cardSignature")}
-            <MoveUpRightIcon />
-          </span>
+          {([false, true] as const).map((back) => (
+            <span
+              key={String(back)}
+              className={`lab-tilt-face${back ? " lab-tilt-face-back" : ""}`}
+              aria-hidden={back !== flipped}
+            >
+              <span className="lab-card-edition">
+                {t("lab.cardEdition")}
+                <SparklesIcon />
+              </span>
+              <span className="lab-hologram" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <b />
+              </span>
+              <span className="lab-tilt-message">
+                {t(back ? "lab.cardBack" : "lab.cardFront")}
+              </span>
+              <span className="lab-card-signature">
+                {t("lab.cardSignature")}
+                <MoveUpRightIcon />
+              </span>
+            </span>
+          ))}
         </motion.button>
       </div>
       <aside className="lab-control-panel">

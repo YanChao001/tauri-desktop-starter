@@ -20,14 +20,14 @@ export const BUILTIN_BACKGROUNDS = BACKGROUNDS.filter(
 
 export const BACKGROUND_STYLES = {
   plain: "plain",
-  aurora: "fluid",
-  dune: "geometric",
-  inkwash: "inkwash",
-  starlight: "starmap",
-  sakura: "anime",
-  moonlit: "pixel",
-  botanical: "botanical",
-  cloudscape: "papercut",
+  aurora: "cat-linework",
+  dune: "coffee-linework",
+  inkwash: "mountain-linework",
+  starlight: "linework",
+  sakura: "cloud-linework",
+  moonlit: "moon-linework",
+  botanical: "leaf-linework",
+  cloudscape: "paper-linework",
 } as const satisfies Record<BuiltinBackground, string>;
 
 export const BACKGROUND_INTENSITIES = ["subtle", "balanced", "strong"] as const;

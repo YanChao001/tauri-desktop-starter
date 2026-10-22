@@ -84,11 +84,12 @@ describe("background task center", () => {
       screen.getByRole("button", { name: "tasks.pickDirectory" }),
     );
     await waitFor(() =>
-      expect(screen.getByLabelText("tasks.directory")).toHaveValue("dir-1"),
+      expect(screen.getByLabelText("tasks.directory")).toHaveTextContent(
+        "Chosen",
+      ),
     );
-    fireEvent.change(screen.getByLabelText("tasks.kind"), {
-      target: { value: "sha256" },
-    });
+    fireEvent.keyDown(screen.getByLabelText("tasks.kind"), { key: "Enter" });
+    fireEvent.click(screen.getByRole("option", { name: "tasks.sha256" }));
     fireEvent.click(screen.getByRole("button", { name: "tasks.start" }));
     await waitFor(() =>
       expect(native.startWorkbenchTask).toHaveBeenCalledWith("sha256", "dir-1"),
@@ -140,7 +141,9 @@ describe("background task center", () => {
       screen.getByRole("button", { name: "tasks.pickDirectory" }),
     );
     await waitFor(() =>
-      expect(screen.getByLabelText("tasks.directory")).toHaveValue("dir-1"),
+      expect(screen.getByLabelText("tasks.directory")).toHaveTextContent(
+        "Chosen",
+      ),
     );
     const waiting = { ...task, id: "task-waiting", status: "queued" as const };
     act(() =>

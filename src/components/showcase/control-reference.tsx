@@ -8,6 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
+import { ControlStates } from "./control-states";
 
 const VARIANTS = [
   { variant: "default", label: "playground.variantPrimary", badge: "default" },
@@ -18,6 +19,7 @@ const VARIANTS = [
   },
   { variant: "outline", label: "playground.variantOutline", badge: "outline" },
   { variant: "ghost", label: "playground.variantGhost", badge: "outline" },
+  { variant: "link", label: "playground.variantLink", badge: "outline" },
   {
     variant: "destructive",
     label: "playground.variantDestructive",
@@ -34,7 +36,13 @@ export function ControlReference() {
     >
       <h3 id="playground-reference-heading">{t("playground.reference")}</h3>
       <p>{t("playground.referenceDescription")}</p>
-      <Accordion type="single" collapsible>
+      <Accordion type="single" collapsible defaultValue="states">
+        <AccordionItem value="states">
+          <AccordionTrigger>{t("playground.controlStates")}</AccordionTrigger>
+          <AccordionContent>
+            <ControlStates />
+          </AccordionContent>
+        </AccordionItem>
         <AccordionItem value="variants">
           <AccordionTrigger>{t("playground.buttonVariants")}</AccordionTrigger>
           <AccordionContent>

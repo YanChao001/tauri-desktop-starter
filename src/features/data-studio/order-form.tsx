@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { useFieldArray, useForm, type FieldPath } from "react-hook-form";
+import {
+  Controller,
+  useFieldArray,
+  useForm,
+  type FieldPath,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -11,6 +17,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n, type DictKey } from "@/providers/i18n";
 import {
   defaultOrder,
@@ -176,16 +189,37 @@ export function OrderForm() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="order-kind">{t("labs.form.kind")}</Label>
-              <select
-                id="order-kind"
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                {...form.register("kind", {
-                  onChange: () => form.clearErrors("company"),
-                })}
-              >
-                <option value="personal">{t("labs.form.personal")}</option>
-                <option value="business">{t("labs.form.business")}</option>
-              </select>
+              <Controller
+                control={form.control}
+                name="kind"
+                render={({ field }) => (
+                  <Select
+                    name={field.name}
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      form.clearErrors("company");
+                    }}
+                  >
+                    <SelectTrigger
+                      id="order-kind"
+                      className="w-full"
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent position="popper" align="start">
+                      <SelectItem value="personal">
+                        {t("labs.form.personal")}
+                      </SelectItem>
+                      <SelectItem value="business">
+                        {t("labs.form.business")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             {kind === "business" ? (
               <div className="space-y-1.5">
@@ -333,23 +367,33 @@ export function OrderForm() {
           </fieldset>
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                id="order-consent"
-                type="checkbox"
-                {...form.register("consent")}
-                aria-invalid={!!errors.consent}
-                aria-describedby={
-                  errors.consent ? "order-consent-error" : undefined
-                }
+              <Controller
+                name="consent"
+                control={form.control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="order-consent"
+                    name={field.name}
+                    ref={field.ref}
+                    checked={field.value}
+                    onBlur={field.onBlur}
+                    onCheckedChange={(checked) =>
+                      field.onChange(checked === true)
+                    }
+                    aria-invalid={!!errors.consent}
+                    aria-describedby={
+                      errors.consent ? "order-consent-error" : undefined
+                    }
+                  />
+                )}
               />
               {t("labs.form.consent")}
             </label>
             {errorFor("consent", errors.consent?.message)}
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={fail}
-                onChange={(event) => setFail(event.target.checked)}
+                onCheckedChange={(checked) => setFail(checked === true)}
               />
               {t("labs.form.simulateFailure")}
             </label>

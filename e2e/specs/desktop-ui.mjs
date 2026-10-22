@@ -60,10 +60,78 @@ function geometry() {
     };
   });
 }
-const screenshot = (name) =>
-  browser.saveScreenshot(join("artifacts", "e2e", "fresh", name));
+async function screenshot(name) {
+  await browser.execute(async () => {
+    await Promise.all(
+      [...document.querySelectorAll(".skin-scene")].map((element) => {
+        const image = new Image();
+        image.src = getComputedStyle(element).maskImage.slice(5, -2);
+        return image.decode();
+      }),
+    );
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  await browser.saveScreenshot(join("artifacts", "e2e", "fresh", name));
+}
 
 export function desktopUiChecks() {
+  it("keeps wheel tails native without replaying edge animations in WebView2", async function () {
+    if (
+      await browser.execute(
+        () => matchMedia("(prefers-reduced-motion: reduce)").matches,
+      )
+    )
+      this.skip();
+    const original = (await invoke("load_settings_snapshot")).value.settings;
+    try {
+      await patchSettings({ motion: "full", sidebarCollapsed: false });
+      await navigate("/settings");
+      await settledAppearance({ motion: "full" });
+      for (const selector of ["main", ".app-sidebar-navigation"]) {
+        const result = await browser.execute(async (target) => {
+          const viewport = document.querySelector(target);
+          viewport.scrollTop = viewport.scrollHeight;
+          const height = viewport.scrollHeight;
+          let scripted = false;
+          for (const delta of [120, 100, 80, 50, 30, 20, 12, 6, 3, 1]) {
+            viewport.dispatchEvent(
+              new WheelEvent("wheel", { deltaY: delta, bubbles: true }),
+            );
+            await new Promise((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            );
+            let node = viewport.querySelector(
+              ".app-page-content, [role='group']",
+            );
+            while (node && node !== viewport) {
+              scripted ||=
+                node.getAnimations().length > 0 ||
+                getComputedStyle(node).translate !== "none";
+              node = node.parentElement;
+            }
+          }
+          return {
+            scripted,
+            policy: getComputedStyle(viewport).overscrollBehaviorY,
+            stableRange: viewport.scrollHeight === height,
+            documentTop: document.scrollingElement.scrollTop,
+          };
+        }, selector);
+        assert.equal(
+          result.scripted,
+          false,
+          selector + " leaves edge feedback to WebView2",
+        );
+        assert.equal(result.policy, "contain");
+        assert.equal(result.stableRange, true);
+        assert.equal(result.documentTop, 0);
+      }
+    } finally {
+      await patchSettings(original);
+      await settledAppearance({ motion: original.motion });
+    }
+  });
+
   it("keeps native menu geometry stable, aligns settings and records real desktop screenshots", async () => {
     const original = (await invoke("load_settings_snapshot")).value.settings;
     const originalWindow = (await invoke("get_window_geometry")).value;
@@ -82,6 +150,7 @@ export function desktopUiChecks() {
       await patchSettings({
         language: "zh",
         theme: "light",
+        accent: "emerald",
         background: "aurora",
         motion: "reduced",
         sidebarCollapsed: false,
@@ -190,7 +259,7 @@ export function desktopUiChecks() {
         );
       });
       assert.equal(aligned, true);
-      await $(".custom-skin-panel").scrollIntoView({ block: "center" });
+      await $(".wallpaper-library").scrollIntoView({ block: "center" });
       await screenshot("desktop-background-controls.png");
 
       // 静止指针下反复折叠不能激活展开时的 Tooltip 状态。
@@ -206,6 +275,81 @@ export function desktopUiChecks() {
       assert.equal((await $$("[data-slot=tooltip-content]")).length, 0);
       await $("button[aria-label='Expand sidebar']").click();
       assert.equal((await $$("[data-slot=tooltip-content]")).length, 0);
+
+      await navigate("/desktop");
+      await $("[data-testid=open-secondary-window]").waitForEnabled();
+      for (const width of [880, 1120]) {
+        const resized = await invoke("set_window_size", { width, height: 740 });
+        assert.equal(resized.ok, true);
+        await browser.waitUntil(() =>
+          browser.execute(
+            (expected) => Math.abs(innerWidth - expected) <= 1,
+            resized.value.width,
+          ),
+        );
+        for (const language of ["zh", "en"]) {
+          await patchSettings({ language, fontSize: "lg", theme: "light" });
+          await settledAppearance({ language, fontSize: "lg", theme: "light" });
+          const controls = await browser.execute(() =>
+            [...document.querySelectorAll(".settings-row-control")].map(
+              (element) => {
+                const control = element.getBoundingClientRect();
+                const row = element
+                  .closest(".settings-row")
+                  .getBoundingClientRect();
+                return {
+                  right: control.right,
+                  withinRow:
+                    control.left >= row.left && control.right <= row.right + 1,
+                };
+              },
+            ),
+          );
+          assert.equal(controls.length, 3);
+          assert.ok(controls.every((control) => control.withinRow));
+          assert.ok(
+            Math.max(...controls.map((control) => control.right)) -
+              Math.min(...controls.map((control) => control.right)) <=
+              1,
+          );
+        }
+      }
+      await patchSettings({ language: "zh", fontSize: "md" });
+      await settledAppearance({ language: "zh", fontSize: "md" });
+      await screenshot("desktop-controls.png");
+      await navigate("/bridge");
+      for (const theme of ["light", "dark"]) {
+        await patchSettings({ theme });
+        await settledAppearance({ theme });
+        for (const language of ["rust", "typescript"]) {
+          await $("code[data-language=" + language + "]").waitForDisplayed();
+          const colors = await browser.execute((value) => {
+            const code = document.querySelector(
+              "code[data-language=" + value + "]",
+            );
+            return {
+              plain: getComputedStyle(code).color,
+              keyword: getComputedStyle(
+                code.querySelector("[data-token=keyword]"),
+              ).color,
+              string: getComputedStyle(
+                code.querySelector("[data-token=string]"),
+              ).color,
+            };
+          }, language);
+          assert.notEqual(
+            colors.keyword,
+            colors.plain,
+            language + " keyword in " + theme,
+          );
+          assert.notEqual(
+            colors.string,
+            colors.keyword,
+            language + " string in " + theme,
+          );
+        }
+        await screenshot("desktop-code-examples-" + theme + ".png");
+      }
     } finally {
       await patchSettings(original);
       await settledAppearance({
@@ -319,7 +463,7 @@ export function desktopUiChecks() {
         ),
         JSON.stringify(fixture),
       );
-      await $(".custom-skin-panel").scrollIntoView({ block: "center" });
+      await $(".wallpaper-library").scrollIntoView({ block: "center" });
       await screenshot("desktop-custom-background.png");
     } finally {
       await browser.switchToWindow(main);

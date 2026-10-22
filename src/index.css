@@ -3,6 +3,7 @@
 @import "./styles/shadcn.css";
 @import "@fontsource-variable/geist";
 @import "./styles/showcase.css";
+@import "./styles/window-skins.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -26,6 +27,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -50,6 +52,10 @@
 }
 
 :root {
+  color-scheme: light;
+  --surface-base: oklch(1 0 0);
+  --surface-sidebar: oklch(0.985 0 0);
+  --surface-muted: oklch(0.97 0 0);
   --app-chrome-height: 40px;
   --app-font-sans: "Geist Variable", sans-serif;
   --background: oklch(1 0 0);
@@ -63,10 +69,11 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.52 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.52 0.21 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -87,6 +94,10 @@
 }
 
 .dark {
+  color-scheme: dark;
+  --surface-base: oklch(0.145 0 0);
+  --surface-sidebar: oklch(0.205 0 0);
+  --surface-muted: oklch(0.269 0 0);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -102,6 +113,7 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.145 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -112,12 +124,25 @@
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* 中性表面是基底；用户选择的强调色只为交互表面提供轻微色调。 */
+html[data-accent]:not([data-accent="neutral"]) {
+  --background: color-mix(in oklab, var(--primary) 2%, var(--surface-base));
+  --sidebar: color-mix(in oklab, var(--primary) 3%, var(--surface-sidebar));
+  --accent: color-mix(in oklab, var(--primary) 9%, var(--surface-base));
+  --sidebar-accent: color-mix(
+    in oklab,
+    var(--primary) 10%,
+    var(--surface-sidebar)
+  );
+  --sidebar-primary-foreground: var(--primary-foreground);
 }
 
 @layer base {
@@ -157,7 +182,7 @@ html[data-accent="indigo"] {
 }
 html.dark[data-accent="indigo"] {
   --primary: oklch(0.64 0.2 277);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.64 0.2 277 / 60%);
   --sidebar-primary: oklch(0.64 0.2 277);
   --chart-1: oklch(0.64 0.2 277);
@@ -172,18 +197,18 @@ html[data-accent="blue"] {
 }
 html.dark[data-accent="blue"] {
   --primary: oklch(0.67 0.16 250);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.67 0.16 250 / 60%);
   --sidebar-primary: oklch(0.67 0.16 250);
   --chart-1: oklch(0.67 0.16 250);
 }
 
 html[data-accent="emerald"] {
-  --primary: oklch(0.55 0.14 160);
+  --primary: oklch(0.51 0.12 164);
   --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.55 0.14 160 / 60%);
-  --sidebar-primary: oklch(0.55 0.14 160);
-  --chart-1: oklch(0.55 0.14 160);
+  --ring: oklch(0.51 0.12 164 / 60%);
+  --sidebar-primary: oklch(0.51 0.12 164);
+  --chart-1: oklch(0.51 0.12 164);
 }
 html.dark[data-accent="emerald"] {
   --primary: oklch(0.69 0.13 160);
@@ -217,7 +242,7 @@ html[data-accent="rose"] {
 }
 html.dark[data-accent="rose"] {
   --primary: oklch(0.67 0.19 12);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.67 0.19 12 / 60%);
   --sidebar-primary: oklch(0.67 0.19 12);
   --chart-1: oklch(0.67 0.19 12);
@@ -232,7 +257,7 @@ html[data-accent="violet"] {
 }
 html.dark[data-accent="violet"] {
   --primary: oklch(0.66 0.21 300);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.145 0 0);
   --ring: oklch(0.66 0.21 300 / 60%);
   --sidebar-primary: oklch(0.66 0.21 300);
   --chart-1: oklch(0.66 0.21 300);
@@ -273,15 +298,15 @@ html[data-font-size="lg"] {
 /* 插画只铺在窗口底层；阅读表面与装饰分别调节，避免降低文字对比度。 */
 :root {
   --skin-strength: 1;
-  --skin-chrome-opacity: 52%;
-  --skin-sidebar-opacity: 42%;
-  --skin-card-opacity: 78%;
+  --skin-chrome-opacity: 20%;
+  --skin-sidebar-opacity: 26%;
+  --skin-card-opacity: 88%;
 }
 
 .dark {
-  --skin-chrome-opacity: 58%;
-  --skin-sidebar-opacity: 46%;
-  --skin-card-opacity: 82%;
+  --skin-chrome-opacity: 20%;
+  --skin-sidebar-opacity: 26%;
+  --skin-card-opacity: 92%;
 }
 
 html[data-background-intensity="subtle"] {
@@ -323,7 +348,7 @@ html[data-background="plain"] {
 }
 .app-title-bar {
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--background) var(--skin-chrome-opacity),
     transparent
   );
@@ -334,10 +359,13 @@ html[data-background="plain"] {
   inset: var(--app-chrome-height) auto 0 0;
   z-index: 10;
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--sidebar) var(--skin-sidebar-opacity),
     transparent
   );
+}
+.app-scroll-region {
+  overscroll-behavior: none contain;
 }
 .app-main {
   position: absolute;
@@ -346,14 +374,13 @@ html[data-background="plain"] {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: none contain;
   scrollbar-gutter: stable;
   scroll-padding-block: 1.25rem;
   background: transparent;
 }
 .app-main [data-slot="card"] {
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--card) var(--skin-card-opacity),
     transparent
   );
@@ -365,139 +392,6 @@ html[data-background="plain"] {
     [data-slot="select-trigger"]
   ) {
   background-color: var(--background);
-}
-
-.pattern-artwork {
-  --skin-color: #b7b0dc;
-  --skin-secondary: #c9d5ec;
-  --skin-ink: #7c7aab;
-  --skin-highlight: #ebcf86;
-  --skin-paper: #fff9f3;
-  --skin-face: #ffe2d4;
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background: var(--background);
-}
-.pattern-artwork[data-pattern="sakura"] {
-  --skin-color: #d6a4c7;
-  --skin-secondary: #e8bad5;
-  --skin-ink: #9d819d;
-  --skin-highlight: #edaac5;
-}
-.pattern-artwork[data-pattern="moonlit"] {
-  --skin-color: #92a6ca;
-  --skin-secondary: #b2c3dd;
-  --skin-ink: #6d83ad;
-  --skin-highlight: #dccca3;
-}
-.pattern-artwork[data-pattern="botanical"] {
-  --skin-color: #96b8a7;
-  --skin-secondary: #bcd0aa;
-  --skin-ink: #608c87;
-  --skin-highlight: #e2c3a2;
-}
-.pattern-artwork[data-pattern="cloudscape"] {
-  --skin-color: #9dbfd9;
-  --skin-secondary: #c0d9e5;
-  --skin-ink: #7390af;
-  --skin-highlight: #e8b8c7;
-}
-.pattern-artwork[data-pattern="aurora"] {
-  --skin-color: #b1b0e0;
-  --skin-secondary: #97cabc;
-  --skin-ink: #789aad;
-  --skin-highlight: #d8afd0;
-}
-.pattern-artwork[data-pattern="dune"] {
-  --skin-color: #c79286;
-  --skin-secondary: #ddc4a6;
-  --skin-ink: #9c797d;
-  --skin-highlight: #e5b578;
-}
-.pattern-artwork[data-pattern="inkwash"] {
-  --skin-color: #75848b;
-  --skin-secondary: #afb9b9;
-  --skin-ink: #52616d;
-  --skin-highlight: #be7164;
-}
-.skin-scene {
-  opacity: calc(0.22 * var(--skin-strength));
-}
-.dark .skin-scene {
-  opacity: calc(0.18 * var(--skin-strength));
-}
-.pattern-artwork--preview .skin-scene {
-  opacity: 0.95;
-}
-.custom-background-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-position: center;
-  opacity: calc(0.16 * var(--skin-strength));
-}
-html:not([data-background="plain"]) {
-  --muted-foreground: oklch(0.43 0 0);
-}
-html.dark:not([data-background="plain"]) {
-  --muted-foreground: oklch(0.78 0 0);
-}
-html[data-background="custom"] {
-  --skin-chrome-opacity: 94%;
-  --skin-sidebar-opacity: 90%;
-  --skin-card-opacity: 94%;
-}
-.pattern-artwork--preview {
-  --skin-strength: 1;
-  border-radius: inherit;
-  background: color-mix(in oklch, var(--skin-color) 12%, var(--background));
-}
-.pattern-artwork[data-pattern="plain"] {
-  background: var(--background);
-}
-.dark .pattern-artwork {
-  --skin-paper: #bcc1d1;
-  --skin-face: #d9b5ac;
-}
-.dark .pattern-artwork[data-pattern="sakura"] {
-  --skin-color: #997e9f;
-  --skin-secondary: #a38a9c;
-  --skin-ink: #696b8d;
-  --skin-highlight: #d29caf;
-}
-.dark .pattern-artwork[data-pattern="moonlit"],
-.dark .pattern-artwork[data-pattern="starlight"] {
-  --skin-color: #6f7d9d;
-  --skin-secondary: #8291ac;
-  --skin-ink: #545e7e;
-  --skin-highlight: #c6bda3;
-}
-.dark .pattern-artwork[data-pattern="botanical"] {
-  --skin-color: #738f88;
-  --skin-secondary: #8caaa0;
-  --skin-ink: #536f6d;
-  --skin-highlight: #c2a697;
-}
-.dark .pattern-artwork[data-pattern="inkwash"] {
-  --skin-color: #687d85;
-  --skin-secondary: #7e9295;
-  --skin-ink: #46575f;
-  --skin-highlight: #bc8a7c;
-}
-.dark .pattern-artwork[data-pattern="cloudscape"],
-.dark .pattern-artwork[data-pattern="aurora"] {
-  --skin-color: #8198b7;
-  --skin-secondary: #89b2b1;
-  --skin-ink: #536b8b;
-  --skin-highlight: #bca7cb;
-}
-.dark .pattern-artwork[data-pattern="dune"] {
-  --skin-color: #9a827d;
-  --skin-secondary: #b3a092;
-  --skin-ink: #796b76;
-  --skin-highlight: #c3a180;
 }
 
 @media (prefers-contrast: more), (forced-colors: active) {
@@ -516,7 +410,7 @@ html[data-background="custom"] {
 html[data-motion="reduced"] {
   overscroll-behavior-y: none;
 }
-html[data-motion="reduced"] .app-main {
+html[data-motion="reduced"] .app-scroll-region {
   overscroll-behavior-y: none;
 }
 html[data-motion="reduced"] *,
@@ -530,7 +424,7 @@ html[data-motion="reduced"] *::after {
 
 @media (prefers-reduced-motion: reduce) {
   html,
-  .app-main {
+  .app-scroll-region {
     overscroll-behavior-y: none;
   }
   *,
@@ -579,13 +473,13 @@ html[data-motion="reduced"] *::after {
   border-radius: 999px;
   background-clip: padding-box;
   background-color: color-mix(
-    in oklch,
+    in oklab,
     var(--foreground) calc(var(--app-scrollbar-opacity) * 100%),
     transparent
   );
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in oklch, var(--foreground) 28%, transparent);
+  background-color: color-mix(in oklab, var(--foreground) 28%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -602,7 +496,7 @@ html[data-motion="reduced"] *::after {
   .app-scroll-region {
     scrollbar-width: thin;
     scrollbar-color: color-mix(
-        in oklch,
+        in oklab,
         var(--foreground) calc(var(--app-scrollbar-opacity) * 100%),
         transparent
       )
@@ -651,7 +545,7 @@ html[data-motion="reduced"] *::after {
   }
 }
 
-/* JSON 通过 React 文本节点渲染，配色跟随应用主题 */
+/* 代码通过 React 文本节点渲染，配色跟随应用主题 */
 .code-block {
   --code-property: #4338ca;
   --code-string: #047857;

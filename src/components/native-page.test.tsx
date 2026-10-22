@@ -11,7 +11,7 @@ describe("browser capability preview", () => {
     localStorage.clear();
   });
   it.each([
-    { mode: "demo", links: ["/components", "/motion"] },
+    { mode: "demo", links: ["/catalog", "/settings"] },
     { mode: "minimal", links: ["/", "/settings"] },
   ])(
     "keeps $mode destinations consistent without rendering native operations",

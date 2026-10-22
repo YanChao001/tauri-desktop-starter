@@ -4,6 +4,13 @@ import { NativePage, ResourceError } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
 import {
   getActivationSnapshot,
@@ -111,21 +118,26 @@ export default function System() {
             {t("system.shortcutHelp")}
           </p>
           <div className="flex flex-wrap gap-2">
-            <select
-              aria-label={t("system.shortcut")}
-              className="rounded-md border bg-background p-2 text-sm"
+            <Select
               value={shortcut}
               disabled={registered || busy}
-              onChange={(event) => setShortcut(event.target.value)}
+              onValueChange={setShortcut}
             >
-              {[
-                "CommandOrControl+Shift+Space",
-                "CommandOrControl+Shift+Y",
-                "Alt+Shift+Y",
-              ].map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
+              <SelectTrigger aria-label={t("system.shortcut")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                {[
+                  "CommandOrControl+Shift+Space",
+                  "CommandOrControl+Shift+Y",
+                  "Alt+Shift+Y",
+                ].map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               disabled={busy}
               onClick={() =>

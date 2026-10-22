@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import {
   ArrowLeftIcon,
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
 import { springCurve, type SpringParameters } from "./physics";
 import { useOrbit, usePlaybackGate, type Playback } from "./playback";
-import { Notes, RangeControl, type SceneProps } from "./shared";
+import { Notes, RangeControl, StageGuides, type SceneProps } from "./shared";
 
 export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
   const { t } = useI18n();
@@ -19,6 +19,9 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
     mass: 1,
   });
   const [target, setTarget] = useState(420);
+  const [launch, setLaunch] = useState(0);
+  const drag = useRef<number | null>(null);
+  const handle = useRef<SVGCircleElement>(null);
   const position = useMotionValue(220);
   const control = useRef<Playback | null>(null);
   const playing = usePlaybackGate(control, active);
@@ -30,6 +33,33 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
       `M 220 164 C ${240 + (value - 220) / 3} 96, ${value - 20} 226, ${value} 164`,
   );
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const send = (next: number) => {
+    setTarget(next);
+    setLaunch((value) => value + 1);
+  };
+  function dragMove(event: PointerEvent<SVGCircleElement>) {
+    if (drag.current !== event.pointerId || !active) return;
+    const matrix = event.currentTarget.ownerSVGElement?.getScreenCTM();
+    if (!matrix) return;
+    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(
+      matrix.inverse(),
+    );
+    position.jump(Math.max(120, Math.min(520, point.x)));
+  }
+  function release(event: PointerEvent<SVGCircleElement>) {
+    if (drag.current !== event.pointerId) return;
+    drag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    send(position.get() < 320 ? 220 : 420);
+  }
+  useEffect(() => {
+    if (active || drag.current === null) return;
+    const id = drag.current;
+    drag.current = null;
+    if (handle.current?.hasPointerCapture(id))
+      handle.current.releasePointerCapture(id);
+  }, [active]);
   useEffect(() => {
     if (reduced) {
       position.jump(target);
@@ -51,7 +81,7 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
       animation.stop();
       control.current = null;
     };
-  }, [target, parameters, replay, reduced, position, playing]);
+  }, [target, parameters, replay, reduced, position, playing, launch]);
   const ratio =
     parameters.damping /
     (2 * Math.sqrt(parameters.stiffness * parameters.mass));
@@ -67,11 +97,13 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
         data-testid="spring-stage"
         ref={stageRef}
       >
+        <StageGuides label={t("lab.spring")} />
         <div className="lab-stage-aura" />
         <svg
           viewBox="0 0 640 320"
           className="lab-artwork"
-          aria-hidden="true"
+          role="group"
+          aria-label={t("lab.springTitle")}
           focusable="false"
         >
           <defs>
@@ -81,6 +113,14 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
               <stop offset="1" stopColor="var(--lab-art)" />
             </radialGradient>
           </defs>
+          <g className="lab-track-marks">
+            {Array.from({ length: 21 }, (_, i) => (
+              <path
+                key={i}
+                d={`M${120 + i * 20} 240v${i % 5 === 0 ? 12 : 6}`}
+              />
+            ))}
+          </g>
           <path d="M100 244H540" className="lab-axis" />
           <ellipse cx="220" cy="244" rx="48" ry="8" className="lab-pad" />
           <ellipse cx="420" cy="244" rx="48" ry="8" className="lab-pad" />
@@ -89,12 +129,65 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
             <ellipse cy="244" rx="54" ry="8" className="lab-orb-shadow" />
             <circle cy="164" r="46" fill={`url(#${id}-orb)`} />
             <circle cy="164" r="53" className="lab-orb-rim" />
+            <circle cy="164" r="65" className="lab-orb-rim lab-orb-rim-outer" />
             <motion.g style={{ rotate: rotation }}>
               <ellipse cy="164" rx="72" ry="21" className="lab-orbit-ring" />
               <circle cx="68" cy="170" r="4" className="lab-orbit-spark" />
             </motion.g>
             <circle cx="-13" cy="149" r="12" fill="white" opacity=".16" />
           </motion.g>
+          <motion.circle
+            ref={handle}
+            cx={position}
+            cy="164"
+            r="52"
+            className="lab-spring-handle"
+            role="button"
+            tabIndex={0}
+            aria-label={t("lab.dragOrb")}
+            focusable="true"
+            onPointerDown={(event) => {
+              if (!active || event.button !== 0 || drag.current !== null)
+                return;
+              event.preventDefault();
+              event.currentTarget.focus();
+              control.current?.stop();
+              drag.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={dragMove}
+            onPointerUp={release}
+            onPointerCancel={release}
+            onLostPointerCapture={() => {
+              if (drag.current !== null) {
+                drag.current = null;
+                send(target);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                [
+                  "ArrowLeft",
+                  "ArrowRight",
+                  "Home",
+                  "End",
+                  "Enter",
+                  " ",
+                ].includes(event.key)
+              ) {
+                event.preventDefault();
+                send(
+                  event.key === "ArrowLeft" || event.key === "Home"
+                    ? 220
+                    : event.key === "ArrowRight" || event.key === "End"
+                      ? 420
+                      : target === 420
+                        ? 220
+                        : 420,
+                );
+              }
+            }}
+          />
           <text x="220" y="278" textAnchor="middle" className="lab-axis-label">
             A
           </text>
@@ -107,14 +200,11 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
             size="icon-sm"
             variant="outline"
             aria-label={t("lab.left")}
-            onClick={() => setTarget(220)}
+            onClick={() => send(220)}
           >
             <ArrowLeftIcon />
           </Button>
-          <Button
-            onClick={() => setTarget((value) => (value === 420 ? 220 : 420))}
-            size="sm"
-          >
+          <Button onClick={() => send(target === 420 ? 220 : 420)} size="sm">
             <ArrowLeftRightIcon />
             {t("lab.throw")}
           </Button>
@@ -122,7 +212,7 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
             size="icon-sm"
             variant="outline"
             aria-label={t("lab.right")}
-            onClick={() => setTarget(420)}
+            onClick={() => send(420)}
           >
             <ArrowRightIcon />
           </Button>

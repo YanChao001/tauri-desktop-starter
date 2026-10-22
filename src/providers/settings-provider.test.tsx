@@ -124,7 +124,7 @@ describe("settings provider persistence", () => {
     expect(result.current.settings).toMatchObject({
       theme: "dark",
       sidebarWidth: 360,
-      accent: "neutral",
+      accent: DEFAULT_SETTINGS.accent,
     });
     expect(result.current.settings).not.toHaveProperty("schemaVersion");
   });

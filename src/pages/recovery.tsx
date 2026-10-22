@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -228,12 +229,13 @@ export default function Recovery() {
                 </p>
               ) : null}
               <label className="flex items-start gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-1 size-4 accent-primary"
+                <Checkbox
+                  className="mt-1"
                   checked={resetSettings}
                   disabled={busy || status.pending}
-                  onChange={(event) => setResetSettings(event.target.checked)}
+                  onCheckedChange={(checked) =>
+                    setResetSettings(checked === true)
+                  }
                 />
                 <span>{t("recovery.resetSettings")}</span>
               </label>

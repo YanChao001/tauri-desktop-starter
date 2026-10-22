@@ -135,7 +135,7 @@ pub enum WindowPosition {
     Center,
 }
 
-fn validate_custom_background(value: &Value) -> NativeResult<()> {
+pub(crate) fn validate_custom_background(value: &Value) -> NativeResult<()> {
     if value.is_null() {
         return Ok(());
     }

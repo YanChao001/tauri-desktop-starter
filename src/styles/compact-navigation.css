@@ -1,0 +1,42 @@
+/* 窄屏页面入口仍属于应用标题栏，不增加网页外壳或额外顶栏。 */
+.app-compact-navigation {
+  display: none;
+}
+@media (max-width: 720px) {
+  .app-compact-navigation {
+    display: flex;
+    min-width: 0;
+    max-width: 10rem;
+    height: 30px;
+    flex: 1;
+    align-self: center;
+    margin-left: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding-inline: 0.4rem;
+    background: var(--background);
+    color: var(--foreground);
+    font: inherit;
+    font-size: 0.75rem;
+  }
+  .app-compact-navigation:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .app-shell-browser :is(.app-sidebar, .app-title-bar nav) {
+    display: none;
+  }
+  .app-shell-browser .app-main {
+    inset-inline-start: 0;
+  }
+  .app-shell-browser .app-page-content {
+    padding: 1rem 0.9rem 2rem;
+  }
+  .app-shell-browser .studio-native-preview {
+    padding: 1.1rem;
+  }
+  .app-shell-browser .studio-native-note {
+    align-items: flex-start;
+    text-align: center;
+  }
+}

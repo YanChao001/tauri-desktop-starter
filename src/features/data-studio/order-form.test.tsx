@@ -48,9 +48,8 @@ describe("complex demo form", () => {
 
   it("locates a conditional field error and keeps dynamic line identities usable", async () => {
     render(<OrderForm />);
-    fireEvent.change(screen.getByLabelText("Request type"), {
-      target: { value: "business" },
-    });
+    fireEvent.keyDown(screen.getByLabelText("Request type"), { key: "Enter" });
+    fireEvent.click(screen.getByRole("option", { name: "Business" }));
     fireEvent.click(screen.getByRole("button", { name: "Add line item" }));
     expect(screen.getAllByLabelText("Description")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Remove line 2" }));
@@ -65,9 +64,8 @@ describe("complex demo form", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Company name")).toHaveFocus(),
     );
-    fireEvent.change(screen.getByLabelText("Request type"), {
-      target: { value: "personal" },
-    });
+    fireEvent.keyDown(screen.getByLabelText("Request type"), { key: "Enter" });
+    fireEvent.click(screen.getByRole("option", { name: "Personal" }));
     expect(screen.queryByLabelText("Company name")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /Company name:/ }),

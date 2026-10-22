@@ -16,6 +16,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
 import { demoMetrics } from "./model";
 
@@ -31,19 +38,22 @@ export function MetricsChart() {
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2">
           <Label htmlFor="chart-metric">{t("labs.media.metric")}</Label>
-          <select
-            id="chart-metric"
+          <Select
             value={metric}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            onChange={(event) =>
-              setMetric(
-                event.target.value === "latency" ? "latency" : "requests",
-              )
+            onValueChange={(value) =>
+              setMetric(value === "latency" ? "latency" : "requests")
             }
           >
-            <option value="requests">{t("labs.media.requests")}</option>
-            <option value="latency">{t("labs.media.latency")}</option>
-          </select>
+            <SelectTrigger id="chart-metric">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectItem value="requests">
+                {t("labs.media.requests")}
+              </SelectItem>
+              <SelectItem value="latency">{t("labs.media.latency")}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div
           className="h-56 w-full min-w-0"

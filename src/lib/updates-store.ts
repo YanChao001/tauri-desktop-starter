@@ -232,6 +232,7 @@ const store = createUpdatesStore({
 export const checkUpdates = store.checkUpdates;
 export const installUpdate = store.installUpdate;
 export const attachUpdateEvents = store.attachUpdateEvents;
+export const getUpdatesSnapshot = store.getSnapshot;
 export function useUpdates() {
   return useSyncExternalStore(
     store.subscribe,

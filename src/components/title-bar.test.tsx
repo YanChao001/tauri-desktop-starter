@@ -22,6 +22,9 @@ import {
 import { TitleBar } from "./title-bar";
 
 vi.mock("@/routes", () => ({ APP_ROUTES: [] }));
+vi.mock("@/hooks/use-fullscreen", () => ({
+  useFullscreen: () => ({ fullscreen: false, change: vi.fn() }),
+}));
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,

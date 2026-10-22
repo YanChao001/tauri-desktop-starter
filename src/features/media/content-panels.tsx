@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CodeBlock } from "@/components/code-block";
+import { ExternalLink } from "@/components/external-link";
+import { normalizeCodeLanguage } from "@/lib/code-language";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardContent,
@@ -22,14 +26,32 @@ export function SafeMarkdown({ content }: { content: string }) {
         skipHtml
         urlTransform={safeMarkdownUrl}
         components={{
-          pre: ({ children }) => (
-            <pre
-              tabIndex={0}
-              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {children}
-            </pre>
-          ),
+          pre: ({ node }) => {
+            const code = node?.children.find(
+              (child) => child.type === "element" && child.tagName === "code",
+            );
+            if (code?.type !== "element") return null;
+            const classes = code.properties.className;
+            const languageClass = Array.isArray(classes)
+              ? classes.find(
+                  (name) =>
+                    typeof name === "string" && name.startsWith("language-"),
+                )
+              : undefined;
+            return (
+              <CodeBlock
+                code={code.children
+                  .map((child) => (child.type === "text" ? child.value : ""))
+                  .join("")}
+                language={normalizeCodeLanguage(
+                  typeof languageClass === "string"
+                    ? languageClass.slice("language-".length)
+                    : "",
+                )}
+                className="rounded-md bg-muted p-3"
+              />
+            );
+          },
           input: ({ checked }) => (
             <input
               type="checkbox"
@@ -41,7 +63,9 @@ export function SafeMarkdown({ content }: { content: string }) {
             />
           ),
           a: ({ href, children }) =>
-            href ? (
+            href && /^https?:/i.test(href) ? (
+              <ExternalLink href={href}>{children}</ExternalLink>
+            ) : href ? (
               <a href={href} target="_blank" rel="noopener noreferrer">
                 {children}
               </a>
@@ -74,13 +98,13 @@ export function MarkdownPanel() {
       <CardContent className="grid items-start gap-4 lg:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="markdown-source">{t("labs.media.source")}</Label>
-          <textarea
+          <Textarea
             id="markdown-source"
             rows={16}
             maxLength={20000}
             value={content}
             onChange={(event) => setContent(event.target.value)}
-            className="w-full resize-y rounded-md border bg-background p-3 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="font-mono text-xs leading-relaxed md:text-xs"
           />
           <Button
             variant="outline"

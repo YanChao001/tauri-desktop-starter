@@ -63,6 +63,7 @@ export type AppSettings = {
   sidebarWidth: number;
   appMode: "demo" | "minimal";
   runInBackground: boolean;
+  autoCheckUpdates: boolean;
   windowPosition: WindowPosition;
   theme: AppTheme;
 };
@@ -81,6 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarWidth: 224,
   appMode: APP_CONFIG.defaultMode,
   runInBackground: false,
+  autoCheckUpdates: true,
   windowPosition: "remember",
   theme: "system",
 };
@@ -134,7 +136,10 @@ export function migrateSettings(raw: unknown): AppSettings {
     rawBackground,
     DEFAULT_SETTINGS.background,
   );
-  const flag = (key: "menuBar" | "sidebarCollapsed" | "runInBackground") =>
+  const flag = (
+    key:
+      "menuBar" | "sidebarCollapsed" | "runInBackground" | "autoCheckUpdates",
+  ) =>
     typeof source[key] === "boolean"
       ? (source[key] as boolean)
       : DEFAULT_SETTINGS[key];
@@ -156,6 +161,7 @@ export function migrateSettings(raw: unknown): AppSettings {
     menuBar: flag("menuBar"),
     sidebarCollapsed: flag("sidebarCollapsed"),
     runInBackground: flag("runInBackground"),
+    autoCheckUpdates: flag("autoCheckUpdates"),
     windowPosition: pick(
       WINDOW_POSITIONS,
       source.windowPosition,

@@ -8,7 +8,7 @@ import {
   WandSparklesIcon,
 } from "lucide-react";
 import { useI18n } from "@/providers/i18n";
-import { Notes, type SceneProps } from "./shared";
+import { Notes, StageGuides, type SceneProps } from "./shared";
 const CARDS = [
   {
     label: "lab.atelier",
@@ -33,6 +33,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
   const { t } = useI18n();
   const [selected, setSelected] = useState(0);
   const [snappy, setSnappy] = useState(false);
+  const [composition, setComposition] = useState("fan");
   const group = useId();
   const previousReplay = useRef(replay);
   useEffect(() => {
@@ -44,6 +45,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
   return (
     <>
       <div className="lab-stage lab-layout-stage" ref={stageRef}>
+        <StageGuides label={t("lab.layout")} />
         <LayoutGroup id={group} key={active ? "moving" : "still"}>
           <div
             className="lab-layout-tabs"
@@ -76,7 +78,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
               </button>
             ))}
           </div>
-          <div className="lab-space-cards">
+          <div className="lab-space-cards" data-composition={composition}>
             {CARDS.map((card, index) => (
               <motion.button
                 key={card.label}
@@ -85,7 +87,6 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
                 className={`lab-space-card lab-card-${card.color}`}
                 data-selected={selected === index}
                 aria-pressed={selected === index}
-                aria-label={t(card.label)}
                 onClick={() => setSelected(index)}
                 style={{ flex: selected === index ? 2.4 : 0.65 }}
                 transition={
@@ -146,6 +147,21 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
               {selected === index && <CheckIcon />}
             </button>
           ))}
+        </div>
+        <div className="lab-presets">
+          <span>{t("lab.composition")}</span>
+          <div>
+            {(["fan", "grid"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={composition === value}
+                onClick={() => setComposition(value)}
+              >
+                {t(value === "fan" ? "lab.layoutFan" : "lab.layoutGrid")}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="lab-presets">
           <span>{t("lab.layoutSpeed")}</span>

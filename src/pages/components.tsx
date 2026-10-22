@@ -10,6 +10,7 @@ import { ProjectStudio } from "@/components/showcase/project-studio";
 import { FeedbackStudio } from "@/components/showcase/feedback-studio";
 import { ResourceLibrary } from "@/components/showcase/resource-library";
 import { ControlReference } from "@/components/showcase/control-reference";
+import { WorkspaceStudio } from "@/components/showcase/workspace-studio";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
 import "@/styles/components-showcase.css";
@@ -18,6 +19,11 @@ const STAGES = [
   { id: "inputs", label: "playground.inputs", icon: SlidersHorizontalIcon },
   { id: "feedback", label: "playground.feedback", icon: BellRingIcon },
   { id: "data", label: "playground.data", icon: LayersIcon },
+  {
+    id: "workspace",
+    label: "experience.workspace",
+    icon: SlidersHorizontalIcon,
+  },
 ] as const;
 
 export default function Components() {
@@ -83,6 +89,14 @@ export default function Components() {
           className="playground-stage"
         >
           <ResourceLibrary active={stage === "data"} />
+        </TabsContent>
+        <TabsContent
+          value="workspace"
+          forceMount
+          hidden={stage !== "workspace"}
+          className="playground-stage"
+        >
+          <WorkspaceStudio />
         </TabsContent>
       </Tabs>
       <ControlReference />

@@ -65,12 +65,13 @@ describe("interactive showroom", () => {
   });
   it("offers working destinations and a real command-palette entry", () => {
     view();
-    expect(
-      screen.getByRole("link", { name: /进入动效实验室/ }),
-    ).toHaveAttribute("href", "/motion");
-    expect(screen.getByRole("link", { name: /探索交互场景/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "动效实验室" })).toHaveAttribute(
       "href",
-      "/components",
+      "/motion",
+    );
+    expect(screen.getByRole("link", { name: /开始体验/ })).toHaveAttribute(
+      "href",
+      "/components?journey=interface&step=0",
     );
     fireEvent.click(screen.getByRole("button", { name: /打开快速操作/ }));
     expect(actions.palette).toHaveBeenCalledWith(true);

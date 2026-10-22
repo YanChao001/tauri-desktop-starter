@@ -222,7 +222,15 @@ export function prepareInitialization(
   const next = validateAppConfig({
     ...current,
     ...patch,
-    updates: { ...current.updates, ...patch.updates },
+    updates: {
+      ...current.updates,
+      ...((patch.repositoryUrl &&
+        patch.repositoryUrl !== current.repositoryUrl) ||
+      (patch.identifier && patch.identifier !== current.identifier)
+        ? { publicKey: "" }
+        : {}),
+      ...patch.updates,
+    },
     ...(minimal ? { defaultMode: "minimal" } : {}),
   });
   const outputs = new Map([["app.config.json", json(next)]]);

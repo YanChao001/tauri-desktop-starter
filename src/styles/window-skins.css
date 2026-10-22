@@ -1,0 +1,52 @@
+/* SVG 只提供透明线条，颜色与底色均由应用主题决定。 */
+.pattern-artwork {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: var(--background);
+}
+.skin-scene {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background-color: color-mix(in oklab, var(--primary) 35%, var(--foreground));
+  mask-size: cover;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  opacity: calc(0.18 * var(--skin-strength));
+}
+.dark .skin-scene {
+  opacity: calc(0.16 * var(--skin-strength));
+}
+.pattern-artwork--preview {
+  --skin-strength: 1;
+  border-radius: inherit;
+}
+.pattern-artwork--preview .skin-scene {
+  opacity: 0.42;
+}
+.pattern-artwork[data-pattern="plain"] {
+  background: var(--background);
+}
+.custom-background-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-position: center;
+  opacity: calc(0.36 * var(--skin-strength));
+}
+html:not([data-background="plain"]) {
+  --muted-foreground: oklch(0.36 0 0);
+}
+html.dark:not([data-background="plain"]) {
+  --muted-foreground: oklch(0.8 0 0);
+}
+html[data-background="custom"] {
+  --skin-chrome-opacity: 50%;
+  --skin-sidebar-opacity: 50%;
+}
+html[data-background="custom"] .app-main {
+  background: color-mix(in oklab, var(--background) 50%, transparent);
+}

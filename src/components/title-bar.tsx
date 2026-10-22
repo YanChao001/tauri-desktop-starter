@@ -19,6 +19,7 @@ import appIcon from "../../resources/branding/app-icon.svg";
 import { CommandMenuItem } from "@/components/command-menu-item";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitch } from "@/components/language-switch";
+import { CompactNavigation } from "@/components/compact-navigation";
 import {
   Dialog,
   DialogContent,
@@ -160,7 +161,7 @@ export function TitleBar() {
                   {t("title.view")}
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuContent align="start" className="w-60">
                 <DropdownMenuLabel>{t("settings.theme")}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={theme ?? "system"}
@@ -187,6 +188,7 @@ export function TitleBar() {
                   {t("title.toggleMenu")}
                 </DropdownMenuCheckboxItem>
                 <CommandMenuItem id="toggle-sidebar" />
+                <CommandMenuItem id="toggle-fullscreen" />
                 <CommandMenuItem id="command-palette" icon={SearchIcon} />
               </DropdownMenuContent>
             </DropdownMenu>
@@ -210,21 +212,31 @@ export function TitleBar() {
         ) : null}
       </div>
 
-      <div data-tauri-drag-region className="min-w-8 flex-1" />
+      {!native ? <CompactNavigation /> : null}
+      <div data-tauri-drag-region className="min-w-2 flex-1" />
 
       <div className="flex items-stretch">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-10 rounded-none"
-          aria-label={t("commands.open")}
-          title={formatShortcut({ key: "k", primary: true })}
-          onClick={() => void execute("command-palette")}
-        >
-          <SearchIcon className="size-4" />
-        </Button>
+        <Tooltip disableHoverableContent>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-10 rounded-none"
+              aria-label={t("commands.open")}
+              onClick={() => void execute("command-palette")}
+            >
+              <SearchIcon className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t("commands.open")}
+            <kbd className="font-mono opacity-75">
+              {formatShortcut({ key: "k", primary: true })}
+            </kbd>
+          </TooltipContent>
+        </Tooltip>
         <LanguageSwitch compact className="my-auto" />
-        <Tooltip>
+        <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
@@ -248,7 +260,7 @@ export function TitleBar() {
 
         {native && !mac ? (
           <>
-            <Tooltip>
+            <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
                   type="button"
@@ -263,7 +275,7 @@ export function TitleBar() {
                 {t("title.minimize")}
               </TooltipContent>
             </Tooltip>
-            <Tooltip>
+            <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
                   type="button"
@@ -280,19 +292,20 @@ export function TitleBar() {
                 {maximized ? t("title.restore") : t("title.maximize")}
               </TooltipContent>
             </Tooltip>
-            <button
-              type="button"
-              aria-label={t("title.close")}
-              onClick={() => void execute("close-window")}
-              className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-white"
-            >
-              <XIcon className="size-4" />
-            </button>
+            <Tooltip disableHoverableContent>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("title.close")}
+                  onClick={() => void execute("close-window")}
+                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("title.close")}</TooltipContent>
+            </Tooltip>
           </>
-        ) : !native ? (
-          <span className="browser-preview-badge my-auto mr-2 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
-            {t("app.preview")}
-          </span>
         ) : null}
       </div>
 

@@ -31,6 +31,18 @@ describe("Bridge 命令调用", () => {
   });
   afterEach(cleanup);
 
+  it("前端调用示例明确使用 TypeScript 高亮", () => {
+    const { container } = render(<Bridge />);
+    const snippet = container.querySelector('code[data-language="typescript"]');
+    expect(snippet).toHaveTextContent('invokeGreet("Ada", language)');
+    expect(snippet?.querySelector('[data-token="keyword"]')).toHaveTextContent(
+      "export",
+    );
+    expect(snippet?.querySelector('[data-token="function"]')).toHaveTextContent(
+      "invokeGreet",
+    );
+  });
+
   it("按钮和回车在请求期间只提交一次，完成后可以再次提交", async () => {
     vi.mocked(isTauri).mockReturnValue(true);
     let resolve!: (message: string) => void;
