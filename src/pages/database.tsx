@@ -63,12 +63,14 @@ const utf8Length = (value: string) => new TextEncoder().encode(value).length;
 type EditorState = {
   draft: Draft;
   original: Draft;
+  ready: boolean;
   pending: boolean;
   error: unknown;
 };
 let editor: EditorState = {
   draft: blank(),
   original: blank(),
+  ready: false,
   pending: false,
   error: null,
 };
@@ -86,13 +88,16 @@ function changeEditor(patch: Partial<EditorState>) {
   editor = { ...editor, ...patch };
   editorListeners.forEach((listener) => listener());
 }
+function setDraftReady(ready: boolean) {
+  changeEditor({ ready });
+}
 function applyDraft(next: Draft) {
   changeEditor({ draft: next, original: next, error: null });
 }
 function isDirty(draft: Draft, original: Draft) {
   return draft.title !== original.title || draft.body !== original.body;
 }
-function persistDraft() {
+function persistDraft(signal?: AbortSignal) {
   const value: NoteDraft | null = isDirty(editor.draft, editor.original)
     ? {
         noteId: editor.draft.id,
@@ -103,7 +108,12 @@ function persistDraft() {
         originalBody: editor.original.body,
       }
     : null;
-  draftWrites = draftWrites.catch(() => {}).then(() => saveNoteDraft(value));
+  draftWrites = draftWrites
+    .catch(() => {})
+    .then(() => {
+      signal?.throwIfAborted();
+      return saveNoteDraft(value);
+    });
   return draftWrites;
 }
 function recoverDraft(value: NoteDraft | null) {
@@ -141,6 +151,7 @@ export default function Database() {
   const {
     draft,
     original,
+    ready: draftReady,
     pending,
     error: mutationError,
   } = useSyncExternalStore(subscribeEditor, readEditor, readEditor);
@@ -149,46 +160,53 @@ export default function Database() {
     "trash" | "restore" | "purge" | null
   >(null);
   const [remote, setRemote] = useState<Note | null>(null);
-  const [draftReady, setDraftReady] = useState(false);
   const [draftNotice, setDraftNotice] = useState<"recovered" | "saved" | null>(
     null,
   );
   const [discardOpen, setDiscardOpen] = useState(false);
   const nextDraft = useRef<Draft | null>(null);
   const mounted = useRef(false);
+  const draftRead = useRef(0);
   const dirty = isDirty(draft, original);
   const searchTooLong = utf8Length(query) > 200;
   const bodyTooLong = utf8Length(draft.body) > 65536;
   useEffect(() => {
     if (!isTauri()) return;
     let stopped = false;
-    if (editor.pending || isDirty(editor.draft, editor.original)) {
+    if (editor.pending) return;
+    if (isDirty(editor.draft, editor.original)) {
       setDraftReady(true);
       return;
     }
+    const request = ++draftRead.current;
     void draftWrites
       .catch(() => {})
       .then(() => loadNoteDraft())
       .then((value) => {
-        if (
-          !stopped &&
-          !editor.pending &&
-          !isDirty(editor.draft, editor.original)
-        ) {
+        if (stopped || request !== draftRead.current) return;
+        if (!editor.pending && !isDirty(editor.draft, editor.original)) {
           recoverDraft(value);
           if (value) setDraftNotice("recovered");
         }
-        if (!stopped) setDraftReady(true);
+        setDraftReady(true);
       })
       .catch((reason) => {
-        if (!stopped) changeEditor({ error: reason });
+        if (!stopped && request === draftRead.current)
+          changeEditor({ error: reason });
       });
     return () => {
       stopped = true;
     };
   }, []);
   useEffect(() => {
-    if (!draftReady || !isTauri() || bodyTooLong || draft.title.length > 200)
+    if (
+      !draftReady ||
+      !dirty ||
+      pending ||
+      !isTauri() ||
+      bodyTooLong ||
+      draft.title.length > 200
+    )
       return;
     const timer = setTimeout(() => {
       void persistDraft()
@@ -201,11 +219,13 @@ export default function Database() {
         .catch((reason) => changeEditor({ error: reason }));
     }, 200);
     return () => clearTimeout(timer);
-  }, [draft, original, draftReady, bodyTooLong]);
+  }, [draft, original, draftReady, bodyTooLong, pending, dirty]);
   useEffect(
     () => () => {
       if (
         draftReady &&
+        !editor.pending &&
+        isDirty(editor.draft, editor.original) &&
         isTauri() &&
         utf8Length(editor.draft.body) <= 65536 &&
         editor.draft.title.length <= 200
@@ -219,8 +239,10 @@ export default function Database() {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      if (!editor.pending && !isDirty(editor.draft, editor.original))
+      if (!editor.pending && !isDirty(editor.draft, editor.original)) {
         applyDraft(blank());
+        setDraftReady(false);
+      }
     };
   }, []);
   useEffect(() => {
@@ -275,8 +297,39 @@ export default function Database() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  function select(next: Draft) {
+  function editDraft(draft: Draft) {
+    changeEditor({ draft });
+    if (draftReady && !isDirty(draft, editor.original))
+      void persistDraft().catch((reason) => changeEditor({ error: reason }));
+  }
+  async function readRecoveredDraft() {
+    const request = ++draftRead.current;
+    try {
+      const recovered = await loadNoteDraft();
+      if (request !== draftRead.current) return;
+      recoverDraft(recovered);
+      setDraftReady(true);
+      changeEditor({ error: null });
+      if (mounted.current && recovered) setDraftNotice("recovered");
+    } catch (reason) {
+      if (request !== draftRead.current) return;
+      changeEditor({ error: reason });
+      throw reason;
+    }
+  }
+  async function retryDraft() {
     if (editor.pending) return;
+    changeEditor({ pending: true, error: null });
+    try {
+      await readRecoveredDraft();
+    } catch {
+      // 保留读取错误，用户可重试；未读取的草稿不会被清空。
+    } finally {
+      changeEditor({ pending: false });
+    }
+  }
+  function select(next: Draft) {
+    if (editor.pending || !editor.ready) return;
     if (dirty) {
       nextDraft.current = next;
       setDiscardOpen(true);
@@ -285,8 +338,13 @@ export default function Database() {
     applyDraft(next);
     setRemote(null);
   }
-  function save(asCopy = false): Promise<void> {
-    if (saving) return saving;
+  async function save(asCopy = false, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    if (saving) {
+      await saving;
+      signal?.throwIfAborted();
+      return;
+    }
     if (editor.pending) return Promise.reject({ code: "CONFLICT" });
     if (
       !editor.draft.title.trim() ||
@@ -311,12 +369,15 @@ export default function Database() {
               });
         applyDraft(note);
         setRemote(null);
-        await persistDraft();
+        signal?.throwIfAborted();
+        await persistDraft(signal);
+        signal?.throwIfAborted();
         if (mounted.current) {
           await reload();
           if (mounted.current) toast.success(latest("database.saved"));
         }
       } catch (reason) {
+        if (signal?.aborted) throw reason;
         changeEditor({ error: reason });
         if (
           current.id !== null &&
@@ -341,18 +402,27 @@ export default function Database() {
     saving = operation();
     return saving;
   }
-  async function discard() {
+  async function discard(signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (saving) await saving.catch(() => {});
-    applyDraft(editor.original);
-    setRemote(null);
-    await persistDraft();
-    setDraftReady(true);
+    signal?.throwIfAborted();
+    if (editor.pending) throw { code: "CONFLICT" };
+    changeEditor({ pending: true });
+    try {
+      applyDraft(editor.original);
+      setRemote(null);
+      await persistDraft(signal);
+      signal?.throwIfAborted();
+      setDraftReady(true);
+    } finally {
+      changeEditor({ pending: false });
+    }
   }
   useUnsavedWork({
     id: "note-editor",
     label: t("database.title"),
     dirty: dirty || pending,
-    save: () => save(),
+    save: (signal) => save(false, signal),
     discard,
   });
   async function remove() {
@@ -419,7 +489,9 @@ export default function Database() {
       description={t("database.description")}
     >
       <ResourceError error={error} retry={() => void reload()} />
-      {mutationError ? (
+      {!draftReady ? (
+        <ResourceError error={mutationError} retry={() => void retryDraft()} />
+      ) : mutationError ? (
         <div
           role="alert"
           className="rounded-lg border border-destructive/40 bg-background p-3 text-sm"
@@ -435,9 +507,9 @@ export default function Database() {
             if (!remote) return;
             changeEditor({
               original: { ...remote },
-              draft: { ...editor.draft, version: remote.version },
               error: null,
             });
+            editDraft({ ...editor.draft, version: remote.version });
             setRemote(null);
           }}
           saveCopy={() => void save(true).catch(() => {})}
@@ -466,7 +538,7 @@ export default function Database() {
         />
         <Button
           variant="outline"
-          disabled={pending}
+          disabled={pending || !draftReady}
           onClick={() => select(blank())}
         >
           <PlusIcon />
@@ -675,11 +747,9 @@ export default function Database() {
                   maxLength={200}
                   required
                   value={draft.title}
-                  disabled={pending || trash}
+                  disabled={pending || !draftReady || trash}
                   onChange={(event) =>
-                    changeEditor({
-                      draft: { ...editor.draft, title: event.target.value },
-                    })
+                    editDraft({ ...editor.draft, title: event.target.value })
                   }
                   placeholder={t("database.titlePlaceholder")}
                 />
@@ -694,11 +764,9 @@ export default function Database() {
                   aria-describedby={bodyTooLong ? "note-body-error" : undefined}
                   rows={12}
                   value={draft.body}
-                  disabled={pending || trash}
+                  disabled={pending || !draftReady || trash}
                   onChange={(event) =>
-                    changeEditor({
-                      draft: { ...editor.draft, body: event.target.value },
-                    })
+                    editDraft({ ...editor.draft, body: event.target.value })
                   }
                   placeholder={t("database.bodyPlaceholder")}
                 />
@@ -766,15 +834,20 @@ export default function Database() {
       </div>
       <BackupPanel
         dirty={dirty}
-        pending={pending}
-        beforeBackup={persistDraft}
+        pending={pending || !draftReady}
+        flushDraft={persistDraft}
         lockEditor={(locked) => changeEditor({ pending: locked })}
         afterRestore={async () => {
+          setDraftReady(false);
           applyDraft(blank());
-          recoverDraft(await loadNoteDraft());
+          setRemote(null);
           setOffset(0);
           setSelected(new Set());
-          await reload();
+          try {
+            await readRecoveredDraft();
+          } finally {
+            await reload();
+          }
         }}
       />
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
@@ -854,7 +927,12 @@ export default function Database() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={discardOpen} onOpenChange={setDiscardOpen}>
+      <Dialog
+        open={discardOpen}
+        onOpenChange={(open) => {
+          if (!pending) setDiscardOpen(open);
+        }}
+      >
         <DialogContent closeLabel={t("common.close")}>
           <DialogHeader>
             <DialogTitle>{t("database.discardTitle")}</DialogTitle>
@@ -862,15 +940,30 @@ export default function Database() {
               {t("database.discardDescription")}
             </DialogDescription>
           </DialogHeader>
+          {mutationError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {nativeErrorText(mutationError, t)}
+            </p>
+          ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDiscardOpen(false)}>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => setDiscardOpen(false)}
+            >
               {t("common.cancel")}
             </Button>
             <Button
+              disabled={pending}
               onClick={() => {
-                if (nextDraft.current) applyDraft(nextDraft.current);
-                nextDraft.current = null;
-                setDiscardOpen(false);
+                const next = nextDraft.current;
+                void discard()
+                  .then(() => {
+                    if (next) applyDraft(next);
+                    nextDraft.current = null;
+                    if (mounted.current) setDiscardOpen(false);
+                  })
+                  .catch((reason) => changeEditor({ error: reason }));
               }}
             >
               {t("database.discard")}

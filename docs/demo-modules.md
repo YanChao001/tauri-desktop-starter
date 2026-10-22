@@ -196,7 +196,7 @@ export default function TextTools() {
         }}
       >
         <Label htmlFor="summary-text">{t("textTools.input")}</Label>
-        <textarea
+        <Textarea
           id="summary-text"
           rows={6}
           value={text}

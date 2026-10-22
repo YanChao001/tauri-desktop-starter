@@ -157,6 +157,30 @@ describe("system integration lifecycle", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("晚到的旧激活不会挤掉较新的历史记录，重复更新保留接收顺序", async () => {
+    const activation = (id: number): native.Activation => ({
+      id,
+      source: "event",
+      route: "/tasks",
+      files: [],
+      resourceIds: [],
+      errors: [],
+    });
+    vi.mocked(native.getActivationSnapshot).mockResolvedValue(
+      Array.from({ length: 20 }, (_, index) => activation(index + 2)),
+    );
+    render(<System />);
+    await screen.findByText(/#21 · event/);
+    const handler = vi.mocked(native.onActivation).mock.calls[0]![0];
+    act(() => handler(activation(1)));
+    expect(screen.queryByText(/#1 · event/)).not.toBeInTheDocument();
+    expect(screen.getByText(/#2 · event/)).toBeInTheDocument();
+    act(() => handler({ ...activation(10), source: "updated" }));
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[8]).toHaveTextContent("#10 · updated");
+    expect(rows.at(-1)).toHaveTextContent("#21 · event");
+  });
+
   it("releases subscriptions that arrive after the page has unmounted", async () => {
     const registration = deferred<() => void>();
     vi.mocked(native.onActivation).mockReturnValue(registration.promise);

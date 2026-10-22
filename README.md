@@ -69,7 +69,7 @@ pnpm init:project --config ../my-app.json
 ## 验证
 
 ```sh
-pnpm verify       # 格式、身份配置、品牌资源、lint、类型、前端 / 脚本测试、版本、前端构建
+pnpm verify       # 工程综合检查，覆盖范围见测试规范
 pnpm test:ui      # 浏览器生产构建、交互和无障碍检查
 pnpm bindings:check
 ```

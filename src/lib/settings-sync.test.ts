@@ -264,6 +264,26 @@ describe("settings synchronization", () => {
     env.sync.stop();
   });
 
+  it("resumes pending edits after another window replaces an incompatible schema", async () => {
+    const env = setup(DEFAULT_SETTINGS, {
+      revision: 8,
+      settings: { schemaVersion: 99 },
+    });
+    await env.sync.start();
+    env.sync.update({ accent: "rose" });
+    env.send(snapshot(9, { theme: "dark" }));
+    await vi.waitFor(() => expect(env.latest().status).toBe("saved"));
+    expect(env.backend.save).toHaveBeenCalledExactlyOnceWith(
+      settingsDocument({ ...DEFAULT_SETTINGS, theme: "dark", accent: "rose" }),
+      9,
+    );
+    expect(env.latest()).toMatchObject({
+      error: null,
+      settings: { theme: "dark", accent: "rose" },
+    });
+    env.sync.stop();
+  });
+
   it("keeps newer local edits over the in-flight write and flushes them afterwards", async () => {
     const env = setup();
     await env.sync.start();

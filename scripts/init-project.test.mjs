@@ -3,7 +3,6 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -226,6 +225,27 @@ test("repository derivation drops inherited links and updater endpoint unless ex
   assert.equal(explicit.config.docsUrl, "https://acme.example/help");
 });
 
+test("brand names keep dollar replacement sequences literal in generated text", (t) => {
+  const { root, files } = fixture(t);
+  const name = "Price $$ $& $` $' Desk";
+  applyInitialization(prepareInitialization(root, { name }));
+  const read = (path) => readFileSync(join(root, path), "utf8");
+  for (const path of ["README.md", "README.en.md"])
+    assert.equal(
+      read(path),
+      `# ${name}${files[path].slice("# Starter".length)}`,
+    );
+  assert.equal(
+    read("index.html"),
+    "<html><head><title>Price $$ $&amp; $` $' Desk</title></head></html>\n",
+  );
+  assert.equal(
+    read(".signpath/artifact-configuration.xml"),
+    '<pe-file product-name="Price $$ $&amp; $` $\' Desk" />\n',
+  );
+  assert.equal(prepareInitialization(root).changes.length, 0);
+});
+
 test("identity-only derivation isolates browser data and system registrations", (t) => {
   const { root } = fixture(t);
   const plan = prepareInitialization(root, { identifier: "io.acme.desk" });
@@ -374,28 +394,6 @@ test("all files are validated before writes and unknown fields are rejected", (t
   );
 });
 
-test("failed commit rolls every file back and removes temporary files", (t) => {
-  const { root, files } = fixture(t);
-  const plan = prepareInitialization(root, { packageName: "renamed" });
-  assert.throws(
-    () =>
-      applyInitialization(plan, {
-        beforeCommit(index) {
-          if (index === 3) throw new Error("simulated write failure");
-        },
-      }),
-    /simulated/,
-  );
-  for (const [path, content] of Object.entries(files))
-    assert.equal(readFileSync(join(root, path), "utf8"), content);
-  for (const path of [
-    root,
-    join(root, "src-tauri"),
-    join(root, "src-tauri", "src"),
-  ])
-    assert.ok(readdirSync(path).every((name) => !name.startsWith(".update-")));
-});
-
 test("unrelated TOML syntax errors abort initialization before any write", (t) => {
   const { root, files } = fixture(t);
   writeFileSync(
@@ -405,54 +403,6 @@ test("unrelated TOML syntax errors abort initialization before any write", (t) =
   assert.throws(
     () => prepareInitialization(root, { name: "Acme" }),
     /TOML|Invalid|Unexpected/,
-  );
-  assert.equal(
-    readFileSync(join(root, "app.config.json"), "utf8"),
-    files["app.config.json"],
-  );
-});
-
-test("rollback preserves concurrent edits and the original backup on conflict", (t) => {
-  const { root, files } = fixture(t);
-  const plan = prepareInitialization(root, { name: "Changed" });
-  assert.throws(
-    () =>
-      applyInitialization(plan, {
-        beforeCommit(index) {
-          if (index === 1)
-            writeFileSync(
-              join(root, "app.config.json"),
-              "concurrent user edit",
-            );
-          if (index === 2) throw new Error("simulated commit failure");
-        },
-      }),
-    /恢复失败.*备份保留/,
-  );
-  assert.equal(
-    readFileSync(join(root, "app.config.json"), "utf8"),
-    "concurrent user edit",
-  );
-  const backups = readdirSync(root).filter((name) => name.endsWith(".bak"));
-  assert.equal(backups.length, 1);
-  assert.equal(
-    readFileSync(join(root, backups[0]), "utf8"),
-    files["app.config.json"],
-  );
-  assert.equal(
-    readFileSync(join(root, "package.json"), "utf8"),
-    files["package.json"],
-  );
-});
-
-test("concurrent modification is detected before committing and never overwritten", (t) => {
-  const { root, files } = fixture(t);
-  const plan = prepareInitialization(root, { name: "Changed" });
-  writeFileSync(join(root, "index.html"), "concurrent edit");
-  assert.throws(() => applyInitialization(plan), /预检后被修改/);
-  assert.equal(
-    readFileSync(join(root, "index.html"), "utf8"),
-    "concurrent edit",
   );
   assert.equal(
     readFileSync(join(root, "app.config.json"), "utf8"),

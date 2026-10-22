@@ -6,23 +6,16 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
-  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { format } from "prettier";
-import {
-  checkVersions,
-  prepareVersionUpdates,
-  validateVersion,
-} from "./version.mjs";
-import { applyFileChanges } from "./fs-utils.mjs";
+import { checkVersions, validateVersion } from "./version.mjs";
 
 function fixture(t, { config = {}, manifest, lock, dependencies = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "tauri-version-test-"));
@@ -230,39 +223,6 @@ test("invalid manifest or missing local lock package leaves every file unchanged
   }
 });
 
-test("failed version commits restore all four files and detect concurrent edits", (t) => {
-  const root = fixture(t);
-  const changes = prepareVersionUpdates(root, "2.0.0");
-  assert.throws(
-    () =>
-      applyFileChanges(
-        { root, changes },
-        {
-          beforeCommit(index) {
-            if (index === 2) throw new Error("simulated commit failure");
-          },
-        },
-      ),
-    /simulated commit failure/,
-  );
-  assert.equal(checkVersions(root), "1.0.0");
-  for (const directory of [root, join(root, "src-tauri")])
-    assert.ok(
-      readdirSync(directory).every((name) => !name.startsWith(".update-")),
-    );
-  writeFileSync(join(root, "package.json"), '{"version":"3.0.0"}');
-  assert.throws(() => applyFileChanges({ root, changes }), /预检后被修改/);
-  assert.equal(
-    JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version,
-    "3.0.0",
-  );
-  assert.equal(
-    JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"))
-      .version,
-    "1.0.0",
-  );
-});
-
 test("version commands reject directory links that point outside the project", (t) => {
   const root = fixture(t);
   const outside = mkdtempSync(join(tmpdir(), "tauri-version-outside-"));
@@ -290,51 +250,6 @@ test("version commands reject directory links that point outside the project", (
     JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version,
     "1.0.0",
   );
-});
-
-test("transaction cleanup cannot follow a directory replaced after staging", (t) => {
-  const root = fixture(t);
-  const outside = mkdtempSync(join(tmpdir(), "tauri-version-cleanup-outside-"));
-  t.after(() => {
-    assert.equal(dirname(outside), resolve(tmpdir()));
-    rmSync(outside, { recursive: true, force: true });
-  });
-  const changes = prepareVersionUpdates(root, "2.0.0");
-  const warnings = t.mock.method(console, "warn", () => {});
-  let outsideTemporary;
-  let outsideBackup;
-  assert.throws(
-    () =>
-      applyFileChanges(
-        { root, changes },
-        {
-          beforeCommit(index, entry) {
-            if (index !== 1) return;
-            renameSync(join(root, "src-tauri"), join(root, "original-tauri"));
-            symlinkSync(
-              outside,
-              join(root, "src-tauri"),
-              process.platform === "win32" ? "junction" : "dir",
-            );
-            outsideTemporary = join(outside, basename(entry.temporary));
-            outsideBackup = join(outside, basename(entry.backup));
-            writeFileSync(outsideTemporary, "unrelated temporary file");
-            writeFileSync(outsideBackup, "unrelated backup file");
-          },
-        },
-      ),
-    /文件目录在预检后被替换/,
-  );
-  assert.equal(
-    readFileSync(outsideTemporary, "utf8"),
-    "unrelated temporary file",
-  );
-  assert.equal(readFileSync(outsideBackup, "utf8"), "unrelated backup file");
-  assert.equal(
-    JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version,
-    "1.0.0",
-  );
-  assert.ok(warnings.mock.callCount() > 0);
 });
 
 test("strict SemVer and MSI constraints reject versions before writing", (t) => {

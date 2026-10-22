@@ -291,7 +291,7 @@ spctl --assess --type exec --verbose=3 "/path/to/My App.app"
 
 ## 自动更新
 
-模板已注册 Rust updater 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，重启由 Rust `AppHandle::restart` 执行。本仓库已配置自己的更新公钥，默认源为本项目 GitHub Releases；CI 私钥与口令存于仓库 Secrets。是否能更新还取决于公开 Release 是否包含有效清单、签名和更高版本，不能从公钥已配置推断服务器已就绪。
+模板已注册 Rust updater 插件，页面通过 `lib/tauri.ts` 的生成命令调用原生更新服务，重启由 Rust `AppHandle::restart` 执行。本仓库已配置自己的更新公钥，默认源为本项目 GitHub Releases；发布所需私钥与口令须由维护者配置到仓库 Secrets。是否能更新还取决于签名配置及公开 Release 是否包含有效清单、签名和更高版本，不能从公钥已配置推断 CI 或服务器已就绪。
 
 主窗口设置加载完成、页面可见后延迟检查一次；`autoCheckUpdates` 默认为 `true`，可在更新页关闭，并沿用设置 revision 与跨窗口同步。旧设置缺少此字段时使用默认值，不改变 schema 3；派生项目改变仓库地址或应用标识符时，初始化脚本清空继承的更新公钥，显式提供新公钥时才保留。浏览器不进行原生检查。
 

@@ -4,7 +4,10 @@ use crate::{
     blocking,
     database::{BACKUP_LIMIT, BackupInfo, BackupPreview, DATABASE_SCHEMA_VERSION, Database},
     error::{ErrorCode, NativeError, NativeResult},
-    storage::{DataPaths, SettingsStore, atomic_write, future_settings_schema},
+    storage::{
+        DataPaths, MAX_SETTINGS_FILE_SIZE, SettingsStore, atomic_write, future_settings_schema,
+        validate_settings,
+    },
 };
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
@@ -289,15 +292,26 @@ fn apply_pending_with(
     protect_future(paths, request.reset_settings)?;
     verify_database(&candidate(paths, &request.token, false))?;
     if request.reset_settings {
-        let settings: crate::storage::SettingsSnapshot =
-            json(&candidate(paths, &request.token, true))?;
+        let path = candidate(paths, &request.token, true);
+        if !regular(&path)? {
+            return Err(invalid("Recovery settings candidate is missing"));
+        }
+        if fs::metadata(&path)
+            .map_err(|e| failure("Cannot inspect recovery settings candidate", e))?
+            .len()
+            > MAX_SETTINGS_FILE_SIZE as u64
+        {
+            return Err(invalid(
+                "Recovery settings candidate exceeds the supported size",
+            ));
+        }
+        let settings: crate::storage::SettingsSnapshot = json(&path)?;
         if settings.revision < 0
-            || !settings.settings.is_object()
             || future_settings_schema(&settings.settings)
+            || validate_settings(&settings.settings).is_err()
         {
             return Err(invalid("Invalid or newer recovery settings candidate"));
         }
-        SettingsStore::open(candidate(paths, &request.token, true))?;
     }
     let mut originals = Vec::new();
     for name in [
@@ -955,6 +969,52 @@ mod tests {
         );
         assert!(paths.data.join(PENDING).exists());
         assert!(!paths.data.join(JOURNAL).exists());
+    }
+
+    #[test]
+    fn invalid_settings_candidates_leave_originals_and_recovery_evidence_untouched() {
+        for contents in [
+            r#"{"revision":1,"settings":{"runInBackground":"yes"}}"#.to_owned(),
+            format!(
+                "{}{}",
+                r#"{"revision":1,"settings":{}}"#,
+                " ".repeat(MAX_SETTINGS_FILE_SIZE)
+            ),
+        ] {
+            let (_root, paths) = fixture();
+            let original_settings = br#"{"revision":7,"settings":{"windowPosition":"center"}}"#;
+            fs::write(paths.config.join("settings.json"), original_settings).unwrap();
+            let initialized = recovered(&paths);
+            stage(
+                &initialized.recovery,
+                &initialized.database,
+                &initialized.settings,
+                true,
+            )
+            .unwrap();
+            drop(initialized);
+            let pending_bytes = fs::read(paths.data.join(PENDING)).unwrap();
+            let pending: Pending = serde_json::from_slice(&pending_bytes).unwrap();
+            let settings_path = candidate(&paths, &pending.token, true);
+            fs::write(&settings_path, &contents).unwrap();
+
+            assert_eq!(
+                apply_pending(&paths).unwrap_err().code,
+                ErrorCode::StorageCorrupt
+            );
+            assert_eq!(fs::read_to_string(&settings_path).unwrap(), contents);
+            assert_eq!(
+                fs::read(paths.config.join("settings.json")).unwrap(),
+                original_settings
+            );
+            assert_eq!(
+                fs::read(paths.data.join("starter.sqlite3")).unwrap(),
+                b"original corrupt database"
+            );
+            assert_eq!(fs::read(paths.data.join(PENDING)).unwrap(), pending_bytes);
+            assert!(!paths.data.join(JOURNAL).exists());
+            assert_eq!(fs::read_dir(&paths.config).unwrap().count(), 2);
+        }
     }
 
     #[test]

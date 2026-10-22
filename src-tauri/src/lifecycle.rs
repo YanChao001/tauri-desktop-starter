@@ -5,13 +5,13 @@ use serde::Serialize;
 use specta::Type;
 use std::collections::{HashMap, HashSet};
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use tauri::{Emitter, Manager};
 use tokio::sync::oneshot;
 
-#[derive(Clone, Copy, Serialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Type, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LifecycleAction {
     Close,
@@ -35,15 +35,56 @@ struct Pending {
     result: oneshot::Sender<bool>,
 }
 
+fn cancel_pending(pending: &Mutex<Option<Pending>>, id: u32) {
+    if let Ok(mut pending) = pending.lock()
+        && pending.as_ref().is_some_and(|value| value.id == id)
+        && let Some(value) = pending.take()
+    {
+        let _ = value.result.send(false);
+    }
+}
+
 #[derive(Default)]
 pub struct LifecycleState {
     dirty: Mutex<HashMap<String, Vec<String>>>,
-    pending: Mutex<Option<Pending>>,
+    pending: Arc<Mutex<Option<Pending>>>,
+    active: Arc<Mutex<Option<LifecycleAction>>>,
     sequence: AtomicU32,
     pub approved_exit: AtomicBool,
 }
 
 impl LifecycleState {
+    fn begin(&self, action: LifecycleAction) -> NativeResult<Operation> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
+        if active.is_some() {
+            return Err(NativeError::new(
+                ErrorCode::Conflict,
+                "Another lifecycle operation is already running",
+            ));
+        }
+        let id = self
+            .sequence
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
+        *active = Some(action);
+        Ok(Operation {
+            id,
+            active: self.active.clone(),
+            pending: self.pending.clone(),
+        })
+    }
+
+    pub fn active_action(&self) -> Option<LifecycleAction> {
+        self.active
+            .lock()
+            .map(|active| *active)
+            // 状态不可用时阻止破坏性动作，不把故障当作没有协商。
+            .unwrap_or(Some(LifecycleAction::InstallUpdate))
+    }
+
     pub fn is_dirty(&self, label: Option<&str>) -> bool {
         self.dirty
             .lock()
@@ -55,12 +96,7 @@ impl LifecycleState {
     }
 
     fn cancel(&self, id: u32) {
-        if let Ok(mut pending) = self.pending.lock()
-            && pending.as_ref().is_some_and(|value| value.id == id)
-            && let Some(value) = pending.take()
-        {
-            let _ = value.result.send(false);
-        }
+        cancel_pending(&self.pending, id);
     }
 
     pub fn remove_window(&self, label: &str) {
@@ -77,17 +113,63 @@ impl LifecycleState {
             self.cancel(id);
         }
     }
+
+    fn respond(&self, label: &str, id: u32, approved: bool) -> NativeResult<()> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
+        let request = pending
+            .as_mut()
+            .filter(|p| p.id == id && p.participants.contains(label))
+            .ok_or_else(|| NativeError::new(ErrorCode::Conflict, "Close request expired"))?;
+        if !approved {
+            if let Some(value) = pending.take() {
+                let _ = value.result.send(false);
+            }
+            return Ok(());
+        }
+        request.waiting.remove(label);
+        self.dirty
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?
+            .remove(label);
+        if request.waiting.is_empty()
+            && let Some(value) = pending.take()
+        {
+            let _ = value.result.send(true);
+        }
+        Ok(())
+    }
+}
+
+struct Operation {
+    id: u32,
+    active: Arc<Mutex<Option<LifecycleAction>>>,
+    pending: Arc<Mutex<Option<Pending>>>,
+}
+
+impl Drop for Operation {
+    fn drop(&mut self) {
+        cancel_pending(&self.pending, self.id);
+        if let Ok(mut active) = self.active.lock() {
+            *active = None;
+        }
+    }
 }
 
 pub struct Authorization {
     app: tauri::AppHandle,
-    id: Option<u32>,
+    operation: Operation,
+    requested: bool,
 }
 impl Drop for Authorization {
     fn drop(&mut self) {
-        if let Some(id) = self.id {
+        let id = self.operation.id;
+        if self.requested {
             let _ = self.app.emit("app://lifecycle-finished", id);
         }
+        // operation 随后释放占用，覆盖事件通知及实际执行阶段。
     }
 }
 
@@ -97,6 +179,11 @@ pub async fn authorize(
     only: Option<&str>,
 ) -> NativeResult<Authorization> {
     let state = app.state::<LifecycleState>();
+    let mut authorization = Authorization {
+        app: app.clone(),
+        operation: state.begin(action)?,
+        requested: false,
+    };
     let mut windows: Vec<String> = state
         .dirty
         .lock()
@@ -117,24 +204,15 @@ pub async fn authorize(
             .collect();
     }
     if windows.is_empty() {
-        return Ok(Authorization {
-            app: app.clone(),
-            id: None,
-        });
+        return Ok(authorization);
     }
-    let id = state.sequence.fetch_add(1, Ordering::Relaxed) + 1;
+    let id = authorization.operation.id;
     let (tx, rx) = oneshot::channel();
     {
         let mut pending = state
             .pending
             .lock()
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
-        if pending.is_some() {
-            return Err(NativeError::new(
-                ErrorCode::Conflict,
-                "Another close request is awaiting a response",
-            ));
-        }
         *pending = Some(Pending {
             id,
             waiting: windows.iter().cloned().collect(),
@@ -142,6 +220,7 @@ pub async fn authorize(
             result: tx,
         });
     }
+    authorization.requested = true;
     let request = LifecycleRequest {
         id,
         action,
@@ -164,17 +243,10 @@ pub async fn authorize(
         .ok()
         .and_then(Result::ok)
         .unwrap_or(false);
-    if !accepted {
-        state.cancel(id);
-    }
     if accepted {
         let _ = app.emit("app://lifecycle-executing", id);
-        Ok(Authorization {
-            app: app.clone(),
-            id: Some(id),
-        })
+        Ok(authorization)
     } else {
-        let _ = app.emit("app://lifecycle-finished", id);
         Err(NativeError::new(
             ErrorCode::UserCancelled,
             "The operation was cancelled; your work is preserved",
@@ -249,32 +321,7 @@ pub fn respond_lifecycle(
     id: u32,
     approved: bool,
 ) -> NativeResult<()> {
-    let mut pending = state
-        .pending
-        .lock()
-        .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
-    let request = pending
-        .as_mut()
-        .filter(|p| p.id == id && p.participants.contains(window.label()))
-        .ok_or_else(|| NativeError::new(ErrorCode::Conflict, "Close request expired"))?;
-    if !approved {
-        if let Some(value) = pending.take() {
-            let _ = value.result.send(false);
-        }
-        return Ok(());
-    }
-    request.waiting.remove(window.label());
-    state
-        .dirty
-        .lock()
-        .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?
-        .remove(window.label());
-    if request.waiting.is_empty()
-        && let Some(value) = pending.take()
-    {
-        let _ = value.result.send(true);
-    }
-    Ok(())
+    state.respond(window.label(), id, approved)
 }
 
 #[cfg(test)]
@@ -301,6 +348,58 @@ mod tests {
         assert!(!state.is_dirty(None));
         assert_eq!(rx.try_recv(), Ok(false));
     }
+    #[test]
+    fn authorization_stays_exclusive_after_the_last_window_approves() {
+        let state = LifecycleState::default();
+        let operation = state.begin(LifecycleAction::InstallUpdate).unwrap();
+        // 无脏工作同样不能穿透正在执行的安装。
+        assert!(!state.is_dirty(None));
+        assert!(matches!(
+            state.begin(LifecycleAction::Quit),
+            Err(NativeError {
+                code: ErrorCode::Conflict,
+                ..
+            })
+        ));
+        let (tx, mut rx) = oneshot::channel();
+        *state.pending.lock().unwrap() = Some(Pending {
+            id: operation.id,
+            waiting: HashSet::from(["main".into()]),
+            participants: HashSet::from(["main".into()]),
+            result: tx,
+        });
+        state.respond("main", operation.id, true).unwrap();
+        assert_eq!(rx.try_recv(), Ok(true));
+        assert!(state.pending.lock().unwrap().is_none());
+        assert!(state.begin(LifecycleAction::Restart).is_err());
+        assert_eq!(state.active_action(), Some(LifecycleAction::InstallUpdate));
+        drop(operation);
+        assert!(state.begin(LifecycleAction::Quit).is_ok());
+    }
+
+    #[test]
+    fn cancellation_and_dropped_async_operations_release_pending_work() {
+        for explicitly_cancel in [true, false] {
+            let state = LifecycleState::default();
+            let operation = state.begin(LifecycleAction::Restart).unwrap();
+            let (tx, mut rx) = oneshot::channel();
+            *state.pending.lock().unwrap() = Some(Pending {
+                id: operation.id,
+                waiting: HashSet::from(["main".into()]),
+                participants: HashSet::from(["main".into()]),
+                result: tx,
+            });
+            if explicitly_cancel {
+                state.respond("main", operation.id, false).unwrap();
+            }
+            drop(operation);
+            assert_eq!(rx.try_recv(), Ok(false));
+            assert!(state.pending.lock().unwrap().is_none());
+            assert!(state.active_action().is_none());
+            assert!(state.begin(LifecycleAction::Quit).is_ok());
+        }
+    }
+
     #[test]
     fn finishing_an_old_request_does_not_cancel_a_new_request() {
         let state = LifecycleState::default();

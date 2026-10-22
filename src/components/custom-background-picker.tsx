@@ -99,6 +99,7 @@ export function CustomBackgroundPicker() {
     let cancelled = false;
     let stop: (() => void) | undefined;
     async function reload() {
+      if (cancelled) return;
       const request = ++readGeneration.current;
       try {
         const loaded = await listWallpaperLibrary(
@@ -112,7 +113,7 @@ export function CustomBackgroundPicker() {
         if (!cancelled && request === readGeneration.current)
           setLoadFailed(true);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && request === readGeneration.current) setLoading(false);
       }
     }
     setLoading(true);

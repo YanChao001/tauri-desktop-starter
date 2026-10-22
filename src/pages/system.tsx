@@ -47,7 +47,9 @@ export default function System() {
       void onActivation((value) => {
         if (disposed) return;
         setEvents((current) =>
-          [...current.filter((v) => v.id !== value.id), value].slice(-20),
+          [...current.filter((v) => v.id !== value.id), value]
+            .sort((a, b) => a.id - b.id)
+            .slice(-20),
         );
       })
         .then(async (unsubscribe) => {

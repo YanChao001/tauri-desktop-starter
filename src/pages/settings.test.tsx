@@ -240,6 +240,36 @@ describe("设置页", () => {
       expect(button).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("窗口监听就绪后读取尺寸，覆盖监听注册期间的变化", async () => {
+    vi.mocked(desktop.isTauri).mockReturnValue(true);
+    let finishResize!: (stop: () => void) => void;
+    let finishMove!: (stop: () => void) => void;
+    vi.mocked(desktop.onWindowResized).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishResize = resolve;
+        }),
+    );
+    vi.mocked(desktop.onWindowMoved).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishMove = resolve;
+        }),
+    );
+    render(<SettingsView />);
+    expect(desktop.getWindowGeometry).not.toHaveBeenCalled();
+    await act(async () => finishResize(vi.fn()));
+    expect(desktop.getWindowGeometry).not.toHaveBeenCalled();
+    vi.mocked(desktop.getWindowGeometry).mockResolvedValue({
+      ...geometry,
+      width: 1280,
+      height: 800,
+    });
+    await act(async () => finishMove(vi.fn()));
+    expect(screen.getByText("当前尺寸 1280 × 800")).toBeVisible();
+    expect(desktop.getWindowGeometry).toHaveBeenCalledOnce();
+  });
+
   it("禁用超出屏幕范围的固定档位，标准尺寸随屏幕范围适配", async () => {
     vi.mocked(desktop.isTauri).mockReturnValue(true);
     vi.mocked(desktop.getWindowGeometry).mockResolvedValue({

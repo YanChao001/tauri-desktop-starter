@@ -110,6 +110,7 @@ export class SettingsSync {
     if (this.blocked) {
       this.blocked = false;
       this.error = null;
+      this.ready = true;
     }
   }
 
@@ -132,6 +133,7 @@ export class SettingsSync {
             try {
               this.accept(snapshot);
               this.emit();
+              void this.flush();
             } catch (error) {
               this.fail(error);
             }

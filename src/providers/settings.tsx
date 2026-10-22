@@ -42,6 +42,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const sync = useRef<SettingsSync | null>(null);
   const unsaved = useRef<Partial<AppSettings>>({});
   const futureVersion = useRef(initial.error === "FUTURE_SETTINGS_VERSION");
+  const browserNeedsRead = useRef(initial.error !== null);
   const native = desktop.isTauri();
   useEffect(() => {
     if (!native) return;
@@ -83,6 +84,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
       return;
     }
+    if (browserNeedsRead.current) return;
     try {
       localStorage.setItem(
         STORAGE_KEY,
@@ -100,7 +102,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const normalized = normalizeSettingsPatch(current.current, patch);
       if (sync.current) sync.current.update(normalized);
       else {
-        if (native) unsaved.current = { ...unsaved.current, ...normalized };
+        if (native || browserNeedsRead.current)
+          unsaved.current = { ...unsaved.current, ...normalized };
         const next = { ...current.current, ...normalized };
         current.current = next;
         setSettings(next);
@@ -126,6 +129,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         throw { code: "STORAGE_UNAVAILABLE" };
       }
       futureVersion.current = false;
+      browserNeedsRead.current = false;
+      unsaved.current = {};
       current.current = next;
       setSettings(next);
       setPersistence("saved");
@@ -134,8 +139,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [native]);
   const retrySave = useCallback(() => {
     if (sync.current) void sync.current.retry();
-    else setRetry((value) => value + 1);
-  }, []);
+    else if (!native && browserNeedsRead.current) {
+      const loaded = readInitialSettings();
+      if (loaded.error) {
+        setPersistence("error");
+        setPersistenceError(loaded.error);
+        return;
+      }
+      browserNeedsRead.current = false;
+      futureVersion.current = false;
+      const next = {
+        ...loaded.settings,
+        ...normalizeSettingsPatch(loaded.settings, unsaved.current),
+      };
+      unsaved.current = {};
+      current.current = next;
+      setSettings(next);
+    } else setRetry((value) => value + 1);
+  }, [native]);
   const value = useMemo(
     () => ({
       settings,

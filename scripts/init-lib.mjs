@@ -504,7 +504,7 @@ export function prepareInitialization(
     "index.html",
     index.replace(
       /<title>[\s\S]*?<\/title>/,
-      `<title>${html(next.name)}</title>`,
+      () => `<title>${html(next.name)}</title>`,
     ),
   );
   for (const path of ["README.md", "README.en.md"]) {
@@ -517,7 +517,7 @@ export function prepareInitialization(
       [current.repositoryUrl, next.repositoryUrl],
     ].sort(([left], [right]) => right.length - left.length);
     const updated = content
-      .replace(/^# [^\r\n]+/, `# ${next.name}`)
+      .replace(/^# [^\r\n]+/, () => `# ${next.name}`)
       .replace(/\]\((https:\/\/[^\s)]+)\)/g, (match, url) => {
         const replacement = links.find(
           ([before]) =>
@@ -539,7 +539,7 @@ export function prepareInitialization(
       signpath,
       content.replace(
         /\bproduct-name="[^"]*"/,
-        `product-name="${html(next.name)}"`,
+        () => `product-name="${html(next.name)}"`,
       ),
     );
   }

@@ -83,7 +83,8 @@ export const zhWorkbench = {
   "tasks.noResults": "没有已完成的文件结果。",
   "tasks.previewLimit":
     "页面最多预览前 200 项；导出可获得本次已处理的完整结果。",
-  "tasks.truncated": "扫描达到文件数量上限，本次结果并非整个目录的完整清单。",
+  "tasks.truncated":
+    "扫描达到文件数量或目录深度上限，本次结果并非整个目录的完整清单。",
   "tasks.retryOf": "重新运行任务：{id}",
   "tasks.status.queued": "排队中",
   "tasks.status.running": "执行中",

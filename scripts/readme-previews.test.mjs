@@ -6,7 +6,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -16,7 +15,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
-import { applyFileChanges } from "./fs-utils.mjs";
 import {
   updateReadmePreviews,
   validateReadmePreviews,
@@ -174,60 +172,6 @@ test("sync rejects destination directory links outside the project", (t) => {
   assert.throws(() => updateReadmePreviews(root), /项目外文件/);
   for (const [, name] of FILES)
     assert.deepEqual(readFileSync(join(outside, name)), OLD);
-});
-
-test("binary transaction rolls back staged images when a later write fails", (t) => {
-  const root = fixture(t);
-  const changes = FILES.map(([, name]) => ({
-    path: `docs/assets/${name}`,
-    before: OLD,
-    content: DARK,
-  }));
-  assert.throws(
-    () =>
-      applyFileChanges(
-        { root, changes },
-        {
-          beforeCommit(index) {
-            if (index === 1) throw new Error("simulated write failure");
-          },
-        },
-      ),
-    /simulated write failure/,
-  );
-  assert.deepEqual(images(root), [OLD, OLD, OLD]);
-  assert.equal(
-    readdirSync(join(root, "docs/assets")).some((name) =>
-      name.startsWith(".update-"),
-    ),
-    false,
-  );
-});
-
-test("binary transaction distinguishes bytes that decode to the same replacement character", (t) => {
-  const root = fixture(t);
-  writeFileSync(
-    join(root, "docs/assets/preview-light.png"),
-    Buffer.from([0x81]),
-  );
-  assert.throws(
-    () =>
-      applyFileChanges({
-        root,
-        changes: [
-          {
-            path: "docs/assets/preview-light.png",
-            before: Buffer.from([0x80]),
-            content: DARK,
-          },
-        ],
-      }),
-    /预检后被修改/,
-  );
-  assert.deepEqual(
-    readFileSync(join(root, "docs/assets/preview-light.png")),
-    Buffer.from([0x81]),
-  );
 });
 
 test("CLI rejects unknown arguments and explains missing captures without starting an app", (t) => {

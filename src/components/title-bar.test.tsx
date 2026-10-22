@@ -106,12 +106,29 @@ describe("TitleBar 窗口订阅", () => {
       () => new Promise((resolve) => pending.push(resolve)),
     );
     renderTitleBar();
+    await act(async () => {});
     const handler = vi.mocked(onWindowResized).mock.calls.at(-1)?.[0];
     act(() => handler?.());
     await act(async () => pending.at(-1)?.(true));
     expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
     await act(async () => pending.forEach((resolve) => resolve(false)));
     expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
+  });
+
+  it("订阅就绪后读取窗口状态，并忽略已清理的 resize 回调", async () => {
+    const registrations: Array<(stop: () => void) => void> = [];
+    vi.mocked(onWindowResized).mockImplementation(
+      () => new Promise((resolve) => registrations.push(resolve)),
+    );
+    vi.mocked(isWindowMaximized).mockResolvedValue(true);
+    renderTitleBar();
+    expect(isWindowMaximized).not.toHaveBeenCalled();
+    await act(async () => registrations.forEach((resolve) => resolve(vi.fn())));
+    expect(screen.getByRole("button", { name: "title.restore" })).toBeVisible();
+    expect(isWindowMaximized).toHaveBeenCalledOnce();
+    const stale = vi.mocked(onWindowResized).mock.calls[0]?.[0];
+    await act(async () => stale?.());
+    expect(isWindowMaximized).toHaveBeenCalledOnce();
   });
 
   it("keeps close-window separate from explicit application quit", async () => {

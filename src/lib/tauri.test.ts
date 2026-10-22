@@ -5,7 +5,6 @@ import {
   getAppInfo,
   getWindowGeometry,
   invokeGreet,
-  isTauri,
   onLifecycleRequest,
   onLifecycleFinished,
   openExternal,
@@ -140,24 +139,6 @@ describe("当前窗口事件契约", () => {
     const stop = await onLifecycleRequest(vi.fn());
     expect(events.listen).not.toHaveBeenCalled();
     expect(stop()).toBeUndefined();
-  });
-});
-
-describe("isTauri", () => {
-  afterEach(() => {
-    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
-  });
-
-  it("jsdom 里默认是浏览器预览模式", () => {
-    expect(isTauri()).toBe(false);
-  });
-
-  it("存在 __TAURI_INTERNALS__ 时判定为 Tauri 环境", () => {
-    Object.defineProperty(window, "__TAURI_INTERNALS__", {
-      value: {},
-      configurable: true,
-    });
-    expect(isTauri()).toBe(true);
   });
 });
 

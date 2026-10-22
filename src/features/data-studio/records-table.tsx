@@ -68,7 +68,8 @@ const features = tableFeatures({
   sortedRowModel: createSortedRowModel(),
   paginatedRowModel: createPaginatedRowModel(),
 });
-const column = createColumnHelper<typeof features, DemoRecord>();
+type TableRecord = DemoRecord & { teamName: string };
+const column = createColumnHelper<typeof features, TableRecord>();
 const DATA_COLUMNS = ["name", "email", "team", "status", "budget"] as const;
 const INITIAL_WIDTHS: Record<string, number> = {
   selection: 44,
@@ -93,6 +94,15 @@ export function RecordsTable() {
     failed: number;
   } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  // 表格按 data 缓存 accessor 值；翻译变化必须同时更新行模型和搜索值。
+  const data = useMemo(
+    () =>
+      records.map((record) => ({
+        ...record,
+        teamName: t(`labs.data.${record.team}`),
+      })),
+    [records, t],
+  );
   const columns = useMemo(
     () =>
       column.columns([
@@ -131,7 +141,7 @@ export function RecordsTable() {
           header: t("labs.data.email"),
           sortFn: "text",
         }),
-        column.accessor((record) => t(`labs.data.${record.team}`), {
+        column.accessor("teamName", {
           id: "team",
           header: t("labs.data.team"),
           sortFn: "text",
@@ -176,7 +186,7 @@ export function RecordsTable() {
   const table = useTable({
     features,
     columns,
-    data: records,
+    data,
     getRowId: (record) => String(record.id),
     globalFilterFn: "includesString",
     getColumnCanGlobalFilter: (item) =>

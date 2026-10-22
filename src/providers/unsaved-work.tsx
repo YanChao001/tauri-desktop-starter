@@ -210,10 +210,11 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
       request &&
       !busy &&
       !waiting &&
+      !error &&
       ![...items.current.values()].some((work) => work.dirty)
     )
       void answer("save");
-  }, [request, revision, busy, waiting, answer]);
+  }, [request, revision, busy, waiting, error, answer]);
   return (
     <Context.Provider value={registry}>
       {children}

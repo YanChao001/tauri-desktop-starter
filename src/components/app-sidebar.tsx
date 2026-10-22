@@ -13,19 +13,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { isMacOS } from "@/lib/platform";
+import {
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+} from "@/lib/settings-model";
 import { useCommands } from "@/providers/commands";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { NAVIGATION_GROUPS, type AppRoute } from "@/routes";
-
-export const SIDEBAR_MIN_WIDTH = 180;
-export const SIDEBAR_MAX_WIDTH = 360;
-export const SIDEBAR_DEFAULT_WIDTH = 224;
-export function clampSidebarWidth(value: number) {
-  return Math.round(
-    Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value)),
-  );
-}
 
 export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   const { t } = useI18n();
@@ -60,8 +56,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
   const leaveTooltip = (id: string) => {
     if (tooltipIntent.current === id) tooltipIntent.current = null;
   };
-  const resize = (value: number) =>
-    update({ sidebarWidth: clampSidebarWidth(value) });
+  const resize = (value: number) => update({ sidebarWidth: value });
   const groups = NAVIGATION_GROUPS.map((group) => ({
     ...group,
     routes: routes.filter((route) => route.group === group.id),

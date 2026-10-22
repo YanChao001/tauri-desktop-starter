@@ -13,18 +13,7 @@
 
 这是 Tauri 2 + React 19 + TypeScript 桌面应用基座，桌面与浏览器演示共用 `src/`。Node 版本见 [`.nvmrc`](./.nvmrc)，其他支持版本及精确 pnpm 版本见 [`package.json`](./package.json)，Rust 工具链见 [`rust-toolchain.toml`](./rust-toolchain.toml)。使用 pnpm，首次安装执行 `pnpm install --frozen-lockfile`，保留现有锁文件。
 
-以下命令均从仓库根目录运行，完整命令与平台依赖见 [开发指南](./docs/development.md)。
-
-| 目的                    | 命令与边界                                                        |
-| ----------------------- | ----------------------------------------------------------------- |
-| 环境诊断                | `pnpm run doctor`；未安装依赖时可用 `node scripts/doctor.mjs`     |
-| 完整桌面开发            | `pnpm app:dev`，包含 Rust 与 WebView                              |
-| 浏览器开发              | `pnpm dev`，仅前端，固定端口 1420                                 |
-| 前端构建与预览          | `pnpm build`、`pnpm preview`，输出 `dist/`                        |
-| 浏览器演示              | `pnpm build:web`、`pnpm exec vite preview --outDir dist-web`      |
-| 安装包 / Windows 便携版 | `pnpm app:build` / `pnpm app:portable`，交付到版本化 `artifacts/` |
-
-前端入口为 `index.html` → `src/main.tsx` → `src/App.tsx`；原生入口为 `src-tauri/src/main.rs` → `lib.rs`。修改源码，不手改 `dist/`、`dist-web/`、`src-tauri/target/` 或 `artifacts/` 的构建输出。
+命令从仓库根目录运行，按 [常用命令](./docs/development.md#常用命令) 选择桌面开发、浏览器预览或构建；未安装依赖时可用 `node scripts/doctor.mjs` 诊断环境。源码入口见 [运行时结构](./docs/architecture.md#运行时结构)。修改源码，不手改 `dist/`、`dist-web/`、`src-tauri/target/` 或 `artifacts/` 的构建输出。
 
 ## 实现约束
 
@@ -45,26 +34,7 @@
 
 日常界面检查默认使用 `pnpm test:ui` 的无头浏览器，不抢占用户正在工作的桌面。未明确安排前台验收时，不运行 `test:e2e --interactive`、`docs:capture --interactive`、有界面浏览器或直接启动测试 exe；需要原生验收时记录待验证范围，按 [桌面干扰边界](./docs/testing.md#避免干扰本机桌面) 使用独立 CI / 虚拟机或用户安排的前台时段。README 图片按 [截图流程](./docs/testing.md#readme-原生截图更新) 随相关功能 PR 提交。
 
-| 改动                    | 适用检查                                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 文档、注释              | 相关文件格式与内容核对，例如 `pnpm exec prettier --check AGENTS.md`                                                             |
-| 前端逻辑                | `pnpm typecheck` 与相关测试，例如 `pnpm test src/lib/settings-sync.test.ts`；共享状态、公共入口或测试配置变化时运行前端全量测试 |
-| 工程脚本                | 对应 `node --test scripts/<name>.test.mjs`；共用文件操作或构建入口变化时运行 `pnpm test:scripts`                                |
-| 样式、布局、交互        | 预览受影响的语言、主题、窗口尺寸和侧栏状态，检查溢出、焦点与可读性；持续动效观察实际运行与暂停                                  |
-| Rust、IPC、桌面生命周期 | 对应 Rust 测试与绑定检查；真实窗口验收按桌面干扰边界运行 `pnpm test:e2e --interactive`                                          |
-| 浏览器演示部署          | `pnpm build:web` 后运行 `pnpm test:browser`，按影响补中英 / 明暗 / 窄屏、键盘与读屏复核                                         |
-
-`pnpm verify` 包含格式、身份配置与品牌资源一致性、lint、类型、前端 / 脚本测试、版本检查与前端构建。Rust、绑定一致性、浏览器演示构建 / Playwright 和真实桌面 E2E 需分别执行；不要求每次局部改动都跑整套检查。
-
-需要完整 Rust 检查时，从根目录执行，先构建 `dist/` 供 `generate_context!` 读取：
-
-```sh
-pnpm build
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-pnpm bindings:check
-```
+`pnpm verify` 的覆盖范围和分层命令统一见 [测试规范](./docs/testing.md#日常验证范围)；Rust、绑定、浏览器与真实桌面需分别验证。完整 Rust 检查按 [Rust 测试](./docs/testing.md#rust-测试) 执行，先构建 `dist/` 供 `generate_context!` 读取，不要求每次局部改动跑整套检查。
 
 - 测试与源码就近放置，前端命名 `*.test.ts(x)`；组件测试优先 mock `@/lib/tauri`。新增测试应防止具体行为回归，不复制实现或为覆盖率数字加测试。
 - 真实桌面测试使用既有 E2E runner、独立标识符和临时数据目录，只管理本次创建的进程与数据；源码或配置变化后重新构建，不用旧 `--skip-build` 结果。不能用浏览器 mock 或 debug E2E 代替正式安装版、目标平台和升级验收。
