@@ -325,15 +325,6 @@ for (const [theme, motion] of [
       await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto("./#/motion");
     await page.locator(".motion-lab").waitFor();
-    await page
-      .locator(".app-route-enter")
-      .evaluate((el) =>
-        Promise.all(
-          el
-            .getAnimations()
-            .map((animation) => animation.finished.catch(() => {})),
-        ),
-      );
     for (const name of [
       "Spring physics",
       "Shared space",

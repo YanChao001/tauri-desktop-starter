@@ -1,5 +1,11 @@
-import { useEffect, useRef } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { lazy, useEffect, useRef } from "react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import {
   Link,
   MemoryRouter,
@@ -133,6 +139,39 @@ describe("应用内容导航", () => {
     expect(window.scrollTo).not.toHaveBeenCalled();
     expect(main.scrollTop).toBe(240);
     expect(screen.getByRole("textbox", { name: "Page input" })).toHaveFocus();
+  });
+
+  it("目标页模块未就绪时保留当前内容，加载后再切换", async () => {
+    let finish!: (value: { default: typeof Page }) => void;
+    const load = vi.fn(
+      () =>
+        new Promise<{ default: typeof Page }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const PendingPage = lazy(load);
+    render(
+      <MemoryRouter>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<Page />} />
+            <Route path="settings" element={<PendingPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("link", { name: "/settings" }));
+    });
+    expect(load).toHaveBeenCalledOnce();
+    expect(screen.getByRole("heading", { name: "Page content" })).toBeVisible();
+    expect(screen.queryByRole("status", { name: "common.loading" })).toBeNull();
+    await act(async () => {
+      finish({ default: Page });
+    });
+    expect(
+      screen.getByRole("navigation", { name: "navContext.location" }),
+    ).toHaveTextContent("nav.settings");
   });
 
   it("精简模式按路由配置隐藏演示入口", () => {

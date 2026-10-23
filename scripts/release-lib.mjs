@@ -20,6 +20,7 @@ import {
   parseBuildArgs,
 } from "./build-lib.mjs";
 import { checkVersions } from "./version.mjs";
+import { generateReleaseNotes, updaterReleaseNotes } from "./release-notes.mjs";
 
 const TARGETS = {
   "x86_64-pc-windows-msvc": { platform: "windows-x86_64", config: "windows" },
@@ -43,13 +44,14 @@ function assertDraftRelease(release, version) {
 /** 由单一 job 创建或复用草稿，再把 ID 传给所有并行构建。 */
 export function ensureDraftRelease({ version, repository, commit }, request) {
   const endpoint = `repos/${repositoryName(repository)}/releases`;
-  const releases = request([
+  const allReleases = request([
     `${endpoint}?per_page=100`,
     "--paginate",
     "--slurp",
-  ])
-    .flat()
-    .filter((release) => release.tag_name === `v${version}`);
+  ]).flat();
+  const releases = allReleases.filter(
+    (release) => release.tag_name === `v${version}`,
+  );
   if (releases.length > 1)
     throw new Error(`v${version} 存在多个 Release，请先归并草稿资产再重跑`);
   if (releases.length === 1) {
@@ -63,7 +65,10 @@ export function ensureDraftRelease({ version, repository, commit }, request) {
     tag_name: `v${version}`,
     target_commitish: commit,
     name: `v${version}`,
-    body: `安装包与分发文件见下方 Assets。使用说明见仓库 README。\n\n[Code signing policy](https://github.com/${repository}/blob/v${version}/docs/code-signing-policy.md)：签名范围、服务状态与隐私说明。签名结果以下载文件的实际验证为准。`,
+    body: generateReleaseNotes(
+      { version, repository, commit, releases: allReleases },
+      request,
+    ),
     draft: true,
     prerelease: version.split("+")[0].includes("-"),
   });
@@ -283,10 +288,7 @@ export function mergeUpdaterMetadata(
   }
   return {
     version,
-    notes:
-      typeof notes === "string" && notes.trim()
-        ? notes.trim().slice(0, 8000)
-        : `Release v${version}`,
+    notes: updaterReleaseNotes(notes, { version, repository }),
     pub_date: now.toISOString(),
     platforms: Object.fromEntries(
       Object.entries(platforms).sort(([a], [b]) => a.localeCompare(b)),
@@ -369,10 +371,10 @@ function main() {
   const mode = process.argv[2];
   if (
     process.argv.length !== 3 ||
-    !["draft", "prepare", "collect", "merge", "upload"].includes(mode)
+    !["draft", "notes", "prepare", "collect", "merge", "upload"].includes(mode)
   )
     throw new Error(
-      "用法: node scripts/release-lib.mjs <draft|prepare|collect|merge|upload>",
+      "用法: node scripts/release-lib.mjs <draft|notes|prepare|collect|merge|upload>",
     );
   const version = checkVersions(
     root,
@@ -393,11 +395,28 @@ function main() {
     );
     return result.trim() ? JSON.parse(result) : undefined;
   };
-  if (mode === "draft") {
+  if (mode === "draft" || mode === "notes") {
     const commit = command("git", ["rev-parse", "HEAD"], root, {
       stdio: ["ignore", "pipe", "inherit"],
       encoding: "utf8",
     }).trim();
+    if (mode === "notes") {
+      const releases = request([
+        `repos/${repository}/releases?per_page=100`,
+        "--paginate",
+        "--slurp",
+      ]).flat();
+      const notes = generateReleaseNotes(
+        { version, repository, commit, releases },
+        request,
+      );
+      const directory = join(root, "artifacts", version);
+      mkdirSync(directory, { recursive: true });
+      const file = join(directory, "release-notes.md");
+      writeFileSync(file, `${notes}\n`);
+      console.log(`已生成发布说明预览：${file}（未修改 GitHub Release）`);
+      return;
+    }
     const releaseId = ensureDraftRelease(
       { version, repository, commit },
       request,

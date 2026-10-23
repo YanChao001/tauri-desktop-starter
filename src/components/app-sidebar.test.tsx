@@ -101,6 +101,23 @@ describe("persisted application sidebar", () => {
       224,
     );
   });
+  it("preloads the intended page on pointer entry and keyboard focus without navigating", () => {
+    const preload = vi.fn();
+    renderSidebar([
+      routes[0]!,
+      { ...routes[0]!, path: "/desktop", labelKey: "nav.desktop", preload },
+    ]);
+    const link = screen.getByRole("link", { name: zhCN["nav.desktop"] });
+    expect(preload).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(link);
+    expect(preload).toHaveBeenCalledTimes(1);
+    fireEvent.focus(link);
+    expect(preload).toHaveBeenCalledTimes(2);
+    expect(link).not.toHaveAttribute("aria-current");
+    expect(
+      screen.getByRole("link", { name: zhCN["nav.overview"] }),
+    ).toHaveAttribute("aria-current", "page");
+  });
   it("keeps collapsed navigation named and restores the saved width", () => {
     const view = renderSidebar();
     fireEvent.keyDown(screen.getByRole("separator"), {
