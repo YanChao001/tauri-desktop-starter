@@ -4,6 +4,7 @@ dist-web
 artifacts
 coverage
 src-tauri/target
+examples/extensions/**/target
 src-tauri/gen
 pnpm-lock.yaml
 src-tauri/Cargo.lock

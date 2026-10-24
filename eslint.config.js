@@ -14,6 +14,7 @@ export default tseslint.config(
       "marketplace/**",
       "examples/extensions/node_modules/**",
       "examples/extensions/dist/**",
+      "examples/extensions/**/target/**",
       "src-tauri/**",
       // shadcn 原子组件沿用上游编码风格；行为修复仍需类型检查与回归验证
       "src/components/ui/**",

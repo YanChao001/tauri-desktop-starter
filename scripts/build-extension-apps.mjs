@@ -1,27 +1,77 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import {
+  readFile,
+  writeFile,
+  mkdir,
+  lstat,
+  readdir,
+  realpath,
+} from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { resolve, join } from "node:path";
+import { resolve, join, relative, isAbsolute, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseToml } from "smol-toml";
 
 const source = "examples/extensions/apps/";
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
+function inside(root, path) {
+  const offset = relative(root, path);
+  return (
+    offset !== "" &&
+    offset !== ".." &&
+    !offset.startsWith(`..${sep}`) &&
+    !isAbsolute(offset)
+  );
+}
+
+async function sourceEntry(root, path) {
+  const metadata = await lstat(path);
+  if (metadata.isSymbolicLink() || !inside(root, await realpath(path)))
+    throw new Error(`内置插件源码不得经过目录或文件链接：${path}`);
+  return metadata;
+}
+
 async function sourceHashes(root) {
-  const files = [
-    "Cargo.toml",
-    "Cargo.lock",
-    "src/lib.rs",
-    "extension.json",
-  ].map((file) => [file, join(root, source, file)]);
+  root = await realpath(root);
+  let directory = root;
+  for (const part of source.split("/").filter(Boolean)) {
+    directory = join(directory, part);
+    if (!(await sourceEntry(root, directory)).isDirectory())
+      throw new Error(`内置插件源码需要普通目录：${directory}`);
+  }
+  const files = ["Cargo.toml", "Cargo.lock", "extension.json"].map((file) => [
+    file,
+    join(root, source, file),
+  ]);
   files.push(["rust-toolchain.toml", join(root, "rust-toolchain.toml")]);
+
+  async function rustSources(path, name) {
+    const metadata = await sourceEntry(root, path);
+    if (metadata.isDirectory()) {
+      for (const entry of (await readdir(path)).sort())
+        await rustSources(join(path, entry), `${name}/${entry}`);
+    } else if (name.endsWith(".rs")) {
+      if (!metadata.isFile())
+        throw new Error(`内置插件源码需要普通文件：${path}`);
+      files.push([name, path]);
+    }
+  }
+  const rustDirectory = join(directory, "src");
+  if (!(await sourceEntry(root, rustDirectory)).isDirectory())
+    throw new Error(`内置插件源码需要普通目录：${rustDirectory}`);
+  await rustSources(rustDirectory, "src");
+  files.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
   return Object.fromEntries(
     await Promise.all(
-      files.map(async ([name, path]) => [
-        name,
-        hash((await readFile(path, "utf8")).replace(/\r\n/g, "\n")),
-      ]),
+      files.map(async ([name, path]) => {
+        if (!(await sourceEntry(root, path)).isFile())
+          throw new Error(`内置插件构建输入需要普通文件：${path}`);
+        return [
+          name,
+          hash((await readFile(path, "utf8")).replace(/\r\n/g, "\n")),
+        ];
+      }),
     ),
   );
 }
@@ -70,6 +120,7 @@ async function compileDemo(root) {
 export async function buildExtensionApps(
   root,
   { check = false, rebuild = false } = {},
+  { compile = compileDemo } = {},
 ) {
   if (rebuild && !check) throw new Error("--rebuild 需要与 --check 一起使用");
   const sources = await sourceHashes(root);
@@ -85,13 +136,18 @@ export async function buildExtensionApps(
       throw new Error(
         "内置插件源码、工具链或模块变化，请运行 pnpm extension:demos:build 并提交资源",
       );
-    if (rebuild && !committed.equals(await compileDemo(root)))
-      throw new Error("重建的内置插件与提交的 Wasm 不一致，请重建并提交资源");
+    if (rebuild) {
+      const rebuilt = await compile(root);
+      if (!sameSources(sources, await sourceHashes(root)))
+        throw new Error("构建期间内置插件源码发生变化，请重新构建");
+      if (!committed.equals(rebuilt))
+        throw new Error("重建的内置插件与提交的 Wasm 不一致，请重建并提交资源");
+    }
     return rebuild
       ? "内置插件重建结果与提交资源一致。"
       : "内置插件源码与分发资源一致。";
   }
-  const wasm = await compileDemo(root);
+  const wasm = await compile(root);
   // Do not associate a successful build with sources edited while Cargo was running.
   if (!sameSources(sources, await sourceHashes(root)))
     throw new Error("构建期间内置插件源码发生变化，请重新构建");
