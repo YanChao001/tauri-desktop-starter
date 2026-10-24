@@ -2,6 +2,14 @@ import type { Language } from "@/i18n/registry";
 import type {
   DesktopStatus,
   DiagnosticsReport,
+  ExtensionPermission,
+  ExtensionPreview,
+  ExtensionRunInput,
+  ExtensionSnapshot,
+  ExtensionView,
+  ExtensionViewInput,
+  MarketDownload,
+  MarketSnapshot,
   NativeError as NativeFailure,
   Note,
   NoteInput,
@@ -15,6 +23,22 @@ import type {
 } from "./generated/bindings";
 
 export type {
+  MarketCatalog,
+  MarketEntry,
+  MarketSnapshot,
+  MarketDownload,
+  ExtensionCommand,
+  ExtensionResultFormat,
+  ExtensionPermission,
+  ExtensionPreview,
+  ExtensionInfo,
+  ExtensionSnapshot,
+  ExtensionRunInput,
+  ExtensionIcon,
+  ExtensionView,
+  ExtensionViewDataInput,
+  ExtensionViewField,
+  ExtensionViewBlock,
   DesktopStatus,
   DiagnosticsReport,
   FrontendError,
@@ -28,6 +52,92 @@ export type {
   Wallpaper,
   WallpaperInput,
 } from "./generated/bindings";
+
+export function extensionSnapshot(): Promise<ExtensionSnapshot> {
+  return callNative((commands) => commands.extensionSnapshot());
+}
+export function extensionMarketSnapshot(
+  refresh = false,
+): Promise<MarketSnapshot> {
+  return callNative((commands) => commands.extensionMarketSnapshot(refresh));
+}
+export function downloadMarketExtension(
+  id: string,
+  expectedPackageSha256: string,
+): Promise<MarketDownload> {
+  return callNative((commands) =>
+    commands.downloadMarketExtension(id, expectedPackageSha256),
+  );
+}
+export function previewExtension(content: string): Promise<ExtensionPreview> {
+  return callNative((commands) => commands.previewExtension(content));
+}
+export function extensionDemo(id = "starter.text-tools"): Promise<string> {
+  return callNative((commands) => commands.extensionDemo(id));
+}
+export function viewExtension(
+  input: ExtensionViewInput,
+): Promise<ExtensionView> {
+  return callNative((commands) => commands.viewExtension(input));
+}
+export async function openExtensionWindow(
+  id: string,
+  commandId: string,
+  expectedSha256: string,
+): Promise<void> {
+  await callNative((commands) =>
+    commands.openExtensionWindow(id, commandId, expectedSha256),
+  );
+}
+export function installExtension(
+  content: string,
+  expectedRevision: number,
+  replaceExisting: boolean,
+  expectedSha256: string,
+): Promise<ExtensionSnapshot> {
+  return callNative((commands) =>
+    commands.installExtension(
+      content,
+      expectedRevision,
+      replaceExisting,
+      expectedSha256,
+    ),
+  );
+}
+export function setExtensionEnabled(
+  id: string,
+  enabled: boolean,
+  grants: ExtensionPermission[],
+  expectedRevision: number,
+  trusted: boolean,
+): Promise<ExtensionSnapshot> {
+  return callNative((commands) =>
+    commands.setExtensionEnabled(
+      id,
+      enabled,
+      grants,
+      expectedRevision,
+      trusted,
+    ),
+  );
+}
+export function uninstallExtension(
+  id: string,
+  expectedRevision: number,
+): Promise<ExtensionSnapshot> {
+  return callNative((commands) =>
+    commands.uninstallExtension(id, expectedRevision),
+  );
+}
+export function runExtension(input: ExtensionRunInput): Promise<string> {
+  return callNative((commands) => commands.runExtension(input));
+}
+export async function cancelExtension(id: string): Promise<void> {
+  await callNative((commands) => commands.cancelExtension(id));
+}
+export function onExtensionsChanged(handler: () => void): Promise<() => void> {
+  return onNativeEvent("app://extensions-changed", handler);
+}
 
 export function listWallpapers(
   legacy: WallpaperInput | null = null,
@@ -91,6 +201,31 @@ async function callNative<T>(
 /** 判断当前是否运行在 Tauri 窗口里（而非普通浏览器预览）。 */
 export function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
+}
+
+/** 原生通过系统对话框保存；浏览器仅发起本地文件下载。取消保存不算成功。 */
+export async function saveTextExport(
+  name: string,
+  content: string,
+): Promise<string | null> {
+  if (isTauri())
+    return callNative((commands) => commands.saveTextExport(name, content));
+  const url = URL.createObjectURL(
+    new Blob([content], {
+      type: name.endsWith(".json")
+        ? "application/json;charset=utf-8"
+        : "text/plain;charset=utf-8",
+    }),
+  );
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  // 下载导航异步消费 URL；延后释放，避免点击后立刻撤销导致空下载。
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return name;
 }
 
 /** 用系统默认浏览器打开外链；在浏览器预览时退化为新标签页。 */

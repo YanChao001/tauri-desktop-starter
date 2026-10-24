@@ -58,6 +58,7 @@ manifest.json 记录版本、目标平台和文件 SHA-256，可用于检查分�
     entries: [
       { source: built.executable, path: executableName },
       { contents: readme, path: "使用说明.txt" },
+      { source: resolve(root, "resources/third-party"), path: "third-party" },
     ],
   });
   console.log(`便携版已生成：${relative(root, output)}`);

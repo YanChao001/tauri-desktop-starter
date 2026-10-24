@@ -7,6 +7,7 @@ import {
 } from "react";
 import { PlusIcon, SaveIcon, TrashIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
+import { useSearchParams } from "react-router-dom";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { BackupPanel } from "@/components/database/backup-panel";
 import { ConflictPanel } from "@/components/database/conflict-panel";
@@ -134,6 +135,8 @@ function recoverDraft(value: NoteDraft | null) {
   });
 }
 export default function Database() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedNote = searchParams.get("note");
   const { t, language } = useI18n();
   const latest = useLatestTranslator();
   const [query, setQuery] = useState("");
@@ -168,6 +171,53 @@ export default function Database() {
   const mounted = useRef(false);
   const draftRead = useRef(0);
   const dirty = isDirty(draft, original);
+  useEffect(() => {
+    if (
+      !requestedNote ||
+      !/^[1-9]\d{0,9}$/.test(requestedNote) ||
+      Number(requestedNote) > 2_147_483_647 ||
+      !draftReady ||
+      pending ||
+      !isTauri()
+    )
+      return;
+    let stopped = false;
+    const originalAtRequest = editor.original;
+    const clearRequest = () =>
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          if (next.get("note") === requestedNote) next.delete("note");
+          return next;
+        },
+        { replace: true },
+      );
+    void getNote(Number(requestedNote))
+      .then((note) => {
+        if (stopped || editor.pending) return;
+        if (editor.original !== originalAtRequest) {
+          clearRequest();
+          return;
+        }
+        if (isDirty(editor.draft, editor.original)) {
+          nextDraft.current = note;
+          setDiscardOpen(true);
+        } else {
+          applyDraft(note);
+          setRemote(null);
+        }
+        clearRequest();
+      })
+      .catch((reason: unknown) => {
+        if (stopped) return;
+        if (editor.original === originalAtRequest)
+          changeEditor({ error: reason });
+        clearRequest();
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [requestedNote, draftReady, pending, setSearchParams]);
   const searchTooLong = utf8Length(query) > 200;
   const bodyTooLong = utf8Length(draft.body) > 65536;
   useEffect(() => {
@@ -501,6 +551,7 @@ export default function Database() {
       ) : null}
       {conflicted ? (
         <ConflictPanel
+          local={draft}
           remote={remote}
           pending={pending}
           keepLocal={() => {
@@ -513,6 +564,12 @@ export default function Database() {
             setRemote(null);
           }}
           saveCopy={() => void save(true).catch(() => {})}
+          merge={(value) => {
+            if (!remote || pending || remote.id !== editor.draft.id) return;
+            changeEditor({ original: { ...remote }, error: null });
+            editDraft({ ...editor.draft, ...value, version: remote.version });
+            setRemote(null);
+          }}
         />
       ) : null}
       {draftNotice && dirty ? (

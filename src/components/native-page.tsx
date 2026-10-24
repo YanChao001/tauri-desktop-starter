@@ -9,6 +9,11 @@ import { nativeErrorText } from "@/lib/native-error";
 import "@/styles/experience.css";
 
 const PREVIEWS: Record<string, readonly DictKey[]> = {
+  "/extensions": [
+    "experience.preview.extensions.1",
+    "experience.preview.extensions.2",
+    "experience.preview.extensions.3",
+  ],
   "/workbench": [
     "experience.preview.workbench.1",
     "experience.preview.workbench.2",

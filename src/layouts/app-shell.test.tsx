@@ -19,6 +19,9 @@ import type { AppRoute } from "@/routes";
 import { AppShell } from "./app-shell";
 
 const state = vi.hoisted(() => ({ appMode: "demo" }));
+vi.mock("@/features/extensions/extensions-provider", () => ({
+  useExtensions: () => ({ data: null }),
+}));
 vi.mock("@/providers/commands", () => ({
   useCommands: () => ({ fullscreen: false, execute: vi.fn() }),
 }));

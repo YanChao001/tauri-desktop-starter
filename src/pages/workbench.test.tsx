@@ -1,3 +1,4 @@
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import {
   act,
   cleanup,
@@ -65,6 +66,93 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("file workbench", () => {
+  it("keeps a manually selected tab ahead of a delayed search result", async () => {
+    const other = { ...selected, id: "file-2", name: "other.txt" };
+    workbenchEditor.open([selected, other]);
+    let finish!: (document: typeof selected) => void;
+    vi.mocked(native.loadWorkbenchDocument).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/workbench?file=search-result"]}>
+        <Workbench />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(native.loadWorkbenchDocument).toHaveBeenCalledWith(
+        "search-result",
+      ),
+    );
+    act(() => workbenchEditor.select(other.id));
+    await act(async () => finish({ ...selected, id: "search-result" }));
+    expect(workbenchEditor.getSnapshot().selectedId).toBe(other.id);
+  });
+
+  it("waits for an in-flight operation before opening a search result and preserves edits", async () => {
+    workbenchEditor.open([selected]);
+    workbenchEditor.edit(selected.id, "local work");
+    workbenchEditor.beginOperation();
+    vi.mocked(native.loadWorkbenchDocument).mockResolvedValue({
+      ...selected,
+      content: "remote work",
+      revision: "v2",
+    });
+    render(
+      <MemoryRouter initialEntries={["/workbench?file=file-1"]}>
+        <Workbench />
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+    expect(native.loadWorkbenchDocument).not.toHaveBeenCalled();
+    act(() => workbenchEditor.finishOperation());
+    await waitFor(() =>
+      expect(native.loadWorkbenchDocument).toHaveBeenCalledOnce(),
+    );
+    await waitFor(() =>
+      expect(workbenchEditor.getSnapshot().entries[0]?.remoteChanged).toBe(
+        true,
+      ),
+    );
+    expect(screen.getByLabelText("workbench.editor")).toHaveValue("local work");
+  });
+
+  it("consumes failed search requests so the same result can be retried", async () => {
+    function SearchNavigation() {
+      const navigate = useNavigate();
+      const location = useLocation();
+      return (
+        <>
+          <button onClick={() => void navigate("/workbench?file=file-1")}>
+            Search file
+          </button>
+          <output data-testid="search-location">{location.search}</output>
+        </>
+      );
+    }
+    vi.mocked(native.loadWorkbenchDocument)
+      .mockRejectedValueOnce({ code: "STORAGE_IO" })
+      .mockResolvedValueOnce(selected);
+    render(
+      <MemoryRouter initialEntries={["/workbench?file=file-1"]}>
+        <SearchNavigation />
+        <Workbench />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("search-location")).toHaveTextContent(/^$/),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search file" }));
+    await waitFor(() =>
+      expect(native.loadWorkbenchDocument).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByLabelText("workbench.editor")).toHaveValue(
+      "original",
+    );
+  });
+
   it("keeps an in-flight save locked across route remounts", async () => {
     workbenchEditor.open([selected]);
     workbenchEditor.edit(selected.id, "saved edit");
@@ -75,10 +163,18 @@ describe("file workbench", () => {
           finish = resolve;
         }),
     );
-    const view = render(<Workbench />);
+    const view = render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "workbench.save" }));
     view.unmount();
-    render(<Workbench />);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     expect(screen.getByLabelText("workbench.editor")).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "workbench.save" }),
@@ -101,7 +197,11 @@ describe("file workbench", () => {
           finish = resolve;
         }),
     );
-    render(<Workbench />);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     let saving!: Promise<void>;
     act(() => {
       saving = lifecycle.work!.save();
@@ -130,7 +230,11 @@ describe("file workbench", () => {
       },
       native.loadWorkbenchDocument,
     );
-    render(<Workbench />);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     expect(screen.getByRole("alert")).toHaveTextContent(
       "bad.json: invalid document",
     );
@@ -147,7 +251,11 @@ describe("file workbench", () => {
       version: 1,
       updatedAt: "now",
     });
-    render(<Workbench />);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "workbench.open" }));
     const editor = await screen.findByRole("textbox", {
       name: "workbench.editor",
@@ -173,7 +281,11 @@ describe("file workbench", () => {
       code: "CONFLICT",
     });
     vi.mocked(native.saveWorkbenchAs).mockResolvedValue(null);
-    render(<Workbench />);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "workbench.open" }));
     const editor = await screen.findByLabelText("workbench.editor");
     fireEvent.change(editor, { target: { value: "mine" } });
@@ -204,7 +316,11 @@ describe("file workbench", () => {
     ]);
     workbenchEditor.edit("draft-1", "do not lose me");
     vi.mocked(native.saveWorkbenchAs).mockResolvedValue(null);
-    const view = render(<Workbench />);
+    const view = render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(lifecycle.work?.dirty).toBe(true));
     const work = lifecycle.work!;
     view.unmount();
@@ -235,7 +351,11 @@ describe("file workbench", () => {
       controller.abort();
       return { ...selected, content: "first edit", revision: "v2" };
     });
-    const view = render(<Workbench />);
+    const view = render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(lifecycle.work?.dirty).toBe(true));
     const work = lifecycle.work!;
     view.unmount();

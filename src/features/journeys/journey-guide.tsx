@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { ArrowLeftIcon, ArrowRightIcon, RouteIcon, XIcon } from "lucide-react";
 import { currentJourney, journeyLink } from "./model";
+import { JourneySamples } from "./journey-samples";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
@@ -73,6 +74,7 @@ export function JourneyGuide() {
           <span key={item.title} data-current={at === index} />
         ))}
       </div>
+      <JourneySamples path={step.path} />
     </section>
   );
 }

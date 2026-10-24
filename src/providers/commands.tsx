@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpenIcon,
   CommandIcon,
@@ -59,9 +59,23 @@ type CommandsContextValue = {
 };
 
 const CommandsContext = createContext<CommandsContextValue | null>(null);
+const STANDALONE_COMMANDS = new Set([
+  "toggle-theme",
+  "theme-light",
+  "theme-dark",
+  "theme-system",
+  "minimize-window",
+  "toggle-maximize",
+  "close-window",
+  "reload",
+  "copy-link",
+  "select-all",
+]);
 
 export function CommandsProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const standalone = pathname.startsWith("/extension-window/");
   const { settings, update } = useSettings();
   const { resolvedTheme, setTheme, toggle } = useThemeSwitch();
   const themeToggle = useRef(toggle);
@@ -82,6 +96,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
       ...APP_ROUTES.filter(
         (route) =>
           route.path !== "/settings" &&
+          !route.hidden &&
           (settings.appMode !== "minimal" || !route.demoOnly),
       ).map((route) => ({
         id: `navigate:${route.path}`,
@@ -297,8 +312,11 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
     const result = new Map(builtins.map((command) => [command.id, command]));
     for (const registration of extensions.values())
       for (const command of registration) result.set(command.id, command);
-    return [...result.values()];
-  }, [builtins, extensions]);
+    // 独立会话只暴露自身的窗口与外观操作，避免快捷键把它导航到宿主页面。
+    return [...result.values()].filter(
+      (command) => !standalone || STANDALONE_COMMANDS.has(command.id),
+    );
+  }, [builtins, extensions, standalone]);
 
   const register = useCallback((items: readonly AppCommand[]) => {
     const token = Symbol("commands");

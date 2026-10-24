@@ -8,6 +8,7 @@ import {
 } from "react";
 import { FilePlus2Icon, FolderOpenIcon, SaveIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
+import { useSearchParams } from "react-router-dom";
 import { NativePage } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DocumentPreview } from "@/components/workbench/document-preview";
+import { TextDiff } from "@/components/text-diff";
 import { workbenchEditor } from "@/components/workbench/editor-store";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { nativeErrorText } from "@/lib/native-error";
@@ -44,6 +46,8 @@ import { useUnsavedWork } from "@/providers/unsaved-work";
 import type { AppCommand } from "@/commands/types";
 
 export default function Workbench() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedFile = searchParams.get("file");
   const { t } = useI18n();
   const latest = useLatestTranslator();
   const state = useSyncExternalStore(
@@ -66,6 +70,48 @@ export default function Workbench() {
   const [closeId, setCloseId] = useState<string | null>(null);
   const [imported, setImported] = useState(false);
   const mounted = useRef(false);
+  useEffect(() => {
+    if (!requestedFile || pending || !isTauri()) return;
+    let stopped = false;
+    const selectedAtRequest = workbenchEditor.getSnapshot().selectedId;
+    const documentAtRequest = workbenchEditor
+      .getSnapshot()
+      .entries.find(
+        (entry) => entry.document.id === selectedAtRequest,
+      )?.document;
+    const selectionIsCurrent = () => {
+      const current = workbenchEditor.getSnapshot();
+      return (
+        current.selectedId === selectedAtRequest &&
+        current.entries.find((entry) => entry.document.id === selectedAtRequest)
+          ?.document === documentAtRequest
+      );
+    };
+    const clearRequest = () =>
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          if (next.get("file") === requestedFile) next.delete("file");
+          return next;
+        },
+        { replace: true },
+      );
+    void loadWorkbenchDocument(requestedFile)
+      .then((document) => {
+        const current = workbenchEditor.getSnapshot();
+        if (stopped || current.pending) return;
+        if (selectionIsCurrent()) workbenchEditor.open([document]);
+        clearRequest();
+      })
+      .catch((reason: unknown) => {
+        if (stopped || workbenchEditor.getSnapshot().pending) return;
+        if (selectionIsCurrent()) setError(reason);
+        clearRequest();
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [requestedFile, pending, setSearchParams]);
   const jsonError = useMemo(() => {
     if (selected?.document.kind !== "json") return false;
     try {
@@ -595,7 +641,28 @@ export default function Workbench() {
             </DialogDescription>
           </DialogHeader>
           {remote ? (
-            <DocumentPreview document={remote} content={remote.content ?? ""} />
+            <div className="space-y-4">
+              <DocumentPreview
+                document={remote}
+                content={remote.content ?? ""}
+              />
+              {selected &&
+              selected.document.id === remote.id &&
+              remote.kind !== "image" ? (
+                <TextDiff
+                  local={selected.draft}
+                  remote={remote.content ?? ""}
+                  disabled={pending}
+                  onApply={(content) => {
+                    workbenchEditor.accept(remote);
+                    workbenchEditor.edit(remote.id, content);
+                    setRemote(null);
+                    setConflict(false);
+                    setError(null);
+                  }}
+                />
+              ) : null}
+            </div>
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemote(null)}>

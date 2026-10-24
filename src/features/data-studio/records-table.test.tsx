@@ -1,12 +1,27 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   within,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { RecordsTable } from "./records-table";
+import { saveTextExport } from "@/lib/tauri";
+import type { UnsavedWork } from "@/providers/unsaved-work";
+
+vi.mock("@/lib/tauri", async (original) => ({
+  ...(await original<typeof import("@/lib/tauri")>()),
+  saveTextExport: vi.fn(),
+}));
+const lifecycle = vi.hoisted(() => ({ work: null as UnsavedWork | null }));
+vi.mock("@/providers/unsaved-work", () => ({
+  useUnsavedWork: (work: UnsavedWork) => {
+    lifecycle.work = work;
+  },
+}));
 
 const locale = vi.hoisted(() => ({ language: "en" as "en" | "zh" }));
 vi.mock("@/providers/i18n", async () => {
@@ -24,6 +39,55 @@ vi.mock("@/providers/i18n", async () => {
 afterEach(() => {
   cleanup();
   locale.language = "en";
+  vi.clearAllMocks();
+});
+
+it("retains imported data through filtered and cancelled exports, and clears dirty state after full export", async () => {
+  vi.mocked(saveTextExport).mockResolvedValue("records.csv");
+  render(<RecordsTable />);
+  fireEvent.click(screen.getByText("Import, validate and export"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load sample with errors" }),
+  );
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "Import valid rows only and retain invalid rows in the report",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Import valid records" }));
+  expect(lifecycle.work?.dirty).toBe(true);
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "Alex" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Export filtered CSV" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Export all CSV" }),
+    ).toBeEnabled(),
+  );
+  expect(saveTextExport).toHaveBeenLastCalledWith(
+    "records.csv",
+    expect.stringContaining("alex@example.test"),
+  );
+  expect(vi.mocked(saveTextExport).mock.calls.at(-1)?.[1]).not.toContain(
+    "mei@example.test",
+  );
+  expect(lifecycle.work?.dirty).toBe(true);
+  vi.mocked(saveTextExport).mockResolvedValueOnce(null);
+  await act(async () => {
+    await expect(lifecycle.work!.save()).rejects.toMatchObject({
+      code: "USER_CANCELLED",
+    });
+  });
+  expect(lifecycle.work?.dirty).toBe(true);
+  await act(async () => {
+    await lifecycle.work!.save();
+  });
+  expect(lifecycle.work?.dirty).toBe(false);
+  expect(saveTextExport).toHaveBeenLastCalledWith(
+    "records.csv",
+    expect.stringContaining("mei@example.test"),
+  );
 });
 
 it("uses stable selection through filtering and retains failed bulk records", () => {

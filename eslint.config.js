@@ -9,7 +9,11 @@ export default tseslint.config(
       "dist/**",
       "dist-web/**",
       "artifacts/**",
+      ".cache/**",
       "node_modules/**",
+      "marketplace/**",
+      "examples/extensions/node_modules/**",
+      "examples/extensions/dist/**",
       "src-tauri/**",
       // shadcn 原子组件沿用上游编码风格；行为修复仍需类型检查与回归验证
       "src/components/ui/**",
@@ -47,10 +51,18 @@ export default tseslint.config(
     files: [
       "*.config.{js,ts}",
       "scripts/**/*.mjs",
+      "examples/extensions/*.mjs",
       "e2e/**/*.mjs",
       "wdio*.mjs",
     ],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: [
+      "examples/extensions/javascript/*.js",
+      "examples/extensions/typescript/*.ts",
+    ],
+    languageOptions: { globals: { Host: "readonly", I32: "readonly" } },
   },
   {
     // 架构约束：系统能力只能从 lib/tauri.ts 出去。

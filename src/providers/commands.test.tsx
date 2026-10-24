@@ -75,6 +75,7 @@ function Probe() {
       <button onClick={() => void commands.execute("theme-light")}>
         Light
       </button>
+      <button onClick={() => void commands.execute("navigate:/")}>Home</button>
       <button onClick={() => update({ language: "en" })}>English</button>
       <button onClick={() => update({ appMode: "minimal" })}>Minimal</button>
       <button onClick={() => commands.setPaletteOpen(true)}>Palette</button>
@@ -89,9 +90,15 @@ function Probe() {
     </>
   );
 }
-function Harness({ children }: { children?: ReactNode }) {
+function Harness({
+  children,
+  initialPath = "/",
+}: {
+  children?: ReactNode;
+  initialPath?: string;
+}) {
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <SettingsProvider>
         <I18nProvider>
           <CommandsProvider>
@@ -221,6 +228,20 @@ describe("unified application commands", () => {
       screen.queryByRole("option", { name: "交互场景" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "创意展厅" })).toBeVisible();
+  });
+
+  it("keeps standalone extension sessions out of host navigation and its shortcuts", () => {
+    const path = "/extension-window/starter.apps/calculator";
+    render(<Harness initialPath={path} />);
+    fireEvent.keyDown(document.body, { key: ",", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    fireEvent.click(screen.getByText("Home"));
+    expect(screen.getByTestId("location")).toHaveTextContent(path);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("collapsed")).toHaveTextContent("false");
+    fireEvent.click(screen.getByText("Light"));
+    expect(theme.setTheme).toHaveBeenCalledWith("light");
   });
 
   it("dispatches registered commands from menus with the same availability", async () => {

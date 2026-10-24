@@ -1,0 +1,20 @@
+{
+  "formatVersion": 2,
+  "apiVersion": 1,
+  "id": "example.typescript-report",
+  "version": "1.0.0",
+  "name": "TypeScript report",
+  "author": "Example author",
+  "description": "Extism example: ASCII case conversion that preserves UTF-8 text.",
+  "inputFormat": "json",
+  "resultFormat": "json",
+  "commands": [
+    {
+      "id": "summarize",
+      "title": "Summarize selected data",
+      "function": "summarize"
+    }
+  ],
+  "permissions": ["text:read", "files:read", "network:https"],
+  "allowedHosts": ["httpbin.org"]
+}

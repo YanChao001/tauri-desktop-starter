@@ -1,0 +1,25 @@
+{
+  "formatVersion": 2,
+  "apiVersion": 1,
+  "id": "example.javascript-text",
+  "version": "1.0.0",
+  "name": "javascript text tools",
+  "author": "Example author",
+  "description": "Extism example: ASCII case conversion that preserves UTF-8 text.",
+  "inputFormat": "text",
+  "resultFormat": "text",
+  "commands": [
+    {
+      "id": "uppercase",
+      "title": "Uppercase",
+      "function": "uppercase"
+    },
+    {
+      "id": "lowercase",
+      "title": "Lowercase",
+      "function": "lowercase"
+    }
+  ],
+  "permissions": ["text:read"],
+  "allowedHosts": []
+}

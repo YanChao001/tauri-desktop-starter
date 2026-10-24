@@ -21,9 +21,13 @@ import {
 import { useCommands } from "@/providers/commands";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
-import { NAVIGATION_GROUPS, type AppRoute } from "@/routes";
+import { NAVIGATION_GROUPS, type AppNavigationItem } from "@/routes";
 
-export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
+export function AppSidebar({
+  routes,
+}: {
+  routes: readonly AppNavigationItem[];
+}) {
   const { t } = useI18n();
   const { settings, update } = useSettings();
   const { execute } = useCommands();
@@ -119,7 +123,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
             </p>
             <div className="space-y-0.5">
               {group.routes.map(
-                ({ path, labelKey, icon: Icon, exact, preload }) => (
+                ({ path, labelKey, label, icon: Icon, exact, preload }) => (
                   <Tooltip
                     key={path}
                     open={collapsed && tooltip === path}
@@ -141,7 +145,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
                       >
                         <Icon className="size-4 shrink-0" aria-hidden="true" />
                         <span className="app-sidebar-label min-w-0 flex-1 truncate">
-                          {t(labelKey)}
+                          {label ?? t(labelKey)}
                         </span>
                       </NavLink>
                     </TooltipTrigger>
@@ -150,7 +154,7 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
                         <p className="text-[10px] opacity-65">
                           {t(group.labelKey)}
                         </p>
-                        <p>{t(labelKey)}</p>
+                        <p>{label ?? t(labelKey)}</p>
                       </TooltipContent>
                     ) : null}
                   </Tooltip>

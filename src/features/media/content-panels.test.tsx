@@ -1,8 +1,9 @@
+import { SafeMarkdown } from "@/components/safe-markdown";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createTranslator } from "@/i18n/translate";
 import { en } from "@/i18n/en";
-import { MediaPreview, SafeMarkdown } from "./content-panels";
+import { MediaPreview } from "./content-panels";
 
 const bridge = vi.hoisted(() => ({
   native: false,

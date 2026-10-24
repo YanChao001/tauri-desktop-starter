@@ -301,7 +301,7 @@ for (const viewport of [
         .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
     ).toBe(true);
     await page.goto("./#/catalog");
-    await expect(page.locator(".experience-route")).toHaveCount(4);
+    await expect(page.locator(".experience-route")).toHaveCount(5);
     expect(
       await page
         .locator("main")

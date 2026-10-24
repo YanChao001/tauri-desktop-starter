@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
  * Windows / Linux 用右侧的自绘按钮；macOS 由平台配置保留系统红绿灯，
  * 这里只负责给红绿灯让出位置（见 src-tauri/tauri.macos.conf.json）。
  */
-export function TitleBar() {
+export function TitleBar({ standalone = false }: { standalone?: boolean }) {
   const { t } = useI18n();
   const { settings } = useSettings();
   const { theme } = useThemeSwitch();
@@ -130,7 +130,7 @@ export function TitleBar() {
           className="size-6 shrink-0"
         />
 
-        {settings.menuBar ? (
+        {settings.menuBar && !standalone ? (
           <nav
             className="ml-1 flex items-center gap-0.5"
             aria-label={APP_CONFIG.name}
@@ -218,29 +218,31 @@ export function TitleBar() {
         ) : null}
       </div>
 
-      {!native ? <CompactNavigation /> : null}
+      {!native && !standalone ? <CompactNavigation /> : null}
       <div data-tauri-drag-region className="min-w-2 flex-1" />
 
       <div className="flex items-stretch">
-        <Tooltip disableHoverableContent>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-10 rounded-none"
-              aria-label={t("commands.open")}
-              onClick={() => void execute("command-palette")}
-            >
-              <SearchIcon className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {t("commands.open")}
-            <kbd className="font-mono opacity-75">
-              {formatShortcut({ key: "k", primary: true })}
-            </kbd>
-          </TooltipContent>
-        </Tooltip>
+        {!standalone ? (
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 rounded-none"
+                aria-label={t("commands.open")}
+                onClick={() => void execute("command-palette")}
+              >
+                <SearchIcon className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {t("commands.open")}
+              <kbd className="font-mono opacity-75">
+                {formatShortcut({ key: "k", primary: true })}
+              </kbd>
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         <LanguageSwitch compact className="my-auto" />
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>

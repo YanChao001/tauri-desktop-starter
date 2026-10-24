@@ -38,7 +38,7 @@ pnpm exec vitest related --run src/lib/settings-sync.ts
 pnpm exec prettier --check docs/testing.md
 ```
 
-已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、身份配置与品牌资源一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查与桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
+已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、身份配置与品牌资源一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查、内置扩展来源与分发资源哈希检查及桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
 
 新增测试应说明要防止哪种实际回归。可逆的样式、文案调整通常用预览确认；不复制配置数组、不重复测试第三方库本身，也不为已经被类型检查约束的普通赋值增加测试。自定义组件的行为修复、数据持久化、并发和外部输入边界仍保留针对性回归。
 
@@ -105,6 +105,12 @@ pnpm verify
 浏览器演示发布前执行 `pnpm build:web` 并通过 `pnpm exec vite preview --outDir dist-web` 预览，复核项目子路径下的资源加载、HashRouter 页面直接访问与刷新、localStorage 偏好恢复和窄屏布局。构建及部署方式见 [开发指南](./development.md#浏览器演示构建与部署)。桌面 E2E 与安装版验收分别提供原生行为和分发证据。
 
 ## Rust 测试
+
+CSV / 差异 / 搜索的前端回归就近维护于对应领域及文件 / 笔记页；无头浏览器 `workflows.spec.ts` 检查工作流和扩展页浏览器边界。扩展服务测试安装、授权、版本、存档、运行租约和 Wasm 预算；开发示例与未经修改的外部 Extism 模块验证真实包往返，命令见 [扩展验证](./extensions.md#验证)。这些检查不启动应用窗口，也不代替正式安装、多窗口退出和目标平台验收。
+
+扩展应用回归使用任意第三方 ID 的视图夹具验证通用控件、StrictMode 单次初始化、串行动作、失败输入保留、关闭等待、离页后导出、导航恢复、显式数据发送和协商取消。Rust `extension_view` 测试直接运行随包扩展实验室 Wasm 的文本分析、数据响应、双语页签与三关解谜；运行时另外检查复用编译代码后实例状态、fuel 和取消仍隔离。`pnpm extension:demos:check` 快速核对源码、锁文件、工具链与模块哈希回执，CI Rust 矩阵使用 `pnpm extension:demos:check --rebuild` 实际编译并比较提交的 Wasm；修改示例、依赖或工具链后按 [应用插件](./extensions.md#开发带界面的应用插件) 重建资源；前端夹具不能替代真实 Wasm 或 WebView 验收。
+
+官方市场回归检查签名与包篡改、目录回退、清单不符、下架与重定向边界。线上联通测试默认跳过，发布官方文本工具示例后可显式运行 `cargo test --manifest-path src-tauri/Cargo.toml --locked live_official_catalog_download -- --ignored`：它从真实 GitHub Release 下载、验签，在临时目录安装并授权，执行文本转换后卸载；不启动桌面窗口，也不修改用户安装数据。市场仓库的构建、签名与发布检查独立运行，不要求普通宿主 CI 拉取子模块。
 
 ```bash
 pnpm build

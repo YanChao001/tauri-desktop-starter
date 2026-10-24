@@ -1,4 +1,5 @@
 import { zhExperience } from "./zh-experience";
+import { zhWorkflows } from "./zh-workflows";
 import { zhFeatures } from "./zh-features";
 import { zhShowroom } from "./zh-showroom";
 import { zhComponents } from "./zh-components";
@@ -12,6 +13,7 @@ import { zhCatalog } from "./zh-catalog";
 import { zhRecovery } from "./zh-recovery";
 /** 默认语言也是词条键的唯一来源。 */
 export const zhCN = {
+  ...zhWorkflows,
   ...zhFeatures,
   ...zhShowroom,
   ...zhComponents,

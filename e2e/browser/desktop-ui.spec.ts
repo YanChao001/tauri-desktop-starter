@@ -13,6 +13,7 @@ const routes = [
   "/workbench",
   "/tasks",
   "/system",
+  "/extensions",
   "/network",
   "/data-studio",
   "/media",

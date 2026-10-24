@@ -1,12 +1,26 @@
 use tauri_specta::{Builder, collect_commands};
 
 use crate::commands;
+use crate::extension_commands;
 use crate::wallpaper_commands;
 use crate::{data_commands, lifecycle, recovery, system_commands, workbench_commands};
 
 pub fn builder() -> Builder<tauri::Wry> {
     Builder::new()
         .commands(collect_commands![
+            crate::file_commands::save_text_export,
+            extension_commands::extension_snapshot,
+            crate::extension_market_commands::extension_market_snapshot,
+            crate::extension_market_commands::download_market_extension,
+            extension_commands::preview_extension,
+            extension_commands::extension_demo,
+            extension_commands::install_extension,
+            extension_commands::set_extension_enabled,
+            extension_commands::uninstall_extension,
+            extension_commands::cancel_extension,
+            extension_commands::run_extension,
+            extension_commands::view_extension,
+            crate::extension_windows::open_extension_window,
             commands::greet,
             wallpaper_commands::list_wallpapers,
             wallpaper_commands::add_wallpaper,

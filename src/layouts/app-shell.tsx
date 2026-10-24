@@ -10,47 +10,43 @@ import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { useCommands } from "@/providers/commands";
 import { Button } from "@/components/ui/button";
-import { APP_ROUTES, NAVIGATION_GROUPS, matchRoute } from "@/routes";
+import {
+  APP_ROUTES,
+  NAVIGATION_GROUPS,
+  extensionNavigation,
+  matchRoute,
+} from "@/routes";
+import { useExtensions } from "@/features/extensions/extensions-provider";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { JourneyGuide } from "@/features/journeys/journey-guide";
 import { currentJourney } from "@/features/journeys/model";
+import { useAppChrome } from "@/hooks/use-app-chrome";
 import "@/styles/app-navigation.css";
 
 /** 感知路由的应用布局；页面失败时保留导航能力 */
 export function AppShell() {
   const { pathname, search } = useLocation();
-  const current = matchRoute(pathname);
+  const { data } = useExtensions();
+  const extensionRoutes = extensionNavigation(data?.items ?? []);
+  const dynamicRoute = extensionRoutes.find((route) => route.path === pathname);
+  const current = dynamicRoute ?? matchRoute(pathname);
   const group =
     NAVIGATION_GROUPS.find(({ id }) => id === current.group) ??
     NAVIGATION_GROUPS[0];
   const { t } = useI18n();
   const { settings } = useSettings();
   const { fullscreen, execute } = useCommands();
-  const routes = APP_ROUTES.filter(
-    (route) => settings.appMode !== "minimal" || !route.demoOnly,
-  );
-  const chrome = useRef<HTMLDivElement>(null);
+  const routes = [
+    ...APP_ROUTES.filter(
+      (route) =>
+        !route.hidden && (settings.appMode !== "minimal" || !route.demoOnly),
+    ),
+    ...extensionRoutes,
+  ];
+  const chrome = useAppChrome();
   const content = useRef<HTMLElement>(null);
   const journeyStep = currentJourney(pathname, search)?.index;
-
-  useLayoutEffect(() => {
-    const header = chrome.current!;
-    const root = document.documentElement;
-    // 按标题栏实际高度为固定外壳留出空间。
-    const syncHeight = () =>
-      root.style.setProperty(
-        "--app-chrome-height",
-        `${header.getBoundingClientRect().height}px`,
-      );
-    syncHeight();
-    const observer = new ResizeObserver(syncHeight);
-    observer.observe(header);
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty("--app-chrome-height");
-    };
-  }, []);
 
   useLayoutEffect(() => {
     // 仅切换页面时重置滚动；设置搜索可能在当前路径内主动聚焦字段
@@ -109,7 +105,9 @@ export function AppShell() {
               <li aria-hidden="true">
                 <ChevronRightIcon />
               </li>
-              <li aria-current="page">{t(current.labelKey)}</li>
+              <li aria-current="page">
+                {dynamicRoute?.label ?? t(current.labelKey)}
+              </li>
             </ol>
           </nav>
           <JourneyGuide />

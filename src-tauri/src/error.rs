@@ -26,6 +26,15 @@ pub enum ErrorCode {
     UpdateDownloadFailed,
     UpdateInstallFailed,
     WindowError,
+    ExtensionIncompatible,
+    ExtensionRunFailed,
+    ExtensionTimeout,
+    ExtensionBusy,
+    ExtensionUnavailable,
+    MarketNotConfigured,
+    MarketUnavailable,
+    MarketInvalid,
+    MarketChanged,
     Internal,
 }
 

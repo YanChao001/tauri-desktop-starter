@@ -46,6 +46,10 @@
     }
   },
   "bundle": {
+    "resources": {
+      "../resources/third-party/extism.LICENSE": "third-party/extism.LICENSE",
+      "../resources/third-party/wasmtime.LICENSE": "third-party/wasmtime.LICENSE"
+    },
     "fileAssociations": [
       {
         "ext": ["tdemo"],

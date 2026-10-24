@@ -1,4 +1,5 @@
 import { enExperience } from "./en-experience";
+import { enWorkflows } from "./en-workflows";
 import type { Messages } from "./zh-CN";
 import { enFeatures } from "./en-features";
 import { enShowroom } from "./en-showroom";
@@ -14,6 +15,7 @@ import { enRecovery } from "./en-recovery";
 
 /** 与默认语言保持相同词条；缺词或拼错键会在类型检查中报错。 */
 export const en = {
+  ...enWorkflows,
   ...enFeatures,
   ...enShowroom,
   ...enComponents,

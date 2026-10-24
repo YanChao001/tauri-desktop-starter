@@ -540,6 +540,22 @@ fn window_error(error: tauri::Error) -> NativeError {
 }
 
 fn configured(app: &tauri::AppHandle, label: &str) -> (LogicalSize, Limits) {
+    if label.starts_with("extension-") {
+        return (
+            LogicalSize {
+                width: 1000.0,
+                height: 760.0,
+            },
+            Limits {
+                min: LogicalSize {
+                    width: 360.0,
+                    height: 480.0,
+                },
+                max_width: None,
+                max_height: None,
+            },
+        );
+    }
     let config = app
         .config()
         .app

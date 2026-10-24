@@ -150,6 +150,27 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+      - name: Extism Rust 示例与未修改的上游模块往返
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup target add wasm32-unknown-unknown
+          cargo fmt --manifest-path examples/extensions/apps/Cargo.toml -- --check
+          pnpm extension:demos:check --rebuild
+          cargo test --manifest-path src-tauri/Cargo.toml --locked extension_view
+          cargo fmt --manifest-path examples/extensions/rust/Cargo.toml -- --check
+          cargo build --manifest-path examples/extensions/rust/Cargo.toml --release --locked --target wasm32-unknown-unknown --target-dir src-tauri/target/extension-example
+          pnpm extension:pack --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --out artifacts/extensions/ci-rust.starter-extension.json
+          $env:STARTER_TEST_EXTENSION_PACKAGE = (Resolve-Path artifacts/extensions/ci-rust.starter-extension.json).Path
+          cargo test --manifest-path src-tauri/Cargo.toml --locked external_extism_package_roundtrip -- --ignored
+          $fixture = Get-Content examples/extensions/upstream/fixture.json -Raw | ConvertFrom-Json
+          Invoke-WebRequest -Uri $fixture.url -OutFile artifacts/extensions/count_vowels.wasm
+          if ((Get-FileHash artifacts/extensions/count_vowels.wasm -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fixture.sha256) { throw 'Upstream Extism module checksum mismatch' }
+          pnpm extension:pack --manifest examples/extensions/upstream/extension.json --wasm artifacts/extensions/count_vowels.wasm --out artifacts/extensions/ci-upstream.starter-extension.json
+          $env:STARTER_TEST_EXTENSION_PACKAGE = (Resolve-Path artifacts/extensions/ci-upstream.starter-extension.json).Path
+          $env:STARTER_TEST_EXTENSION_EXPECT = '"count":2'
+          cargo test --manifest-path src-tauri/Cargo.toml --locked external_extism_package_roundtrip -- --ignored
+
   desktop-e2e:
     name: 真实桌面 E2E（${{ matrix.platform }}）
     runs-on: ${{ matrix.platform }}

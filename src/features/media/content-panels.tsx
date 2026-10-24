@@ -1,9 +1,5 @@
+import { SafeMarkdown } from "@/components/safe-markdown";
 import { useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { CodeBlock } from "@/components/code-block";
-import { ExternalLink } from "@/components/external-link";
-import { normalizeCodeLanguage } from "@/lib/code-language";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -15,76 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/providers/i18n";
-import { markdownExample, mediaKind, safeMarkdownUrl } from "./model";
-
-export function SafeMarkdown({ content }: { content: string }) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-3 break-words text-sm [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_a]:text-primary [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2">
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        urlTransform={safeMarkdownUrl}
-        components={{
-          pre: ({ node }) => {
-            const code = node?.children.find(
-              (child) => child.type === "element" && child.tagName === "code",
-            );
-            if (code?.type !== "element") return null;
-            const classes = code.properties.className;
-            const languageClass = Array.isArray(classes)
-              ? classes.find(
-                  (name) =>
-                    typeof name === "string" && name.startsWith("language-"),
-                )
-              : undefined;
-            return (
-              <CodeBlock
-                code={code.children
-                  .map((child) => (child.type === "text" ? child.value : ""))
-                  .join("")}
-                language={normalizeCodeLanguage(
-                  typeof languageClass === "string"
-                    ? languageClass.slice("language-".length)
-                    : "",
-                )}
-                className="rounded-md bg-muted p-3"
-              />
-            );
-          },
-          input: ({ checked }) => (
-            <input
-              type="checkbox"
-              disabled
-              checked={checked}
-              aria-label={t(
-                checked ? "labs.media.taskCompleted" : "labs.media.taskPending",
-              )}
-            />
-          ),
-          a: ({ href, children }) =>
-            href && /^https?:/i.test(href) ? (
-              <ExternalLink href={href}>{children}</ExternalLink>
-            ) : href ? (
-              <a href={href} target="_blank" rel="noopener noreferrer">
-                {children}
-              </a>
-            ) : (
-              <span>{children}</span>
-            ),
-          img: ({ alt }) => (
-            <span className="text-muted-foreground">
-              [{t("labs.media.blockedImage")}
-              {alt ? `: ${alt}` : ""}]
-            </span>
-          ),
-        }}
-      >
-        {content}
-      </Markdown>
-    </div>
-  );
-}
+import { markdownExample, mediaKind } from "./model";
 
 export function MarkdownPanel() {
   const { t, language } = useI18n();

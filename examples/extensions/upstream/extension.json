@@ -1,0 +1,20 @@
+{
+  "formatVersion": 2,
+  "apiVersion": 1,
+  "id": "extism.count-vowels",
+  "version": "1.0.0",
+  "name": "Count vowels",
+  "author": "The Extism Authors",
+  "description": "Unmodified Extism count_vowels module v1.1.1",
+  "inputFormat": "text",
+  "resultFormat": "json",
+  "commands": [
+    {
+      "id": "count-vowels",
+      "title": "Count vowels",
+      "function": "count_vowels"
+    }
+  ],
+  "permissions": ["text:read"],
+  "allowedHosts": []
+}

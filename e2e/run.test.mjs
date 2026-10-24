@@ -90,6 +90,8 @@ test("ordinary script checks skip native installer executables before probing to
   const result = spawnSync(
     process.execPath,
     [
+      "--test",
+      "--test-reporter=tap",
       fileURLToPath(
         new URL("../scripts/installer-layout.test.mjs", import.meta.url),
       ),

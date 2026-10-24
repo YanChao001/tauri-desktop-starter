@@ -21,6 +21,7 @@ const FIELDS = new Set([
   "integration",
   "defaultMode",
   "updates",
+  "extensionMarket",
 ]);
 
 function object(value) {
@@ -214,6 +215,30 @@ export function validateAppConfig(config) {
       );
     }
   }
+  const market = config.extensionMarket;
+  if (
+    !object(market) ||
+    Object.keys(market).some(
+      (key) => !["repository", "publicKey"].includes(key),
+    ) ||
+    typeof market.repository !== "string" ||
+    typeof market.publicKey !== "string"
+  )
+    throw new Error("extensionMarket 需要 repository 与 publicKey");
+  if (market.repository || market.publicKey) {
+    const key = Buffer.from(market.publicKey, "base64");
+    if (
+      !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(market.repository) ||
+      [".", ".."].includes(market.repository.split("/")[1]) ||
+      market.repository.length > 200 ||
+      key.length !== 42 ||
+      key.toString("base64") !== market.publicKey ||
+      key.subarray(0, 2).toString() !== "Ed"
+    )
+      throw new Error(
+        "extensionMarket 需要 GitHub owner/repo 与 minisign 公钥",
+      );
+  }
   return config;
 }
 
@@ -305,6 +330,8 @@ export function prepareInitialization(
     throw new Error("updates 必须是对象");
   if (patch.integration !== undefined && !object(patch.integration))
     throw new Error("integration 必须是对象");
+  if (patch.extensionMarket !== undefined && !object(patch.extensionMarket))
+    throw new Error("extensionMarket 必须是对象");
   const identityChanged =
     patch.identifier !== undefined && patch.identifier !== current.identifier;
   const repositoryChanged =
@@ -313,6 +340,9 @@ export function prepareInitialization(
   const endpointChanged =
     patch.updates?.endpoint !== undefined &&
     patch.updates.endpoint !== current.updates.endpoint;
+  const marketRepositoryChanged =
+    patch.extensionMarket?.repository !== undefined &&
+    patch.extensionMarket.repository !== current.extensionMarket.repository;
   const derivedName =
     patch.packageName && patch.packageName !== current.packageName
       ? patch.packageName
@@ -340,6 +370,14 @@ export function prepareInitialization(
         : {}),
       ...(endpointChanged ? { publicKey: "" } : {}),
       ...patch.updates,
+    },
+    extensionMarket: {
+      ...current.extensionMarket,
+      ...(identityChanged || repositoryChanged
+        ? { repository: "", publicKey: "" }
+        : {}),
+      ...(marketRepositoryChanged ? { publicKey: "" } : {}),
+      ...patch.extensionMarket,
     },
     ...(minimal ? { defaultMode: "minimal" } : {}),
   });

@@ -1,0 +1,15 @@
+{
+  "name": "starter-extism-examples",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --project typescript/tsconfig.json"
+  },
+  "devDependencies": {
+    "@extism/js-pdk": "1.1.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

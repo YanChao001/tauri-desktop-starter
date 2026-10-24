@@ -77,6 +77,7 @@ pub fn allowed_route(route: &str) -> bool {
             | "/workbench"
             | "/tasks"
             | "/system"
+            | "/extensions"
             | "/network"
             | "/data-studio"
             | "/media"

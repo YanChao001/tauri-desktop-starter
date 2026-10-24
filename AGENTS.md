@@ -15,6 +15,12 @@
 
 命令从仓库根目录运行，按 [常用命令](./docs/development.md#常用命令) 选择桌面开发、浏览器预览或构建；未安装依赖时可用 `node scripts/doctor.mjs` 诊断环境。源码入口见 [运行时结构](./docs/architecture.md#运行时结构)。修改源码，不手改 `dist/`、`dist-web/`、`src-tauri/target/` 或 `artifacts/` 的构建输出。
 
+## 命令被策略拦截时
+
+- 带 `-Force` 的检查命令（如 `Get-ChildItem -Force`）应与删除、修改、服务启停等操作分成独立工具调用，不要放在同一脚本中；仅换行或用分号分隔无效。
+- 遇到 `blocked by policy`，先检查完整脚本是否混用了上述命令和参数，不要直接归因于权限不足。
+- 每步执行后核验实际结果；仍被拦截时如实记录命令和错误。
+
 ## 实现约束
 
 - **路由与命令**：路由、导航与页面懒加载统一维护于 `src/routes.tsx`；菜单、命令面板与快捷键复用 `src/commands/` 和 `CommandsProvider` 的注册、执行入口。保留演示 / 精简模式与原生环境的可用性过滤。

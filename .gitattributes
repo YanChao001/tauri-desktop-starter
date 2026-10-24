@@ -8,6 +8,7 @@
 *.icns binary
 *.jpg binary
 *.woff2 binary
+*.wasm binary
 
 # Windows 脚本保留 CRLF，否则 cmd/powershell 解析异常
 *.bat text eol=crlf

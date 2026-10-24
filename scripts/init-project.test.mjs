@@ -33,11 +33,73 @@ const config = {
   integration: { deepLinkScheme: "old-app", fileExtension: "old-app" },
   defaultMode: "demo",
   updates: { endpoint: "", publicKey: "" },
+  extensionMarket: { repository: "", publicKey: "" },
 };
 
 // 与 src-tauri/src/update_signature.rs 共用公开测试样本，不保存私钥。
 const PUBLIC_KEY =
   "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDExMjgyNEJFMDZDREQ3QjAKUldTdzE4MEd2aVFvRVJNSlV1SVZldmFLWHlhMjdWSW9Sb3Rkdm10WklRYmFLbUtnWmhwcmJXSUMK";
+
+const MARKET_KEY = readFileSync(
+  new URL(
+    "../src-tauri/test-fixtures/extension-market/public-key.txt",
+    import.meta.url,
+  ),
+  "utf8",
+).trim();
+test("derived applications clear inherited market trust and reject untrusted market configuration", (t) => {
+  const { root } = fixture(t);
+  writeFileSync(
+    join(root, "app.config.json"),
+    JSON.stringify({
+      ...config,
+      extensionMarket: { repository: "owner/market", publicKey: MARKET_KEY },
+    }),
+  );
+  const plan = prepareInitialization(root, {
+    identifier: "com.example.new-app",
+  });
+  assert.deepEqual(plan.config.extensionMarket, {
+    repository: "",
+    publicKey: "",
+  });
+  const configured = prepareInitialization(root, {
+    identifier: "com.example.new-app",
+    extensionMarket: { repository: "new-owner/market", publicKey: MARKET_KEY },
+  });
+  assert.equal(configured.config.extensionMarket.publicKey, MARKET_KEY);
+  assert.throws(
+    () =>
+      prepareInitialization(root, {
+        extensionMarket: { repository: "new-owner/market" },
+      }),
+    /extensionMarket/,
+  );
+  const moved = prepareInitialization(root, {
+    extensionMarket: { repository: "new-owner/market", publicKey: MARKET_KEY },
+  });
+  assert.equal(moved.config.extensionMarket.publicKey, MARKET_KEY);
+  const disabled = prepareInitialization(root, {
+    extensionMarket: { repository: "" },
+  });
+  assert.deepEqual(disabled.config.extensionMarket, {
+    repository: "",
+    publicKey: "",
+  });
+  for (const extensionMarket of [
+    { repository: "../outside", publicKey: MARKET_KEY },
+    { repository: "owner/.", publicKey: MARKET_KEY },
+    { repository: "owner/..", publicKey: MARKET_KEY },
+    { repository: "owner_name/market", publicKey: MARKET_KEY },
+    { repository: "owner/market", publicKey: "private-key" },
+    { repository: "owner/market", publicKey: MARKET_KEY, token: "secret" },
+  ]) {
+    assert.throws(
+      () => validateAppConfig({ ...config, extensionMarket }),
+      /extensionMarket/,
+    );
+  }
+});
 
 test("a derived identity does not inherit the template's update signing trust", (t) => {
   for (const patch of [

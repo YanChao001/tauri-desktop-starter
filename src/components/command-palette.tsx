@@ -1,4 +1,7 @@
 import { Command } from "cmdk";
+import { useState } from "react";
+import { useContentSearch } from "@/features/content-search/use-content-search";
+import { Button } from "@/components/ui/button";
 import { SearchIcon } from "lucide-react";
 import {
   Dialog,
@@ -13,6 +16,7 @@ import { useCommands } from "@/providers/commands";
 import { useI18n, type DictKey } from "@/providers/i18n";
 
 const GROUPS: Array<{ id: CommandGroup; labelKey: DictKey }> = [
+  { id: "content", labelKey: "search.content" },
   { id: "navigation", labelKey: "commands.groupNavigation" },
   { id: "appearance", labelKey: "commands.groupAppearance" },
   { id: "window", labelKey: "commands.groupWindow" },
@@ -23,8 +27,16 @@ const GROUPS: Array<{ id: CommandGroup; labelKey: DictKey }> = [
 export function CommandPalette() {
   const { t } = useI18n();
   const { commands, execute, paletteOpen, setPaletteOpen } = useCommands();
+  const [query, setQuery] = useState("");
+  const content = useContentSearch(query, paletteOpen);
   return (
-    <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
+    <Dialog
+      open={paletteOpen}
+      onOpenChange={(open) => {
+        setPaletteOpen(open);
+        if (!open) setQuery("");
+      }}
+    >
       <DialogContent
         className="overflow-hidden p-0 sm:max-w-xl"
         closeLabel={t("common.close")}
@@ -40,11 +52,35 @@ export function CommandPalette() {
               aria-hidden="true"
             />
             <Command.Input
+              value={query}
+              onValueChange={setQuery}
               className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               placeholder={t("commands.placeholder")}
               aria-label={t("commands.title")}
             />
           </div>
+          <p className="px-4 pt-2 text-xs text-muted-foreground" role="status">
+            {t(
+              content.tooLong
+                ? "search.limit"
+                : content.loading
+                  ? "search.loading"
+                  : content.native
+                    ? "search.hint"
+                    : "search.browser",
+            )}
+          </p>
+          {content.failed ? (
+            <div
+              className="flex items-center gap-2 px-4 pt-2 text-xs"
+              role="alert"
+            >
+              <span>{t("search.failed")}</span>
+              <Button variant="ghost" size="sm" onClick={content.retry}>
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : null}
           <Command.List className="max-h-[min(60vh,24rem)] overflow-y-auto p-2">
             <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
               {t("commands.empty")}
@@ -54,6 +90,7 @@ export function CommandPalette() {
                 (command) =>
                   command.id !== "command-palette" &&
                   command.group === group.id &&
+                  (group.id !== "content" || content.ids.has(command.id)) &&
                   commandAvailable(command),
               );
               if (!items.length) return null;
@@ -68,20 +105,30 @@ export function CommandPalette() {
                       key={command.id}
                       value={command.id}
                       keywords={[
-                        t(command.labelKey),
+                        command.label ?? t(command.labelKey),
                         ...(command.keywords ?? []),
                         ...(command.keywordKeys?.map((key) => t(key)) ?? []),
                       ]}
                       className="flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
                       onSelect={() => {
                         setPaletteOpen(false);
+                        setQuery("");
                         void execute(command.id);
                       }}
                     >
                       {command.icon ? (
                         <command.icon className="size-4" aria-hidden="true" />
                       ) : null}
-                      <span className="flex-1">{t(command.labelKey)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">
+                          {command.label ?? t(command.labelKey)}
+                        </span>
+                        {command.description ? (
+                          <span className="block text-xs text-muted-foreground">
+                            {command.description}
+                          </span>
+                        ) : null}
+                      </span>
                       {command.shortcuts?.[0] ? (
                         <kbd className="ml-4 font-mono text-[11px] text-muted-foreground">
                           {formatShortcut(command.shortcuts[0])}

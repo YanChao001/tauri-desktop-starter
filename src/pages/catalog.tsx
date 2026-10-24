@@ -42,6 +42,7 @@ export default function Catalog() {
   const source = (path: string) =>
     repositoryFileUrl(APP_CONFIG.repositoryUrl, path);
   const routes = APP_ROUTES.filter((route) => {
+    if (route.hidden) return false;
     const detail = capabilityFor(route.path);
     return (
       (kind === "all" || detail.kinds.includes(kind)) &&

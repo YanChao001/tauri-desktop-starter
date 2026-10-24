@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "Cargo.toml": "94a6b160c6f4d1b4cba117c063467c896fc51fec4082a57b954dd50c339bf31d",
+    "Cargo.lock": "dc02de8e0d63293961bf48c25ce1f9430086713f5bbf3d75f5ccfcb3c2a852a6",
+    "src/lib.rs": "a231c640d9e81ea294dc6c3cd0d805c2a2dcbbc0d4fb7914a730686bd7e905e1",
+    "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe"
+  },
+  "sha256": "4c1f5d2e03133ec244a169d83d543d6c35ba6c2168df9938e61dbd79dee899f2"
+}

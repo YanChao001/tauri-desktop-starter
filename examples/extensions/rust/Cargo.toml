@@ -1,0 +1,17 @@
+[package]
+name = "starter-extism-text"
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+extism-pdk = "=1.4.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

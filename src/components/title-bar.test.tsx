@@ -18,6 +18,8 @@ import {
   isWindowMaximized,
   closeWindow,
   quitApp,
+  minimizeWindow,
+  toggleMaximizeWindow,
 } from "@/lib/tauri";
 import { TitleBar } from "./title-bar";
 
@@ -50,13 +52,13 @@ vi.mock("@/hooks/use-theme-switch", () => ({
   }),
 }));
 
-function renderTitleBar() {
+function renderTitleBar(standalone = false) {
   return render(
     <StrictMode>
       <MemoryRouter>
         <TooltipProvider>
           <CommandsProvider>
-            <TitleBar />
+            <TitleBar standalone={standalone} />
           </CommandsProvider>
         </TooltipProvider>
       </MemoryRouter>
@@ -156,5 +158,25 @@ describe("TitleBar 窗口订阅", () => {
     expect(icon).toHaveAttribute("width", "24");
     expect(screen.queryByText(APP_CONFIG.name)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "title.file" })).toBeVisible();
+  });
+
+  it("keeps theme, language and native controls available in a standalone window", () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    renderTitleBar(true);
+    expect(screen.queryByRole("button", { name: "title.file" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "commands.open" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "title.toggleTheme" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "common.language" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "title.minimize" }));
+    fireEvent.click(screen.getByRole("button", { name: "title.maximize" }));
+    fireEvent.click(screen.getByRole("button", { name: "title.close" }));
+    expect(minimizeWindow).toHaveBeenCalledOnce();
+    expect(toggleMaximizeWindow).toHaveBeenCalledOnce();
+    expect(closeWindow).toHaveBeenCalledOnce();
+    expect(quitApp).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,15 @@ import type { Translate } from "@/i18n/translate";
 import type { MessageKey } from "@/i18n/zh-CN";
 import { isRecord } from "./settings-model";
 const ERROR_KEYS: Record<string, MessageKey> = {
+  MARKET_NOT_CONFIGURED: "ext.market.notConfigured",
+  MARKET_UNAVAILABLE: "ext.market.unavailable",
+  MARKET_INVALID: "ext.market.invalid",
+  MARKET_CHANGED: "ext.market.changed",
+  EXTENSION_INCOMPATIBLE: "ext.error.incompatible",
+  EXTENSION_RUN_FAILED: "ext.error.failed",
+  EXTENSION_TIMEOUT: "ext.error.timeout",
+  EXTENSION_BUSY: "ext.error.busy",
+  EXTENSION_UNAVAILABLE: "ext.error.unavailable",
   INVALID_ARGUMENT: "errors.VALIDATION",
   USER_CANCELLED: "nativeError.userCancelled",
   CREDENTIAL_ERROR: "nativeError.credentialError",
