@@ -31,6 +31,7 @@ struct Fixture {
     input: Value,
     expect_output: Option<String>,
     expect_json: Option<Value>,
+    expect_json_subset: Option<Value>,
     expect_error: Option<String>,
     cancel_after_ms: Option<u64>,
 }
@@ -97,6 +98,7 @@ fn check_fixture(
     if [
         fixture.expect_output.is_some(),
         fixture.expect_json.is_some(),
+        fixture.expect_json_subset.is_some(),
         fixture.expect_error.is_some(),
     ]
     .into_iter()
@@ -104,7 +106,14 @@ fn check_fixture(
     .count()
         != 1
     {
-        return Err("Fixture needs exactly one of expectOutput, expectJson or expectError".into());
+        return Err("Fixture needs exactly one of expectOutput, expectJson, expectJsonSubset or expectError".into());
+    }
+    if fixture
+        .expect_json_subset
+        .as_ref()
+        .is_some_and(|value| value.as_object().is_none_or(serde_json::Map::is_empty))
+    {
+        return Err("expectJsonSubset must be a nonempty object".into());
     }
     if fixture
         .cancel_after_ms
@@ -182,9 +191,28 @@ fn check_fixture(
     {
         return Err(format!("JSON output mismatch for command {}", command.id).into());
     }
+    if let Some(expected) = fixture.expect_json_subset
+        && !output_json
+            .as_ref()
+            .is_some_and(|actual| json_subset(actual, &expected))
+    {
+        return Err(format!("JSON subset mismatch for command {}", command.id).into());
+    }
     Ok(
         json!({ "command": command.id, "passed": true, "output": output_json.unwrap_or(Value::String(output)) }),
     )
+}
+
+/// 对象仅核对声明的字段；数组与标量保持全等，避免隐式前缀或顺序语义。
+fn json_subset(actual: &Value, expected: &Value) -> bool {
+    match (actual, expected) {
+        (Value::Object(actual), Value::Object(expected)) => expected.iter().all(|(key, value)| {
+            actual
+                .get(key)
+                .is_some_and(|found| json_subset(found, value))
+        }),
+        _ => actual == expected,
+    }
 }
 
 fn execute() -> ToolResult<Value> {
@@ -254,6 +282,25 @@ mod tests {
 
     fn args(values: &[&str]) -> ToolResult<(String, HashMap<String, PathBuf>)> {
         arguments(values.iter().map(|value| (*value).to_string()))
+    }
+
+    #[test]
+    fn json_subset_assertions_check_nested_keys_and_preserve_exact_array_semantics() {
+        let actual =
+            json!({"version":2,"state":"opaque","nested":{"title":"Game","count":3},"effects":[]});
+        assert!(json_subset(
+            &actual,
+            &json!({"version":2,"nested":{"title":"Game"},"effects":[]})
+        ));
+        for expected in [
+            json!({"version":1}),
+            json!({"nested":{"missing":null}}),
+            json!({"effects":[{}]}),
+            json!({"nested":[]}),
+        ] {
+            assert!(!json_subset(&actual, &expected));
+        }
+        assert!(!json_subset(&json!([{"a":1,"b":2}]), &json!([{"a":1}])));
     }
 
     #[test]
