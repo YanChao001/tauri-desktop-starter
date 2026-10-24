@@ -1,0 +1,16 @@
+{
+  "command": "summarize",
+  "input": {
+    "apiVersion": 2,
+    "inputText": "Hello 世界",
+    "files": [],
+    "network": []
+  },
+  "expectJson": {
+    "text": "HELLO 世界",
+    "characters": 8,
+    "words": 2,
+    "files": [],
+    "networkResponses": 0
+  }
+}

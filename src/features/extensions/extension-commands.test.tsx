@@ -22,27 +22,37 @@ vi.mock("@/lib/tauri", () => ({
 }));
 const snapshot: ExtensionSnapshot = {
   revision: 1,
-  runningId: null,
+  runs: [],
   items: [
     {
+      origin: { kind: "local" },
       enabled: true,
       grantedPermissions: [],
       package: {
         bytes: 100,
         sha256: "a".repeat(64),
         manifest: {
-          formatVersion: 2,
-          apiVersion: 1,
+          formatVersion: 3,
+          apiVersion: 2,
           id: "test.plugin",
           version: "1.0.0",
           name: "Plugin",
           author: "Test",
           description: "Test plugin",
-          inputFormat: "text",
-          resultFormat: "text",
           permissions: [],
-          allowedHosts: [],
-          commands: [{ id: "run", title: "Run tool", function: "run" }],
+          commands: [
+            {
+              id: "run",
+              title: "Run tool",
+              function: "run",
+              inputFormat: "text",
+              resultFormat: "text",
+              permissions: [],
+            },
+          ],
+          minHostVersion: "0.1.0",
+          optionalPermissions: [],
+          network: [],
         },
       },
     },
@@ -97,7 +107,7 @@ it("an older snapshot cannot restore commands after a revocation", async () => {
         old = resolve;
       }),
     )
-    .mockResolvedValueOnce({ revision: 2, items: [], runningId: null });
+    .mockResolvedValueOnce({ revision: 2, items: [], runs: [] });
   await act(async () => {
     changed();
     changed();

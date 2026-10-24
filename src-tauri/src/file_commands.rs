@@ -17,7 +17,7 @@ pub async fn save_text_export(
         || !name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
-        || ![".csv", ".json", ".txt"]
+        || ![".csv", ".tsv", ".json", ".txt", ".md"]
             .iter()
             .any(|extension| name.ends_with(extension))
     {

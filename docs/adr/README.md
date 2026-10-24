@@ -78,8 +78,8 @@ ADR 采纳后保留原始决策与上下文。结论改变时新增 ADR 并标�
 | [0004](./0004-wallpaper-library.md)         | 将多图图库与当前背景设置分开保存    | 已采纳       | 2026-10-22 |
 | [0005](./0005-gitflow-release-backmerge.md) | 保留 GitFlow 并从 main 回流发布历史 | 已采纳       | 2026-10-22 |
 | [0006](./0006-native-process-extensions.md) | 通过独立进程接入可安装原生扩展      | 被 0007 取代 | 2026-10-23 |
-| [0007](./0007-extism-extensions.md)         | 通过 Extism 接入跨语言 Wasm 扩展    | 已采纳       | 2026-10-23 |
+| [0007](./0007-extism-extensions.md)         | 通过 Extism 接入跨语言 Wasm 扩展    | 被 0011 取代 | 2026-10-23 |
 | [0008](./0008-extension-app-views.md)       | 使用声明式视图展示扩展应用          | 被 0009 取代 | 2026-10-23 |
-| [0009](./0009-extension-surfaces.md)        | 为扩展提供页面与独立窗口            | 已采纳       | 2026-10-24 |
-| [0010](./0010-curated-extension-market.md)  | 通过独立仓库发布受控扩展市场        | 已采纳       | 2026-10-24 |
+| [0009](./0009-extension-surfaces.md)        | 为扩展提供页面与独立窗口            | 被 0011 取代 | 2026-10-24 |
+| [0010](./0010-curated-extension-market.md)  | 通过独立仓库发布受控扩展市场        | 被 0011 取代 | 2026-10-24 |
 | [0011](./0011-capability-extension-host.md) | 通过能力宿主组合扩展贡献与受控效果  | 已采纳       | 2026-10-24 |

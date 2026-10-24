@@ -1,17 +1,31 @@
 {
-  "formatVersion": 2,
-  "apiVersion": 1,
+  "formatVersion": 3,
+  "apiVersion": 2,
   "id": "starter.text-tools",
   "version": "1.0.0",
   "name": "Text tools",
   "author": "Tauri Desktop Starter",
   "description": "Extism example: ASCII case conversion that preserves UTF-8 text.",
-  "inputFormat": "text",
-  "resultFormat": "text",
   "commands": [
-    { "id": "uppercase", "title": "Uppercase", "function": "uppercase" },
-    { "id": "lowercase", "title": "Lowercase", "function": "lowercase" }
+    {
+      "id": "uppercase",
+      "title": "Uppercase",
+      "function": "uppercase",
+      "inputFormat": "text",
+      "resultFormat": "text",
+      "permissions": ["text:read"]
+    },
+    {
+      "id": "lowercase",
+      "title": "Lowercase",
+      "function": "lowercase",
+      "inputFormat": "text",
+      "resultFormat": "text",
+      "permissions": ["text:read"]
+    }
   ],
   "permissions": ["text:read"],
-  "allowedHosts": []
+  "minHostVersion": "0.1.4",
+  "optionalPermissions": [],
+  "network": []
 }

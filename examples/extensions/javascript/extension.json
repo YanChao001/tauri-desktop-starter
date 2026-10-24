@@ -1,25 +1,31 @@
 {
-  "formatVersion": 2,
-  "apiVersion": 1,
+  "formatVersion": 3,
+  "apiVersion": 2,
   "id": "example.javascript-text",
   "version": "1.0.0",
   "name": "javascript text tools",
   "author": "Example author",
-  "description": "Extism example: ASCII case conversion that preserves UTF-8 text.",
-  "inputFormat": "text",
-  "resultFormat": "text",
+  "description": "Unicode case conversion using the Extism JavaScript PDK.",
   "commands": [
     {
       "id": "uppercase",
       "title": "Uppercase",
-      "function": "uppercase"
+      "function": "uppercase",
+      "inputFormat": "text",
+      "resultFormat": "text",
+      "permissions": ["text:read"]
     },
     {
       "id": "lowercase",
       "title": "Lowercase",
-      "function": "lowercase"
+      "function": "lowercase",
+      "inputFormat": "text",
+      "resultFormat": "text",
+      "permissions": ["text:read"]
     }
   ],
   "permissions": ["text:read"],
-  "allowedHosts": []
+  "minHostVersion": "0.1.4",
+  "optionalPermissions": [],
+  "network": []
 }

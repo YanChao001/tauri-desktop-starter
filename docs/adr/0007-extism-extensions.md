@@ -1,9 +1,9 @@
 # 7. 通过 Extism 接入跨语言 Wasm 扩展
 
-- 状态：已采纳
+- 状态：被 0011 取代（包协议、进程内执行与单运行调度；单一 Extism 技术选择继续沿用）
 - 日期：2026-10-23
 - 决策依据：用户要求复用通用框架，并明确允许替换未发布的原生程序扩展，避免并行维护两套运行机制
-- 相关：[扩展指南](../extensions.md)、[架构说明](../architecture.md)、[ADR 0006](./0006-native-process-extensions.md)
+- 相关：[ADR 0011](./0011-capability-extension-host.md)、[扩展指南](../extensions.md)、[架构说明](../architecture.md)、[ADR 0006](./0006-native-process-extensions.md)
 
 ## 范围与方案比较
 

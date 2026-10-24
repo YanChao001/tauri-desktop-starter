@@ -80,6 +80,10 @@ name = "verify-updater"
 path = "src/bin/verify-updater.rs"
 required-features = ["bindings"]
 
+[[bin]]
+name = "extension-tool"
+path = "src/bin/extension-tool.rs"
+
 # 体积优化配置说明：https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

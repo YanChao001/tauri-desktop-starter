@@ -26,43 +26,47 @@ flowchart LR
 
 ## 模块职责
 
-| 位置                                                               | 职责                                                               |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `src/routes.tsx`                                                   | 懒加载页面、路径、导航分组、文案及演示页面标记                     |
-| `src/config/app.ts` / `app.config.json`                            | 品牌、默认演示 / 精简模式、部署更新默认值                          |
-| `src/commands/` / `providers/commands.tsx`                         | 命令描述、上下文可用性、菜单 / 面板 / 快捷键共用执行入口           |
-| `src/components/`                                                  | 交互与外壳；`ui/` 为 shadcn 原子组件                               |
-| `src/components/showcase/` / `motion-lab/`                         | 交互场景与动效实验，页面内数据与播放状态                           |
-| `src/features/`                                                    | 已形成独立规则的能力目录、数据工作室、网络与媒体演示               |
-| `src/components/workbench/`                                        | 文件草稿、预览与跨路由编辑状态                                     |
-| `src/hooks/use-demo-motion.ts` / `components/demo-motion.tsx`      | 文档可见性、场景离屏、用户偏好与全局 MotionConfig                  |
-| `src/styles/`                                                      | 共用页面层次、导航与独立场景样式                                   |
-| `src/providers/settings.tsx`                                       | 设置状态、保存反馈与生命周期                                       |
-| `src/providers/unsaved-work.tsx`                                   | 保留离页后的脏工作回调，协调保存、放弃与退出取消                   |
-| `src/hooks/use-workspace.ts` / `use-task-notifications.ts`         | 工作区恢复、激活导航、任务通知及退出前等待 / 取消任务              |
-| `src/lib/settings-model.ts` / `settings-sync.ts`                   | schema 迁移、校验、局部字段合并、原生 revision 同步                |
-| `src/lib/updates-store.ts`                                         | 每个 WebView 的更新状态、操作编号及进度快照协调                    |
-| `src/hooks/use-native-resource.ts`                                 | 原生页面数据加载、错误及过期请求结果隔离                           |
-| `src/i18n/`                                                        | 类型化词典、语言注册表、系统匹配与翻译回退                         |
-| `src/lib/tauri.ts`                                                 | 系统能力的唯一前端门面；生成绑定是允许的底层例外                   |
-| `src-tauri/src/commands.rs` / `*_commands.rs`                      | 基础及领域 IPC 参数边界与服务编排                                  |
-| `src-tauri/src/bindings.rs`                                        | 命令 / DTO 导出注册；Rust 是 IPC 契约来源                          |
-| `src-tauri/src/blocking.rs`                                        | 将同步存储、数据库与系统探测适配到阻塞任务池                       |
-| `src-tauri/src/error.rs` / `redaction.rs`                          | 结构化错误与共用脱敏，不依赖诊断聚合或业务服务                     |
-| `storage.rs` / `database.rs`                                       | 原子设置存储与 SQLite 迁移、事务、并发版本                         |
-| `workbench.rs` / `workbench_commands.rs`                           | 原生路径授权、文件原子保存、扫描 / 哈希任务与持久历史              |
-| `data_commands.rs`                                                 | 分页笔记、草稿、批量操作与逻辑备份的命令入口                       |
-| `extensions.rs` / `extension_commands.rs` / `extension_runtime.rs` | Wasm 扩展注册表、数据 broker、Extism 运行与资源限制                |
-| `extension_market.rs` / `extension_market_commands.rs`             | 固定官方源、签名目录、下载上限与包完整性校验                       |
-| `marketplace/`                                                     | 独立 Git 子模块，维护市场插件源码、收录目录与签名发布流程          |
-| `examples/extensions/`                                             | 使用官方 PDK 的 Rust / JS / TS 示例、内置 WAT 与固定上游互操作样例 |
-| `lifecycle.rs` / `recovery.rs`                                     | 跨窗口退出协商、启动存储隔离与重启恢复                             |
-| `system_commands.rs`                                               | 工作区、激活参数、专用系统凭据与固定 worker 协议                   |
-| `desktop.rs` / `autostart.rs`                                      | 窗口复用、托盘、后台行为与平台自启动                               |
-| `window_geometry.rs`                                               | 按窗口保存逻辑尺寸，适配 DPI 与显示器工作区变化                    |
-| `diagnostics.rs` / `updater.rs`                                    | 诊断脱敏及更新策略、下载 / 安装状态                                |
-| `resources/branding/` / `scripts/branding.mjs`                     | SVG 设计源与平台图标、安装器位图的可复现生成                       |
-| `scripts/fs-utils.mjs`                                             | 初始化与版本设置共用的路径校验、文件暂存、冲突检测与回滚           |
+| 位置                                                          | 职责                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/routes.tsx`                                              | 懒加载页面、路径、导航分组、文案及演示页面标记                     |
+| `src/config/app.ts` / `app.config.json`                       | 品牌、默认演示 / 精简模式、部署更新默认值                          |
+| `src/commands/` / `providers/commands.tsx`                    | 命令描述、上下文可用性、菜单 / 面板 / 快捷键共用执行入口           |
+| `src/components/`                                             | 交互与外壳；`ui/` 为 shadcn 原子组件                               |
+| `src/components/showcase/` / `motion-lab/`                    | 交互场景与动效实验，页面内数据与播放状态                           |
+| `src/features/`                                               | 已形成独立规则的能力目录、数据工作室、网络与媒体演示               |
+| `src/components/workbench/`                                   | 文件草稿、预览与跨路由编辑状态                                     |
+| `src/hooks/use-demo-motion.ts` / `components/demo-motion.tsx` | 文档可见性、场景离屏、用户偏好与全局 MotionConfig                  |
+| `src/styles/`                                                 | 共用页面层次、导航与独立场景样式                                   |
+| `src/providers/settings.tsx`                                  | 设置状态、保存反馈与生命周期                                       |
+| `src/providers/unsaved-work.tsx`                              | 保留离页后的脏工作回调，协调保存、放弃与退出取消                   |
+| `src/hooks/use-workspace.ts` / `use-task-notifications.ts`    | 工作区恢复、激活导航、任务通知及退出前等待 / 取消任务              |
+| `src/lib/settings-model.ts` / `settings-sync.ts`              | schema 迁移、校验、局部字段合并、原生 revision 同步                |
+| `src/lib/updates-store.ts`                                    | 每个 WebView 的更新状态、操作编号及进度快照协调                    |
+| `src/hooks/use-native-resource.ts`                            | 原生页面数据加载、错误及过期请求结果隔离                           |
+| `src/i18n/`                                                   | 类型化词典、语言注册表、系统匹配与翻译回退                         |
+| `src/lib/tauri.ts`                                            | 系统能力的唯一前端门面；生成绑定是允许的底层例外                   |
+| `src-tauri/src/commands.rs` / `*_commands.rs`                 | 基础及领域 IPC 参数边界与服务编排                                  |
+| `src-tauri/src/bindings.rs`                                   | 命令 / DTO 导出注册；Rust 是 IPC 契约来源                          |
+| `src-tauri/src/blocking.rs`                                   | 将同步存储、数据库与系统探测适配到阻塞任务池                       |
+| `src-tauri/src/error.rs` / `redaction.rs`                     | 结构化错误与共用脱敏，不依赖诊断聚合或业务服务                     |
+| `storage.rs` / `database.rs`                                  | 原子设置存储与 SQLite 迁移、事务、并发版本                         |
+| `workbench.rs` / `workbench_commands.rs`                      | 原生路径授权、文件原子保存、扫描 / 哈希任务与持久历史              |
+| `data_commands.rs`                                            | 分页笔记、草稿、批量操作与逻辑备份的命令入口                       |
+| `extensions.rs` / `extension_commands.rs`                     | 扩展包、可选授权、来源与回退、2 个执行位 / 16 项有界队列及管理 IPC |
+| `extension_execution.rs` / `extension_host.rs`                | 命令执行、类型化效果往返与 60 秒总预算、存储与凭据服务编排         |
+| `extension_network.rs` / `extension_storage.rs`               | 精确公网 / 本机网络 broker、系统凭据引用、按插件隔离的 KV CAS      |
+| `extension_runtime.rs` / `extension_worker.rs`                | 固定无界面子进程、整体执行时限、新实例与编译 LRU                   |
+| `extension_view.rs` / `extension_windows.rs`                  | 有界声明式视图、结果产物与可信本地宿主窗口                         |
+| `extension_market.rs` / `extension_market_commands.rs`        | 固定官方源、目录签名 / 有效期、跨重启防回退、包完整性与来源收据    |
+| `marketplace/`                                                | 独立 Git 子模块，维护市场插件源码、收录目录与签名发布流程          |
+| `examples/extensions/`                                        | 使用官方 PDK 的 Rust / JS / TS 示例、内置 WAT 与固定上游互操作样例 |
+| `lifecycle.rs` / `recovery.rs`                                | 跨窗口退出协商、启动存储隔离与重启恢复                             |
+| `system_commands.rs`                                          | 工作区、激活参数、专用系统凭据与固定 worker 协议                   |
+| `desktop.rs` / `autostart.rs`                                 | 窗口复用、托盘、后台行为与平台自启动                               |
+| `window_geometry.rs`                                          | 按窗口保存逻辑尺寸，适配 DPI 与显示器工作区变化                    |
+| `diagnostics.rs` / `updater.rs`                               | 诊断脱敏及更新策略、下载 / 安装状态                                |
+| `resources/branding/` / `scripts/branding.mjs`                | SVG 设计源与平台图标、安装器位图的可复现生成                       |
+| `scripts/fs-utils.mjs`                                        | 初始化与版本设置共用的路径校验、文件暂存、冲突检测与回滚           |
 
 小领域继续放在现有页面、组件、Hook 和原生服务中；已有 `features/data-studio`、`network`、`media`、`catalog` 按实际规则内聚组件和模型，路由页面仍在 `pages/`。新增领域按 [业务模块与依赖方向](./engineering-at-scale.md#业务模块与依赖方向) 划分，不要求一次迁移全部页面，也不为消除几行相似代码增加空壳层。
 
@@ -86,7 +90,9 @@ CSV 导入通过 `features/data-studio/csv.ts` 有界解析、字段映射和逐
 
 文件与笔记冲突共用 `TextDiff` 和有面积上限的行差异算法。每块默认本地，合并只更新编辑器和已审阅的远端 revision / version；后续保存仍由原服务执行条件写入，新冲突保留草稿。大文本只缩短预览，不截断实际合并内容。
 
-Wasm 扩展通过 Rust 管理独立注册表与模块缓存，由 Extism 在阻塞线程执行；暂停、退出与更新共用运行租约。声明的命令复用 CommandsProvider，扩展中心用图标卡片打开文本工具或声明式应用视图。`extension_view.rs` 校验有界视图，通用 React 渲染器绘制插件返回的字段与按钮，不执行网页代码。扩展实验室使用真实 Rust PDK 模块展示文本分析、文件 / HTTPS 数据、表格和点灯解谜；页面与独立窗口共享渲染器，ExtensionsProvider 汇集快照、侧栏贡献与每窗口会话，extension_windows.rs 仅创建本地宿主窗口；仅复用最近一个编译模块，每次调用仍创建新实例。协议、授权和备份范围统一见 [扩展指南](./extensions.md)，不并入设置或笔记 schema。
+Wasm 扩展采用包格式 3 / API 2。清单按命令贡献输入、结果、能力门槛和侧栏 / 窗口入口，必需与可选能力在插件级授权；命令复用 CommandsProvider。文本工具主动提交数据，视图初始化与按钮调用使用同一执行入口；插件可返回有界 HTTP / KV 效果，宿主校验后以结构化结果再次调用插件，不执行网页代码。通用渲染器支持表单、字段错误、图表、分页表格、内嵌图片与用户确认保存的产物，页面和独立窗口共享组件。
+
+ExtensionsProvider 汇集快照、每窗口会话和动态入口；原生端按窗口串行、最多 2 项执行与 16 项排队。固定当前应用的无界面 worker 在 Tauri 初始化前分派，每次创建新 Wasm 实例，复用有界编译 LRU；15 秒 worker 时限覆盖编译，完整效果编排另有 60 秒预算，取消后持有租约到实际工作结束。独立注册表、私有 KV、凭据别名和市场信任各自有数据边界，不并入设置或笔记 schema。协议、开发态不兼容处理、线上市场待发布与验收边界统一见 [扩展指南](./extensions.md)。
 
 原生能力页使用 NativePage 说明浏览器限制并展示当前页面的操作流程，不生成原生结果；通信页保留表单与代码，实际提交仍由门面检查。两者都不伪造 IPC 成功。
 
@@ -165,17 +171,17 @@ pnpm bindings:check
 
 ## 数据存储
 
-| 数据           | 位置与边界                                                                                                                                   |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 设置、窗口存档 | Tauri `appConfigDir`；可恢复的损坏设置先备份再恢复，前端对未来设置 schema 阻止自动写回                                                       |
-| 笔记数据库     | `appDataDir/starter.sqlite3`，由 Rust `rusqlite` 持有连接                                                                                    |
-| 笔记备份       | `appDataDir/backups/` 下的版本化逻辑 JSON，包含全部笔记、回收站及窗口草稿                                                                    |
-| 文件与任务     | 用户明确授权的外部文件；授权记录、任务历史及报告在 `appDataDir/workbench/`                                                                   |
-| 壁纸图库       | 桌面 `appDataDir/wallpapers.json`，Rust 服务原子更新；浏览器演示使用独立 IndexedDB。图库不属于笔记数据库备份范围，恢复隔离模式使用临时图库   |
-| 扩展安装       | `appDataDir/extensions/` 下的独立注册表和模块缓存，不属于笔记备份或恢复归档；格式与生命周期见 [扩展指南](./extensions.md#执行存储与生命周期) |
-| 应用日志       | `appLogDir`，轮换规则见 [排障手册](./troubleshooting.md#先看日志)                                                                            |
-| 浏览器缓存     | WebView / 浏览器的 localStorage，仅存非敏感偏好                                                                                              |
-| 用户凭据       | `keyring` 操作应用标识下的专用演示项，不存明文 JSON / SQLite / localStorage                                                                  |
+| 数据           | 位置与边界                                                                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 设置、窗口存档 | Tauri `appConfigDir`；可恢复的损坏设置先备份再恢复，前端对未来设置 schema 阻止自动写回                                                                                                                     |
+| 笔记数据库     | `appDataDir/starter.sqlite3`，由 Rust `rusqlite` 持有连接                                                                                                                                                  |
+| 笔记备份       | `appDataDir/backups/` 下的版本化逻辑 JSON，包含全部笔记、回收站及窗口草稿                                                                                                                                  |
+| 文件与任务     | 用户明确授权的外部文件；授权记录、任务历史及报告在 `appDataDir/workbench/`                                                                                                                                 |
+| 壁纸图库       | 桌面 `appDataDir/wallpapers.json`，Rust 服务原子更新；浏览器演示使用独立 IndexedDB。图库不属于笔记数据库备份范围，恢复隔离模式使用临时图库                                                                 |
+| 扩展安装       | `appDataDir/extensions/` 保存注册表和模块，`extension-data/` 保存私有 KV / 凭据别名，`extension-market/` 保存目录防回退信任；均不属于笔记备份或恢复归档，见 [扩展指南](./extensions.md#执行存储与生命周期) |
+| 应用日志       | `appLogDir`，轮换规则见 [排障手册](./troubleshooting.md#先看日志)                                                                                                                                          |
+| 浏览器缓存     | WebView / 浏览器的 localStorage，仅存非敏感偏好                                                                                                                                                            |
+| 用户凭据       | `keyring` 保存应用演示项与按插件 / origin / 别名隔离的扩展凭据；JSON 只存别名元数据，不存秘密                                                                                                              |
 
 原生设置在文件可读取、未超过读取大小上限但内容无效时，保留 `settings-corrupt-*.json` 备份后恢复空快照。读取失败、文件超限或备份失败会返回错误；启动恢复入口接管这些错误并隔离业务状态，不强行覆盖原文件。浏览器 localStorage 的读取或 JSON 解析失败时以默认值维持界面、保留原存档，期间修改只留在内存；重试须先成功读取，再合并期间明确修改过的字段并保存，明确重置才允许直接替换。浏览器没有原生文件备份机制，未来 schema 同样阻止自动写回。
 

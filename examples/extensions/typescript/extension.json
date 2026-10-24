@@ -1,20 +1,35 @@
 {
-  "formatVersion": 2,
-  "apiVersion": 1,
+  "formatVersion": 3,
+  "apiVersion": 2,
   "id": "example.typescript-report",
   "version": "1.0.0",
   "name": "TypeScript report",
   "author": "Example author",
-  "description": "Extism example: ASCII case conversion that preserves UTF-8 text.",
-  "inputFormat": "json",
-  "resultFormat": "json",
+  "description": "Typed API 2 example: selected data report and a notebook with optional private storage and exported files.",
   "commands": [
     {
       "id": "summarize",
       "title": "Summarize selected data",
-      "function": "summarize"
+      "function": "summarize",
+      "inputFormat": "json",
+      "resultFormat": "json",
+      "permissions": ["text:read"]
+    },
+    {
+      "id": "notebook",
+      "title": "Private notebook",
+      "function": "notebook",
+      "inputFormat": "json",
+      "resultFormat": "view",
+      "ui": {
+        "sidebar": true,
+        "window": true
+      },
+      "permissions": []
     }
   ],
-  "permissions": ["text:read", "files:read", "network:https"],
-  "allowedHosts": ["httpbin.org"]
+  "permissions": ["text:read"],
+  "minHostVersion": "0.1.4",
+  "optionalPermissions": ["files:read", "storage"],
+  "network": []
 }

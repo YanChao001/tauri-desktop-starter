@@ -21,6 +21,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   extensionDemo: vi.fn(),
   previewExtension: vi.fn(),
   installExtension: vi.fn(),
+  installMarketExtension: vi.fn(),
   setExtensionEnabled: vi.fn(),
   onExtensionsChanged: vi.fn(),
   viewExtension: vi.fn(),
@@ -34,17 +35,27 @@ vi.mock("@/providers/i18n", async () => {
 });
 const preview: native.ExtensionPreview = {
   manifest: {
-    formatVersion: 2,
-    apiVersion: 1,
+    formatVersion: 3,
+    apiVersion: 2,
     id: "test.example",
     version: "1.0.0",
     name: "Example",
     author: "Local",
     description: "Test example",
-    inputFormat: "text",
-    resultFormat: "text",
-    commands: [{ id: "run", title: "Run", function: "run" }],
+    commands: [
+      {
+        id: "run",
+        title: "Run",
+        function: "run",
+        inputFormat: "text",
+        resultFormat: "text",
+        permissions: [],
+      },
+    ],
     permissions: ["text:read"],
+    minHostVersion: "0.1.0",
+    optionalPermissions: [],
+    network: [],
   },
   sha256: "b".repeat(64),
   bytes: 100,
@@ -55,7 +66,7 @@ beforeEach(() => {
   snapshot = {
     revision: 0,
     items: [],
-    runningId: null,
+    runs: [],
   };
   vi.mocked(native.extensionSnapshot).mockImplementation(async () => snapshot);
   vi.mocked(native.previewExtension).mockResolvedValue(preview);
@@ -63,7 +74,9 @@ beforeEach(() => {
   vi.mocked(native.onExtensionsChanged).mockResolvedValue(vi.fn());
   vi.mocked(native.extensionMarketSnapshot).mockResolvedValue({
     catalog: {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      issuedAt: 1,
+      expiresAt: 9999999999,
       revision: 1,
       repository: "owner/market",
       entries: [],
@@ -81,6 +94,7 @@ it("previews without installing, then installs disabled and requires every conse
       revision: 1,
       items: [
         {
+          origin: { kind: "local" },
           package: preview,
           enabled: false,
           grantedPermissions: [],
@@ -194,6 +208,12 @@ const marketEntry: native.MarketEntry = {
   packageSha256: "c".repeat(64),
   packageBytes: 500,
 };
+const marketSource = {
+  repository: "owner/market",
+  publicKeyFingerprint: "d".repeat(64),
+  catalogRevision: 1,
+  packageSha256: marketEntry.packageSha256,
+};
 function marketPage() {
   return render(
     <MemoryRouter>
@@ -208,7 +228,9 @@ it("downloads a market package for review and installs only after confirmation w
   const user = userEvent.setup();
   vi.mocked(native.extensionMarketSnapshot).mockResolvedValue({
     catalog: {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      issuedAt: 1,
+      expiresAt: 9999999999,
       revision: 1,
       repository: "owner/market",
       entries: [marketEntry],
@@ -219,8 +241,9 @@ it("downloads a market package for review and installs only after confirmation w
   vi.mocked(native.downloadMarketExtension).mockResolvedValue({
     content: "verified-package",
     preview: marketEntry.package,
+    source: marketSource,
   });
-  vi.mocked(native.installExtension).mockResolvedValue(snapshot);
+  vi.mocked(native.installMarketExtension).mockResolvedValue(snapshot);
   marketPage();
   await user.click(
     await screen.findByRole("tab", { name: "Discover plugins" }),
@@ -239,11 +262,12 @@ it("downloads a market package for review and installs only after confirmation w
     within(review).getByRole("button", { name: "Install and keep disabled" }),
   );
   await waitFor(() =>
-    expect(native.installExtension).toHaveBeenCalledWith(
+    expect(native.installMarketExtension).toHaveBeenCalledWith(
       "verified-package",
       0,
       false,
       preview.sha256,
+      marketSource,
     ),
   );
 });
@@ -251,6 +275,7 @@ it("offers numeric version updates and retains the installed package when downlo
   const user = userEvent.setup();
   snapshot.items = [
     {
+      origin: { kind: "local" },
       package: {
         ...preview,
         manifest: { ...preview.manifest, version: "1.2.0" },
@@ -261,7 +286,9 @@ it("offers numeric version updates and retains the installed package when downlo
   ];
   vi.mocked(native.extensionMarketSnapshot).mockResolvedValue({
     catalog: {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      issuedAt: 1,
+      expiresAt: 9999999999,
       revision: 1,
       repository: "owner/market",
       entries: [marketEntry],
@@ -288,7 +315,9 @@ it("keeps a verified catalog visible after refresh failure and filters it withou
   vi.mocked(native.extensionMarketSnapshot)
     .mockResolvedValueOnce({
       catalog: {
-        schemaVersion: 1,
+        schemaVersion: 2,
+        issuedAt: 1,
+        expiresAt: 9999999999,
         revision: 1,
         repository: "owner/market",
         entries: [marketEntry],
@@ -345,15 +374,19 @@ it("keeps installation unavailable for an incompatible registry and recovers aft
 it("shows a bundled app once in the installed list and opens a normal route without executing or reinstalling", async () => {
   snapshot.items = [
     {
+      origin: { kind: "local" },
       package: {
         ...preview,
         manifest: {
           ...preview.manifest,
           name: "Extension Lab",
           id: "starter.extension-lab",
-          inputFormat: "json",
-          resultFormat: "view",
-          ui: { sidebar: true, window: true },
+          commands: preview.manifest.commands.map((command) => ({
+            ...command,
+            inputFormat: "json",
+            resultFormat: "view",
+            ui: { sidebar: true, window: true },
+          })),
         },
       },
       enabled: true,
@@ -389,7 +422,12 @@ it("shows a bundled app once in the installed list and opens a normal route with
 it("restores keyboard focus to the action that opened the consent dialog", async () => {
   const user = userEvent.setup();
   snapshot.items = [
-    { package: preview, enabled: false, grantedPermissions: [] },
+    {
+      origin: { kind: "local" },
+      package: preview,
+      enabled: false,
+      grantedPermissions: [],
+    },
   ];
   render(
     <MemoryRouter>
@@ -403,4 +441,72 @@ it("restores keyboard focus to the action that opened the consent dialog", async
   const dialog = await screen.findByRole("dialog");
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(enable).toHaveFocus());
+});
+
+it("enables offline commands without optional networking and allows grants to change later", async () => {
+  const offline: native.ExtensionPreview = {
+    ...preview,
+    manifest: {
+      ...preview.manifest,
+      permissions: [],
+      optionalPermissions: ["network:https"],
+      network: [{ origin: "https://example.com", methods: ["GET"] }],
+    },
+  };
+  snapshot.items = [
+    {
+      origin: { kind: "local" },
+      package: offline,
+      enabled: false,
+      grantedPermissions: [],
+    },
+  ];
+  vi.mocked(native.setExtensionEnabled).mockImplementation(
+    async (_id, enabled, grants) => {
+      snapshot = {
+        ...snapshot,
+        revision: snapshot.revision + 1,
+        items: snapshot.items.map((item) => ({
+          ...item,
+          enabled,
+          grantedPermissions: grants,
+        })),
+      };
+      return snapshot;
+    },
+  );
+  marketPage();
+  fireEvent.click(await screen.findByRole("button", { name: "Enable" }));
+  const dialog = await screen.findByRole("dialog");
+  const confirm = within(dialog).getByRole("button", { name: "Enable" });
+  fireEvent.click(within(dialog).getAllByRole("checkbox")[0]!);
+  expect(confirm).toBeEnabled();
+  expect(within(dialog).getAllByRole("checkbox")[1]).not.toBeChecked();
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(native.setExtensionEnabled).toHaveBeenCalledWith(
+      "test.example",
+      true,
+      [],
+      0,
+      true,
+    ),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage permissions" }),
+  );
+  const permissions = await screen.findByRole("dialog");
+  fireEvent.click(within(permissions).getAllByRole("checkbox")[1]!);
+  fireEvent.click(
+    within(permissions).getByRole("button", { name: "Save permissions" }),
+  );
+  await waitFor(() =>
+    expect(native.setExtensionEnabled).toHaveBeenLastCalledWith(
+      "test.example",
+      true,
+      ["network:https"],
+      1,
+      true,
+    ),
+  );
 });

@@ -17,6 +17,11 @@ async function fixture(t) {
     ["Cargo.lock", "examples/extensions/apps/Cargo.lock", "version = 4\n"],
     ["src/lib.rs", "examples/extensions/apps/src/lib.rs", "fn main() {}\n"],
     [
+      "extension.json",
+      "examples/extensions/apps/extension.json",
+      '{"formatVersion":3}\n',
+    ],
+    [
       "rust-toolchain.toml",
       "rust-toolchain.toml",
       '[toolchain]\nchannel = "1.99.1"\n',
@@ -46,6 +51,7 @@ test("快速检查接受等效换行和收据顺序，但拒绝源码、工具�
   await buildExtensionApps(root, { check: true });
   for (const path of [
     "examples/extensions/apps/src/lib.rs",
+    "examples/extensions/apps/extension.json",
     "rust-toolchain.toml",
     "resources/extensions/demo-apps.wasm",
   ]) {

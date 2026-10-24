@@ -3,6 +3,10 @@ import type {
   DesktopStatus,
   DiagnosticsReport,
   ExtensionPermission,
+  ExtensionArtifact,
+  ExtensionCredentialSlot,
+  ExtensionFileChoice,
+  ExtensionStorageInfo,
   ExtensionPreview,
   ExtensionRunInput,
   ExtensionSnapshot,
@@ -10,6 +14,7 @@ import type {
   ExtensionViewInput,
   MarketDownload,
   MarketSnapshot,
+  MarketSource,
   NativeError as NativeFailure,
   Note,
   NoteInput,
@@ -23,6 +28,16 @@ import type {
 } from "./generated/bindings";
 
 export type {
+  ExtensionArtifact,
+  ExtensionCredentialSlot,
+  ExtensionFileChoice,
+  ExtensionStorageInfo,
+  ExtensionRunStatus,
+  ExtensionViewRequest,
+  ExtensionHostContext,
+  ExtensionEffect,
+  ExtensionEffectResult,
+  MarketSource,
   MarketCatalog,
   MarketEntry,
   MarketSnapshot,
@@ -120,6 +135,92 @@ export function setExtensionEnabled(
       trusted,
     ),
   );
+}
+export function installMarketExtension(
+  content: string,
+  expectedRevision: number,
+  replaceExisting: boolean,
+  expectedSha256: string,
+  source: MarketSource,
+): Promise<ExtensionSnapshot> {
+  return callNative((commands) =>
+    commands.installMarketExtension(
+      content,
+      expectedRevision,
+      replaceExisting,
+      expectedSha256,
+      source,
+    ),
+  );
+}
+export function rollbackExtension(
+  id: string,
+  expectedRevision: number,
+): Promise<ExtensionSnapshot> {
+  return callNative((commands) =>
+    commands.rollbackExtension(id, expectedRevision),
+  );
+}
+export function pickExtensionFiles(): Promise<ExtensionFileChoice[]> {
+  return callNative((commands) => commands.pickExtensionFiles());
+}
+export function validateExtensionView(content: string): Promise<ExtensionView> {
+  return callNative((commands) => commands.validateExtensionView(content));
+}
+export function saveExtensionArtifact(
+  id: string,
+  expectedSha256: string,
+  artifact: ExtensionArtifact,
+): Promise<string | null> {
+  return callNative((commands) =>
+    commands.saveExtensionArtifact(id, expectedSha256, artifact),
+  );
+}
+export function extensionStorageInfo(
+  id: string,
+  expectedSha256: string,
+): Promise<ExtensionStorageInfo> {
+  return callNative((commands) =>
+    commands.extensionStorageInfo(id, expectedSha256),
+  );
+}
+export function clearExtensionStorage(
+  id: string,
+  expectedSha256: string,
+  expectedRevision: number,
+): Promise<void> {
+  return callNative((commands) =>
+    commands.clearExtensionStorage(id, expectedSha256, expectedRevision),
+  ).then(() => undefined);
+}
+export function extensionCredentialSlots(
+  id: string,
+  expectedSha256: string,
+): Promise<ExtensionCredentialSlot[]> {
+  return callNative((commands) =>
+    commands.extensionCredentialSlots(id, expectedSha256),
+  );
+}
+export function setExtensionCredential(
+  id: string,
+  expectedSha256: string,
+  origin: string,
+  alias: string,
+  secret: string,
+): Promise<void> {
+  return callNative((commands) =>
+    commands.setExtensionCredential(id, expectedSha256, origin, alias, secret),
+  ).then(() => undefined);
+}
+export function deleteExtensionCredential(
+  id: string,
+  expectedSha256: string,
+  origin: string,
+  alias: string,
+): Promise<void> {
+  return callNative((commands) =>
+    commands.deleteExtensionCredential(id, expectedSha256, origin, alias),
+  ).then(() => undefined);
 }
 export function uninstallExtension(
   id: string,

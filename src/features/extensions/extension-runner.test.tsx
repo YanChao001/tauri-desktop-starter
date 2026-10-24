@@ -16,7 +16,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   runExtension: vi.fn(),
   cancelExtension: vi.fn(),
   saveTextExport: vi.fn(),
-  pickWorkbenchFiles: vi.fn(),
+  pickExtensionFiles: vi.fn(),
 }));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
@@ -30,20 +30,30 @@ vi.mock("@/providers/unsaved-work", () => ({
   },
 }));
 const tool: native.ExtensionInfo = {
+  origin: { kind: "local" },
   package: {
     manifest: {
-      formatVersion: 2,
-      apiVersion: 1,
+      formatVersion: 3,
+      apiVersion: 2,
       id: "test.tool",
       version: "1.0.0",
       name: "Test tool",
       author: "Test",
       description: "Tool",
-      inputFormat: "text",
-      resultFormat: "text",
-      commands: [{ id: "run", title: "Run", function: "run" }],
+      commands: [
+        {
+          id: "run",
+          title: "Run",
+          function: "run",
+          inputFormat: "text",
+          resultFormat: "text",
+          permissions: [],
+        },
+      ],
       permissions: ["text:read"],
-      allowedHosts: [],
+      minHostVersion: "0.1.0",
+      optionalPermissions: [],
+      network: [],
     },
     sha256: "a".repeat(64),
     bytes: 100,
@@ -73,7 +83,7 @@ it("exports the actual final result when completion races with lifecycle cancell
   render(
     <ExtensionRunner
       items={[tool]}
-      runningId={null}
+      runs={[]}
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
@@ -96,7 +106,7 @@ it("keeps input and previous output after failure and leaves a cancelled export 
   render(
     <ExtensionRunner
       items={[tool]}
-      runningId={null}
+      runs={[]}
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
@@ -133,7 +143,7 @@ it("keeps its run occupied until native cancellation completes and cancels on un
   const view = render(
     <ExtensionRunner
       items={[tool]}
-      runningId={null}
+      runs={[]}
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
@@ -153,7 +163,7 @@ it("does not clear or save anything for an already aborted lifecycle request", a
   render(
     <ExtensionRunner
       items={[tool]}
-      runningId={null}
+      runs={[]}
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
@@ -170,17 +180,17 @@ it("does not clear or save anything for an already aborted lifecycle request", a
 });
 
 it("waits for an active file picker and exports the selection that actually completed", async () => {
-  const selecting = deferred<native.WorkbenchDocument[]>();
-  vi.mocked(native.pickWorkbenchFiles).mockReturnValueOnce(selecting.promise);
+  const selecting = deferred<native.ExtensionFileChoice[]>();
+  vi.mocked(native.pickExtensionFiles).mockReturnValueOnce(selecting.promise);
   render(
     <ExtensionRunner
       items={[{ ...tool, grantedPermissions: ["files:read"] }]}
-      runningId={null}
+      runs={[]}
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Choose text files for this run" }),
+    screen.getByRole("button", { name: "Choose files for this run" }),
   );
   expect(lifecycle.work?.dirty).toBe(true);
   const saving = lifecycle.work!.save();
@@ -190,12 +200,8 @@ it("waits for an active file picker and exports the selection that actually comp
       {
         id: "selected",
         name: "new-selection.txt",
-        path: "C:/new-selection.txt",
-        kind: "text",
-        content: "saved text",
+        mediaType: "text/plain",
         bytes: 10,
-        previewUrl: null,
-        revision: "revision",
       },
     ]);
     await saving;

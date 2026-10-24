@@ -1,262 +1,250 @@
 # Extism 扩展开发与安装
 
-扩展中心位于 `/extensions`。宿主使用 [Extism](https://extism.org/docs/overview/) 的 Rust SDK 运行 Wasm 模块，支持内置扩展、本地包导入和官方市场发现、下载与更新。扩展以带图标的卡片呈现，点击打开应用视图或文本工具。设计取舍见 [ADR 0007](./adr/0007-extism-extensions.md)、[ADR 0008](./adr/0008-extension-app-views.md)、[ADR 0009](./adr/0009-extension-surfaces.md) 与 [ADR 0010](./adr/0010-curated-extension-market.md)。
+扩展中心位于 `/extensions`。宿主使用 Extism 运行 Rust / JavaScript / TypeScript 编译的 Wasm，通过清单登记命令、侧栏与独立窗口，用类型化效果连接已授权的网络和私有数据，统一绘制声明式界面。长期取舍见 [ADR 0011](./adr/0011-capability-extension-host.md)。浏览器演示提供限制说明，安装、运行和系统凭据需要桌面环境。
 
 ## 架构与兼容范围
 
-插件使用官方 PDK 开发，宿主复用 Extism ABI、WASI、资源限制与取消，不加载原生程序、动态库或 Node.js。命令声明映射到 Wasm 导出函数，启用后注册到既有命令面板。文本工具需主动提交数据并运行，结果为文本、JSON 或安全 Markdown；应用命令打开声明式视图，首次加载和后续按钮点击均调用实际 Wasm 函数，只提交本视图的数据。
+当前契约为 **包格式 3、API 2、视图版本 2、注册表 schema 3**。每条命令分别声明输入、结果、入口和所需能力；同一插件可以同时提供普通文本工具与应用视图。宿主复用 Extism ABI，不加载插件原生程序、动态库、Node.js 或任意网页，不提供 VS Code API 兼容层。
 
-采用同一运行框架仍需匹配输入、导出函数和宿主能力。对于只依赖 Extism 标准能力的模块，可以不改源码，只补充本应用的安装清单。需要其他应用专有 Host Functions 的模块需要适配；完整 Node API、常驻服务、任意 HTML / React 页面及 VS Code API 不在本实现中。浏览器仅展示流程，不安装或运行原生存档中的模块。
+只依赖标准 Extism 能力的模块可保留原始 Wasm，补充本应用清单后调用真实导出函数；其他应用的专用 Host Functions 或界面协议仍需适配。插件的业务状态、动作和数据格式由插件自行校验；生成的 TypeScript 类型不能代替 Rust 和插件边界校验。
 
-旧的原生程序扩展是本分支未发布原型，已删除执行器、进程 SDK 与兼容分支。当前只接收包格式 2、API 1 和注册表 schema 2；旧版本或未来存档拒写并保留原件，不静默执行、迁移或清除旧程序。
-
-若曾使用旧原型，先退出应用，将应用数据目录中的 `extensions/` 改名归档，再启动并重新安装 Wasm 包。保留归档，不删除设置或数据库。
-
-如果扩展列表无法读取，先查看页面顶部的结构化错误。安装器升级会保留应用数据，重装不会清除旧扩展记录。确认是旧原型 schema 1 后按上述方法归档，再点击刷新；未来版本或损坏存档仍应保留原件，不能一律当作旧原型清除。
+本轮属于开发阶段重构，**不兼容旧扩展包、视图、注册表和市场目录**。遇到旧版、未来版或损坏存档明确拒绝并保留原件，不自动迁移或清空。确认是此前开发版后，退出所有应用进程，将应用数据目录的 `extensions/` 改名归档，再启动并重新安装格式 3 包；不要删除设置、笔记或外部文件。重装应用会保留用户数据，不能代替这一步。未来版本或原因不明的损坏应先保留现场，不一律当成旧开发版处理。
 
 ## 安装与体验
 
-桌面版首次读取扩展列表时，将 **扩展实验室** 安装到“已安装扩展”，初始禁用且没有任何授权。确认信任及三项数据用途后启用；这一步不会执行 Wasm。页面没有第二份内置应用画廊。
+桌面版首次读取扩展列表时安装 **扩展实验室**，默认禁用且没有授权。审阅包来源、命令和用途，确认信任后启用；必需能力需要全部同意，可选能力可以拒绝或随后在“管理权限”调整。实验室的文本、文件、网络与私有存储均为可选能力，可先启用体验离线页签。
 
-实验室是实际 Rust PDK 插件，完整源码位于 [apps](../examples/extensions/apps/)，包含五个页签：
+实验室源码位于 [apps](../examples/extensions/apps/)，包含总览、文本工坊、数据连接、待办与偏好、点灯解谜和开发协议六个页签：
 
-- 总览：能力说明、运行时与入口指标。
-- 文本工坊：文本域、下拉框、复选框、大小写 / 空白转换、Unicode 字符统计、高频词表与安全预览。
-- 数据连接：用户选择的文本文件与有界 HTTPS GET 响应；解析 JSON 表格，保留文件名与内容统计。
-- 点灯解谜：5 × 5 棋盘、三关、撤销、重开、提示和胜负判断，全部规则在 Wasm 内。
-- 开发协议：清单片段、宿主能力及源码入口。
+- 文本转换、Unicode 统计与高频词由真实 Wasm 计算，可生成单独保存的文本文件。
+- 数据连接展示显式发送的文本 / 二进制文件和声明来源的 HTTPS 效果。
+- 待办与偏好演示私有存储、revision 冲突、日期、字段错误和完成进度；不授予存储时其他离线功能仍可使用。
+- 点灯解谜的三关、撤销和提示位于插件中，宿主只绘制通用棋盘控件。
 
-启用后可从左侧导航、扩展卡片或命令面板打开普通页面；点击“在独立窗口打开”创建真正的系统窗口，复用主窗口皮肤、语言、主题与窗口按钮，保留最小化、最大化、关闭和拖动缩放。主窗口继续使用，没有模态遮罩。每个窗口拥有独立会话；重复打开同一扩展命令聚焦该系统窗口。
+启用且满足命令能力要求后，从卡片、命令面板或清单声明的侧栏入口打开。应用视图首次加载会执行初始化函数；预览、安装、启用本身不执行 Wasm。声明独立窗口入口的命令可创建本地宿主系统窗口，同一入口重复打开聚焦既有窗口，每个窗口保留自己的会话。默认安装只发生一次，卸载后不会自动重装；“恢复内置实验室”需要重新审阅和手动安装，同 ID 包不被默认资源覆盖。
 
-默认安装只发生一次，用户卸载后不自动重装；可在安装区域点击“恢复内置实验室”，审阅后手动安装。已有同 ID 包不覆盖、不自动启用或信任，达到安装上限时不强制插入；失败保留原记录。旧计算器 / 井字棋的已安装 Wasm 包可继续使用旧视图协议，用户可自行卸载，宿主不删除其会话或用户数据。
+本地导入使用 `.starter-extension.json`。作者来自包内自述，内容 SHA-256 标识模块，市场签名表示维护者发布目录，均不能认证包内作者。安装升级要求更高的数字版本，并保留前一包供显式回退；回退撤销授权并禁用，需重新确认后启用，不是市场目录降级。
 
-也可选择 `.starter-extension.json` 文件安装第三方插件。开发者的小型文本 / JSON 工具仍提供在 [多语言示例](../examples/extensions/)，使用相同的包审阅、安装与授权流程。
+只有来自同一内置来源或同仓库 / 公钥的已验证市场来源、major / minor 不变、必需能力不超出已有授权且网络来源 / 方法不扩大的 patch 升级，才保留启用状态和仍声明的已有授权。新增可选能力不会自动授予。本地包、换来源、扩大权限或网络范围及 major / minor 升级均重新确认并默认禁用。
 
-预览、安装和启用本身不执行插件；打开应用视图会执行其初始化函数。外部包继续默认禁用并要求确认信任。作者为包内自述；市场目录签名表示维护者发布该目录，SHA-256 标识内容，均不认证包内作者。升级需提高数字版本，清空授权并禁用，正在运行的旧实例收到停止请求。禁用和卸载先撤回入口并请求停止，运行租约直到实际执行结束才释放，退出也等待运行停止；已经发出的 HTTPS 请求不会被取消操作撤回。
-
-## 官方插件市场
-
-“已安装扩展”保留本地文件导入、内置实验室恢复和运行；“发现插件”读取维护者控制的签名目录，支持按名称 / 简介 / 作者 / ID 搜索、分类与推荐。市场版本高于本机版本时，在已安装卡片与市场卡片提供更新入口。下载只进入包审阅，用户明确确认后才安装，随后仍需授权启用。
-
-市场仓库由主项目根目录的 `marketplace/` Git submodule 引用，源码、收录清单、发布工具和 Actions 独立维护。普通宿主构建不依赖子模块初始化；内置实验室继续由主仓库编译进应用。开发者需要市场源码时执行：
-
-```sh
-git submodule update --init --recursive
-```
-
-发布规则由 [独立市场仓库](https://github.com/YanChao001/tauri-desktop-starter-extensions#readme) 维护。先审核插件源码、许可、权限和宿主实际运行，再合并收录清单；在该仓库 Actions 手动运行“发布市场”。构建与签名使用独立任务，流程计算完整包与模块的独立哈希、签名并核对目录，先上传草稿 Release 的全部附件，成功后才发布为 latest。下架通过移除收录项并发布更高目录 revision 完成，已安装的用户数据保留。
-
-市场仓库与 minisign 公钥集中在 `app.config.json` 的 `extensionMarket`；两项留空可禁用市场，派生新应用身份或主仓库时默认清除继承的市场信任；单独更换市场仓库时也清除旧公钥，需显式提供新源可信的公钥，初始化拒绝不完整配置。用户不能通过 IPC 指定另一个源或任意下载 URL。目录来自该仓库 latest Release 的 `catalog.json`，扩展包只来自签名目录所指向的同仓库 Release 附件。签名使用 Node 内置 Ed25519 / BLAKE2b 与既有 Rust `minisign-verify`，没有新增应用依赖。私钥只用于仓库外临时文件与受控 Actions Secret，不随客户端分发。
-
-Rust 对下载实施 HTTPS、同仓库路径与 GitHub 附件重定向白名单、超时、目录 / 包大小和并发限制；目录验签后再次校验清单、ID 唯一性、revision、附件名、完整包哈希、模块哈希及完整元数据一致性。当前宿主进程缓存已验证目录五分钟；刷新失败保留该进程的旧目录并标明过期，重启不恢复缓存。每次下载都重新确认目标仍在上架，失败不修改安装记录。本地文件导入不依赖市场联网。浏览器仍展示原生能力边界，不模拟下载安装成功。
-
-## 构建 Rust 示例
-
-完整示例位于 [examples/extensions/rust](../examples/extensions/rust/)。它直接使用官方 `extism-pdk`，不依赖本项目私有 SDK；复制目录、修改导出函数和清单即可开始开发。
-
-从仓库根运行：
-
-```powershell
-rustup target add wasm32-unknown-unknown
-cargo build --manifest-path examples/extensions/rust/Cargo.toml --release --locked --target wasm32-unknown-unknown --target-dir src-tauri/target/extension-example
-pnpm extension:pack --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --out artifacts/extensions/rust-text-1.0.0.starter-extension.json
-```
-
-这是 Wasm 编译目标，同一模块可交给不同桌面平台上的兼容 Extism 宿主，不需要分别打包 Windows / macOS / Linux 原生程序。目标平台的宿主仍需实际验收。
-
-## 构建 JavaScript 和 TypeScript 示例
-
-[JavaScript 示例](../examples/extensions/javascript/) 展示普通文本与多个导出命令，[TypeScript 示例](../examples/extensions/typescript/) 展示 JSON 输入、选中文件与结构化结果。独立的 [示例工程](../examples/extensions/package.json) 使用官方 PDK 类型和 esbuild，不向应用前端增加运行时依赖。
-
-先按 [官方 JS PDK](https://github.com/extism/js-pdk#install) 安装 `extism-js` 和 Binaryen，将 `extism-js`、`wasm-merge`、`wasm-opt` 加入 PATH。当前示例使用的编译器版本为 extism-js 1.7.0 / Binaryen 133；开发依赖由示例锁文件固定。
-
-```powershell
-pnpm --dir examples/extensions install --frozen-lockfile
-pnpm --dir examples/extensions typecheck
-pnpm --dir examples/extensions build
-pnpm extension:pack --manifest examples/extensions/javascript/extension.json --wasm examples/extensions/dist/javascript.wasm --out artifacts/extensions/js-text-1.0.0.starter-extension.json
-pnpm extension:pack --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --out artifacts/extensions/ts-report-1.0.0.starter-extension.json
-```
-
-TS 先由 esbuild 输出 ES2020 / CommonJS，再由官方编译器生成含 JavaScript 引擎的 Wasm。用户运行插件不需要安装 Node、Rust 或上述编译工具。纯计算 npm 包可随构建打包；依赖 Node 内置模块、DOM 或异步后台任务的包需要适配。本宿主没有直接联网能力，示例只接收本次 HTTPS broker 返回的数据。
-
-打包脚本不执行模块，不覆盖已有输出。再次打包使用新文件名；完整的元数据、权限和命令校验由安装时的 Rust 边界执行。
+禁用、升级、卸载和权限变更撤回不可用入口并请求停止旧调用；租约在原生执行真正结束后释放。卸载撤销该插件的系统凭据，私有数据保留，重装同 ID 后可重新授权访问。需要清除私有数据时，在卸载前进入详情中的存储概况，确认后清空；清空不结束当前会话。系统凭据删除失败会阻止卸载并保留重试信息。
 
 ## 包与输入契约
 
-UTF-8 JSON 文件，推荐后缀 `.starter-extension.json`：
+推荐使用开发工具生成 UTF-8 JSON 包，清单和核心 Wasm 以标准 base64 封装。最小文本示例：
 
 ```json
 {
   "manifest": {
-    "formatVersion": 2,
-    "apiVersion": 1,
+    "formatVersion": 3,
+    "apiVersion": 2,
+    "minHostVersion": "0.1.4",
     "id": "example.text-tool",
     "version": "1.0.0",
     "name": "Text tool",
     "author": "Example author",
     "description": "Transforms explicitly submitted text",
-    "inputFormat": "text",
-    "resultFormat": "text",
     "commands": [
-      { "id": "uppercase", "title": "Uppercase", "function": "uppercase" }
+      {
+        "id": "uppercase",
+        "title": "Uppercase",
+        "function": "uppercase",
+        "inputFormat": "text",
+        "resultFormat": "text",
+        "permissions": ["text:read"]
+      }
     ],
     "permissions": ["text:read"],
-    "allowedHosts": []
+    "optionalPermissions": [],
+    "network": []
   },
   "wasm": "<standard base64 of the Wasm core module>"
 }
 ```
 
-`manifest` 是安装与界面元数据，`wasm` 中的模块仍使用标准 Extism ABI；这不是要求其他应用都采用的通用安装包格式。原始模块不被重写。可以指定已有模块的真实导出函数，使用文本输入传入其要求的 UTF-8 内容（包括插件自行约定的 JSON 字符串）。
+契约与校验源为 [extensions.rs](../src-tauri/src/extensions.rs)，未知字段拒绝。包最多 24 MiB，模块最多 16 MiB；支持 1–32 个命令，命令 ID 唯一。插件 ID 使用有界小写反向域名，版本与 `minHostVersion` 使用三段数字版本；最低宿主高于当前应用时明确提示不兼容。准确字符和长度限制由 Rust 校验，不在打包脚本重复维护另一套规则。
 
-Rust 的 DTO 和校验是契约来源，前端消费生成绑定。未知字段拒绝。包最多 24 MiB，模块最多 16 MiB，必须是 Wasm 核心模块；安装只检查格式和元数据，语义、导出与运行能力在执行时由 Extism 检查。ID 为不超过 80 字节的小写反向域名式标识，版本为三段 `0..65535` 数字；名称、作者、说明分别最多 120 / 120 / 1000 UTF-8 字节。支持 1–8 个命令，局部 ID 唯一，函数名最多 128 字节且仅含 ASCII 字母、数字、下划线、连字符或点。
+| 声明                                       | 用途                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| 命令 `inputFormat`                         | `text` 原样交付本次 UTF-8 文本；`json` 接收宿主请求或视图请求                        |
+| 命令 `resultFormat`                        | `text`、`json`、`markdown` 或版本化声明式 `view`；视图必须配合 JSON 输入             |
+| 命令 `ui`                                  | 仅视图可声明 `{ "sidebar": true, "window": true }`；省略时仍可在扩展中心打开普通页面 |
+| 命令 `permissions`                         | 该命令的必需能力门槛，必须来自插件已声明能力；不满足时撤回或禁用入口                 |
+| 插件 `permissions` / `optionalPermissions` | 必需与可选能力集合，唯一且互不重叠；调整授权会停止旧调用                             |
+| 插件 `network`                             | 精确 origin 和允许的 HTTP 方法，必须与声明的网络能力对应                             |
 
-| 字段                  | 作用                                                                                |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| `inputFormat: "text"` | 将本次文本直接交给函数，不添加本项目请求包装；仅能声明文本用途                      |
-| `inputFormat: "json"` | 文本工具接收下面的宿主请求；`view` 应用接收下节的视图请求                           |
-| `resultFormat`        | `text`、`json`、`markdown`，或返回有版本声明式响应的 `view`                         |
-| `icon`                | 可选：`puzzle`、`calculator`、`gamepad`、`notebook`、`terminal`；缺省使用拼图       |
-| `ui`                  | 可选 `{ "sidebar": true, "window": true }`，仅适用于 `view`；声明侧栏和独立窗口入口 |
-| `commands`            | 命令 ID、纯文本标题与实际 Wasm 导出函数名                                           |
-| `permissions`         | 必须唯一，启用时逐项确认；每次运行仍需用户主动提交数据                              |
+授权的主体是整个插件。命令所列能力决定其能否启动，不是此命令独立的权限上限；插件效果和主动发送的数据仍按该插件当前的全部授权检查。不得因为离线命令未列网络门槛，就推断已授予插件的网络能力不可用。
 
-JSON 输入示例：
+JSON 文本工具接收 `apiVersion: 2`、`inputText`、`files` 和 `network`。文本最多 1 MiB；最多 16 个当前用户主动选择的已授权文件，原始内容合计 2 MiB。文件只含名称、`mediaType`、`encoding`（`utf8` 或 `base64`）和内容，不含系统路径。`mediaType` 是提示，不是内容认证；插件须自行检查实际格式。选择不等于发送，用户提交后宿主重新读取保存的文件内容，不代发工作台未保存草稿。完整编码请求最多 4 MiB，base64 与 JSON 开销均计入。
+
+JSON 与 Markdown 结果由 Rust / 安全组件检查，文本结果按纯文本显示，结果不自动写入笔记或文件。完整输入输出与体积检查统一在 [执行编排](../src-tauri/src/extension_execution.rs) 和 [视图协议](../src-tauri/src/extension_view.rs) 实施。
+
+## 网络、凭据与私有数据
+
+### 来源与授权
+
+`network:https` 支持明确声明的公网 HTTPS 服务，`network:local` 单独允许精确的本机 HTTP 服务。例如：
 
 ```json
 {
-  "apiVersion": 1,
-  "inputText": "explicit text",
-  "files": [{ "name": "sample.txt", "content": "saved text" }],
+  "optionalPermissions": ["network:https", "network:local"],
   "network": [
-    { "url": "https://httpbin.org/get", "status": 200, "body": "response" }
+    { "origin": "https://api.example.com", "methods": ["GET", "POST"] },
+    { "origin": "http://127.0.0.1:3000", "methods": ["GET"] }
   ]
 }
 ```
 
-| 用途            | 交付边界                                                                                                |
-| --------------- | ------------------------------------------------------------------------------------------------------- |
-| `text:read`     | 本次主动输入的文本，最多 64 KiB UTF-8                                                                   |
-| `files:read`    | 最多 3 个工作台已授权资源，重新读取已保存版本，内容合计 64 KiB，只传文件名和内容                        |
-| `network:https` | 本次主动填写的 HTTPS GET；manifest 同时声明 `httpbin.org` / `jsonplaceholder.typicode.com` 中的允许主机 |
+origin 必须是标准化的精确协议 / 主机 / 端口，不带路径、凭据、查询、片段或通配符。公网 HTTPS 的所有解析地址必须通过公网地址检查，并固定到本次连接；拒绝私网、环回、映射、隧道与保留地址。本机 HTTP 仅接受 `localhost` 或字面环回地址，全部解析结果仍需为环回；它不开放局域网或任意内网。宿主禁止重定向、代理和 Cookie，不因插件声明服务而增加 WebView CSP 来源。
 
-未选择的数据为空数组。HTTPS broker 禁止凭据、其他主机、自定义端口与重定向，不使用宿主代理或凭据，最多 3 秒、64 KiB 严格 UTF-8；HTTP 状态由插件处理。它是演示用的有限数据接口，不能据此声称支持任意外部服务。
+支持 `GET`、`HEAD`、`POST`、`PUT`、`PATCH`、`DELETE`、`OPTIONS`，逐次检查清单的方法集合和当前授权。请求正文最多 1 MiB，响应正文最多 2 MiB 严格 UTF-8，HTTP 请求最多 15 秒；头部数量和总字节另有限额。插件不能自行设置 Authorization、Cookie、代理和连接控制头。完整限制见 [extension_network.rs](../src-tauri/src/extension_network.rs)。
 
-请求编码后最多 512 KiB，函数返回最多 64 KiB，拒绝 NUL 与无效 UTF-8。JSON 结果先在 Rust 验证；Markdown 复用既有安全组件，禁止原始 HTML、可执行 URL 和远程图片。结果不自动写入用户文件或笔记。
+### 系统凭据
+
+扩展详情中按清单 origin 配置凭据别名和密钥，最多 32 个别名，单个密钥最多 8 KiB。秘密进入系统 keyring，按应用、插件 ID、origin 与别名隔离，普通 JSON 仅保留可删除的配置位置。插件在 HTTP 效果中用 `credential` 引用别名，宿主只向匹配来源注入 Bearer 头；没有读取密钥的 IPC，宿主不直接把秘密作为字段返回插件或写入会话、私有 KV、日志；受信服务仍可能在响应中回显自己收到的数据，不能把引用机制当成对服务端的保密措施。
+
+卸载、换来源替换、本地包替换与回退会清除旧凭据；同一已验证来源的允许保留授权升级继续使用对应别名。设置 / 删除失败明确报告，不用空值冒充成功。别名列表表示已登记的位置，不保证操作系统中仍可读取秘密；配置失败可重试或删除登记，运行时取不到会提示重新配置。隔离恢复与 E2E 构建不操作真实系统凭据，目标平台的 keyring 可用性需单独验收。
+
+### 私有 JSON 存储
+
+授予 `storage` 后，视图请求的 `host.storage` 提供该插件的 `{ revision, values }` 快照。插件通过 storage 效果提交 `expectedRevision` 和 `changes`，与当前修订不一致时返回冲突，不静默覆盖其他窗口。每插件最多 1 MiB、128 个键；使用原子替换，未知版本、损坏存档和链接路径拒写。存储文件自身使用 schema 1，与扩展注册表 schema 3 分开。
+
+`changes` 的顶层 `null` 表示删除该键；需要保存 JSON null 时放入对象，例如 `{ "item": { "value": null } }`。嵌套 null 保持普通 JSON 语义。卸载保留 KV，显式清空使用同样的 revision CAS；它不属于笔记备份或应用会话文件。实现与更多额度见 [extension_storage.rs](../src-tauri/src/extension_storage.rs)。
 
 ## 开发带界面的应用插件
 
-复制 [apps 示例](../examples/extensions/apps/)，或在任意官方 PDK 工程中声明 `inputFormat: "json"`、`resultFormat: "view"`，将 `commands[].function` 指向处理视图的导出。图标使用宿主已有图标名，不加载外部图片或 SVG。页面、窗口、命令统一由同一份清单贡献：
+复制 [apps 示例](../examples/extensions/apps/) 或 [TypeScript notebook](../examples/extensions/typescript/)，在单条命令声明 JSON 输入、`view` 结果和需要的入口。宿主绘制通用组件，不执行插件 HTML、CSS、JavaScript 或 React，不接受远程页面或远程图片。
+
+首次请求 `version: 2`、`action: null`、空 `state` / `fields` 和当前语言；后续动作交回不透明状态与当前字段。宿主添加 `host`（当前授权与可用存储快照），插件不能通过前端伪造它。只有用户点击“发送所选数据”时才额外附加 `data`，`action` 为 `host-data`；普通动作不会重新读取已选文件或重复发送这个输入。但插件可在拥有网络授权时返回 HTTP 效果，不能将“未点击发送所选数据”理解为禁止插件发起已授权效果。
+
+插件可在视图响应的 `effects` 返回以下类型：
 
 ```json
-{
-  "inputFormat": "json",
-  "resultFormat": "view",
-  "icon": "puzzle",
-  "ui": { "sidebar": true, "window": true },
-  "commands": [{ "id": "open", "title": "打开应用", "function": "app" }]
-}
-```
-
-省略 `ui` 的旧视图包仍可在扩展中心打开普通页面。启用的 `sidebar` 命令进入侧栏“已安装扩展”组；窗口只由宿主 Rust 创建，仅加载本地页面，不接受插件 URL 或系统路径。禁用、卸载或升级会撤回入口，已打开页面显示不可用状态，旧运行收到停止请求；未保存会话仍可在关闭协商时导出或放弃。
-
-首次打开发送 `action: null`、空 `state` 与 `fields`。后续操作传回上一次响应中的不透明状态、当前字段与语言。例如：
-
-```json
-{
-  "version": 1,
-  "action": "analyze",
-  "state": "plugin-owned state",
-  "fields": { "text": "hello", "mode": "upper" },
-  "locale": "zh-CN"
-}
-```
-
-仅当用户点击“发送所选数据”时，宿主额外附加 `data`，内容与上面的 `ExtensionRequest` JSON 相同，`action` 约定为 `host-data`。它经过相同的权限、文件资源 ID、主机、体积和超时检查；插件不能通过响应要求宿主自动读文件或联网。普通动作不附加 `data`，也不重新发送请求。插件应仅在本次包含 `data` 时更新对应结果。
-
-输出是 Extism 的 UTF-8 JSON 字符串：
-
-```json
-{
-  "version": 1,
-  "state": "next plugin-owned state",
-  "display": "文本工坊",
-  "description": "由插件计算，宿主绘制",
-  "fields": [
-    { "id": "text", "label": "文本", "value": "hello", "kind": "textarea" }
-  ],
-  "groups": [
-    {
-      "columns": 1,
-      "actions": [
-        { "id": "analyze", "label": "分析", "disabled": false, "primary": true }
-      ]
+[
+  {
+    "kind": "http",
+    "id": "load-items",
+    "request": {
+      "url": "https://api.example.com/items",
+      "method": "GET",
+      "headers": {},
+      "body": null,
+      "credential": "account"
     }
-  ],
-  "blocks": [
-    { "kind": "metrics", "items": [{ "label": "字符数", "value": "5" }] }
-  ]
-}
+  },
+  {
+    "kind": "storage",
+    "id": "save-title",
+    "expectedRevision": 3,
+    "changes": { "title": "Draft" }
+  }
+]
 ```
 
-基础字段 `version/state/display/description/fields/groups` 必需，旧包不必增加新字段。以下为可选的通用视图能力；准确字段定义与校验以 [Rust 视图协议](../src-tauri/src/extension_view.rs) 为准，前端类型由此生成：
+宿主按顺序检查并执行，保留上一视图的 state / fields 并刷新宿主上下文，使用 `action: "host-result"` 和 `results: [{ id, value, error }]` 再次调用同一导出；效果失败通过结构化错误回传，不解析错误文字。同一动作的效果 ID 不得重复；整个动作最多 8 轮、合计 16 个效果，完整编排最多 60 秒，不包含调度排队。插件应处理失败 / 冲突，不能自动重试有外部副作用的操作；已经完成的网络写入或 KV 写入不会因之后取消而回滚。准确的回传状态与执行规则见 [extension_execution.rs](../src-tauri/src/extension_execution.rs)。
 
-| 能力     | 字段与限制                                                                                                                         |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 页签     | `tabs: [{id,label,active}]`，最多 6 个，必须恰好一个激活；点击时 `action` 为页签 ID。页签与按钮动作 ID 不得冲突                    |
-| 表单     | 最多 8 项；`kind` 为 `text`（默认）、`textarea`、`number`、`select` 或 `checkbox`；所有值均为字符串，复选值为 `"true"` / `"false"` |
-| 选择项   | `options: [{value,label}]`，最多 20 个且 value 唯一；select 的值必须存在于选项中                                                   |
-| 操作     | 最多 4 组，合计 36 个动作，列数 1–6；`board: true` 使用方格布局，`ariaLabel` 可提供独立的无障碍标签                                |
-| Markdown | `blocks: [{kind:"markdown",text}]`，每块最多 8192 UTF-8 字节；复用安全 Markdown，不接受 HTML、可执行 URL 或远程图片                |
-| 指标     | `{kind:"metrics",items:[{label,value}]}`，最多 8 项                                                                                |
-| 表格     | `{kind:"table",columns:["列名"],rows:[["内容"]]}`，最多 8 列、100 行，行宽必须一致；单元格最多 512 UTF-8 字节                      |
+视图基础字段为 `version/state/display/description/fields/groups`；页签、块、字段错误、效果和产物可选。当前通用控件与预算如下，完整 DTO 以 [extension_view.rs](../src-tauri/src/extension_view.rs) 为准：
 
-状态最多 8192 UTF-8 字节；显示文本 512、说明 1000；字段值 2048、标签 120；每个视图最多 8 块、完整响应最多 64 KiB。ID 长度 1–80，只含 ASCII 字母、数字、下划线与连字符，字段和动作各自唯一。语言为 `zh-CN` 或 `en`。插件须校验自己的状态和动作，控件禁用只提供交互反馈，不构成安全边界。
+| 能力       | 范围                                                                                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 表单       | 最多 24 项；文本、多行、数字、选择、复选、日期；值为字符串。默认单字段 64 KiB，可用 `maxBytes` 提高到 256 KiB，字段值合计 1 MiB；`errors` 按字段 ID 关联 |
+| 页签与按钮 | 最多 12 页签，恰好一个激活；最多 16 组、合计 128 个动作，支持棋盘和独立无障碍标签                                                                        |
+| 展示块     | 最多 24 块；安全 Markdown、指标、分页表格、折线 / 柱状图、有限进度和内嵌图片                                                                             |
+| 表格与图表 | 表格最多 32 列、2000 行；图表最多 8 组序列、1000 个标签，数值须有限；宿主提供分页和可读替代内容                                                          |
+| 图片       | 仅有界 PNG / JPEG / WebP base64 data URL，检查文件头和尺寸，不支持 SVG 或远程 URL                                                                        |
+| 状态与响应 | 状态最多 256 KiB，完整请求与响应各最多 4 MiB；字段、显示文本和各块另有各自上限                                                                           |
+| 结果产物   | 最多 8 个，每个解码后最多 2 MiB，仍受完整响应预算约束；文本、CSV / TSV、JSON、Markdown、PDF、ZIP、PNG / JPEG / WebP，文件名 / 后缀 / MIME / 编码匹配     |
 
-宿主通过通用渲染器绘制上述组件，不执行插件 HTML、CSS、脚本或 React。可用 Tab、Enter / Space 操作；页签支持方向键。请求串行，失败保留输入和上次视图，不自动重试有副作用的动作。执行期间的临时锁定保留控件透明度与输入底色，避免每次点击都出现整片明暗闪动；插件声明的不可用操作仍正常置灰。运行状态和停止按钮保持布局位置，结果区有高度上限；页面允许收缩和滚动，不根据每次响应调整系统窗口大小。
+请求串行，失败保留输入和上次视图。Tab、Enter / Space 和页签方向键仍可操作；执行、排队和停止状态可见。单独“保存结果”或保存产物只通过用户选择的原生路径写出，不自动执行、解压或导入生成文件；取消保存不清除会话未保存标记。安全 Markdown 不执行 HTML 或危险 URL。
 
-同一窗口切换导航会保留会话与数据草稿；离页停止当时的运行，原生租约仍等待实际结束。会话可导出 JSON，目前不提供导入或跨重启恢复；导出期间离页再返回，操作锁仍保留到保存完成或取消，避免新编辑被旧导出错误标为已保存。“请求停止”取消当前操作并等待实际结束，保留输入与上次结果；“结束会话”清空输入、进度和结果后退出，不禁用或卸载扩展。系统关闭按钮走既有未保存工作协商，保存 / 放弃遵循 AbortSignal。页面停止与窗口关闭仅取消该窗口发起的执行，关闭等待停止后销毁；扩展窗口不采用主窗口“关闭到托盘”策略。退出、重启和更新协商覆盖扩展窗口。
+同一窗口切换导航保留会话与数据草稿，离页请求停止本页运行。会话可导出和导入 JSON：导入上限 8 MiB，要求插件 ID、命令、版本、模块哈希和视图 / 工具种类完全匹配，经结构和 Rust 视图预算校验后，用户确认替换才恢复输入、状态与结果；不执行 Wasm、不恢复授权、不重新授予文件资源。只记录文件名，导入后需重新选择文件。会话不包含系统凭据，也不等同于私有 KV 的备份。
 
-内置模块是预编译的分发资源 [demo-apps.wasm](../resources/extensions/demo-apps.wasm)，普通宿主构建不依赖交叉编译目标。修改 Rust 示例后先格式化，再重建并提交模块与哈希清单：
+系统关闭与“结束会话”沿用未保存工作协商，保存 / 放弃遵循 AbortSignal；原生停止真正完成后才释放占用。独立扩展窗口正常关闭，不采用主窗口关闭到托盘策略。窗口创建与退出 / 重启 / 更新协商互斥；窗口关闭会使该窗口旧运行和排队请求失效，同 label 重开也不恢复旧请求。
+
+## 构建 Rust 示例
+
+示例使用官方 Extism PDK，宿主私有协议的辅助 DTO 位于示例源码；无需为每个平台编译一份插件。首次使用开发 CLI 会通过 Cargo 构建本机 `extension-tool`，不启动桌面窗口；它仍需要项目 Rust / 平台编译环境。
+
+从仓库根运行：
 
 ```powershell
+pnpm build
 rustup target add wasm32-unknown-unknown
+cargo build --manifest-path examples/extensions/rust/Cargo.toml --release --locked --target wasm32-unknown-unknown --target-dir src-tauri/target/extension-example
+pnpm extension:validate --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm
+pnpm extension:test --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --fixture examples/extensions/rust/smoke.json
+pnpm extension:pack --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --out artifacts/extensions/rust-text-1.0.0.starter-extension.json
+```
+
+`validate` 复用 Rust 清单、导入 / 导出和模块编译校验，不创建实例、不运行 Wasm start；`test` 在真实无界面 worker 中执行离线 fixture，再按命令结果类型检查。`pack` 使用同一权威校验后包装包，不执行插件，不覆盖已有输出。打包不代表网络、凭据或多窗口工作流已经验收。
+
+fixture 示例 `{ "command": "uppercase", "input": "Hello", "expectOutput": "HELLO" }`；JSON 输入可为对象，也可提供 1–32 个 fixture 的数组按顺序执行，以验证取消后重建等流程。`expectOutput`、`expectJson`、`expectError` 必须且只能选一个，分别比较完整文本、JSON 等价或稳定错误码；`cancelAfterMs` 用于取消回归。离线 fixture 不执行宿主效果，需要效果结果时提供合成请求，真实 broker / CAS 仍由服务测试覆盖。已编译开发工具可用 `STARTER_EXTENSION_TOOL` 指定绝对路径复用，避免每次 Cargo 启动。
+
+## 构建 JavaScript 和 TypeScript 示例
+
+[JavaScript](../examples/extensions/javascript/) 展示多条文本命令，[TypeScript](../examples/extensions/typescript/) 展示数据报告与私有 notebook。[示例 SDK](../examples/extensions/sdk.ts) 与 Rust 示例 DTO 帮助构造本宿主协议，模块 ABI 仍使用官方 Extism PDK。
+
+安装官方 `extism-js` 与 Binaryen，将 `extism-js`、`wasm-merge`、`wasm-opt` 加入 PATH；`EXTISM_JS` 可指定编译器路径。示例和 CI 使用的工具版本以示例工程与工作流为准。然后从根目录执行：
+
+```powershell
+pnpm --dir examples/extensions install --frozen-lockfile
+pnpm --dir examples/extensions typecheck
+pnpm --dir examples/extensions build
+pnpm extension:validate --manifest examples/extensions/javascript/extension.json --wasm examples/extensions/dist/javascript.wasm
+pnpm extension:test --manifest examples/extensions/javascript/extension.json --wasm examples/extensions/dist/javascript.wasm --fixture examples/extensions/javascript/smoke.json
+pnpm extension:pack --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --out artifacts/extensions/ts-report-1.0.0.starter-extension.json
+```
+
+TS 经 esbuild 输出 CommonJS，再由官方编译器生成包含 JavaScript 引擎的 Wasm。用户运行插件无需安装 Node、Rust 或开发工具；纯计算依赖可随构建打包，Node 内置模块、DOM、常驻异步任务需要适配。
+
+内置实验室使用提交的预编译 [demo-apps.wasm](../resources/extensions/demo-apps.wasm)，普通应用构建无需交叉编译目标。修改源码、清单、依赖或工具链后重建并提交模块与回执：
+
+```powershell
 cargo fmt --manifest-path examples/extensions/apps/Cargo.toml
 pnpm extension:demos:build
 pnpm extension:demos:check --rebuild
-pnpm extension:pack --manifest examples/extensions/apps/extension.json --wasm resources/extensions/demo-apps.wasm --out artifacts/extensions/extension-lab-1.0.0.starter-extension.json
 ```
 
-`pnpm extension:demos:check` 只核对源码、锁文件、工具链与已提交模块的哈希回执，不启动 Rust 编译；该快速检查已纳入 `pnpm verify`。`--rebuild` 在此基础上使用锁定工具链与 `wasm32-unknown-unknown` 实际编译，逐字节比较提交的 Wasm，不覆盖分发资源；CI Rust 矩阵执行这一模式。源码、依赖或工具链变化后都要重建资源，不能通过同时修改模块与哈希回执来替代编译比对。Rust 回归直接执行分发模块的文本分析、数据解析、全部页签和三关解谜规则。第三方也可用 JS / TS 官方 PDK 接收同样的 JSON，通过 `Host.outputString(JSON.stringify(view))` 返回视图。此视图协议是本应用的 UI 契约，Extism 本身通用的是模块 ABI，其他应用的专有界面协议仍需适配。该方案适合表单、计算器和回合制小游戏，不提供实时画布或任意网页界面。
+不带 `--rebuild` 只核对源码、清单、锁文件、工具链及模块哈希回执，已纳入 `pnpm verify`；完整模式在锁定工具链下实际编译，比较提交的 Wasm，不覆盖分发资源。CI 使用完整模式，快速回执不代替源码编译比对。
 
 ## 执行、存储与生命周期
 
-每次运行创建新的 Extism 实例，无常驻插件或跨运行变量持久化。进程内只保留最近一个 Extism `CompiledPlugin`，按实际模块 SHA-256、时限和 fuel 预算匹配；切换模块或预算会替换它。只复用不可变代码，内存、WASI、变量与执行额度每次重新创建。Wasm 线性内存最多 256 MiB，表最多 65536 项，Extism 变量最多 64 KiB；初始化和调用各有 fuel 预算，调用最多 5 秒。首次编译在阻塞线程执行，执行时限不包含 JIT 编译，编译本身不能被 Wasm 中断取消。停止后持有租约直到编译 / 执行真实结束，不把停止等待冒充回滚。
+宿主最多同时执行 2 项，等待队列最多 16 项；同一窗口串行，按可运行窗口的队列顺序调度。排队可取消，关闭窗口使其旧请求失效。排队等待不计入 60 秒完整动作预算；动作取得租约后包含显式数据 broker、Wasm 与最多 8 轮 / 16 项效果。到期或取消先请求停止并等待实际服务结束，不提前释放租约，不承诺回滚已完成的副作用。
 
-为支持 JS PDK 启用基础 WASI，不预开目录、不继承宿主环境或参数，不提供系统进程和网络 socket；同步 `poll_oneoff` 被拒绝，避免长时间阻塞调用逃过执行中断。直接 Extism HTTP、远程模块加载、文件注册和磁盘编译缓存均关闭；调试 dump / profiler 关闭。正常环境不继承标准输出；宿主设置 `EXTISM_ENABLE_WASI_OUTPUT` 会按上游行为启用调试输出，不应在正式分发环境设置。
+Wasm 在固定当前应用可执行文件的 `--extension-worker` 子进程执行，分派早于 Tauri 初始化；不加载插件原生程序。每次 worker 调用总预算 15 秒，包含槽等待、进程创建、通信、编译、初始化和执行，超时、取消或协议断连会终止并回收本次拥有的进程。两个无界面 worker 空闲时可复用，各自最多 4 条编译 LRU、源模块合计 32 MiB；这个额度不是 JIT 真实内存占用上限。每次调用仍创建新实例，线性内存 / 变量 / WASI 状态不共享，线性内存最多 256 MiB，初始化和调用分别有 fuel 预算。
 
-全应用共享一个运行租约，无排队。禁用、升级、卸载、正常退出 / 重启和更新安装复用同一停止与等待机制。页面卸载请求停止本页运行，未导出内容使用已有未保存工作登记。命令面板的导航请求不覆盖尚未导出的会话。
+worker 不继承宿主环境、预开目录或插件标准输出，不提供直接 Extism HTTP、文件注册、远程模块下载或系统命令，拒绝同步 WASI `poll_oneoff`。磁盘编译缓存、dump 和 profiler 关闭。进程分离用于终止与故障恢复，worker 仍以当前用户身份运行，不能称为额外的操作系统权限沙箱。
 
-注册表位于应用数据目录 `extensions/registry.json`（schema 2），模块位于 `extensions/packages/<sha256>/module.wasm`。最多 24 项、注册表 1 MiB、模块缓存 128 MiB。写入采用 revision CAS 和原子替换，跨窗口发变更事件；运行前核对启用状态、授权和哈希，并执行本次核验过的内存字节。启动恢复隔离时禁止使用扩展，未知存档拒写。卸载仅清理已知模块和空目录，不跟随链接或递归删除未知文件。
+应用数据目录的 `extensions/registry.json` 使用 schema 3、revision CAS 与原子替换，最多 64 项；模块按内容哈希缓存，总量 128 MiB，并保留仍被运行租约使用的模块和前一包。运行前核对实际模块哈希、已安装版本和授权，使用本次核验的字节。私有 KV 与凭据别名元数据分别保存在 `extension-data/storage/` 和 `extension-data/credential-slots/`；笔记备份 / 恢复归档不包含这些扩展数据。隔离恢复禁止扩展运行与安装，不以删除用户数据恢复。
 
-笔记备份和恢复归档不包含扩展注册表与模块，恢复后按可信来源重新安装。源码入口为 `extensions.rs`、`extension_runtime.rs`、`extension_commands.rs`、`extension_view.rs`、`extension_windows.rs` 和 `features/extensions/`；原生门面、命令注册与错误处理沿用项目约定。
+## 官方插件市场
+
+市场使用固定仓库、公钥与签名目录，支持发现、分类、推荐与版本提示。下载先进入审阅，明确确认后才安装；原生市场安装入口重新核对验签目录、完整包和来源收据，本地导入不能伪装市场来源。来源记录包括仓库、公钥指纹、目录 revision 和完整包哈希。
+
+**当前客户端要求目录 schema 2；线上旧 schema 1 目录尚未配套发布。** 维护者需要在独立市场仓库完成格式 3 / API 2 插件构建、验签和新目录发布，才可恢复线上发现 / 下载；本地包与内置实验室可独立工作。代码、离线 fixture 或 CI 配置更新不代表市场已在线完成升级。
+
+市场源码由 `marketplace/` Git 子模块引用，普通宿主构建不要求初始化：
+
+```sh
+git submodule update --init --recursive
+```
+
+`app.config.json` 的 `extensionMarket.repository` 与 `publicKey` 固定信任源，两项为空禁用市场。派生新应用身份 / 主仓库时默认清除继承的市场配置；单独更换市场仓库也清除旧公钥，配置不完整拒写。IPC 不接受任意下载 URL，目录和扩展包仅来自配置仓库的 GitHub Release，附件重定向逐跳受限。
+
+目录 schema 2 的签名 payload 包含 `issuedAt` / `expiresAt`（UTC Unix 秒）、完整清单、模块与包哈希、大小、分类及附件位置。宿主最多接受 30 天有效期和 5 分钟签发时钟容差，当前发布工具生成 7 天有效期；到期前需发布更高 revision。验签后的进程缓存最多 5 分钟且不能超过签名截止；失败可显示该进程旧目录并标为过期，安装 / 下载不得依靠过期目录。目录内容缓存不跨重启恢复，已知最高 revision 和摘要则原子持久化到 `extension-market/trust.json`，按仓库与公钥指纹隔离，拒绝回退和同 revision 内容替换；损坏或未来 trust 存档拒写，不自动重置信任。
+
+维护者通过 [市场仓库](https://github.com/YanChao001/tauri-desktop-starter-extensions#readme) 的收录清单和发布流程控制上架。先审核源码、许可、权限和宿主实际运行，再构建、签名、核对所有附件并发布；私钥仅在仓库外临时文件和受控 Secret 中使用。下架通过移除收录项并发布更高 revision，停止新下载，不远程删除已安装包。用户显式回退上一包与目录防回退是不同操作，不能靠降低目录 revision 回滚分发。
 
 ## 依赖与分发
 
-Extism 使用 BSD-3-Clause，Wasmtime 使用 Apache-2.0 WITH LLVM-exception。宿主关闭 Extism 默认 feature；直接声明 Wasmtime 仅用于设置池与表上限，复用同一锁定版本。它们增加原生编译时间和安装体积，不增加前端 Wasm 引擎依赖或 CSP 来源。扩展系统窗口单独使用 `capabilities/extensions.json`，只允许宿主事件、窗口控制、用户触发的剪贴板写入及受限外链，不开放直接文件、HTTP、通知或快捷键插件权限；这不是 Wasm 或自定义 Rust 命令的 ACL。新增运行时许可原文保留于 [resources/third-party](../resources/third-party/)，由安装器资源和便携打包一并分发；其余依赖清单以 Cargo 锁文件和各自许可为准。
+Extism 使用 BSD-3-Clause，Wasmtime 使用 Apache-2.0 WITH LLVM-exception，精确版本见 Cargo 锁文件。宿主关闭 Extism 默认 feature，复用 Wasmtime JIT 与现有 keyring、HTTP 和签名依赖。新增编译与 worker 成本应以目标安装包实测；macOS Hardened Runtime / 签名安装版的 JIT 仍需 [单独验收](./build-release.md#macos)。
+
+扩展宿主窗口使用 [`capabilities/extensions.json`](../src-tauri/capabilities/extensions.json) 的有限事件、窗口、剪贴板写入与外链能力，不开放直接文件 / HTTP 插件权限。capability 不等同于自定义 Rust 命令或 Wasm 授权的 ACL。第三方许可原文保留于 [resources/third-party](../resources/third-party/)，随安装器资源和便携包分发。
 
 ## 验证
 
-按 [Rust 检查](./testing.md#rust-测试) 验证宿主，按上面命令构建示例。真实包测试使用临时注册表完成安装、授权、执行与卸载，不启动应用窗口：
+按 [Rust 检查](./testing.md#rust-测试) 准备前端产物并验证原生服务，再使用开发 CLI 对实际编译的 Rust / JS / TS 模块与固定 [上游 fixture](../examples/extensions/upstream/fixture.json) 执行 validate / 离线 smoke。上游模块下载后需核对固定 SHA-256，不以本项目模块代替互操作检查。
 
-```powershell
-$env:STARTER_TEST_EXTENSION_PACKAGE = (Resolve-Path artifacts/extensions/rust-text-1.0.0.starter-extension.json).Path
-cargo test --manifest-path src-tauri/Cargo.toml --locked external_extism_package_roundtrip -- --ignored
-```
+`pnpm extension:test:worker` 在开发工具可执行程序中检查真实 worker 的取消后重建、断连、实例隔离、帧与 I/O 超限，不启动 WebView；worker 期限单元测试另外检查整体超时。普通 `cargo test` 的进程内运行时测试不能替代这项进程边界检查。存储 / 网络 / 效果、调度、市场过期和跨重启防回退使用隔离数据的服务回归；前端检查授权、入口撤回、会话导入、单独保存与失败输入保留，无头浏览器检查布局与原生限制。
 
-JS 包同样使用默认输入 `hello` 和预期片段 `HELLO`；TS JSON 模式由测试构造文件 fixture。可用 `STARTER_TEST_EXTENSION_INPUT` / `STARTER_TEST_EXTENSION_EXPECT` 指定其他插件的输入和预期片段。
-
-[upstream fixture](../examples/extensions/upstream/fixture.json) 固定官方 `count_vowels.wasm` 的发布 URL 和 SHA-256，下载后必须核对哈希，再使用相邻清单打包。输入 `hello`、预期 `"count":2`，用于证明未修改的外部 Extism 模块可以运行；不得用本项目自己编译的示例替代这个互操作验证。CI 覆盖 Rust 示例和此固定 fixture，JS / TS 编译依赖另行准备官方工具。
-
-单元测试覆盖格式、权限、版本、未来存档、内存 / 表额度、初始化与调用预算、取消、租约和卸载。前端回归覆盖命令注册撤销、过期快照、安全展示、输入保留和晚到订阅；无头浏览器覆盖演示边界。它们不替代正式安装包、真实窗口、多窗口退出和各目标平台验收。
+当前线上旧目录与新协议不兼容，线上联通检查须等市场配套发布后执行。正式安装版、系统 keyring、真实多窗口退出 / 更新及各目标平台仍需独立环境验收；不能把源码中存在测试、CI 配置或浏览器 mock 写成这些项目已实测通过。

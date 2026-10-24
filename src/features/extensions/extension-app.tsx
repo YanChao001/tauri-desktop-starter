@@ -7,6 +7,8 @@ import {
   cancelExtension,
   viewExtension,
   saveTextExport,
+  saveExtensionArtifact,
+  type ExtensionSnapshot,
   NativeBridgeError,
   type ExtensionInfo,
   type ExtensionView,
@@ -14,8 +16,14 @@ import {
 } from "@/lib/tauri";
 import {
   ExtensionView as ViewRenderer,
-  EXTENSION_FIELD_BYTES,
+  extensionFieldBytes,
 } from "./extension-view";
+import { useExtensionPhase } from "./use-extension-phase";
+import { ExtensionSessionImport } from "./extension-session-import";
+import {
+  extensionSessionIdentity,
+  type ExtensionSessionExport,
+} from "./extension-session";
 import { ExtensionData } from "./extension-data";
 import { useExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS } from "./control-styles";
@@ -24,18 +32,19 @@ import { LOCKED_CONTROL_CLASS } from "./control-styles";
 export function ExtensionApp({
   item,
   commandId,
-  runningId,
+  runs,
   onClose,
   onSettled,
 }: {
   item: ExtensionInfo;
   commandId: string;
-  runningId: string | null;
+  runs: ExtensionSnapshot["runs"];
   onClose: () => void;
   onSettled: () => Promise<void>;
 }) {
   const { t, language } = useI18n();
   const manifest = item.package.manifest;
+  const phase = useExtensionPhase(runs, manifest.id);
   const workId = `extension-app:${manifest.id}:${commandId}:${item.package.sha256}:${manifest.version}`;
   const session = useExtensionSession(
     `${manifest.id}:${commandId}`,
@@ -57,27 +66,35 @@ export function ExtensionApp({
   const init = useRef(() => {});
   const invalidFields = new Set(
     Object.entries(fields)
-      .filter(
-        ([, value]) =>
-          new TextEncoder().encode(value).length > EXTENSION_FIELD_BYTES,
-      )
+      .filter(([id, value]) => {
+        const field = view?.fields.find((field) => field.id === id);
+        return (
+          new TextEncoder().encode(value).length >
+          (field ? extensionFieldBytes(field) : 64 * 1024)
+        );
+      })
       .map(([id]) => id),
   );
+  if (
+    Object.values(fields).reduce(
+      (sum, value) => sum + new TextEncoder().encode(value).length,
+      0,
+    ) >
+    1024 * 1024
+  )
+    Object.keys(fields).forEach((id) => invalidFields.add(id));
   const blocked =
     busy ||
     saving ||
     stopping ||
     picking ||
     session.exporting !== null ||
-    session.pending !== null ||
-    runningId !== null;
+    session.pending !== null;
   const status = stopping
     ? t("ext.stopping")
     : busy
-      ? t("ext.appWorking")
-      : runningId
-        ? t("ext.running", { id: runningId })
-        : "";
+      ? t(phase === "queued" ? "ext.queued" : "ext.appWorking")
+      : "";
 
   function run(action: string | null, data?: ExtensionViewDataInput) {
     if (
@@ -86,7 +103,6 @@ export function ExtensionApp({
       session.selecting ||
       closing.current ||
       invalidFields.size > 0 ||
-      runningId !== null ||
       !item.enabled
     )
       return;
@@ -99,7 +115,9 @@ export function ExtensionApp({
       expectedSha256: item.package.sha256,
       data,
       request: {
-        version: 1,
+        version: 2,
+        host: null,
+        results: [],
         action,
         state: session.view?.state ?? "",
         fields: session.fields,
@@ -205,6 +223,11 @@ export function ExtensionApp({
       setDirty(session.dirty);
     }
   }, [session, session.pending, session.view, session.fields, session.dirty]);
+  useEffect(() => {
+    if (!busy) return;
+    const timer = window.setInterval(() => void onSettled(), 750);
+    return () => window.clearInterval(timer);
+  }, [busy, onSettled]);
   async function settle(signal?: AbortSignal) {
     signal?.throwIfAborted();
     await session.selecting;
@@ -233,8 +256,10 @@ export function ExtensionApp({
           `${manifest.id}-session.json`,
           JSON.stringify(
             {
-              extensionId: manifest.id,
-              commandId,
+              formatVersion: 1,
+              kind: "view",
+              ...extensionSessionIdentity(item, commandId),
+              result: null,
               view: session.view,
               fields: session.fields,
               inputText: session.draft.inputText,
@@ -368,6 +393,69 @@ export function ExtensionApp({
           {nativeErrorText(error, t)}
         </p>
       ) : null}
+      {view?.artifacts?.length ? (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium">{t("ext.artifacts")}</h4>
+          <div className="flex flex-wrap gap-2">
+            {view.artifacts.map((artifact) => (
+              <Button
+                key={artifact.name}
+                variant="outline"
+                disabled={blocked}
+                onClick={() => {
+                  if (session.exporting || session.pending) return;
+                  setSaving(true);
+                  const saving = saveExtensionArtifact(
+                    manifest.id,
+                    item.package.sha256,
+                    artifact,
+                  )
+                    .then(() => {})
+                    .catch((reason: unknown) => {
+                      if (alive.current) setError(reason);
+                    })
+                    .finally(() => {
+                      session.exporting = null;
+                      if (alive.current) setSaving(false);
+                    });
+                  session.exporting = saving;
+                }}
+              >
+                {t("ext.saveArtifact", { name: artifact.name })}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <ExtensionSessionImport
+        item={item}
+        commandId={commandId}
+        kind="view"
+        blocked={blocked}
+        onError={(reason) => {
+          if (alive.current) setError(reason);
+        }}
+        onPending={(pending) => {
+          session.selecting = pending;
+          if (alive.current) setPicking(pending !== null);
+        }}
+        onRestore={(imported: ExtensionSessionExport) => {
+          latest.current = imported.view;
+          latestFields.current = imported.fields;
+          session.view = imported.view;
+          session.fields = imported.fields;
+          session.draft = {
+            inputText: imported.inputText,
+            url: imported.url,
+            files: [],
+          };
+          session.dirty = true;
+          setView(imported.view);
+          setFields(imported.fields);
+          setDirty(true);
+          setError(null);
+        }}
+      />
       <p
         role="status"
         aria-label={t("ext.appStatus")}

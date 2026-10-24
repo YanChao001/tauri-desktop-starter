@@ -3,6 +3,7 @@ use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult},
     extensions::{ExtensionPreview, PACKAGE_LIMIT, preview_package},
+    storage::atomic_write,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use minisign_verify::{PublicKey, Signature};
@@ -11,6 +12,9 @@ use sha2::{Digest, Sha256};
 use specta::Type;
 use std::{
     collections::HashSet,
+    fs::{self, OpenOptions},
+    io::Read,
+    path::{Component, Path, PathBuf},
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -20,12 +24,31 @@ use url::Url;
 
 const CATALOG_LIMIT: usize = 2 * 1024 * 1024;
 const CACHE_DURATION: Duration = Duration::from_secs(300);
+const SIGNATURE_LIFETIME: u64 = 30 * 24 * 60 * 60;
+const FUTURE_TOLERANCE: u64 = 300;
+const TRUST_LIMIT: usize = 64 * 1024;
+const TRUST_SOURCES: usize = 64;
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MarketConfig {
     pub repository: String,
     pub public_key: String,
+}
+fn valid_repository(repository: &str) -> bool {
+    let parts: Vec<_> = repository.split('/').collect();
+    repository.len() <= 200
+        && parts.len() == 2
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && !matches!(*part, "." | "..")
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+        })
+        && parts[0]
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 impl MarketConfig {
     pub fn configured() -> NativeResult<Self> {
@@ -41,19 +64,7 @@ impl MarketConfig {
         Ok(config)
     }
     fn validate(&self) -> NativeResult<()> {
-        let parts: Vec<_> = self.repository.split('/').collect();
-        if self.repository.len() > 200
-            || parts.len() != 2
-            || parts.iter().any(|part| {
-                part.is_empty()
-                    || matches!(*part, "." | "..")
-                    || !part
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
-            })
-            || !parts[0]
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        if !valid_repository(&self.repository)
             || self.public_key.len() > 128
             || PublicKey::from_base64(&self.public_key).is_err()
         {
@@ -75,6 +86,51 @@ impl MarketConfig {
             self.repository, entry.release_tag, entry.asset
         ))
         .map_err(|_| failure(ErrorCode::MarketInvalid))
+    }
+    fn identity(&self) -> NativeResult<MarketIdentity> {
+        self.validate()?;
+        let packet = STANDARD
+            .decode(&self.public_key)
+            .map_err(|_| failure(ErrorCode::MarketNotConfigured))?;
+        Ok(MarketIdentity {
+            repository: self.repository.to_ascii_lowercase(),
+            public_key_fingerprint: digest(
+                packet
+                    .get(10..)
+                    .filter(|key| key.len() == 32)
+                    .ok_or_else(|| failure(ErrorCode::MarketNotConfigured))?,
+            ),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MarketIdentity {
+    repository: String,
+    public_key_fingerprint: String,
+}
+
+/// 此收据仅说明来源；安装入口必须重新与已验签目录及完整包内容核对。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarketSource {
+    pub repository: String,
+    pub public_key_fingerprint: String,
+    pub catalog_revision: u32,
+    pub package_sha256: String,
+}
+impl MarketSource {
+    pub(crate) fn validate(&self) -> NativeResult<()> {
+        if !valid_repository(&self.repository)
+            || self.repository != self.repository.to_ascii_lowercase()
+            || !valid_digest(&self.public_key_fingerprint)
+            || self.catalog_revision == 0
+            || !valid_digest(&self.package_sha256)
+        {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        Ok(())
     }
 }
 
@@ -104,9 +160,13 @@ pub struct MarketCatalog {
     pub schema_version: u32,
     pub revision: u32,
     pub repository: String,
+    #[specta(type = f64)]
+    pub issued_at: u64,
+    #[specta(type = f64)]
+    pub expires_at: u64,
     pub entries: Vec<MarketEntry>,
 }
-#[derive(Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketSnapshot {
     pub catalog: MarketCatalog,
@@ -118,6 +178,7 @@ pub struct MarketSnapshot {
 pub struct MarketDownload {
     pub content: String,
     pub preview: ExtensionPreview,
+    pub source: MarketSource,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -128,13 +189,28 @@ struct SignedCatalog {
 #[derive(Clone)]
 struct VerifiedCatalog {
     catalog: MarketCatalog,
+    identity: MarketIdentity,
     digest: String,
     fetched_at: f64,
     verified_at: Instant,
+    valid_for: Duration,
 }
 impl VerifiedCatalog {
-    fn is_fresh(&self, now: Instant) -> bool {
-        now.duration_since(self.verified_at) < CACHE_DURATION
+    fn is_valid(&self, now: Instant, wall_now: u64) -> bool {
+        now.saturating_duration_since(self.verified_at) < self.valid_for
+            && valid_catalog_time(&self.catalog, wall_now)
+    }
+    fn is_fresh(&self, now: Instant, wall_now: u64) -> bool {
+        self.is_valid(now, wall_now)
+            && now.saturating_duration_since(self.verified_at) < CACHE_DURATION
+    }
+    fn source(&self, entry: &MarketEntry) -> MarketSource {
+        MarketSource {
+            repository: self.identity.repository.clone(),
+            public_key_fingerprint: self.identity.public_key_fingerprint.clone(),
+            catalog_revision: self.catalog.revision,
+            package_sha256: entry.package_sha256.clone(),
+        }
     }
 }
 
@@ -162,7 +238,28 @@ fn valid_digest(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn now_seconds() -> NativeResult<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| failure(ErrorCode::MarketInvalid))
+}
+fn valid_catalog_time(catalog: &MarketCatalog, now: u64) -> bool {
+    catalog.issued_at > 0
+        && catalog.issued_at <= now.saturating_add(FUTURE_TOLERANCE)
+        && catalog.expires_at > now
+        && catalog.expires_at > catalog.issued_at
+        && catalog.expires_at - catalog.issued_at <= SIGNATURE_LIFETIME
+}
 fn verify_catalog(bytes: &[u8], config: &MarketConfig) -> NativeResult<VerifiedCatalog> {
+    verify_catalog_at(bytes, config, now_seconds()?)
+}
+fn verify_catalog_at(
+    bytes: &[u8],
+    config: &MarketConfig,
+    now: u64,
+) -> NativeResult<VerifiedCatalog> {
+    let verified_at = Instant::now();
     config.validate()?;
     if bytes.len() > CATALOG_LIMIT {
         return Err(failure(ErrorCode::MarketInvalid));
@@ -184,21 +281,23 @@ fn verify_catalog(bytes: &[u8], config: &MarketConfig) -> NativeResult<VerifiedC
     let catalog: MarketCatalog =
         serde_json::from_slice(&payload).map_err(|_| failure(ErrorCode::MarketInvalid))?;
     validate_catalog(&catalog, config)?;
+    if !valid_catalog_time(&catalog, now) {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    let valid_for = Duration::from_secs(catalog.expires_at - now);
     Ok(VerifiedCatalog {
         catalog,
+        identity: config.identity()?,
         digest: digest(&payload),
-        fetched_at: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64()
-            * 1000.0,
-        verified_at: Instant::now(),
+        fetched_at: now as f64 * 1000.0,
+        verified_at,
+        valid_for,
     })
 }
 fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeResult<()> {
-    if catalog.schema_version != 1
+    if catalog.schema_version != 2
         || catalog.revision == 0
-        || catalog.repository != config.repository
+        || !catalog.repository.eq_ignore_ascii_case(&config.repository)
         || catalog.entries.len() > 100
     {
         return Err(failure(ErrorCode::MarketInvalid));
@@ -208,7 +307,7 @@ fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeRes
         entry
             .package
             .manifest
-            .validate()
+            .validate_structure()
             .map_err(|_| failure(ErrorCode::MarketInvalid))?;
         if !ids.insert(&entry.package.manifest.id)
             || !valid_digest(&entry.package.sha256)
@@ -236,7 +335,11 @@ fn entry_for(catalog: MarketCatalog, id: &str, expected_hash: &str) -> NativeRes
         .find(|entry| entry.package.manifest.id == id && entry.package_sha256 == expected_hash)
         .ok_or_else(|| failure(ErrorCode::MarketChanged))
 }
-fn verify_package(bytes: &[u8], entry: &MarketEntry) -> NativeResult<MarketDownload> {
+fn verify_package(
+    bytes: &[u8],
+    entry: &MarketEntry,
+    source: MarketSource,
+) -> NativeResult<MarketDownload> {
     if bytes.len() != entry.package_bytes as usize
         || bytes.len() > PACKAGE_LIMIT
         || digest(bytes) != entry.package_sha256
@@ -245,20 +348,232 @@ fn verify_package(bytes: &[u8], entry: &MarketEntry) -> NativeResult<MarketDownl
     }
     let content =
         String::from_utf8(bytes.to_vec()).map_err(|_| failure(ErrorCode::MarketInvalid))?;
-    let preview = preview_package(&content).map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    let preview = preview_package(&content).map_err(|error| {
+        if error.code == ErrorCode::ExtensionIncompatible {
+            error
+        } else {
+            failure(ErrorCode::MarketInvalid)
+        }
+    })?;
     if serde_json::to_value(&preview).ok() != serde_json::to_value(&entry.package).ok() {
         return Err(failure(ErrorCode::MarketInvalid));
     }
-    Ok(MarketDownload { content, preview })
+    Ok(MarketDownload {
+        content,
+        preview,
+        source,
+    })
+}
+fn verify_install(
+    catalog: &VerifiedCatalog,
+    content: &str,
+    expected_sha256: &str,
+    source: &MarketSource,
+) -> NativeResult<MarketSource> {
+    source.validate()?;
+    let entry = catalog
+        .catalog
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.package.sha256 == expected_sha256 && entry.package_sha256 == source.package_sha256
+        })
+        .ok_or_else(|| failure(ErrorCode::MarketChanged))?;
+    let trusted_source = catalog.source(entry);
+    if source != &trusted_source {
+        return Err(failure(ErrorCode::MarketChanged));
+    }
+    verify_package(content.as_bytes(), entry, trusted_source.clone())?;
+    Ok(trusted_source)
 }
 fn accept_catalog(old: Option<&VerifiedCatalog>, next: &VerifiedCatalog) -> NativeResult<()> {
     if old.is_some_and(|old| {
-        next.catalog.revision < old.catalog.revision
-            || (next.catalog.revision == old.catalog.revision && next.digest != old.digest)
+        next.identity == old.identity
+            && (next.catalog.revision < old.catalog.revision
+                || (next.catalog.revision == old.catalog.revision && next.digest != old.digest))
     }) {
         return Err(failure(ErrorCode::MarketInvalid));
     }
     Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TrustRecord {
+    identity: MarketIdentity,
+    revision: u32,
+    digest: String,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TrustStore {
+    schema_version: u32,
+    sources: Vec<TrustRecord>,
+}
+impl Default for TrustStore {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            sources: Vec::new(),
+        }
+    }
+}
+fn real_metadata(metadata: &fs::Metadata) -> bool {
+    if metadata.is_symlink() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // 同时拒绝 junction 和其它 reparse point。
+        metadata.file_attributes() & 0x400 == 0
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+fn checked_directory(path: &Path, create: bool) -> NativeResult<bool> {
+    if !path.is_absolute() {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    let mut cursor = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) => {
+                cursor.push(component);
+                continue;
+            }
+            Component::RootDir | Component::Normal(_) => cursor.push(component),
+            _ => return Err(failure(ErrorCode::MarketInvalid)),
+        }
+        match fs::symlink_metadata(&cursor) {
+            Ok(metadata) if metadata.is_dir() && real_metadata(&metadata) => {}
+            Ok(_) => return Err(failure(ErrorCode::MarketInvalid)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
+                fs::create_dir(&cursor).map_err(|_| failure(ErrorCode::MarketUnavailable))?;
+                let metadata = fs::symlink_metadata(&cursor)
+                    .map_err(|_| failure(ErrorCode::MarketUnavailable))?;
+                if !metadata.is_dir() || !real_metadata(&metadata) {
+                    return Err(failure(ErrorCode::MarketInvalid));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(_) => return Err(failure(ErrorCode::MarketUnavailable)),
+        }
+    }
+    Ok(true)
+}
+fn trust_file(path: &Path) -> NativeResult<Option<fs::File>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() && real_metadata(&metadata) => {}
+        Ok(_) => return Err(failure(ErrorCode::MarketInvalid)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(failure(ErrorCode::MarketUnavailable)),
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        #[cfg(target_os = "macos")]
+        options.custom_flags(0x0100); // O_NOFOLLOW
+        #[cfg(not(target_os = "macos"))]
+        options.custom_flags(0x0002_0000); // O_NOFOLLOW (Linux/Android)
+    }
+    let file = options
+        .open(path)
+        .map_err(|_| failure(ErrorCode::MarketUnavailable))?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| failure(ErrorCode::MarketUnavailable))?;
+    if !metadata.is_file() || !real_metadata(&metadata) || metadata.len() > TRUST_LIMIT as u64 {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    Ok(Some(file))
+}
+fn read_trust(root: &Path) -> NativeResult<TrustStore> {
+    if !checked_directory(root, false)? {
+        return Ok(TrustStore::default());
+    }
+    let Some(file) = trust_file(&root.join("trust.json"))? else {
+        return Ok(TrustStore::default());
+    };
+    let mut bytes = Vec::new();
+    file.take(TRUST_LIMIT as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| failure(ErrorCode::MarketUnavailable))?;
+    if bytes.len() > TRUST_LIMIT {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    let store: TrustStore =
+        serde_json::from_slice(&bytes).map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    let mut identities = HashSet::new();
+    if store.schema_version != 1 || store.sources.len() > TRUST_SOURCES {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    for record in &store.sources {
+        let repository = &record.identity.repository;
+        if !valid_repository(repository)
+            || repository.to_ascii_lowercase() != *repository
+            || !valid_digest(&record.identity.public_key_fingerprint)
+            || !valid_digest(&record.digest)
+            || record.revision == 0
+            || !identities.insert((repository, &record.identity.public_key_fingerprint))
+        {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+    }
+    Ok(store)
+}
+fn validate_persisted_trust(store: &TrustStore, next: &VerifiedCatalog) -> NativeResult<()> {
+    if store.sources.iter().any(|record| {
+        record.identity == next.identity
+            && (next.catalog.revision < record.revision
+                || (next.catalog.revision == record.revision && next.digest != record.digest))
+    }) {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    Ok(())
+}
+fn persist_catalog_trust(root: &Path, next: &VerifiedCatalog) -> NativeResult<()> {
+    // 未来版本、损坏或链接文件必须原样保留，不能因一次刷新覆盖信任历史。
+    let mut store = read_trust(root)?;
+    validate_persisted_trust(&store, next)?;
+    if let Some(record) = store
+        .sources
+        .iter_mut()
+        .find(|record| record.identity == next.identity)
+    {
+        if next.catalog.revision == record.revision {
+            return Ok(());
+        }
+        record.revision = next.catalog.revision;
+        record.digest = next.digest.clone();
+    } else {
+        if store.sources.len() >= TRUST_SOURCES {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        store.sources.push(TrustRecord {
+            identity: next.identity.clone(),
+            revision: next.catalog.revision,
+            digest: next.digest.clone(),
+        });
+    }
+    let bytes = serde_json::to_vec(&store).map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    if bytes.len() > TRUST_LIMIT {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    checked_directory(root, true)?;
+    // atomic_write 在同目录创建临时文件并替换最终目录项，绝不写入链接指向的文件。
+    trust_file(&root.join("trust.json"))?;
+    atomic_write(&root.join("trust.json"), &bytes)
+        .map_err(|_| failure(ErrorCode::MarketUnavailable))
 }
 fn allowed_url(url: &Url, repository: &str) -> bool {
     if url.scheme() != "https"
@@ -322,20 +637,22 @@ async fn fetch(url: Url, repository: String, limit: usize) -> NativeResult<Vec<u
 }
 
 pub struct ExtensionMarket {
+    root: PathBuf,
+    isolated: bool,
     cached: Mutex<Option<VerifiedCatalog>>,
     refresh: AsyncMutex<()>,
     downloads: Semaphore,
 }
-impl Default for ExtensionMarket {
-    fn default() -> Self {
+impl ExtensionMarket {
+    pub fn new(root: PathBuf, isolated: bool) -> Self {
         Self {
+            root,
+            isolated,
             cached: Mutex::new(None),
             refresh: AsyncMutex::new(()),
             downloads: Semaphore::new(2),
         }
     }
-}
-impl ExtensionMarket {
     fn cache(&self) -> NativeResult<Option<VerifiedCatalog>> {
         self.cached
             .lock()
@@ -344,11 +661,25 @@ impl ExtensionMarket {
     }
     async fn latest(&self, force: bool) -> NativeResult<VerifiedCatalog> {
         let _refresh = self.refresh.lock().await;
+        if self.isolated {
+            return Err(failure(ErrorCode::ExtensionUnavailable));
+        }
         let config = MarketConfig::configured()?;
-        let old = self.cache()?;
+        let identity = config.identity()?;
+        let old = self.cache()?.filter(|old| old.identity == identity);
+        let root = self.root.clone();
+        let cached = old.clone();
+        blocking::run(move || {
+            let trust = read_trust(&root)?;
+            if let Some(cached) = cached {
+                validate_persisted_trust(&trust, &cached)?;
+            }
+            Ok(())
+        })
+        .await?;
         if !force
             && let Some(old) = old.as_ref()
-            && old.is_fresh(Instant::now())
+            && old.is_fresh(Instant::now(), now_seconds()?)
         {
             return Ok(old.clone());
         }
@@ -360,6 +691,9 @@ impl ExtensionMarket {
         .await?;
         let next = blocking::run(move || verify_catalog(&bytes, &config)).await?;
         accept_catalog(old.as_ref(), &next)?;
+        let root = self.root.clone();
+        let trusted = next.clone();
+        blocking::run(move || persist_catalog_trust(&root, &trusted)).await?;
         *self
             .cached
             .lock()
@@ -373,14 +707,22 @@ impl ExtensionMarket {
                 fetched_at: value.fetched_at,
                 stale: false,
             }),
-            Err(error) => match self.cache()? {
-                Some(value) => Ok(MarketSnapshot {
-                    catalog: value.catalog,
-                    fetched_at: value.fetched_at,
-                    stale: true,
-                }),
-                None => Err(error),
-            },
+            Err(error) if error.code == ErrorCode::MarketUnavailable => {
+                match self.cache()?.filter(|value| {
+                    MarketConfig::configured()
+                        .and_then(|config| config.identity())
+                        .is_ok_and(|identity| identity == value.identity)
+                        && now_seconds().is_ok_and(|now| value.is_valid(Instant::now(), now))
+                }) {
+                    Some(value) => Ok(MarketSnapshot {
+                        catalog: value.catalog,
+                        fetched_at: value.fetched_at,
+                        stale: true,
+                    }),
+                    None => Err(error),
+                }
+            }
+            Err(error) => Err(error),
         }
     }
     pub async fn download(
@@ -397,7 +739,8 @@ impl ExtensionMarket {
             .map_err(|_| failure(ErrorCode::ExtensionBusy))?;
         // 下载前重新确认当前上架状态，过期的界面不能绕过下架。
         let catalog = self.latest(true).await?;
-        let entry = entry_for(catalog.catalog, id, expected_package_sha256)?;
+        let entry = entry_for(catalog.catalog.clone(), id, expected_package_sha256)?;
+        let source = catalog.source(&entry);
         let config = MarketConfig::configured()?;
         let bytes = fetch(
             config.package_url(&entry)?,
@@ -405,7 +748,37 @@ impl ExtensionMarket {
             entry.package_bytes as usize,
         )
         .await?;
-        blocking::run(move || verify_package(&bytes, &entry)).await
+        if !catalog.is_valid(Instant::now(), now_seconds()?) {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        let download = blocking::run(move || verify_package(&bytes, &entry, source)).await?;
+        if !catalog.is_valid(Instant::now(), now_seconds()?) {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        Ok(download)
+    }
+    pub async fn verify_install_source(
+        &self,
+        content: &str,
+        expected_sha256: &str,
+        source: &MarketSource,
+    ) -> NativeResult<MarketSource> {
+        if content.len() > PACKAGE_LIMIT || !valid_digest(expected_sha256) {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        source.validate()?;
+        let catalog = self.latest(false).await?;
+        let content = content.to_string();
+        let expected_sha256 = expected_sha256.to_string();
+        let source = source.clone();
+        let current = catalog.clone();
+        let source =
+            blocking::run(move || verify_install(&current, &content, &expected_sha256, &source))
+                .await?;
+        if !catalog.is_valid(Instant::now(), now_seconds()?) {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        Ok(source)
     }
 }
 
@@ -414,6 +787,13 @@ mod tests {
     use super::*;
     const SIGNED: &[u8] = include_bytes!("../test-fixtures/extension-market/catalog.json");
     const PACKAGE: &[u8] = include_bytes!("../test-fixtures/extension-market/package.json");
+    const TEST_NOW: u64 = 1_800_000_000;
+    fn verified() -> VerifiedCatalog {
+        verify_catalog_at(SIGNED, &config(), TEST_NOW).unwrap()
+    }
+    fn tempdir() -> tempfile::TempDir {
+        tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+    }
     fn config() -> MarketConfig {
         MarketConfig {
             repository: "YanChao001/tauri-desktop-starter-extensions".into(),
@@ -424,22 +804,57 @@ mod tests {
     }
     #[test]
     fn signed_catalog_and_package_validate_without_running_wasm() {
-        let verified = verify_catalog(SIGNED, &config()).unwrap();
+        let verified = verified();
         assert_eq!(verified.catalog.entries.len(), 1);
         let entry = &verified.catalog.entries[0];
         assert_eq!(
-            verify_package(PACKAGE, entry).unwrap().preview.manifest.id,
+            verify_package(PACKAGE, entry, verified.source(entry))
+                .unwrap()
+                .preview
+                .manifest
+                .id,
             "market.text-tools"
         );
         let mut tampered = PACKAGE.to_vec();
         tampered.push(b' ');
         assert_eq!(
-            verify_package(&tampered, entry).unwrap_err().code,
+            verify_package(&tampered, entry, verified.source(entry))
+                .unwrap_err()
+                .code,
             ErrorCode::MarketInvalid
         );
         let mut changed = entry.clone();
         changed.package.manifest.name = "Substituted metadata".into();
-        assert!(verify_package(PACKAGE, &changed).is_err());
+        assert!(verify_package(PACKAGE, &changed, verified.source(&changed)).is_err());
+    }
+    #[test]
+    fn market_install_verifies_receipt_identity_revision_and_full_package() {
+        let catalog = verified();
+        let entry = &catalog.catalog.entries[0];
+        let source = catalog.source(entry);
+        let content = std::str::from_utf8(PACKAGE).unwrap();
+        assert_eq!(
+            verify_install(&catalog, content, &entry.package.sha256, &source).unwrap(),
+            source
+        );
+        let mut forged = source.clone();
+        forged.repository = "other/repository".into();
+        assert!(verify_install(&catalog, content, &entry.package.sha256, &forged).is_err());
+        forged = source.clone();
+        forged.public_key_fingerprint = "a".repeat(64);
+        assert!(verify_install(&catalog, content, &entry.package.sha256, &forged).is_err());
+        forged = source.clone();
+        forged.catalog_revision += 1;
+        assert!(verify_install(&catalog, content, &entry.package.sha256, &forged).is_err());
+        assert!(
+            verify_install(
+                &catalog,
+                &format!("{content} "),
+                &entry.package.sha256,
+                &source
+            )
+            .is_err()
+        );
     }
     #[test]
     fn signatures_substituted_keys_and_oversized_catalogs_are_rejected() {
@@ -462,11 +877,126 @@ mod tests {
     }
     #[test]
     fn cache_expiration_uses_elapsed_time_instead_of_wall_clock() {
-        let mut cached = verify_catalog(SIGNED, &config()).unwrap();
+        let mut cached = verified();
         cached.fetched_at = 0.0;
-        assert!(cached.is_fresh(cached.verified_at));
+        assert!(cached.is_fresh(cached.verified_at, TEST_NOW));
         cached.fetched_at = f64::MAX;
-        assert!(!cached.is_fresh(cached.verified_at + CACHE_DURATION));
+        assert!(!cached.is_fresh(cached.verified_at + CACHE_DURATION, TEST_NOW));
+        assert!(!cached.is_valid(cached.verified_at, cached.catalog.expires_at));
+        // 时钟回拨也不能延长本次已验证签名的剩余寿命。
+        assert!(!cached.is_valid(cached.verified_at + cached.valid_for, TEST_NOW));
+    }
+    #[test]
+    fn signed_catalogs_require_bounded_current_validity() {
+        assert!(verify_catalog_at(SIGNED, &config(), TEST_NOW - FUTURE_TOLERANCE).is_ok());
+        assert!(verify_catalog_at(SIGNED, &config(), TEST_NOW - FUTURE_TOLERANCE - 1).is_err());
+        assert!(verify_catalog_at(SIGNED, &config(), TEST_NOW + 3600).is_err());
+        let mut catalog = verified().catalog;
+        catalog.expires_at = catalog.issued_at;
+        assert!(!valid_catalog_time(&catalog, TEST_NOW));
+        catalog.expires_at = catalog.issued_at + SIGNATURE_LIFETIME + 1;
+        assert!(!valid_catalog_time(&catalog, TEST_NOW));
+    }
+    #[test]
+    fn trust_watermark_survives_restart_and_is_scoped_to_repository_and_key() {
+        let directory = tempdir();
+        let root = directory.path().join("market");
+        let mut old = verified();
+        old.catalog.revision = 8;
+        persist_catalog_trust(&root, &old).unwrap();
+        assert_eq!(read_trust(&root).unwrap().sources[0].revision, 8);
+        let rollback = verified();
+        assert!(persist_catalog_trust(&root, &rollback).is_err());
+        let mut replacement = old.clone();
+        replacement.digest = "f".repeat(64);
+        assert!(persist_catalog_trust(&root, &replacement).is_err());
+        let mut changed_key = rollback.clone();
+        changed_key.identity.public_key_fingerprint = "e".repeat(64);
+        persist_catalog_trust(&root, &changed_key).unwrap();
+        let mut changed_source = rollback.clone();
+        changed_source.identity.repository = "other/repository".into();
+        persist_catalog_trust(&root, &changed_source).unwrap();
+        assert_eq!(read_trust(&root).unwrap().sources.len(), 3);
+        assert!(persist_catalog_trust(&root, &rollback).is_err());
+    }
+    #[test]
+    fn invalid_or_future_trust_store_is_never_replaced() {
+        let directory = tempdir();
+        let path = directory.path().join("trust.json");
+        for content in [
+            "{\"schemaVersion\":99,\"sources\":[]}",
+            "not-json",
+            "{\"schemaVersion\":1,\"sources\":[],\"unexpected\":true}",
+        ] {
+            fs::write(&path, content).unwrap();
+            assert!(persist_catalog_trust(directory.path(), &verified()).is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), content);
+        }
+        fs::write(&path, vec![b' '; TRUST_LIMIT + 1]).unwrap();
+        assert!(persist_catalog_trust(directory.path(), &verified()).is_err());
+        assert_eq!(fs::metadata(&path).unwrap().len(), TRUST_LIMIT as u64 + 1);
+    }
+    #[test]
+    fn trust_sources_are_bounded_without_eviction_of_rollback_history() {
+        let directory = tempdir();
+        let mut catalog = verified();
+        for index in 0..TRUST_SOURCES {
+            catalog.identity.repository = format!("source-{index}/repository");
+            persist_catalog_trust(directory.path(), &catalog).unwrap();
+        }
+        let before = fs::read(directory.path().join("trust.json")).unwrap();
+        catalog.identity.repository = "new-source/repository".into();
+        assert!(persist_catalog_trust(directory.path(), &catalog).is_err());
+        assert_eq!(
+            fs::read(directory.path().join("trust.json")).unwrap(),
+            before
+        );
+        assert_eq!(
+            read_trust(directory.path()).unwrap().sources.len(),
+            TRUST_SOURCES
+        );
+    }
+    #[test]
+    fn newer_host_requirement_does_not_hide_other_market_entries() {
+        let mut catalog = verified().catalog;
+        catalog.entries[0].package.manifest.min_host_version = "65535.0.0".into();
+        validate_catalog(&catalog, &config()).unwrap();
+        let mut package: serde_json::Value = serde_json::from_slice(PACKAGE).unwrap();
+        package["manifest"]["minHostVersion"] = serde_json::json!("65535.0.0");
+        let bytes = serde_json::to_vec(&package).unwrap();
+        let entry = &mut catalog.entries[0];
+        entry.package_bytes = bytes.len() as u32;
+        entry.package_sha256 = digest(&bytes);
+        assert_eq!(
+            verify_package(&bytes, entry, verified().source(entry))
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionIncompatible
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn trust_store_rejects_linked_files_and_ancestor_directories() {
+        use std::os::unix::fs::symlink;
+        let directory = tempdir();
+        let real = directory.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let linked = directory.path().join("linked");
+        symlink(&real, &linked).unwrap();
+        assert!(persist_catalog_trust(&linked.join("market"), &verified()).is_err());
+        let protected = directory.path().join("protected");
+        fs::write(&protected, "keep").unwrap();
+        symlink(&protected, real.join("trust.json")).unwrap();
+        assert!(persist_catalog_trust(&real, &verified()).is_err());
+        assert_eq!(fs::read_to_string(protected).unwrap(), "keep");
+    }
+    #[test]
+    fn recovery_isolation_disables_market_and_preserves_trust() {
+        let directory = tempdir();
+        let market = ExtensionMarket::new(directory.path().join("market"), true);
+        let error = tauri::async_runtime::block_on(market.snapshot(false)).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ExtensionUnavailable);
+        assert!(!market.root.exists());
     }
     #[test]
     fn configuration_rejects_repository_dot_segments_and_invalid_owners() {
@@ -491,7 +1021,7 @@ mod tests {
     }
     #[test]
     fn cache_rejects_rollback_and_same_revision_replacement() {
-        let old = verify_catalog(SIGNED, &config()).unwrap();
+        let old = verified();
         let mut next = old.clone();
         next.catalog.revision = 0;
         assert!(accept_catalog(Some(&old), &next).is_err());
@@ -504,7 +1034,9 @@ mod tests {
     #[test]
     fn malformed_catalogs_and_removed_versions_cannot_supply_downloads() {
         let config = config();
-        let catalog = verify_catalog(SIGNED, &config).unwrap().catalog;
+        let catalog = verify_catalog_at(SIGNED, &config, TEST_NOW)
+            .unwrap()
+            .catalog;
         let mut duplicate = catalog.clone();
         duplicate.entries.push(duplicate.entries[0].clone());
         assert!(validate_catalog(&duplicate, &config).is_err());
@@ -553,7 +1085,8 @@ mod tests {
     #[ignore = "requires an explicitly published official market and network access"]
     fn live_official_catalog_download() {
         tauri::async_runtime::block_on(async {
-            let market = ExtensionMarket::default();
+            let directory = tempdir();
+            let market = ExtensionMarket::new(directory.path().join("market"), false);
             let snapshot = market.snapshot(true).await.unwrap();
             assert!(!snapshot.stale);
             let entry = snapshot.catalog.entries.first().unwrap();
@@ -562,38 +1095,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(download.preview.sha256, entry.package.sha256);
-            let directory = tempfile::tempdir().unwrap();
-            let store =
-                crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
-            let installed = store
-                .install(&download.content, 0, false, &download.preview.sha256)
-                .unwrap();
-            assert!(!installed.items[0].enabled);
-            let enabled = store
-                .set_enabled(
-                    &entry.package.manifest.id,
-                    true,
-                    entry.package.manifest.permissions.clone(),
-                    installed.revision,
-                    true,
-                )
-                .unwrap();
-            let run = store
-                .prepare(&entry.package.manifest.id, &entry.package.sha256)
-                .unwrap();
-            let output = crate::extension_runtime::run(
-                &run.module,
-                &entry.package.manifest.commands[0].function,
-                b"Hello market",
-                run.stop.clone(),
-            )
-            .unwrap();
-            assert_eq!(output, "HELLO MARKET");
-            drop(run);
-            store
-                .uninstall(&entry.package.manifest.id, enabled.revision)
-                .unwrap();
-            assert!(store.snapshot().unwrap().items.is_empty());
+            assert_eq!(download.source.package_sha256, entry.package_sha256);
         });
     }
 }

@@ -9,6 +9,7 @@ import { ExtensionIcon } from "@/features/extensions/extension-icon";
 import { useExtensions } from "@/features/extensions/extensions-provider";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
+import { canRunExtensionCommand } from "@/features/extensions/extension-model";
 import { closeWindow, openExtensionWindow } from "@/lib/tauri";
 
 export function ExtensionPage({
@@ -28,13 +29,14 @@ export function ExtensionPage({
     if (standalone && theme !== settings.theme) setTheme(settings.theme);
   }, [standalone, theme, settings.theme, setTheme]);
   const item = data?.items.find(
-    (item) =>
-      item.enabled &&
-      item.package.manifest.id === extensionId &&
-      item.package.manifest.resultFormat === "view",
+    (item) => item.enabled && item.package.manifest.id === extensionId,
   );
   const command = item?.package.manifest.commands.find(
-    (command) => command.id === commandId,
+    (command) =>
+      command.id === commandId &&
+      command.resultFormat === "view" &&
+      item &&
+      canRunExtensionCommand(item, command),
   );
   return (
     <NativePage
@@ -61,7 +63,7 @@ export function ExtensionPage({
                 {command.title} · v{item.package.manifest.version}
               </span>
             </div>
-            {!standalone && item.package.manifest.ui?.window ? (
+            {!standalone && command.ui?.window ? (
               <Button
                 variant="outline"
                 disabled={opening}
@@ -91,7 +93,7 @@ export function ExtensionPage({
             key={`${item.package.sha256}:${item.package.manifest.version}:${extensionId}:${commandId}`}
             item={item}
             commandId={command.id}
-            runningId={data?.runningId ?? null}
+            runs={data?.runs ?? []}
             onSettled={reload}
             onClose={() => {
               if (standalone)

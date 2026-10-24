@@ -313,6 +313,7 @@ name = "starter-extism-text"
 version = "1.0.0"
 dependencies = [
  "extism-pdk",
+ "serde",
 ]
 
 [[package]]

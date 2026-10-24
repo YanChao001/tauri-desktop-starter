@@ -43,6 +43,26 @@ export const commands = {
         expectedSha256,
       }),
     ),
+  installMarketExtension: (
+    content: string,
+    expectedRevision: number,
+    replaceExisting: boolean,
+    expectedSha256: string,
+    source: MarketSource,
+  ) =>
+    typedError<ExtensionSnapshot, NativeError>(
+      __TAURI_INVOKE("install_market_extension", {
+        content,
+        expectedRevision,
+        replaceExisting,
+        expectedSha256,
+        source,
+      }),
+    ),
+  rollbackExtension: (id: string, expectedRevision: number) =>
+    typedError<ExtensionSnapshot, NativeError>(
+      __TAURI_INVOKE("rollback_extension", { id, expectedRevision }),
+    ),
   setExtensionEnabled: (
     id: string,
     enabled: boolean,
@@ -70,6 +90,76 @@ export const commands = {
   viewExtension: (input: ExtensionViewInput) =>
     typedError<ExtensionView, NativeError>(
       __TAURI_INVOKE("view_extension", { input }),
+    ),
+  validateExtensionView: (content: string) =>
+    typedError<ExtensionView, NativeError>(
+      __TAURI_INVOKE("validate_extension_view", { content }),
+    ),
+  pickExtensionFiles: () =>
+    typedError<ExtensionFileChoice[], NativeError>(
+      __TAURI_INVOKE("pick_extension_files"),
+    ),
+  saveExtensionArtifact: (
+    id: string,
+    expectedSha256: string,
+    artifact: ExtensionArtifact,
+  ) =>
+    typedError<string | null, NativeError>(
+      __TAURI_INVOKE("save_extension_artifact", {
+        id,
+        expectedSha256,
+        artifact,
+      }),
+    ),
+  extensionStorageInfo: (id: string, expectedSha256: string) =>
+    typedError<ExtensionStorageInfo, NativeError>(
+      __TAURI_INVOKE("extension_storage_info", { id, expectedSha256 }),
+    ),
+  clearExtensionStorage: (
+    id: string,
+    expectedSha256: string,
+    expectedRevision: number,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("clear_extension_storage", {
+        id,
+        expectedSha256,
+        expectedRevision,
+      }),
+    ),
+  extensionCredentialSlots: (id: string, expectedSha256: string) =>
+    typedError<ExtensionCredentialSlot[], NativeError>(
+      __TAURI_INVOKE("extension_credential_slots", { id, expectedSha256 }),
+    ),
+  setExtensionCredential: (
+    id: string,
+    expectedSha256: string,
+    origin: string,
+    alias: string,
+    secret: string,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("set_extension_credential", {
+        id,
+        expectedSha256,
+        origin,
+        alias,
+        secret,
+      }),
+    ),
+  deleteExtensionCredential: (
+    id: string,
+    expectedSha256: string,
+    origin: string,
+    alias: string,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("delete_extension_credential", {
+        id,
+        expectedSha256,
+        origin,
+        alias,
+      }),
     ),
   openExtensionWindow: (
     id: string,
@@ -465,14 +555,74 @@ export type ErrorCode =
   | "MARKET_CHANGED"
   | "INTERNAL";
 
+export type ExtensionArtifact = {
+  name: string;
+  mediaType: string;
+  content: string;
+  encoding: ExtensionArtifactEncoding;
+};
+
+export type ExtensionArtifactEncoding = "utf8" | "base64";
+
+export type ExtensionChartSeries = {
+  label: string;
+  values: (number | null)[];
+};
+
+export type ExtensionChartType = "bar" | "line";
+
 export type ExtensionCommand = {
   id: string;
   title: string;
   function: string;
+  inputFormat: ExtensionInputFormat;
+  resultFormat: ExtensionResultFormat;
+  ui?: ExtensionUi | null;
+  permissions: ExtensionPermission[];
+};
+
+export type ExtensionCredentialSlot = {
+  origin: string;
+  alias: string;
+};
+
+export type ExtensionEffect =
+  | { kind: "http"; id: string; request: ExtensionHttpRequest }
+  | {
+      kind: "storage";
+      id: string;
+      expectedRevision: number;
+      changes: { [key in string]: JsonValue | null };
+    };
+
+export type ExtensionEffectResult = {
+  id: string;
+  value: JsonValue | null;
+  error: NativeError | null;
 };
 
 export type ExtensionFieldKind =
-  "text" | "textarea" | "number" | "select" | "checkbox";
+  "text" | "textarea" | "number" | "select" | "checkbox" | "date";
+
+export type ExtensionFileChoice = {
+  id: string;
+  name: string;
+  bytes: number | null;
+  mediaType: string;
+};
+
+export type ExtensionHostContext = {
+  permissions: ExtensionPermission[];
+  storage: ExtensionStorageSnapshot | null;
+};
+
+export type ExtensionHttpRequest = {
+  url: string;
+  method: string;
+  headers?: { [key in string]: string };
+  body?: string | null;
+  credential?: string | null;
+};
 
 export type ExtensionIcon =
   "puzzle" | "calculator" | "gamepad" | "notebook" | "terminal";
@@ -481,6 +631,9 @@ export type ExtensionInfo = {
   package: ExtensionPreview;
   enabled: boolean;
   grantedPermissions: ExtensionPermission[];
+  origin: ExtensionOrigin;
+  previousPackage?: ExtensionPreview | null;
+  previousOrigin?: ExtensionOrigin | null;
 };
 
 export type ExtensionInputFormat = "text" | "json";
@@ -488,21 +641,31 @@ export type ExtensionInputFormat = "text" | "json";
 export type ExtensionManifest = {
   formatVersion: number;
   apiVersion: number;
+  minHostVersion: string;
   id: string;
   version: string;
   name: string;
   author: string;
   description: string;
-  inputFormat: ExtensionInputFormat;
-  resultFormat: ExtensionResultFormat;
   icon?: ExtensionIcon | null;
-  ui?: ExtensionUi | null;
   commands: ExtensionCommand[];
   permissions: ExtensionPermission[];
-  allowedHosts?: string[];
+  optionalPermissions: ExtensionPermission[];
+  network: ExtensionNetworkRule[];
 };
 
-export type ExtensionPermission = "text:read" | "files:read" | "network:https";
+export type ExtensionNetworkRule = {
+  origin: string;
+  methods: string[];
+};
+
+export type ExtensionOrigin =
+  | { kind: "local" }
+  | { kind: "bundled" }
+  | { kind: "market"; source: MarketSource };
+
+export type ExtensionPermission =
+  "text:read" | "files:read" | "network:https" | "network:local" | "storage";
 
 export type ExtensionPreview = {
   manifest: ExtensionManifest;
@@ -521,10 +684,29 @@ export type ExtensionRunInput = {
   url: string | null;
 };
 
+export type ExtensionRunPhase = "queued" | "running";
+
+export type ExtensionRunStatus = {
+  id: string;
+  owner: string;
+  phase: ExtensionRunPhase;
+};
+
 export type ExtensionSnapshot = {
   revision: number;
   items: ExtensionInfo[];
-  runningId: string | null;
+  runs: ExtensionRunStatus[];
+};
+
+export type ExtensionStorageInfo = {
+  revision: number;
+  entries: number;
+  bytes: number;
+};
+
+export type ExtensionStorageSnapshot = {
+  revision: number;
+  values: { [key in string]: JsonValue };
 };
 
 export type ExtensionUi = {
@@ -541,6 +723,9 @@ export type ExtensionView = {
   groups: ExtensionViewGroup[];
   tabs?: ExtensionViewTab[];
   blocks?: ExtensionViewBlock[];
+  errors?: { [key in string]: string };
+  effects?: ExtensionEffect[];
+  artifacts?: ExtensionArtifact[];
 };
 
 export type ExtensionViewAction = {
@@ -554,7 +739,21 @@ export type ExtensionViewAction = {
 export type ExtensionViewBlock =
   | { kind: "markdown"; text: string }
   | { kind: "metrics"; items: ExtensionViewMetric[] }
-  | { kind: "table"; columns: string[]; rows: string[][] };
+  | { kind: "table"; columns: string[]; rows: string[][] }
+  | {
+      kind: "chart";
+      chartType: ExtensionChartType;
+      label: string;
+      labels: string[];
+      series: ExtensionChartSeries[];
+    }
+  | {
+      kind: "progress";
+      label: string;
+      value: number | null;
+      max: number | null;
+    }
+  | { kind: "image"; src: string; alt: string };
 
 export type ExtensionViewDataInput = {
   inputText: string;
@@ -568,6 +767,7 @@ export type ExtensionViewField = {
   value: string;
   kind?: ExtensionFieldKind | null;
   options?: ExtensionViewOption[];
+  maxBytes?: number | null;
 };
 
 export type ExtensionViewGroup = {
@@ -600,6 +800,8 @@ export type ExtensionViewRequest = {
   state: string;
   fields: { [key in string]: string };
   locale: string;
+  host?: ExtensionHostContext | null;
+  results?: ExtensionEffectResult[];
 };
 
 export type ExtensionViewTab = {
@@ -639,6 +841,8 @@ export type MarketCatalog = {
   schemaVersion: number;
   revision: number;
   repository: string;
+  issuedAt: number | null;
+  expiresAt: number | null;
   entries: MarketEntry[];
 };
 
@@ -647,6 +851,7 @@ export type MarketCategory = "text" | "data" | "tools" | "games";
 export type MarketDownload = {
   content: string;
   preview: ExtensionPreview;
+  source: MarketSource;
 };
 
 export type MarketEntry = {
@@ -663,6 +868,14 @@ export type MarketSnapshot = {
   catalog: MarketCatalog;
   fetchedAt: number | null;
   stale: boolean;
+};
+
+/**  此收据仅说明来源；安装入口必须重新与已验签目录及完整包内容核对。 */
+export type MarketSource = {
+  repository: string;
+  publicKeyFingerprint: string;
+  catalogRevision: number;
+  packageSha256: string;
 };
 
 export type NativeError = {

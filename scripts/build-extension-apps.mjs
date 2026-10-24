@@ -9,10 +9,12 @@ const source = "examples/extensions/apps/";
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 async function sourceHashes(root) {
-  const files = ["Cargo.toml", "Cargo.lock", "src/lib.rs"].map((file) => [
-    file,
-    join(root, source, file),
-  ]);
+  const files = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "src/lib.rs",
+    "extension.json",
+  ].map((file) => [file, join(root, source, file)]);
   files.push(["rust-toolchain.toml", join(root, "rust-toolchain.toml")]);
   return Object.fromEntries(
     await Promise.all(

@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
@@ -18,7 +19,10 @@ vi.mock("@/lib/tauri", async (original) => ({
   viewExtension: vi.fn(),
   cancelExtension: vi.fn(),
   saveTextExport: vi.fn(),
-  pickWorkbenchFiles: vi.fn(),
+  pickExtensionFiles: vi.fn(),
+  validateExtensionView: vi.fn(),
+  saveExtensionArtifact: vi.fn(),
+  getCurrentWindowLabel: vi.fn(),
 }));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
@@ -32,20 +36,30 @@ vi.mock("@/providers/unsaved-work", () => ({
   },
 }));
 const item: native.ExtensionInfo = {
+  origin: { kind: "local" },
   package: {
     manifest: {
-      formatVersion: 2,
-      apiVersion: 1,
+      formatVersion: 3,
+      apiVersion: 2,
       id: "third-party.form",
       version: "1.0.0",
       name: "Custom app",
       author: "Example",
       description: "Third party view",
-      inputFormat: "json",
-      resultFormat: "view",
-      commands: [{ id: "open", title: "Open", function: "app" }],
+      commands: [
+        {
+          id: "open",
+          title: "Open",
+          function: "app",
+          inputFormat: "json",
+          resultFormat: "view",
+          permissions: [],
+        },
+      ],
       permissions: [],
-      allowedHosts: [],
+      minHostVersion: "0.1.0",
+      optionalPermissions: [],
+      network: [],
     },
     sha256: "a".repeat(64),
     bytes: 100,
@@ -54,11 +68,11 @@ const item: native.ExtensionInfo = {
   grantedPermissions: [],
 };
 const first: native.ExtensionView = {
-  version: 1,
+  version: 2,
   state: "opaque state",
   display: "<script>plain text</script>",
   description: "Plugin controls this view",
-  fields: [{ id: "query", label: "Query", value: "Original" }],
+  fields: [{ id: "query", label: "Query", value: "Original", maxBytes: 2048 }],
   groups: [
     {
       columns: 1,
@@ -84,7 +98,9 @@ function app(runningId: string | null = null) {
     <ExtensionApp
       item={item}
       commandId="open"
-      runningId={runningId}
+      runs={
+        runningId ? [{ id: runningId, owner: "browser", phase: "running" }] : []
+      }
       onClose={onClose}
       onSettled={onSettled}
     />
@@ -96,6 +112,7 @@ beforeEach(() => {
   vi.mocked(native.viewExtension).mockResolvedValue(first);
   vi.mocked(native.cancelExtension).mockResolvedValue(undefined);
   vi.mocked(native.saveTextExport).mockResolvedValue("saved.json");
+  vi.mocked(native.getCurrentWindowLabel).mockResolvedValue("browser");
 });
 afterEach(cleanup);
 
@@ -110,7 +127,15 @@ it("renders third-party controls as text and sends one initialized request in St
     commandId: "open",
     expectedSha256: item.package.sha256,
     data: undefined,
-    request: { version: 1, action: null, state: "", fields: {}, locale: "en" },
+    request: {
+      version: 2,
+      host: null,
+      results: [],
+      action: null,
+      state: "",
+      fields: {},
+      locale: "en",
+    },
   });
   expect(screen.getByText("<script>plain text</script>")).toBeVisible();
   expect(document.querySelector("script")).toBeNull();
@@ -135,7 +160,9 @@ it("serializes actions and preserves both input and the previous view after fail
   expect(native.viewExtension).toHaveBeenLastCalledWith(
     expect.objectContaining({
       request: {
-        version: 1,
+        version: 2,
+        host: null,
+        results: [],
         action: "submit",
         state: "opaque state",
         fields: { query: "Typed" },
@@ -184,8 +211,40 @@ it("keeps feedback and footer controls mounted across running, stopping and sett
   expect(status).toBeEmptyDOMElement();
   expect(stop).toBeDisabled();
   mounted.rerender(app("test.other"));
-  expect(status).toHaveTextContent("Running: test.other");
+  expect(status).toBeEmptyDOMElement();
+  expect(submit).toBeEnabled();
   expect(stop).toBeDisabled();
+});
+it("shows queued status for this window and lets the user cancel its waiting operation", async () => {
+  const pending = deferred<native.ExtensionView>();
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockReturnValueOnce(pending.promise);
+  const mounted = render(app());
+  fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+  mounted.rerender(
+    <ExtensionApp
+      item={item}
+      commandId="open"
+      runs={[
+        { id: item.package.manifest.id, owner: "browser", phase: "queued" },
+      ]}
+      onClose={onClose}
+      onSettled={onSettled}
+    />,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("status", { name: "Execution status" }),
+    ).toHaveTextContent("Queued, waiting for a runtime slot…"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Request stop" }));
+  await waitFor(() =>
+    expect(native.cancelExtension).toHaveBeenCalledWith(
+      item.package.manifest.id,
+    ),
+  );
+  await act(async () => pending.reject({ code: "USER_CANCELLED" }));
 });
 it("waits for native completion before ending a session and clears its unsaved registration", async () => {
   const pending = deferred<native.ExtensionView>();
@@ -377,7 +436,7 @@ it("transfers host data only on explicit send and omits it from ordinary actions
     <ExtensionApp
       item={withData}
       commandId="open"
-      runningId={null}
+      runs={[]}
       onClose={onClose}
       onSettled={onSettled}
     />,
@@ -387,7 +446,7 @@ it("transfers host data only on explicit send and omits it from ordinary actions
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "Explicit input" },
   });
-  fireEvent.change(screen.getByLabelText("HTTPS URL for this run (optional)"), {
+  fireEvent.change(screen.getByLabelText("URL for this run (optional)"), {
     target: { value: "https://httpbin.org/get" },
   });
   expect(native.viewExtension).toHaveBeenCalledTimes(1);
@@ -412,6 +471,37 @@ it("transfers host data only on explicit send and omits it from ordinary actions
   );
 });
 
+it("omits retained host-data drafts when their optional permissions are revoked", async () => {
+  const view = (grantedPermissions: native.ExtensionPermission[]) => (
+    <ExtensionApp
+      item={{ ...item, grantedPermissions }}
+      commandId="open"
+      runs={[]}
+      onClose={onClose}
+      onSettled={onSettled}
+    />
+  );
+  const mounted = render(view(["text:read", "network:https"]));
+  await screen.findByRole("button", { name: "Submit" });
+  fireEvent.click(screen.getByText("Host data · explicit transfer"));
+  fireEvent.change(screen.getByLabelText("Input text"), {
+    target: { value: "keep text" },
+  });
+  fireEvent.change(screen.getByLabelText("URL for this run (optional)"), {
+    target: { value: "https://service.example/data" },
+  });
+  mounted.rerender(view(["text:read"]));
+  expect(
+    screen.queryByLabelText("URL for this run (optional)"),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Send selected data" }));
+  expect(native.viewExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      data: { inputText: "keep text", fileIds: [], url: null },
+    }),
+  );
+});
+
 it("starts a fresh session for a higher package version even when the Wasm hash is unchanged", async () => {
   function Workspace() {
     const [version, setVersion] = useState("1.0.0");
@@ -429,7 +519,7 @@ it("starts a fresh session for a higher package version even when the Wasm hash 
           key={version}
           item={upgraded}
           commandId="open"
-          runningId={null}
+          runs={[]}
           onClose={onClose}
           onSettled={onSettled}
         />
@@ -480,25 +570,21 @@ it("observes a retained run directly after remount and preserves its failure fee
 });
 
 it("preserves file choices on picker cancellation and waits for selection before exporting", async () => {
-  const document: native.WorkbenchDocument = {
+  const document: native.ExtensionFileChoice = {
     id: "chosen-file",
     name: "sample.txt",
-    path: "C:/sample.txt",
-    kind: "text",
-    content: "saved text",
+    mediaType: "text/plain",
     bytes: 10,
-    previewUrl: null,
-    revision: "revision",
   };
-  const selecting = deferred<native.WorkbenchDocument[]>();
-  vi.mocked(native.pickWorkbenchFiles)
+  const selecting = deferred<native.ExtensionFileChoice[]>();
+  vi.mocked(native.pickExtensionFiles)
     .mockResolvedValueOnce([document])
     .mockReturnValueOnce(selecting.promise);
   render(
     <ExtensionApp
       item={{ ...item, grantedPermissions: ["files:read"] }}
       commandId="open"
-      runningId={null}
+      runs={[]}
       onClose={onClose}
       onSettled={onSettled}
     />,
@@ -506,11 +592,11 @@ it("preserves file choices on picker cancellation and waits for selection before
   await screen.findByRole("button", { name: "Submit" });
   fireEvent.click(screen.getByText("Host data · explicit transfer"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Choose text files for this run" }),
+    screen.getByRole("button", { name: "Choose files for this run" }),
   );
   await screen.findByText("sample.txt");
   fireEvent.click(
-    screen.getByRole("button", { name: "Choose text files for this run" }),
+    screen.getByRole("button", { name: "Choose files for this run" }),
   );
   expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Export session" })).toBeDisabled();
@@ -527,4 +613,77 @@ it("preserves file choices on picker cancellation and waits for selection before
     expect.stringContaining('"sample.txt"'),
   );
   expect(lifecycle.work?.dirty).toBe(false);
+});
+
+it("requires confirmation before importing a version-bound session and never restores native file IDs", async () => {
+  vi.mocked(native.validateExtensionView).mockResolvedValue({
+    ...first,
+    state: "restored state",
+  });
+  render(app());
+  await screen.findByLabelText("Query");
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "Current unsaved input" },
+  });
+  const content = JSON.stringify({
+    formatVersion: 1,
+    kind: "view",
+    extensionId: item.package.manifest.id,
+    commandId: "open",
+    extensionVersion: "1.0.0",
+    sha256: item.package.sha256,
+    view: first,
+    fields: { query: "Restored input" },
+    inputText: "restored host input",
+    url: "",
+    files: ["reselect.txt"],
+    result: null,
+  });
+  const file = new File([content], "session.json", {
+    type: "application/json",
+  });
+  file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
+  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+    target: { files: [file] },
+  });
+  const dialog = await screen.findByRole("dialog");
+  expect(screen.getByLabelText("Query")).toHaveValue("Current unsaved input");
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  expect(dialog).toHaveTextContent("reselect.txt");
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Replace current session" }),
+  );
+  expect(screen.getByLabelText("Query")).toHaveValue("Restored input");
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  await act(async () => lifecycle.work!.save());
+  const exported = JSON.parse(
+    String(vi.mocked(native.saveTextExport).mock.calls.at(-1)?.[1]),
+  ) as { files: string[]; fields: Record<string, string> };
+  expect(exported.files).toEqual([]);
+  expect(exported.fields).toEqual({ query: "Restored input" });
+});
+
+it("saves a typed generated artifact only after the user activates its button", async () => {
+  const artifact: native.ExtensionArtifact = {
+    name: "report.csv",
+    mediaType: "text/csv",
+    encoding: "utf8",
+    content: "name,value\nexample,1",
+  };
+  vi.mocked(native.viewExtension).mockResolvedValueOnce({
+    ...first,
+    artifacts: [artifact],
+  });
+  vi.mocked(native.saveExtensionArtifact).mockResolvedValueOnce("report.csv");
+  render(app());
+  const save = await screen.findByRole("button", { name: "Save report.csv" });
+  expect(native.saveExtensionArtifact).not.toHaveBeenCalled();
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(native.saveExtensionArtifact).toHaveBeenCalledWith(
+      item.package.manifest.id,
+      item.package.sha256,
+      artifact,
+    ),
+  );
 });

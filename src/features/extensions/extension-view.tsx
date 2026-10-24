@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { lazy, Suspense, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,94 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/providers/i18n";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 
-export const EXTENSION_FIELD_BYTES = 2048;
+export const EXTENSION_FIELD_BYTES = 64 * 1024;
+export const EXTENSION_FORM_BYTES = 1024 * 1024;
+export function extensionFieldBytes(field: View["fields"][number]): number {
+  return field.maxBytes ?? EXTENSION_FIELD_BYTES;
+}
+const ExtensionChart = lazy(() =>
+  import("./extension-chart").then((module) => ({
+    default: module.ExtensionChart,
+  })),
+);
+
+function ViewTable({
+  columns,
+  rows,
+  label,
+}: {
+  columns: string[];
+  rows: string[][];
+  label?: string;
+}) {
+  const { t } = useI18n();
+  const [requestedPage, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(rows.length / 50));
+  const page = Math.min(requestedPage, pages - 1);
+  return (
+    <div className="min-w-0 space-y-2">
+      <div
+        className="min-w-0 overflow-auto rounded-xl border"
+        tabIndex={0}
+        aria-label={label ?? columns.join(" / ")}
+      >
+        <table className="w-full text-left text-sm">
+          {label ? <caption className="sr-only">{label}</caption> : null}
+          <thead className="bg-muted/50">
+            <tr>
+              {columns.map((column, i) => (
+                <th scope="col" key={i} className="px-4 py-3 font-medium">
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.slice(page * 50, (page + 1) * 50).map((row, i) => (
+              <tr key={i}>
+                {row.map((cell, j) => (
+                  <td
+                    key={j}
+                    className="max-w-80 break-words px-4 py-3 align-top"
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {pages > 1 ? (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {t("data.pageCount", {
+              from: page * 50 + 1,
+              to: Math.min((page + 1) * 50, rows.length),
+              total: rows.length,
+            })}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 0}
+            onClick={() => setPage(page - 1)}
+          >
+            {t("data.previous")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === pages - 1}
+            onClick={() => setPage(page + 1)}
+          >
+            {t("data.next")}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "markdown")
@@ -40,35 +127,67 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
         ))}
       </dl>
     );
-  return (
-    <div className="min-w-0 overflow-auto rounded-xl border" tabIndex={0}>
-      <table className="w-full text-left text-sm">
-        <thead className="bg-muted/50">
-          <tr>
-            {block.columns.map((column, i) => (
-              <th key={i} className="px-4 py-3 font-medium">
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {block.rows.map((row, i) => (
-            <tr key={i}>
-              {row.map((cell, j) => (
-                <td
-                  key={j}
-                  className="max-w-80 break-words px-4 py-3 align-top"
-                >
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  if (block.kind === "progress") {
+    if (block.value === null || block.max === null) return null;
+    return (
+      <div className="space-y-2 rounded-xl border bg-card p-4">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span>{block.label}</span>
+          <span className="text-muted-foreground">
+            {Math.round((block.value / block.max) * 100)}%
+          </span>
+        </div>
+        <progress
+          aria-label={block.label}
+          value={block.value}
+          max={block.max}
+          className="h-2 w-full accent-primary"
+        />
+      </div>
+    );
+  }
+  if (block.kind === "image")
+    return (
+      <figure className="overflow-hidden rounded-xl border bg-card p-3">
+        <img
+          src={block.src}
+          alt={block.alt}
+          loading="lazy"
+          className="mx-auto h-auto max-h-[36rem] max-w-full object-contain"
+        />
+      </figure>
+    );
+  if (block.kind === "chart")
+    return (
+      <div className="min-w-0 space-y-3 rounded-xl border bg-card p-4">
+        <Suspense
+          fallback={
+            <p className="text-sm text-muted-foreground">{block.label}</p>
+          }
+        >
+          <ExtensionChart block={block} />
+        </Suspense>
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">
+            {block.label}
+          </summary>
+          <div className="mt-3">
+            <ViewTable
+              label={block.label}
+              columns={[
+                block.label,
+                ...block.series.map((series) => series.label),
+              ]}
+              rows={block.labels.map((label, index) => [
+                label,
+                ...block.series.map((series) => String(series.values[index])),
+              ])}
+            />
+          </div>
+        </details>
+      </div>
+    );
+  return <ViewTable columns={block.columns} rows={block.rows} />;
 }
 
 /** Every layout is protocol data. No extension IDs or application algorithms here. */
@@ -103,7 +222,9 @@ export function ExtensionView({
           {view.fields.map((field) => {
             const fieldId = `${id}-${field.id}`;
             const value = fields[field.id] ?? "";
-            const invalid = invalidFields.has(field.id);
+            const byteLimit = extensionFieldBytes(field);
+            const fieldError = view.errors?.[field.id];
+            const invalid = invalidFields.has(field.id) || Boolean(fieldError);
             const errorId = `${fieldId}-error`;
             const props = {
               id: fieldId,
@@ -126,6 +247,8 @@ export function ExtensionView({
                     <Checkbox
                       id={fieldId}
                       checked={value === "true"}
+                      aria-invalid={invalid}
+                      aria-describedby={invalid ? errorId : undefined}
                       disabled={blocked}
                       data-operation-locked={blocked}
                       className={LOCKED_CONTROL_CLASS}
@@ -147,7 +270,6 @@ export function ExtensionView({
                     {field.kind === "textarea" ? (
                       <Textarea
                         {...props}
-                        maxLength={EXTENSION_FIELD_BYTES}
                         className={cn(
                           "min-h-40 resize-y font-mono text-sm",
                           LOCKED_INPUT_CLASS,
@@ -184,15 +306,22 @@ export function ExtensionView({
                     ) : (
                       <Input
                         {...props}
-                        type={field.kind === "number" ? "number" : "text"}
-                        maxLength={EXTENSION_FIELD_BYTES}
+                        type={
+                          field.kind === "number"
+                            ? "number"
+                            : field.kind === "date"
+                              ? "date"
+                              : "text"
+                        }
                       />
                     )}
                   </>
                 )}
                 {invalid ? (
                   <p id={errorId} className="text-xs text-destructive">
-                    {t("ext.fieldLimit", { bytes: EXTENSION_FIELD_BYTES })}
+                    {invalidFields.has(field.id)
+                      ? t("ext.fieldLimit", { bytes: byteLimit })
+                      : fieldError}
                   </p>
                 ) : null}
               </div>

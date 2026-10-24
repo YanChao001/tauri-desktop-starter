@@ -57,24 +57,35 @@ vi.mock("@/components/window-background", () => ({
 }));
 
 const item: native.ExtensionInfo = {
+  origin: { kind: "local" },
   enabled: true,
   grantedPermissions: [],
   package: {
     sha256: "a".repeat(64),
     bytes: 100,
     manifest: {
-      formatVersion: 2,
-      apiVersion: 1,
+      formatVersion: 3,
+      apiVersion: 2,
       id: "example.lab",
       version: "1.0.0",
       name: "Lab app",
       description: "A real extension entry",
       author: "Example",
-      inputFormat: "json",
-      resultFormat: "view",
-      ui: { sidebar: true, window: true },
       permissions: [],
-      commands: [{ id: "open", title: "Open lab", function: "lab" }],
+      commands: [
+        {
+          id: "open",
+          title: "Open lab",
+          function: "lab",
+          inputFormat: "json",
+          resultFormat: "view",
+          permissions: [],
+          ui: { sidebar: true, window: true },
+        },
+      ],
+      minHostVersion: "0.1.0",
+      optionalPermissions: [],
+      network: [],
     },
   },
 };
@@ -82,14 +93,14 @@ let changed: () => void;
 let snapshot: native.ExtensionSnapshot;
 beforeEach(() => {
   vi.clearAllMocks();
-  snapshot = { revision: 1, items: [item], runningId: null };
+  snapshot = { revision: 1, items: [item], runs: [] };
   vi.mocked(native.extensionSnapshot).mockImplementation(async () => snapshot);
   vi.mocked(native.onExtensionsChanged).mockImplementation(async (handler) => {
     changed = handler;
     return () => {};
   });
   vi.mocked(native.viewExtension).mockResolvedValue({
-    version: 1,
+    version: 2,
     state: "state",
     display: "Application content",
     description: "A regular page",
@@ -153,7 +164,7 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
 });
 
 it("closes an unavailable standalone entry without navigating into the host application", async () => {
-  snapshot = { revision: 2, items: [], runningId: null };
+  snapshot = { revision: 2, items: [], runs: [] };
   workspace(true);
   await screen.findByText(/This extension is disabled/);
   expect(
@@ -169,7 +180,7 @@ it("revocation removes the sidebar contribution and stops exposing the applicati
   snapshot = {
     revision: 2,
     items: [{ ...item, enabled: false }],
-    runningId: null,
+    runs: [],
   };
   await act(async () => changed());
   await waitFor(() =>

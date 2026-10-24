@@ -1,18 +1,38 @@
 {
-  "formatVersion": 2,
-  "apiVersion": 1,
+  "formatVersion": 3,
+  "apiVersion": 2,
   "id": "starter.extension-lab",
   "version": "1.0.0",
   "name": "扩展实验室",
   "author": "Tauri Desktop Starter",
-  "description": "文本分析、文件与 HTTPS、数据视图、点灯解谜；完整源码演示侧栏、命令和独立窗口。",
-  "inputFormat": "json",
-  "resultFormat": "view",
+  "description": "文本分析、文件与 HTTPS、私有待办和偏好、图表与点灯解谜；完整源码演示宿主效果协议。",
   "icon": "puzzle",
-  "ui": { "sidebar": true, "window": true },
   "commands": [
-    { "id": "open", "title": "打开实验室 / Open lab", "function": "lab" }
+    {
+      "id": "open",
+      "title": "打开实验室 / Open lab",
+      "function": "lab",
+      "inputFormat": "json",
+      "resultFormat": "view",
+      "ui": {
+        "sidebar": true,
+        "window": true
+      },
+      "permissions": []
+    }
   ],
-  "permissions": ["text:read", "files:read", "network:https"],
-  "allowedHosts": ["httpbin.org", "jsonplaceholder.typicode.com"]
+  "permissions": [],
+  "minHostVersion": "0.1.4",
+  "optionalPermissions": [
+    "text:read",
+    "files:read",
+    "network:https",
+    "storage"
+  ],
+  "network": [
+    {
+      "origin": "https://jsonplaceholder.typicode.com",
+      "methods": ["GET"]
+    }
+  ]
 }

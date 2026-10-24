@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ExtensionView as View } from "@/lib/tauri";
@@ -24,7 +24,7 @@ it("keeps the selected panel populated in the same commit when moving forward an
       );
     });
     const view: View = {
-      version: 1,
+      version: 2,
       state: active,
       display: "Result",
       description: "Panel content",
@@ -59,7 +59,7 @@ it("renders protocol select fields with keyboard access and preserves an empty o
   const user = userEvent.setup();
   const onField = vi.fn();
   const view: View = {
-    version: 1,
+    version: 2,
     state: "",
     display: "Choose",
     description: "Selection",
@@ -95,4 +95,102 @@ it("renders protocol select fields with keyboard access and preserves an empty o
   expect(await screen.findByRole("option", { name: "None" })).toBeVisible();
   await user.keyboard("{ArrowDown}{Enter}");
   expect(onField).toHaveBeenCalledWith("mode", "upper");
+});
+
+it("shows plugin field errors accessibly and allows corrected actions", async () => {
+  const user = userEvent.setup();
+  const onField = vi.fn();
+  const onAction = vi.fn();
+  const view: View = {
+    version: 2,
+    state: "",
+    display: "Tasks",
+    description: "",
+    fields: [
+      { id: "due", label: "Due date", value: "", kind: "date", maxBytes: 10 },
+    ],
+    groups: [
+      {
+        columns: 1,
+        actions: [
+          { id: "save", label: "Save", primary: true, disabled: false },
+        ],
+      },
+    ],
+    errors: { due: "Choose a future date" },
+  };
+  render(
+    <ExtensionView
+      view={view}
+      fields={{ due: "" }}
+      blocked={false}
+      invalidFields={new Set()}
+      onField={onField}
+      onAction={onAction}
+    />,
+  );
+  const input = screen.getByLabelText("Due date");
+  expect(input).toHaveAttribute("type", "date");
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(input).toHaveAccessibleDescription("Choose a future date");
+  fireEvent.change(input, { target: { value: "2026-10-25" } });
+  expect(onField).toHaveBeenCalledWith("due", "2026-10-25");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(onAction).toHaveBeenCalledWith("save");
+});
+
+it("paginates large contributed tables and exposes progress semantics", async () => {
+  const user = userEvent.setup();
+  const view: View = {
+    version: 2,
+    state: "",
+    display: "Data",
+    description: "",
+    fields: [],
+    groups: [],
+    blocks: [
+      {
+        kind: "table",
+        columns: ["Task"],
+        rows: Array.from({ length: 120 }, (_, index) => [`Task ${index + 1}`]),
+      },
+      { kind: "progress", label: "Completed", value: 3, max: 4 },
+    ],
+  };
+  const mounted = render(
+    <ExtensionView
+      view={view}
+      fields={{}}
+      blocked={false}
+      invalidFields={new Set()}
+      onField={vi.fn()}
+      onAction={vi.fn()}
+    />,
+  );
+  expect(screen.getAllByRole("row")).toHaveLength(51);
+  expect(screen.getByText("Task 1")).toBeVisible();
+  expect(screen.queryByText("Task 51")).toBeNull();
+  expect(
+    screen.getByRole("progressbar", { name: "Completed" }),
+  ).toHaveAttribute("value", "3");
+  await user.click(screen.getByRole("button", { name: "data.next" }));
+  expect(screen.getByText("Task 51")).toBeVisible();
+  expect(screen.queryByText("Task 1")).toBeNull();
+  const shorter = {
+    ...view,
+    blocks: [
+      { kind: "table" as const, columns: ["Task"], rows: [["Only row"]] },
+    ],
+  };
+  mounted.rerender(
+    <ExtensionView
+      view={shorter}
+      fields={{}}
+      blocked={false}
+      invalidFields={new Set()}
+      onField={vi.fn()}
+      onAction={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("Only row")).toBeVisible();
 });

@@ -6,10 +6,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/providers/i18n";
 import { nativeErrorText } from "@/lib/native-error";
 import {
-  pickWorkbenchFiles,
+  pickExtensionFiles,
   type ExtensionInfo,
   type ExtensionViewDataInput,
 } from "@/lib/tauri";
+import { extensionNetworkOrigins } from "./extension-model";
 import type { ExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 
@@ -52,8 +53,18 @@ export function ExtensionData({
     };
   }, [session]);
   const grants = item.grantedPermissions;
-  if (!grants.length) return null;
-  const tooLong = new TextEncoder().encode(inputText).length > 64 * 1024;
+  const hasText = grants.includes("text:read");
+  const hasFiles = grants.includes("files:read");
+  const hasNetwork =
+    grants.includes("network:https") || grants.includes("network:local");
+  if (!hasText && !hasFiles && !hasNetwork) return null;
+  const tooLong =
+    hasText && new TextEncoder().encode(inputText).length > 1024 * 1024;
+  const hasData = Boolean(
+    (hasText && inputText) ||
+    (hasFiles && files.length) ||
+    (hasNetwork && url.trim()),
+  );
   function draft(patch: Partial<ExtensionSession["draft"]>) {
     session.draft = { ...session.draft, ...patch };
     refresh();
@@ -67,7 +78,7 @@ export function ExtensionData({
       </summary>
       <div className="mt-4 space-y-4">
         <p className="text-sm text-muted-foreground">{t("ext.hostDataHint")}</p>
-        {grants.includes("text:read") ? (
+        {hasText ? (
           <div className="space-y-2">
             <Label htmlFor={`${id}-text`}>{t("ext.input")}</Label>
             <Textarea
@@ -79,7 +90,7 @@ export function ExtensionData({
               onChange={(e) => {
                 draft({ inputText: e.target.value });
               }}
-              maxLength={65536}
+
               aria-invalid={tooLong}
             />
             <p className="text-xs text-muted-foreground">
@@ -87,7 +98,7 @@ export function ExtensionData({
             </p>
           </div>
         ) : null}
-        {grants.includes("files:read") ? (
+        {hasFiles ? (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
               <Button
@@ -101,21 +112,17 @@ export function ExtensionData({
                   setPicking(true);
                   onPickingChange(true);
                   setError(null);
-                  const selecting = pickWorkbenchFiles()
+                  const selecting = pickExtensionFiles()
                     .then((result) => {
                       if (request !== generation.current) return;
                       if (!result.length) return;
                       if (
-                        result.length > 3 ||
-                        result.some(
-                          (file) =>
-                            file.content === null || file.bytes === null,
-                        ) ||
+                        result.length > 16 ||
                         result.reduce(
                           (sum, file) => sum + (file.bytes ?? Infinity),
                           0,
                         ) >
-                          64 * 1024
+                          2 * 1024 * 1024
                       )
                         throw new Error(t("ext.filesHint"));
                       const files = result.map(({ id, name }) => ({
@@ -166,7 +173,7 @@ export function ExtensionData({
             ) : null}
           </div>
         ) : null}
-        {grants.includes("network:https") ? (
+        {hasNetwork ? (
           <div className="space-y-2">
             <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
             <Input
@@ -176,16 +183,15 @@ export function ExtensionData({
               disabled={blocked}
               data-operation-locked={blocked}
               className={LOCKED_INPUT_CLASS}
-              maxLength={2048}
+              maxLength={4096}
               onChange={(e) => {
                 draft({ url: e.target.value });
               }}
-              placeholder={`https://${item.package.manifest.allowedHosts?.[0] ?? ""}/`}
+              placeholder={`${extensionNetworkOrigins(item)[0] ?? "https://example.com"}/`}
             />
             <p className="break-words text-xs text-muted-foreground">
               {t("ext.allowedHosts")}:{" "}
-              {item.package.manifest.allowedHosts?.join(", ")}.{" "}
-              {t("ext.urlHint")}
+              {extensionNetworkOrigins(item).join(", ")}. {t("ext.urlHint")}
             </p>
           </div>
         ) : null}
@@ -196,22 +202,13 @@ export function ExtensionData({
         ) : null}
         <Button
           className={LOCKED_CONTROL_CLASS}
-          data-operation-locked={
-            (blocked || picking) &&
-            !tooLong &&
-            Boolean(inputText || files.length || url.trim())
-          }
-          disabled={
-            blocked ||
-            picking ||
-            tooLong ||
-            (!inputText && !files.length && !url.trim())
-          }
+          data-operation-locked={(blocked || picking) && !tooLong && hasData}
+          disabled={blocked || picking || tooLong || !hasData}
           onClick={() =>
             onSend({
-              inputText,
-              fileIds: files.map((file) => file.id),
-              url: url.trim() || null,
+              inputText: hasText ? inputText : "",
+              fileIds: hasFiles ? files.map((file) => file.id) : [],
+              url: hasNetwork ? url.trim() || null : null,
             })
           }
         >

@@ -5,6 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -17,20 +25,29 @@ import { nativeErrorText } from "@/lib/native-error";
 import {
   runExtension,
   cancelExtension,
-  pickWorkbenchFiles,
+  pickExtensionFiles,
   saveTextExport,
   NativeBridgeError,
   type ExtensionInfo,
+  type ExtensionSnapshot,
   type ExtensionResultFormat,
-  type WorkbenchDocument,
+  type ExtensionFileChoice,
 } from "@/lib/tauri";
 
-type FileChoice = Pick<WorkbenchDocument, "id" | "name">;
+import {
+  canRunExtensionCommand,
+  extensionNetworkOrigins,
+} from "./extension-model";
+import { useExtensionPhase } from "./use-extension-phase";
+import { ExtensionSessionImport } from "./extension-session-import";
+import { extensionSessionIdentity } from "./extension-session";
+
+type FileChoice = Pick<ExtensionFileChoice, "id" | "name">;
 type PendingRun = { id: string; done: Promise<void> };
 
 export function ExtensionRunner({
   items,
-  runningId,
+  runs,
   onSettled,
   requestedExtension = "",
   requestedCommand = "",
@@ -38,12 +55,13 @@ export function ExtensionRunner({
   requestedExtension?: string;
   requestedCommand?: string;
   items: ExtensionInfo[];
-  runningId: string | null;
+  runs: ExtensionSnapshot["runs"];
   onSettled: () => Promise<void>;
 }) {
   const { t } = useI18n();
   const id = useId();
   const [selected, setSelected] = useState("");
+  const [nextSelected, setNextSelected] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [url, setUrl] = useState("");
   const [files, setFiles] = useState<FileChoice[]>([]);
@@ -66,25 +84,32 @@ export function ExtensionRunner({
   const current = useRef<PendingRun | null>(null);
   const selection = useRef<Promise<void> | null>(null);
   const exportLock = useRef(false);
-  const enabled = items.filter(
-    (item) => item.enabled && item.package.manifest.resultFormat !== "view",
-  );
+  const selector = useRef<HTMLButtonElement>(null);
+  const enabled = items.filter((item) => item.enabled);
   const choices = enabled.flatMap((item) =>
-    item.package.manifest.commands.map((command) => ({
-      item,
-      command,
-      key: item.package.manifest.id + ":" + command.id,
-    })),
+    item.package.manifest.commands
+      .filter(
+        (command) =>
+          command.resultFormat !== "view" &&
+          canRunExtensionCommand(item, command),
+      )
+      .map((command) => ({
+        item,
+        command,
+        key: item.package.manifest.id + ":" + command.id,
+      })),
   );
   const choice =
     choices.find((value) => value.key === selected) ??
     (selected ? undefined : choices[0]);
   const item = choice?.item;
+  const phase = useExtensionPhase(runs, item?.package.manifest.id ?? "");
   const grants = item?.grantedPermissions ?? [];
   const hasText = grants.includes("text:read");
   const hasFiles = grants.includes("files:read");
-  const hasNetwork = grants.includes("network:https");
-  const tooLong = new TextEncoder().encode(input).length > 64 * 1024;
+  const hasNetwork =
+    grants.includes("network:https") || grants.includes("network:local");
+  const tooLong = new TextEncoder().encode(input).length > 1024 * 1024;
   const locked = busy || exporting || picking;
   useEffect(() => {
     // Navigation from the command palette does not overwrite an unsaved session.
@@ -108,6 +133,23 @@ export function ExtensionRunner({
         void cancelExtension(current.current.id).catch(() => {});
     };
   }, []);
+  useEffect(() => {
+    if (!busy) return;
+    const timer = window.setInterval(() => void onSettled(), 750);
+    return () => window.clearInterval(timer);
+  }, [busy, onSettled]);
+  function selectCommand(key: string) {
+    lastOutput.current = null;
+    latestFiles.current = [];
+    setOutput(null);
+    setFiles([]);
+    setInput("");
+    setUrl("");
+    setError(null);
+    setDirty(false);
+    setSelected(key);
+    setNextSelected(null);
+  }
   async function settle(signal?: AbortSignal) {
     signal?.throwIfAborted();
     await selection.current;
@@ -133,12 +175,22 @@ export function ExtensionRunner({
       await settle(signal);
       const content = JSON.stringify(
         {
-          extensionId: item?.package.manifest.id ?? selected,
-          commandId: choice?.command.id,
+          formatVersion: 1,
+          kind: "tool",
+          ...(item && choice
+            ? extensionSessionIdentity(item, choice.command.id)
+            : {}),
+          fields: {},
+          view: null,
           inputText: input,
           files: latestFiles.current.map((file) => file.name),
           url,
-          result: lastOutput.current,
+          result: lastOutput.current
+            ? {
+                format: lastOutput.current.format,
+                text: lastOutput.current.text,
+              }
+            : null,
         },
         null,
         2,
@@ -184,7 +236,6 @@ export function ExtensionRunner({
       current.current ||
       exportLock.current ||
       locked ||
-      runningId ||
       (hasText && tooLong)
     )
       return;
@@ -206,7 +257,7 @@ export function ExtensionRunner({
         lastOutput.current = {
           extensionId,
           commandId: choice.command.id,
-          format: item.package.manifest.resultFormat,
+          format: choice.command.resultFormat,
           text,
         };
         if (alive.current) {
@@ -243,20 +294,17 @@ export function ExtensionRunner({
     if (locked || selection.current) return;
     setPicking(true);
     setError(null);
-    const pending = pickWorkbenchFiles()
+    const pending = pickExtensionFiles()
       .then((documents) => {
         if (!documents.length || !alive.current) return;
         if (
-          documents.length > 3 ||
-          documents.some(
-            (file) => file.content === null || file.bytes === null,
-          ) ||
+          documents.length > 16 ||
           documents.reduce((sum, file) => sum + (file.bytes ?? Infinity), 0) >
-            64 * 1024
+            2 * 1024 * 1024
         )
           throw new NativeBridgeError({
             code: "INVALID_ARGUMENT",
-            message: "Select at most three text files totaling 64 KiB",
+            message: "Select at most sixteen files totaling 2 MiB",
             retryable: false,
           });
         latestFiles.current = documents.map(({ id, name }) => ({ id, name }));
@@ -279,15 +327,23 @@ export function ExtensionRunner({
     >
       <h3 className="font-semibold">{t("ext.runner")}</h3>
       <p className="text-sm text-muted-foreground">{t("ext.runHint")}</p>
-      {enabled.length ? (
+      {choices.length ? (
         <div className="space-y-2">
           <Label htmlFor={`${id}-extension`}>{t("ext.choose")}</Label>
           <Select
             value={choice?.key ?? ""}
             disabled={locked}
-            onValueChange={setSelected}
+            onValueChange={(key) => {
+              if (key === choice?.key) return;
+              if (dirty) setNextSelected(key);
+              else selectCommand(key);
+            }}
           >
-            <SelectTrigger id={`${id}-extension`} className="w-full">
+            <SelectTrigger
+              ref={selector}
+              id={`${id}-extension`}
+              className="w-full"
+            >
               <SelectValue placeholder={t("ext.choose")} />
             </SelectTrigger>
             <SelectContent>
@@ -308,7 +364,7 @@ export function ExtensionRunner({
           <Textarea
             id={`${id}-input`}
             rows={5}
-            maxLength={65536}
+
             disabled={locked}
             value={input}
             aria-invalid={tooLong}
@@ -364,7 +420,7 @@ export function ExtensionRunner({
           <Input
             id={`${id}-url`}
             type="url"
-            maxLength={2048}
+            maxLength={4096}
             value={url}
             disabled={locked}
             onChange={(event) => {
@@ -375,7 +431,7 @@ export function ExtensionRunner({
           />
           <p className="text-xs">
             {t("ext.allowedHosts")}:{" "}
-            <code>{item?.package.manifest.allowedHosts?.join(", ")}</code>
+            <code>{item ? extensionNetworkOrigins(item).join(", ") : ""}</code>
           </p>
           <p id={`${id}-url-hint`} className="text-xs text-muted-foreground">
             {t("ext.urlHint")}
@@ -384,9 +440,7 @@ export function ExtensionRunner({
       ) : null}
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={
-            !item || locked || runningId !== null || (hasText && tooLong)
-          }
+          disabled={!item || locked || (hasText && tooLong)}
           onClick={run}
         >
           {t("ext.run")}
@@ -419,9 +473,16 @@ export function ExtensionRunner({
       ) : null}
       {busy ? (
         <p role="status" className="text-sm">
-          {t(stopping ? "ext.stopping" : "ext.running", {
-            id: current.current?.id ?? "",
-          })}
+          {t(
+            stopping
+              ? "ext.stopping"
+              : phase === "queued"
+                ? "ext.queued"
+                : "ext.running",
+            {
+              id: current.current?.id ?? "",
+            },
+          )}
         </p>
       ) : null}
       <div className="space-y-2">
@@ -434,7 +495,99 @@ export function ExtensionRunner({
           format={output?.format ?? "text"}
         />
       </div>
+      {output ? (
+        <Button
+          variant="outline"
+          disabled={locked}
+          onClick={() => {
+            if (exportLock.current) return;
+            exportLock.current = true;
+            setExporting(true);
+            const suffix =
+              output.format === "json"
+                ? "json"
+                : output.format === "markdown"
+                  ? "md"
+                  : "txt";
+            void saveTextExport(
+              `${output.extensionId}-${output.commandId}.${suffix}`,
+              output.text,
+            )
+              .catch((reason: unknown) => {
+                if (alive.current) setError(reason);
+              })
+              .finally(() => {
+                exportLock.current = false;
+                if (alive.current) setExporting(false);
+              });
+          }}
+        >
+          {t("ext.saveResult")}
+        </Button>
+      ) : null}
+      {item && choice ? (
+        <ExtensionSessionImport
+          key={choice.key}
+          item={item}
+          commandId={choice.command.id}
+          kind="tool"
+          blocked={locked}
+          onError={(reason) => {
+            if (alive.current) setError(reason);
+          }}
+          onPending={(pending) => {
+            selection.current = pending;
+            if (alive.current) setPicking(pending !== null);
+          }}
+          onRestore={(imported) => {
+            latestFiles.current = [];
+            setFiles([]);
+            setInput(imported.inputText);
+            setUrl(imported.url);
+            lastOutput.current = imported.result
+              ? {
+                  ...imported.result,
+                  extensionId: imported.extensionId,
+                  commandId: imported.commandId,
+                }
+              : null;
+            setOutput(lastOutput.current);
+            setDirty(true);
+            setError(null);
+          }}
+        />
+      ) : null}
       <p className="text-xs text-muted-foreground">{t("ext.sessionHint")}</p>
+      <Dialog
+        open={nextSelected !== null}
+        onOpenChange={(open) => {
+          if (!open) setNextSelected(null);
+        }}
+      >
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            selector.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("ext.switchCommand")}</DialogTitle>
+            <DialogDescription>{t("ext.switchCommandHint")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNextSelected(null)}>
+              {t("ext.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                if (nextSelected) selectCommand(nextSelected);
+              }}
+            >
+              {t("ext.switchCommand")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

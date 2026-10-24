@@ -18,12 +18,17 @@ mod desktop;
 mod diagnostics;
 mod error;
 mod extension_commands;
+mod extension_execution;
+pub mod extension_host;
 mod extension_market;
 mod extension_market_commands;
-mod extension_runtime;
-mod extension_view;
+mod extension_network;
+pub mod extension_runtime;
+mod extension_storage;
+pub mod extension_view;
 mod extension_windows;
-mod extensions;
+mod extension_worker;
+pub mod extensions;
 mod file_commands;
 mod lifecycle;
 mod recovery;
@@ -158,7 +163,15 @@ pub fn run() {
             paths.data.join("extensions"),
             initialized.recovery.is_isolated(),
         ));
-        app.manage(extension_market::ExtensionMarket::default());
+        app.manage(extension_market::ExtensionMarket::new(
+            paths.data.join("extension-market"),
+            initialized.recovery.is_isolated(),
+        ));
+        app.manage(extension_host::ExtensionHostStore::new(
+            paths.data.join("extension-data"),
+            initialized.recovery.is_isolated(),
+            app.config().identifier.clone(),
+        ));
         app.manage(wallpapers::WallpaperStore::new(
             initialized.recovery.wallpaper_path(),
         ));

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { MessageKey as DictKey } from "@/i18n/zh-CN";
 import type { ExtensionInfo } from "@/lib/tauri";
+import { canRunExtensionCommand } from "@/features/extensions/extension-model";
 import { matchPath } from "react-router-dom";
 
 type PageComponent = ComponentType | LazyExoticComponent<ComponentType>;
@@ -63,26 +64,27 @@ export function extensionPath(id: string, command: string, window = false) {
 export function extensionNavigation(
   items: readonly ExtensionInfo[],
 ): AppNavigationItem[] {
-  return items
-    .filter(
-      (item) =>
-        item.enabled &&
-        item.package.manifest.ui?.sidebar &&
-        item.package.manifest.resultFormat === "view",
-    )
-    .flatMap(({ package: { manifest } }) =>
-      manifest.commands.map((command) => ({
+  return items.flatMap((item) => {
+    const manifest = item.package.manifest;
+    return manifest.commands
+      .filter(
+        (command) =>
+          canRunExtensionCommand(item, command) &&
+          command.ui?.sidebar &&
+          command.resultFormat === "view",
+      )
+      .map((command) => ({
         path: extensionPath(manifest.id, command.id),
-        labelKey: "ext.title",
+        labelKey: "ext.title" as const,
         label:
           manifest.commands.length === 1
             ? manifest.name
             : `${manifest.name}: ${command.title}`,
         icon: PuzzleIcon,
-        group: "extensions",
+        group: "extensions" as const,
         exact: true,
-      })),
-    );
+      }));
+  });
 }
 export const WINDOW_ROUTES = [
   {

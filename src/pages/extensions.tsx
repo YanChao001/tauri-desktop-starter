@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -26,7 +26,8 @@ import {
   PERMISSION_LABELS,
 } from "@/features/extensions/extension-details";
 import { ExtensionRunner } from "@/features/extensions/extension-runner";
-import { ExtensionIcon } from "@/features/extensions/extension-icon";
+import { ExtensionCard } from "@/features/extensions/extension-card";
+import { availableExtensionCommands } from "@/features/extensions/extension-model";
 import { ExtensionMarket } from "@/features/extensions/extension-market";
 import { useExtensionMarket } from "@/features/extensions/use-extension-market";
 import { marketUpdate } from "@/features/extensions/market-model";
@@ -37,6 +38,9 @@ import {
   downloadMarketExtension,
   extensionDemo,
   installExtension,
+  installMarketExtension,
+  rollbackExtension,
+  type MarketSource,
   setExtensionEnabled,
   uninstallExtension,
   isTauri,
@@ -51,11 +55,12 @@ type Review = {
   content: string;
   revision: number;
   previous: string | null;
+  source?: MarketSource;
 };
 type Decision = {
   item: ExtensionInfo;
   revision: number;
-  action: "enable" | "uninstall";
+  action: "enable" | "permissions" | "uninstall" | "rollback";
 };
 
 export default function Extensions() {
@@ -136,8 +141,8 @@ export default function Extensions() {
         ? document.activeElement
         : null;
     setActionError(null);
-    setTrusted(false);
-    setGrants([]);
+    setTrusted(action === "permissions");
+    setGrants(action === "permissions" ? item.grantedPermissions : []);
     setDecision({ item, action, revision: data.revision });
   }
   async function inspectMarket(entry: import("@/lib/tauri").MarketEntry) {
@@ -158,6 +163,7 @@ export default function Extensions() {
           setReview({
             content: downloaded.content,
             preview: downloaded.preview,
+            source: downloaded.source,
             revision: snapshot.revision,
             previous:
               snapshot.items.find(
@@ -170,15 +176,18 @@ export default function Extensions() {
       }
     });
   }
-  function open(item: ExtensionInfo) {
-    const command = item.package.manifest.commands[0];
-    if (command && item.package.manifest.resultFormat === "view") {
+  function open(item: ExtensionInfo, commandId?: string) {
+    const commands = availableExtensionCommands(item);
+    const command = commandId
+      ? commands.find((command) => command.id === commandId)
+      : commands[0];
+    if (command && command.resultFormat === "view") {
       navigate(extensionPath(item.package.manifest.id, command.id));
       return;
     }
     if (command)
       setSearch({ extension: item.package.manifest.id, command: command.id });
-    if (item.package.manifest.resultFormat !== "view")
+    if (command?.resultFormat !== "view")
       document
         .getElementById("extension-runner")
         ?.scrollIntoView({ behavior: "instant", block: "start" });
@@ -288,9 +297,9 @@ export default function Extensions() {
               {t("ext.docs")}
             </ExternalLink>
           </section>
-          {data?.runningId ? (
+          {data?.runs.length ? (
             <p role="status" className="text-sm">
-              {t("ext.running", { id: data.runningId })}
+              {t("ext.queueSummary", { count: data.runs.length })}
             </p>
           ) : null}
           <h3 className="font-semibold">{t("ext.installed")}</h3>
@@ -303,127 +312,47 @@ export default function Extensions() {
           ) : null}
           <div className="grid gap-4 lg:grid-cols-2">
             {data?.items.map((item) => (
-              <article
+              <ExtensionCard
                 key={item.package.manifest.id}
-                className="min-w-0 space-y-4 rounded-xl border bg-card p-5"
-              >
-                <div className="flex items-start gap-4">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      item.enabled ? open(item) : decide(item, "enable")
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-4 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label={t("ext.openNamed", {
-                      name: item.package.manifest.name,
-                    })}
-                  >
-                    <span className="shrink-0 rounded-2xl bg-primary/10 p-4 text-primary">
-                      <ExtensionIcon
-                        name={item.package.manifest.icon}
-                        className="size-8"
-                      />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block break-words font-semibold">
-                        {item.package.manifest.name}
-                      </span>
-                      <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
-                        {item.package.manifest.description}
-                      </span>
-                    </span>
-                  </button>
-                  <Badge variant={item.enabled ? "default" : "secondary"}>
-                    {t(item.enabled ? "ext.enabled" : "ext.disabled")}
-                  </Badge>
-                </div>
-                <details className="text-sm">
-                  <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
-                    {t("ext.details")}
-                  </summary>
-                  <div className="pt-3">
-                    <ExtensionDetails value={item.package} />
-                  </div>
-                </details>
-                <div className="flex flex-wrap gap-2">
-                  {(() => {
-                    const update = marketUpdate(
-                      market.data?.catalog.entries ?? [],
-                      item,
+                item={item}
+                busy={busy}
+                update={
+                  marketUpdate(market.data?.catalog.entries ?? [], item) ?? null
+                }
+                onOpen={(commandId) => open(item, commandId)}
+                onWindow={(commandId) =>
+                  void act(() =>
+                    openExtensionWindow(
+                      item.package.manifest.id,
+                      commandId,
+                      item.package.sha256,
+                    ),
+                  )
+                }
+                onEnable={() => decide(item, "enable")}
+                onPermissions={() => decide(item, "permissions")}
+                onUninstall={() => decide(item, "uninstall")}
+                onRollback={() => decide(item, "rollback")}
+                onUpdate={() => {
+                  const update = marketUpdate(
+                    market.data?.catalog.entries ?? [],
+                    item,
+                  );
+                  if (update) void inspectMarket(update);
+                }}
+                onDisable={() =>
+                  void act(async () => {
+                    await setExtensionEnabled(
+                      item.package.manifest.id,
+                      false,
+                      [],
+                      data.revision,
+                      false,
                     );
-                    return update ? (
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void inspectMarket(update)}
-                      >
-                        {t("ext.market.updateTo", {
-                          version: update.package.manifest.version,
-                        })}
-                      </Button>
-                    ) : null;
-                  })()}
-                  {item.enabled ? (
-                    <Button disabled={busy} onClick={() => open(item)}>
-                      {t("ext.open")}
-                    </Button>
-                  ) : null}
-                  {item.enabled &&
-                  item.package.manifest.ui?.window &&
-                  item.package.manifest.commands[0] ? (
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(() =>
-                          openExtensionWindow(
-                            item.package.manifest.id,
-                            item.package.manifest.commands[0]!.id,
-                            item.package.sha256,
-                          ),
-                        )
-                      }
-                    >
-                      {t("ext.openWindow")}
-                    </Button>
-                  ) : null}
-                  {item.enabled ? (
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async () => {
-                          await setExtensionEnabled(
-                            item.package.manifest.id,
-                            false,
-                            [],
-                            data.revision,
-                            false,
-                          );
-                          await reload();
-                        })
-                      }
-                    >
-                      {t("ext.disable")}
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={busy}
-                      onClick={() => decide(item, "enable")}
-                    >
-                      {t("ext.enable")}
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => decide(item, "uninstall")}
-                  >
-                    {t("ext.uninstall")}
-                  </Button>
-                </div>
-              </article>
+                    await reload();
+                  })
+                }
+              />
             ))}
           </div>
           {data && !data.items.length ? (
@@ -433,13 +362,15 @@ export default function Extensions() {
           ) : null}
           {data &&
           (data.items.length === 0 ||
-            data.items.some(
-              (item) => item.package.manifest.resultFormat !== "view",
+            data.items.some((item) =>
+              item.package.manifest.commands.some(
+                (command) => command.resultFormat !== "view",
+              ),
             )) ? (
             <div id="extension-runner">
               <ExtensionRunner
                 items={data.items}
-                runningId={data.runningId}
+                runs={data.runs}
                 onSettled={reload}
                 requestedExtension={search.get("extension") ?? ""}
                 requestedCommand={search.get("command") ?? ""}
@@ -484,7 +415,14 @@ export default function Extensions() {
           </DialogHeader>
           {review ? (
             <>
-              <ExtensionDetails value={review.preview} />
+              <ExtensionDetails
+                value={review.preview}
+                origin={
+                  review.source
+                    ? { kind: "market", source: review.source }
+                    : { kind: "local" }
+                }
+              />
               {review.previous ? (
                 <p className="rounded-md bg-muted p-3 text-sm">
                   {t("ext.upgradeHint", { version: review.previous })}
@@ -513,12 +451,21 @@ export default function Extensions() {
               onClick={() => {
                 if (review)
                   void act(async () => {
-                    await installExtension(
-                      review.content,
-                      review.revision,
-                      review.previous !== null,
-                      review.preview.sha256,
-                    );
+                    if (review.source)
+                      await installMarketExtension(
+                        review.content,
+                        review.revision,
+                        review.previous !== null,
+                        review.preview.sha256,
+                        review.source,
+                      );
+                    else
+                      await installExtension(
+                        review.content,
+                        review.revision,
+                        review.previous !== null,
+                        review.preview.sha256,
+                      );
                     if (alive.current) setReview(null);
                     await reload();
                   });
@@ -545,21 +492,38 @@ export default function Extensions() {
           <DialogHeader>
             <DialogTitle>
               {t(
-                decision?.action === "enable"
-                  ? "ext.enableTitle"
-                  : "ext.uninstallTitle",
+                decision?.action === "rollback"
+                  ? "ext.rollbackTitle"
+                  : decision?.action === "uninstall"
+                    ? "ext.uninstallTitle"
+                    : "ext.enableTitle",
               )}
             </DialogTitle>
             <DialogDescription>
               {t(
-                decision?.action === "enable"
-                  ? "ext.grantHint"
-                  : "ext.uninstallHint",
+                decision?.action === "rollback"
+                  ? "ext.rollbackHint"
+                  : decision?.action === "uninstall"
+                    ? "ext.uninstallHint"
+                    : "ext.grantHint",
               )}
             </DialogDescription>
           </DialogHeader>
-          {decision ? <ExtensionDetails value={decision.item.package} /> : null}
-          {decision?.action === "enable" ? (
+          {decision ? (
+            <ExtensionDetails
+              value={
+                decision.action === "rollback" && decision.item.previousPackage
+                  ? decision.item.previousPackage
+                  : decision.item.package
+              }
+              origin={
+                decision.action === "rollback"
+                  ? (decision.item.previousOrigin ?? undefined)
+                  : decision.item.origin
+              }
+            />
+          ) : null}
+          {decision && ["enable", "permissions"].includes(decision.action) ? (
             <div className="space-y-4">
               <p className="text-sm">{t("ext.boundary")}</p>
               <Label className="items-start leading-relaxed">
@@ -570,22 +534,42 @@ export default function Extensions() {
                 />
                 {t("ext.trust")}
               </Label>
-              {decision.item.package.manifest.permissions.map((permission) => (
-                <Label key={permission} className="items-start leading-relaxed">
-                  <Checkbox
-                    checked={grants.includes(permission)}
-                    disabled={busy}
-                    onCheckedChange={(value) =>
-                      setGrants((current) =>
-                        value === true
-                          ? [...new Set([...current, permission])]
-                          : current.filter((item) => item !== permission),
-                      )
-                    }
-                  />
-                  {t(PERMISSION_LABELS[permission])}
-                </Label>
-              ))}
+              {[
+                {
+                  label: "ext.requiredPermissions" as const,
+                  permissions: decision.item.package.manifest.permissions,
+                },
+                {
+                  label: "ext.optionalPermissions" as const,
+                  permissions:
+                    decision.item.package.manifest.optionalPermissions,
+                },
+              ].map((group) =>
+                group.permissions.length ? (
+                  <div key={group.label} className="space-y-3">
+                    <h4 className="text-sm font-medium">{t(group.label)}</h4>
+                    {group.permissions.map((permission) => (
+                      <Label
+                        key={permission}
+                        className="items-start leading-relaxed"
+                      >
+                        <Checkbox
+                          checked={grants.includes(permission)}
+                          disabled={busy}
+                          onCheckedChange={(value) =>
+                            setGrants((current) =>
+                              value === true
+                                ? [...new Set([...current, permission])]
+                                : current.filter((item) => item !== permission),
+                            )
+                          }
+                        />
+                        {t(PERMISSION_LABELS[permission])}
+                      </Label>
+                    ))}
+                  </div>
+                ) : null,
+              )}
             </div>
           ) : null}
           {actionError ? (
@@ -611,21 +595,30 @@ export default function Extensions() {
               disabled={
                 busy ||
                 !decision ||
-                (decision.action === "enable" &&
+                (["enable", "permissions"].includes(decision.action) &&
                   (!trusted ||
-                    grants.length !==
-                      decision.item.package.manifest.permissions.length))
+                    !decision.item.package.manifest.permissions.every(
+                      (permission) => grants.includes(permission),
+                    )))
               }
               onClick={() => {
                 if (decision)
                   void act(async () => {
-                    if (decision.action === "enable")
+                    if (
+                      decision.action === "enable" ||
+                      decision.action === "permissions"
+                    )
                       await setExtensionEnabled(
                         decision.item.package.manifest.id,
                         true,
                         grants,
                         decision.revision,
                         trusted,
+                      );
+                    else if (decision.action === "rollback")
+                      await rollbackExtension(
+                        decision.item.package.manifest.id,
+                        decision.revision,
                       );
                     else
                       await uninstallExtension(
@@ -640,7 +633,11 @@ export default function Extensions() {
               {t(
                 decision?.action === "uninstall"
                   ? "ext.uninstall"
-                  : "ext.enable",
+                  : decision?.action === "rollback"
+                    ? "ext.rollbackConfirm"
+                    : decision?.action === "permissions"
+                      ? "ext.savePermissions"
+                      : "ext.enable",
               )}
             </Button>
           </DialogFooter>
