@@ -118,38 +118,44 @@ export function AppSidebar({ routes }: { routes: readonly AppRoute[] }) {
               <span className="app-sidebar-label">{t(group.labelKey)}</span>
             </p>
             <div className="space-y-0.5">
-              {group.routes.map(({ path, labelKey, icon: Icon, exact }) => (
-                <Tooltip
-                  key={path}
-                  open={collapsed && tooltip === path}
-                  onOpenChange={(open) => tooltipChanged(path, open)}
-                >
-                  <TooltipTrigger asChild>
-                    <NavLink
-                      to={path}
-                      end={exact}
-                      className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
-                      onPointerMove={() => trackTooltip(path)}
-                      onFocus={() => trackTooltip(path)}
-                      onPointerLeave={() => leaveTooltip(path)}
-                      onBlur={() => leaveTooltip(path)}
-                    >
-                      <Icon className="size-4 shrink-0" aria-hidden="true" />
-                      <span className="app-sidebar-label min-w-0 flex-1 truncate">
-                        {t(labelKey)}
-                      </span>
-                    </NavLink>
-                  </TooltipTrigger>
-                  {collapsed && tooltip === path ? (
-                    <TooltipContent side="right" className="space-y-0.5">
-                      <p className="text-[10px] opacity-65">
-                        {t(group.labelKey)}
-                      </p>
-                      <p>{t(labelKey)}</p>
-                    </TooltipContent>
-                  ) : null}
-                </Tooltip>
-              ))}
+              {group.routes.map(
+                ({ path, labelKey, icon: Icon, exact, preload }) => (
+                  <Tooltip
+                    key={path}
+                    open={collapsed && tooltip === path}
+                    onOpenChange={(open) => tooltipChanged(path, open)}
+                  >
+                    <TooltipTrigger asChild>
+                      <NavLink
+                        to={path}
+                        end={exact}
+                        className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
+                        onPointerEnter={preload}
+                        onPointerMove={() => trackTooltip(path)}
+                        onFocus={() => {
+                          trackTooltip(path);
+                          preload?.();
+                        }}
+                        onPointerLeave={() => leaveTooltip(path)}
+                        onBlur={() => leaveTooltip(path)}
+                      >
+                        <Icon className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="app-sidebar-label min-w-0 flex-1 truncate">
+                          {t(labelKey)}
+                        </span>
+                      </NavLink>
+                    </TooltipTrigger>
+                    {collapsed && tooltip === path ? (
+                      <TooltipContent side="right" className="space-y-0.5">
+                        <p className="text-[10px] opacity-65">
+                          {t(group.labelKey)}
+                        </p>
+                        <p>{t(labelKey)}</p>
+                      </TooltipContent>
+                    ) : null}
+                  </Tooltip>
+                ),
+              )}
             </div>
           </div>
         ))}

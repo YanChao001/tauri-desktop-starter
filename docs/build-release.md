@@ -320,7 +320,7 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 4. 正常打 tag 发布。工作流用临时配置启用 `bundle.createUpdaterArtifacts: true`，生成 Tauri v2 更新产物；本地默认构建仍不额外产出更新签名。每个平台收集后，用独立 Rust 验证器核对最终文件字节、公钥、`.sig` 与签名绑定的版本，随后上传平台元数据。
 
-5. 构建完成后由单独 job 合并四个目标的元数据，按名称或上传标签核对 draft Release 中的实际资产，用 GitHub 返回的真实文件名生成正式 tag 的下载 URL，再上传唯一的 `latest.json`，避免矩阵任务互相覆盖。不能用草稿的临时下载 URL 判断正式地址是否存在，也不预猜空格等字符的重命名结果。清单使用 Release 正文作为版本说明（最多 8000 字符），没有正文时回落到版本标题。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+5. 构建完成后由单独 job 合并四个目标的元数据，按名称或上传标签核对 draft Release 中的实际资产，用 GitHub 返回的真实文件名生成正式 tag 的下载 URL，再上传唯一的 `latest.json`，避免矩阵任务互相覆盖。不能用草稿的临时下载 URL 判断正式地址是否存在，也不预猜空格等字符的重命名结果。清单使用 Release 正文作为版本说明（最多 8000 字符）；正文过长时优先保留变更摘要、升级限制及完整说明链接。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
 
 早期未配置公钥的客户端不会访问更新源，常规交付需先手动安装带公钥的版本作为后续升级起点；受控部署也可通过可信配置文件迁移。首轮正式验收用两个不同版本验证发现、下载、验签及安装，不用同版本安装或仅生成清单代替升级验证。Windows 便携版应用内安装更新会转为 NSIS 安装版；保留便携形态时从发行页手动下载并替换 EXE。
 
@@ -356,6 +356,10 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 出正式包由 `.github/workflows/release.yml` 负责，推送 `v*` tag 或手动触发均可运行。tag 触发会核对 tag 与项目版本；手动触发按所选 ref 构建，并以项目版本关联 `v<version>` Release。正式发布应选择已合入 `main` 的发布提交及对应 tag，不能以手动触发绕过分支评审。
 
 发布流程先由 `validate` job 执行冻结安装和 `pnpm verify`，通过后创建或复用唯一的同版本草稿，将 Release ID 传给全部平台、更新清单与可选的签名上传步骤。后续步骤按 ID 上传，矩阵任务不再各自查找和创建草稿；已有同标签的多个 Release、已公开版本或草稿源码提交不匹配时，在构建前失败。PFX 签名验证按配置检查实际启用的 NSIS / MSI 产物，缺失或签名无效会失败。
+
+新草稿的正文包含变更摘要、升级与限制、GitHub 自动生成的 PR 清单及下载入口。摘要与限制来自本次合入 `main` 的 `release/x.y.z` 或 `hotfix/x.y.z` PR：优先读取“变更摘要”“升级与限制”小节，否则读取模板的“变更内容”“影响范围”；仅有模板注释会阻止创建草稿。摘要应覆盖上一公开正式版以来的实际变化，不能只写版本号。PR 清单以最近公开正式版为基线，忽略草稿和预发布版，并过滤纯升版 / 回流的 `chore(release)` 条目；`fix(release)` 等实际修复仍保留。首次发布尚无公开版及发布 PR 时，生成如实说明没有历史升级路径的首发正文。
+
+发布 PR 合入后、打 tag 前，可在对应 `main` 提交执行 `GITHUB_REPOSITORY=owner/repo pnpm release:notes`（PowerShell 先设置 `$env:GITHUB_REPOSITORY`；需已登录 `gh`），预览写入 `artifacts/<version>/release-notes.md`，不修改远端。构建重跑会保留已有草稿的人工编辑。需修正文案时应在更新清单汇总前完成；正文会进入 `latest.json`，清单生成后再改草稿正文不会同步其中的说明，公开后不替换既有更新清单。
 
 构建矩阵覆盖：
 
@@ -410,6 +414,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 - [ ] 涉及数据格式变更时，按 [数据与恢复验证](./testing.md#数据与恢复验证) 记录支持升级的历史版本、迁移失败状态及恢复演练结果
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
 - [ ] `release/*` 已通过 PR 合入 `main`，在对应发布提交打 tag `vX.Y.Z`；再通过 `main` → `develop` 的回流 PR 同步发布历史，见 [Git 发布流程](./conventions/git-workflow.md#发布流程)
+- [ ] 发布 PR 的摘要覆盖上一公开正式版以来的变更，升级与限制明确；已预览自动生成的 PR 清单，未将 CI 通过写成完整安装升级验收
 - [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布
 - [ ] 发布公告与更新说明同步给使用方
 

@@ -32,7 +32,9 @@ test("one draft is created before builds and its ID is reused on reruns", () => 
   let draft;
   const request = (args, body) => {
     requests.push(args);
-    if (!body) return [[{ tag_name: "v1.2.2" }], draft ? [draft] : []];
+    if (args[0].includes("/commits/")) return [[]];
+    if (args[0].endsWith("/generate-notes")) return { body: "首发" };
+    if (!body) return [draft ? [draft] : []];
     assert.equal(body.target_commitish, options.commit);
     assert.equal(body.draft, true);
     assert.equal(body.prerelease, true);
@@ -40,8 +42,10 @@ test("one draft is created before builds and its ID is reused on reruns", () => 
     return draft;
   };
   assert.equal(ensureDraftRelease(options, request), 42);
+  draft.body = "人工补充的实际验收限制";
   assert.equal(ensureDraftRelease(options, request), 42);
-  assert.equal(requests.filter((args) => args.includes("POST")).length, 1);
+  assert.equal(draft.body, "人工补充的实际验收限制");
+  assert.equal(requests.filter((args) => args.includes("POST")).length, 2);
 });
 
 test("duplicate, published or mismatched-source releases stop before builds or uploads", () => {
@@ -307,13 +311,12 @@ test("a single manifest requires all four targets and rejects stale, duplicate o
   });
   assert.equal(manifest.pub_date, "2026-01-02T00:00:00.000Z");
   assert.equal(manifest.notes, "## Improvements\n\nReal release notes.");
-  assert.equal(
+  assert.ok(
     mergeUpdaterMetadata(records, {
       repository,
       version,
       notes: "x".repeat(9000),
-    }).notes.length,
-    8000,
+    }).notes.length <= 8000,
   );
   assert.equal(
     mergeUpdaterMetadata(records, { repository, version, notes: "  " }).notes,

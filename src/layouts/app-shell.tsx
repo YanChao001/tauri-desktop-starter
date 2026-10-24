@@ -113,25 +113,23 @@ export function AppShell() {
             </ol>
           </nav>
           <JourneyGuide />
-          <RouteErrorBoundary>
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  aria-label={t("common.loading")}
-                  className="space-y-3"
-                >
-                  <Skeleton className="h-7 w-40" />
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-48 w-full" />
-                </div>
-              }
-            >
-              <div key={pathname} className="app-route-enter">
-                <Outlet />
+          <Suspense
+            fallback={
+              <div
+                role="status"
+                aria-label={t("common.loading")}
+                className="space-y-3"
+              >
+                <Skeleton className="h-7 w-40" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-48 w-full" />
               </div>
-            </Suspense>
-          </RouteErrorBoundary>
+            }
+          >
+            <RouteErrorBoundary>
+              <Outlet />
+            </RouteErrorBoundary>
+          </Suspense>
         </div>
       </main>
     </div>
