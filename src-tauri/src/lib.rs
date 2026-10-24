@@ -292,6 +292,11 @@ pub fn run() {
         .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                // App::run 在结束时直接退出进程，须在最终退出事件回收拥有的 worker。
+                extension_runtime::shutdown_workers();
+                return;
+            }
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                 let state = app.state::<lifecycle::LifecycleState>();
                 let reservation = match state.reserve_exit() {

@@ -21,5 +21,4 @@ fn main() {
         return;
     }
     tauri_desktop_starter_lib::run();
-    tauri_desktop_starter_lib::extension_runtime::shutdown_workers();
 }

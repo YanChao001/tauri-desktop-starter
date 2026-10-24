@@ -18,6 +18,8 @@ pub(crate) const IO_LIMIT: usize = 4 * 1024 * 1024;
 pub(crate) const MODULE_LIMIT: usize = 16 * 1024 * 1024;
 const FUEL: u64 = 100_000_000;
 const MEMORY_PAGES: u32 = 4096;
+const MAX_MEMORIES_PER_MODULE: u32 = 1;
+const MAX_TABLES_PER_MODULE: u32 = 1;
 const CACHE_ENTRIES: usize = 4;
 // SDK 不公开 JIT 实际占用；此额度针对源模块字节，条目数另设硬上限。
 const CACHE_SOURCE_BYTES: usize = 32 * 1024 * 1024;
@@ -114,6 +116,8 @@ impl CompilationCache {
         pool.total_core_instances(4)
             .total_memories(4)
             .total_tables(4)
+            .max_memories_per_module(MAX_MEMORIES_PER_MODULE)
+            .max_tables_per_module(MAX_TABLES_PER_MODULE)
             .max_memory_size(MEMORY_PAGES as usize * 65536)
             .table_elements(65536);
         let mut config = wasmtime::Config::new();
@@ -221,8 +225,8 @@ pub(crate) fn validate_in_process(module: &[u8], expected_exports: &[&str]) -> R
     let compiled = wasmtime::Module::new(&engine, module)
         .map_err(|_| Failure::failed("validate", "module compilation failed"))?;
     let resources = compiled.resources_required();
-    if resources.num_memories > 3
-        || resources.num_tables > 3
+    if resources.num_memories > MAX_MEMORIES_PER_MODULE
+        || resources.num_tables > MAX_TABLES_PER_MODULE
         || resources
             .max_initial_memory_size
             .is_some_and(|size| size > u64::from(MEMORY_PAGES))

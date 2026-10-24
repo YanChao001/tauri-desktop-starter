@@ -430,4 +430,34 @@ mod tests {
             FailureKind::Failed
         ));
     }
+    #[test]
+    fn worker_validation_rejects_resources_the_execution_pool_cannot_run() {
+        for resources in [
+            "(memory 1) (memory 1)",
+            "(table 1 funcref) (table 1 funcref)",
+        ] {
+            let module =
+                format!("(module {resources} (func (export \"run\") (result i32) (i32.const 0)))");
+            let request = Request {
+                module: STANDARD.encode(module),
+                operation: Operation::Validate {
+                    exports: vec!["run".into()],
+                },
+            };
+            // 使用真实 Wasmtime 编译和 worker 校验入口，不以解析失败冒充资源拒绝。
+            let failure = process_request(request, &mut CompilationCache::default()).unwrap_err();
+            assert_eq!(
+                failure.message,
+                "Extension validate: module exceeds the memory or table budget"
+            );
+        }
+        let module = "(module (memory 1) (table 1 funcref) (func (export \"run\") (result i32) (i32.const 0)))";
+        let request = Request {
+            module: STANDARD.encode(module),
+            operation: Operation::Validate {
+                exports: vec!["run".into()],
+            },
+        };
+        process_request(request, &mut CompilationCache::default()).unwrap();
+    }
 }
