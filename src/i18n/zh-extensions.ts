@@ -1,4 +1,34 @@
 export const zhExtensions = {
+  "ext.recovery.title": "扩展存档恢复",
+  "ext.checkBundledUpdate": "检查内置实验室更新",
+  "ext.bundledCurrent": "内置实验室已是当前版本。",
+  "ext.bundledNewerInstalled": "本机实验室比内置版本更新，已保留本机安装包。",
+  "ext.bundledDifferent":
+    "本机实验室与内置包版本相同但内容不同，已保留本机安装包。替换需要使用更高的包版本。",
+  "ext.recovery.checking": "正在检查扩展存档…",
+  "ext.recovery.checkHint":
+    "重建扩展前，先确认是否为可识别的开发期旧存档。检查不会修改数据。",
+  "ext.recovery.checkAgain": "重新检查存档",
+  "ext.recovery.legacy":
+    "检测到 {count} 条旧版扩展安装记录。可先完整归档，再初始化当前内置扩展。",
+  "ext.recovery.current":
+    "当前存档已使用受支持的版本。请刷新扩展列表并检查具体扩展包，无需归档。",
+  "ext.recovery.future":
+    "此存档由更高版本创建，请使用支持它的应用版本。原存档会保留。",
+  "ext.recovery.invalid":
+    "无法安全识别此存档，请保留原目录以便诊断和恢复，暂不提供自动归档。",
+  "ext.recovery.unavailable":
+    "启动恢复、更新安装或退出期间不能修改扩展存档。完成当前操作后可重新检查。",
+  "ext.recovery.archive": "归档旧扩展并重建",
+  "ext.recovery.confirmTitle": "归档旧版扩展安装？",
+  "ext.recovery.confirmHint":
+    "将旧扩展目录完整移到归档位置，再重新加载当前内置扩展，默认保持禁用。应用设置、笔记和插件私有数据会保留。旧扩展会话仍需使用原包版本恢复。完成后会显示归档位置。",
+  "ext.recovery.confirm": "确认归档并重建",
+  "ext.recovery.archiving": "正在归档…",
+  "ext.recovery.archived": "旧扩展目录已完整归档。",
+  "ext.recovery.archiveLocation": "归档位置：",
+  "ext.recovery.afterArchive":
+    "扩展列表会单独重新加载。若仍有错误，请保留此归档并重试刷新；新的内置扩展默认禁用，请重新审阅并授权后启用。",
   "ext.market.discover": "发现插件",
   "ext.market.title": "官方插件市场",
   "ext.market.hint":

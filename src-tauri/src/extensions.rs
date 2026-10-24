@@ -19,6 +19,10 @@ use std::{
     },
 };
 
+#[path = "extension_recovery.rs"]
+mod recovery;
+pub use recovery::{ExtensionArchivePreview, ExtensionArchiveResult, ExtensionArchiveStatus};
+
 pub const EXTENSIONS_EVENT: &str = "app://extensions-changed";
 pub const TEXT_LIMIT: usize = 1024 * 1024;
 const BINARY_LIMIT: usize = 16 * 1024 * 1024;

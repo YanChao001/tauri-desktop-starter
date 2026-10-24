@@ -348,7 +348,13 @@ export function ExtensionView({
                     "h-auto min-h-11 min-w-0 whitespace-normal break-words",
                     LOCKED_CONTROL_CLASS,
                     group.board &&
-                      "aspect-square min-h-0 rounded-xl p-0 text-3xl shadow-sm",
+                      "aspect-square min-h-0 rounded-xl p-0 leading-none shadow-sm disabled:opacity-100",
+                    group.board &&
+                      (group.columns >= 6 || action.label.length >= 5
+                        ? "text-sm"
+                        : action.label.length >= 3
+                          ? "text-xl"
+                          : "text-3xl"),
                   )}
                   disabled={actionsBlocked || action.disabled}
                   data-operation-locked={
@@ -376,7 +382,12 @@ export function ExtensionView({
   if (!tabs.length) return body;
   return (
     <Tabs value={tabs.find((tab) => tab.active)?.id} onValueChange={onAction}>
-      <TabsList className="mb-4 grid w-full grid-cols-2 gap-1 bg-muted/50 p-1 group-data-horizontal/tabs:h-auto sm:grid-cols-3 lg:grid-cols-5">
+      <TabsList
+        className={cn(
+          "mb-4 grid w-full grid-cols-2 gap-1 bg-muted/50 p-1 group-data-horizontal/tabs:h-auto sm:grid-cols-3",
+          tabs.length > 5 ? "lg:grid-cols-6" : "lg:grid-cols-5",
+        )}
+      >
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}

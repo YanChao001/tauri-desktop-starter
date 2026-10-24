@@ -7,8 +7,9 @@ use crate::{
     extension_market::{ExtensionMarket, MarketSource},
     extension_view::{ExtensionArtifact, ExtensionView, ExtensionViewInput, validate_artifact},
     extensions::{
-        self, ExtensionFileChoice, ExtensionOrigin, ExtensionPermission, ExtensionPreview,
-        ExtensionRunInput, ExtensionSnapshot, ExtensionStore,
+        self, ExtensionArchivePreview, ExtensionArchiveResult, ExtensionFileChoice,
+        ExtensionOrigin, ExtensionPermission, ExtensionPreview, ExtensionRunInput,
+        ExtensionSnapshot, ExtensionStore,
     },
     workbench,
 };
@@ -26,6 +27,27 @@ pub async fn extension_snapshot(app: tauri::AppHandle) -> NativeResult<Extension
         store.snapshot()
     })
     .await
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_extension_archive(
+    app: tauri::AppHandle,
+) -> NativeResult<ExtensionArchivePreview> {
+    let store = app.state::<ExtensionStore>().inner().clone();
+    blocking::run(move || store.preview_archive()).await
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn archive_legacy_extensions(
+    app: tauri::AppHandle,
+    expected_sha256: String,
+) -> NativeResult<ExtensionArchiveResult> {
+    let store = app.state::<ExtensionStore>().inner().clone();
+    let result = blocking::run(move || store.archive_legacy(&expected_sha256)).await;
+    if result.is_ok() {
+        emit(&app);
+    }
+    result
 }
 #[tauri::command]
 #[specta::specta]

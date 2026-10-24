@@ -1,10 +1,16 @@
 {
   "sources": {
-    "Cargo.toml": "94a6b160c6f4d1b4cba117c063467c896fc51fec4082a57b954dd50c339bf31d",
-    "Cargo.lock": "dc02de8e0d63293961bf48c25ce1f9430086713f5bbf3d75f5ccfcb3c2a852a6",
-    "src/lib.rs": "69f3d3d1d7b4456275b44e12d2ef8dc286ba5a84b851c6b5707ca645d3861474",
-    "extension.json": "b7cbdd37f41a621c2a51f3fbe5d26fb3330f35218ee321e41145ac940d08daba",
-    "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe"
+    "Cargo.lock": "e359c7c9b1fe9bf54520ebe88a23dfd67bf1f199ac0f16efe8fa45472a8b384e",
+    "Cargo.toml": "f4218dc47bb954861f88763d45a2318a0e7e51f201b570d058ac6e7320f323c6",
+    "extension.json": "6bb395d58afe16486adbd91939c9fa013294b1fa55b97a3084cf27bac8725ba1",
+    "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
+    "src/app.rs": "8ce302d49964cae35301c4f6276f64deec81b9ea570810cecd83f4389e3ae2a2",
+    "src/data.rs": "aab9c1089d1c32221fd957113a0cba1c0533bb45db4f93510d8e39b04df1600b",
+    "src/lib.rs": "4ea5c53460abac6ab828818952eeef13672819aa1122628e3deaa2881e9972cc",
+    "src/puzzle.rs": "72f2590f9b47cb4d1ab784f73ee4bef3f130fe115bdc42553213199859eea5e6",
+    "src/tasks.rs": "5fc78b8d8735449d8f5c14edd1d8def7531aa2f5f55a1c8f5fdf563607ffdf59",
+    "src/text.rs": "87bd725497228247e2192445e649eeb57b4ab9f87caa17900f0a632b2af1d04f",
+    "src/view.rs": "8d09d0adff23b24a5f53c38b72a1dfa115db5877ca719f6d74978121dab2ae2e"
   },
-  "sha256": "ab2a54a7bb83d472d5bb835cd7a72324a8c93fd0d3eefcd4eaad8d638d094c80"
+  "sha256": "fde41c1c78eb25f55cd06eca1888a7820f3b1a098dd5cc40bc78e64541bb8f5e"
 }

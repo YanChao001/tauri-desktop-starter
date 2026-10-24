@@ -7,6 +7,8 @@ import type {
   ExtensionCredentialSlot,
   ExtensionFileChoice,
   ExtensionStorageInfo,
+  ExtensionArchivePreview,
+  ExtensionArchiveResult,
   ExtensionPreview,
   ExtensionRunInput,
   ExtensionSnapshot,
@@ -28,6 +30,9 @@ import type {
 } from "./generated/bindings";
 
 export type {
+  ExtensionArchivePreview,
+  ExtensionArchiveResult,
+  ExtensionArchiveStatus,
   ExtensionArtifact,
   ExtensionCredentialSlot,
   ExtensionFileChoice,
@@ -70,6 +75,16 @@ export type {
 
 export function extensionSnapshot(): Promise<ExtensionSnapshot> {
   return callNative((commands) => commands.extensionSnapshot());
+}
+export function previewExtensionArchive(): Promise<ExtensionArchivePreview> {
+  return callNative((commands) => commands.previewExtensionArchive());
+}
+export function archiveLegacyExtensions(
+  expectedSha256: string,
+): Promise<ExtensionArchiveResult> {
+  return callNative((commands) =>
+    commands.archiveLegacyExtensions(expectedSha256),
+  );
 }
 export function extensionMarketSnapshot(
   refresh = false,

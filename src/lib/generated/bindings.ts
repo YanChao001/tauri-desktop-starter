@@ -12,6 +12,14 @@ export const commands = {
     typedError<ExtensionSnapshot, NativeError>(
       __TAURI_INVOKE("extension_snapshot"),
     ),
+  previewExtensionArchive: () =>
+    typedError<ExtensionArchivePreview, NativeError>(
+      __TAURI_INVOKE("preview_extension_archive"),
+    ),
+  archiveLegacyExtensions: (expectedSha256: string) =>
+    typedError<ExtensionArchiveResult, NativeError>(
+      __TAURI_INVOKE("archive_legacy_extensions", { expectedSha256 }),
+    ),
   extensionMarketSnapshot: (refresh: boolean) =>
     typedError<MarketSnapshot, NativeError>(
       __TAURI_INVOKE("extension_market_snapshot", { refresh }),
@@ -582,6 +590,20 @@ export type ErrorCode =
   | "MARKET_INVALID"
   | "MARKET_CHANGED"
   | "INTERNAL";
+
+export type ExtensionArchivePreview = {
+  status: ExtensionArchiveStatus;
+  schemaVersion: number | null;
+  fingerprint: string | null;
+  installedCount: number;
+};
+
+export type ExtensionArchiveResult = {
+  archivePath: string;
+};
+
+export type ExtensionArchiveStatus =
+  "legacy" | "current" | "future" | "invalid" | "unavailable";
 
 export type ExtensionArtifact = {
   name: string;

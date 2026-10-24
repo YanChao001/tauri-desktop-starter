@@ -2,10 +2,10 @@
   "formatVersion": 3,
   "apiVersion": 2,
   "id": "starter.extension-lab",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "扩展实验室",
   "author": "Tauri Desktop Starter",
-  "description": "文本分析、文件与 HTTPS、私有待办和偏好、图表与点灯解谜；完整源码演示宿主效果协议。",
+  "description": "九种文本转换、CSV / JSON 数据工坊、文件与 HTTPS、私有待办和偏好，以及六关点灯解谜；可选授权，离线可玩。",
   "icon": "puzzle",
   "commands": [
     {

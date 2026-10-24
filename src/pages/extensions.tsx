@@ -26,11 +26,15 @@ import {
   PERMISSION_LABELS,
 } from "@/features/extensions/extension-details";
 import { ExtensionRunner } from "@/features/extensions/extension-runner";
+import { ExtensionRecovery } from "@/features/extensions/extension-recovery";
 import { ExtensionCard } from "@/features/extensions/extension-card";
 import { availableExtensionCommands } from "@/features/extensions/extension-model";
 import { ExtensionMarket } from "@/features/extensions/extension-market";
 import { useExtensionMarket } from "@/features/extensions/use-extension-market";
-import { marketUpdate } from "@/features/extensions/market-model";
+import {
+  compareExtensionVersions,
+  marketUpdate,
+} from "@/features/extensions/market-model";
 import { repositoryFileUrl } from "@/features/catalog/model";
 import { APP_CONFIG } from "@/config/app";
 import {
@@ -70,6 +74,9 @@ export default function Extensions() {
   const market = useExtensionMarket();
   const navigate = useNavigate();
   const [actionError, setActionError] = useState<unknown>(null);
+  const [bundledStatus, setBundledStatus] = useState<
+    "current" | "newer" | "different" | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
   const alive = useRef(false);
@@ -91,6 +98,7 @@ export default function Extensions() {
     locked.current = true;
     setBusy(true);
     setActionError(null);
+    setBundledStatus(null);
     try {
       await action();
     } catch (reason) {
@@ -122,15 +130,32 @@ export default function Extensions() {
       }
       if (!file) content = await extensionDemo("starter.extension-lab");
       const preview = await previewExtension(content);
+      const installed = snapshot.items.find(
+        (item) => item.package.manifest.id === preview.manifest.id,
+      );
+      if (!file && installed) {
+        const order = compareExtensionVersions(
+          preview.manifest.version,
+          installed.package.manifest.version,
+        );
+        if (order <= 0) {
+          if (alive.current)
+            setBundledStatus(
+              order < 0
+                ? "newer"
+                : installed.package.sha256 === preview.sha256
+                  ? "current"
+                  : "different",
+            );
+          return;
+        }
+      }
       if (alive.current)
         setReview({
           preview,
           content,
           revision: snapshot.revision,
-          previous:
-            snapshot.items.find(
-              (item) => item.package.manifest.id === preview.manifest.id,
-            )?.package.manifest.version ?? null,
+          previous: installed?.package.manifest.version ?? null,
         });
     });
   }
@@ -205,6 +230,7 @@ export default function Extensions() {
         {t("ext.boundary")}
       </p>
       <ResourceError error={error} retry={() => void reload()} />
+      <ExtensionRecovery error={error} reload={reload} />
       {!dialogOpen ? (
         <ResourceError
           error={actionError}
@@ -269,17 +295,30 @@ export default function Extensions() {
                 if (file) void inspect(file);
               }}
             />
-            {data &&
-            !data.items.some(
-              (item) => item.package.manifest.id === "starter.extension-lab",
-            ) ? (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void inspect()}
-              >
-                {t("ext.restoreLab")}
-              </Button>
+            <Button
+              variant="outline"
+              disabled={!data || busy}
+              onClick={() => void inspect()}
+            >
+              {t(
+                data?.items.some(
+                  (item) =>
+                    item.package.manifest.id === "starter.extension-lab",
+                )
+                  ? "ext.checkBundledUpdate"
+                  : "ext.restoreLab",
+              )}
+            </Button>
+            {bundledStatus ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t(
+                  bundledStatus === "current"
+                    ? "ext.bundledCurrent"
+                    : bundledStatus === "newer"
+                      ? "ext.bundledNewerInstalled"
+                      : "ext.bundledDifferent",
+                )}
+              </p>
             ) : null}
             <p className="text-xs text-muted-foreground">
               {t("ext.host")}:{" "}

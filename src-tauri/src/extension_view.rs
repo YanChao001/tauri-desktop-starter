@@ -760,11 +760,11 @@ mod tests {
         let initial: serde_json::Value = serde_json::from_str(&view.state).unwrap();
         view = step(&view.state, Some("cell-0"), serde_json::json!({}), None);
         let changed: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        assert_ne!(initial["board"], changed["board"]);
+        assert_ne!(initial["puzzle"]["board"], changed["puzzle"]["board"]);
         view = step(&view.state, Some("undo"), serde_json::json!({}), None);
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&view.state).unwrap()["board"],
-            initial["board"]
+            serde_json::from_str::<serde_json::Value>(&view.state).unwrap()["puzzle"]["board"],
+            initial["puzzle"]["board"]
         );
         for level in 0..3 {
             for _ in 0..25 {
@@ -773,9 +773,9 @@ mod tests {
                 }
                 view = step(&view.state, Some("hint"), serde_json::json!({}), None);
             }
-            assert_eq!(view.display, "漂亮，全部熄灭！", "level {level}");
+            assert_eq!(view.display, "全部熄灭，挑战成功！", "level {level}");
             view = step(&view.state, Some("next"), serde_json::json!({}), None);
-            assert_eq!(view.display, "把每一盏灯熄灭");
+            assert_eq!(view.display, "让星光安静下来");
         }
     }
 
@@ -806,10 +806,16 @@ mod tests {
         view = step(&view.state, Some("hint"), serde_json::json!({}), None);
         assert!(hint_disabled(&view));
         let after_hint: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        assert_ne!(before_hint["board"], after_hint["board"]);
+        assert_ne!(
+            before_hint["puzzle"]["board"],
+            after_hint["puzzle"]["board"]
+        );
         view = step(&view.state, Some("undo"), serde_json::json!({}), None);
         let after_undo: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        assert_eq!(before_hint["board"], after_undo["board"]);
+        assert_eq!(
+            before_hint["puzzle"]["board"],
+            after_undo["puzzle"]["board"]
+        );
     }
 
     #[test]

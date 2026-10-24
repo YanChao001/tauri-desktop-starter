@@ -1,4 +1,35 @@
 export const enExtensions = {
+  "ext.recovery.title": "Extension archive recovery",
+  "ext.checkBundledUpdate": "Check bundled lab for updates",
+  "ext.bundledCurrent": "The bundled lab is already up to date.",
+  "ext.bundledNewerInstalled":
+    "The installed lab is newer than the bundled version. The installed package was retained.",
+  "ext.bundledDifferent":
+    "The installed lab has the same version but different contents. The installed package was retained; a replacement needs a higher package version.",
+  "ext.recovery.checking": "Checking the extension archive…",
+  "ext.recovery.checkHint":
+    "Check whether these are recognized development archives before rebuilding extensions. The check does not change data.",
+  "ext.recovery.checkAgain": "Check archive again",
+  "ext.recovery.legacy":
+    "Found {count} extension installation records from an older version. Archive them before setting up the current bundled extension.",
+  "ext.recovery.current":
+    "The archive already uses a supported version. Refresh the extension list and review the affected package. No archive operation is available.",
+  "ext.recovery.future":
+    "This archive was created by a newer version. Use an app version that supports it. The original archive is preserved.",
+  "ext.recovery.invalid":
+    "This archive could not be recognized safely. Keep the original directory for diagnosis and recovery. Automatic archiving is unavailable.",
+  "ext.recovery.unavailable":
+    "Extension archives cannot be changed during startup recovery, updates, or shutdown. Finish that operation and check again.",
+  "ext.recovery.archive": "Archive old extensions and rebuild",
+  "ext.recovery.confirmTitle": "Archive old extension installations?",
+  "ext.recovery.confirmHint":
+    "Move the complete old extension directory to an archive and reload the current bundled extension, disabled by default. App settings, notes, and plugin private data are retained. Old extension sessions require their original package version. The archive location will be shown after completion.",
+  "ext.recovery.confirm": "Confirm archive and rebuild",
+  "ext.recovery.archiving": "Archiving…",
+  "ext.recovery.archived": "The old extension directory was archived.",
+  "ext.recovery.archiveLocation": "Archive location:",
+  "ext.recovery.afterArchive":
+    "Extension loading is checked separately. If an error remains, keep this archive and retry refreshing the list. New bundled extensions remain disabled until you review and authorize them.",
   "ext.market.discover": "Discover plugins",
   "ext.market.title": "Official plugin market",
   "ext.market.hint":

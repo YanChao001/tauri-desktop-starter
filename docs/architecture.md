@@ -53,6 +53,7 @@ flowchart LR
 | `workbench.rs` / `workbench_commands.rs`                      | 原生路径授权、文件原子保存、扫描 / 哈希任务与持久历史              |
 | `data_commands.rs`                                            | 分页笔记、草稿、批量操作与逻辑备份的命令入口                       |
 | `extensions.rs` / `extension_commands.rs`                     | 扩展包、可选授权、来源与回退、2 个执行位 / 16 项有界队列及管理 IPC |
+| `extension_recovery.rs`                                       | 识别旧开发版注册表、核对确认摘要并原子归档；不迁移或清除未知数据   |
 | `extension_execution.rs` / `extension_host.rs`                | 命令执行、类型化效果往返与 60 秒合作取消预算、存储与凭据服务编排   |
 | `extension_network.rs` / `extension_storage.rs`               | 精确公网 / 本机网络 broker、系统凭据引用、按插件隔离的 KV CAS      |
 | `extension_runtime.rs` / `extension_worker.rs`                | 固定无界面子进程、整体执行时限、新实例与编译 LRU                   |
