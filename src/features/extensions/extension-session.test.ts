@@ -93,7 +93,10 @@ it("restores the exact package session with native view validation and keeps onl
     "view",
   );
   expect(native.validateExtensionView).toHaveBeenCalledWith(
-    JSON.stringify(view),
+    JSON.stringify({
+      ...view,
+      fields: view.fields.map((field) => ({ ...field, value: "edited" })),
+    }),
   );
   expect(restored).toMatchObject({
     fields: { query: "edited" },
@@ -165,6 +168,42 @@ it("rejects invalid controls and per-field budgets after native schema validatio
   await expect(
     parseExtensionSession(JSON.stringify(session()), item, "open", "view"),
   ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+});
+it("passes edited number and date values through native semantic validation", async () => {
+  for (const kind of ["number", "date"] as const) {
+    const original = {
+      ...view,
+      fields: [
+        {
+          id: "query",
+          label: "Value",
+          kind,
+          value: kind === "date" ? "2026-10-25" : "1",
+        },
+      ],
+    };
+    vi.mocked(native.validateExtensionView).mockRejectedValueOnce({
+      code: "EXTENSION_RUN_FAILED",
+    });
+    await expect(
+      parseExtensionSession(
+        JSON.stringify({
+          ...session(),
+          view: original,
+          fields: { query: "invalid draft" },
+        }),
+        item,
+        "open",
+        "view",
+      ),
+    ).rejects.toMatchObject({ code: "EXTENSION_RUN_FAILED" });
+    expect(native.validateExtensionView).toHaveBeenLastCalledWith(
+      JSON.stringify({
+        ...original,
+        fields: [{ ...original.fields[0], value: "invalid draft" }],
+      }),
+    );
+  }
 });
 it("retains native validation failures and rejects a mismatched tool output format", async () => {
   vi.mocked(native.validateExtensionView).mockRejectedValueOnce({

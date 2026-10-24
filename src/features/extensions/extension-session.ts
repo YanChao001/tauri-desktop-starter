@@ -103,7 +103,26 @@ export async function parseExtensionSession(
       if (Object.keys(fields).length) invalid();
     } else {
       if (!record(value.view)) invalid();
-      view = await validateExtensionView(JSON.stringify(value.view));
+      const rawFields = value.view.fields;
+      if (
+        !Array.isArray(rawFields) ||
+        rawFields.length !== Object.keys(fields).length
+      )
+        invalid();
+      const restoredFields = rawFields.map((field: unknown) => {
+        if (
+          !record(field) ||
+          typeof field.id !== "string" ||
+          !Object.hasOwn(fields, field.id)
+        )
+          invalid();
+        return { ...field, value: fields[field.id] };
+      });
+      // Validate the values that will actually be rendered and sent, including
+      // number/date semantics, through the same Rust schema as live responses.
+      view = await validateExtensionView(
+        JSON.stringify({ ...value.view, fields: restoredFields }),
+      );
       if (
         view.fields.length !== Object.keys(fields).length ||
         view.fields.some(

@@ -33,7 +33,7 @@ export function ExtensionSessionImport({
   blocked: boolean;
   onRestore: (value: ExtensionSessionExport) => void;
   onError: (error: unknown) => void;
-  onPending: (promise: Promise<void> | null) => void;
+  onPending: (promise: Promise<void> | null, completed?: Promise<void>) => void;
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -82,7 +82,7 @@ export function ExtensionSessionImport({
             })
             .finally(() => {
               pending.current = false;
-              onPending(null);
+              onPending(null, parsing);
             });
           onPending(parsing);
         }}

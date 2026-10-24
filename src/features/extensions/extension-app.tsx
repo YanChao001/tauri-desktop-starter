@@ -435,9 +435,11 @@ export function ExtensionApp({
         onError={(reason) => {
           if (alive.current) setError(reason);
         }}
-        onPending={(pending) => {
-          session.selecting = pending;
-          if (alive.current) setPicking(pending !== null);
+        onPending={(pending, completed) => {
+          if (pending !== null || session.selecting === completed) {
+            session.selecting = pending;
+            if (alive.current) setPicking(pending !== null);
+          }
         }}
         onRestore={(imported: ExtensionSessionExport) => {
           latest.current = imported.view;

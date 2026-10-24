@@ -535,9 +535,11 @@ export function ExtensionRunner({
           onError={(reason) => {
             if (alive.current) setError(reason);
           }}
-          onPending={(pending) => {
-            selection.current = pending;
-            if (alive.current) setPicking(pending !== null);
+          onPending={(pending, completed) => {
+            if (pending !== null || selection.current === completed) {
+              selection.current = pending;
+              if (alive.current) setPicking(pending !== null);
+            }
           }}
           onRestore={(imported) => {
             latestFiles.current = [];
