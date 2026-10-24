@@ -28,6 +28,7 @@ pub struct ExtensionViewInput {
     pub id: String,
     pub command_id: String,
     pub expected_sha256: String,
+    pub expected_generation: i32,
     pub request: ExtensionViewRequest,
     #[serde(default)]
     pub data: Option<ExtensionViewDataInput>,

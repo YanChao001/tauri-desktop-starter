@@ -22,3 +22,8 @@ export function availableExtensionCommands(item: ExtensionInfo) {
 export function extensionNetworkOrigins(item: ExtensionInfo) {
   return item.package.manifest.network.map((rule) => rule.origin);
 }
+
+/** Runtime identity rotates on install/replacement even for identical Wasm bytes. */
+export function extensionInstallationIdentity(item: ExtensionInfo): string {
+  return `${item.package.manifest.id}:${item.generation}:${item.package.sha256}:${item.package.manifest.version}`;
+}

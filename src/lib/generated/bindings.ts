@@ -83,8 +83,10 @@ export const commands = {
     typedError<ExtensionSnapshot, NativeError>(
       __TAURI_INVOKE("uninstall_extension", { id, expectedRevision }),
     ),
-  cancelExtension: (id: string) =>
-    typedError<null, NativeError>(__TAURI_INVOKE("cancel_extension", { id })),
+  cancelExtension: (id: string, expectedGeneration: number) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("cancel_extension", { id, expectedGeneration }),
+    ),
   runExtension: (input: ExtensionRunInput) =>
     typedError<string, NativeError>(__TAURI_INVOKE("run_extension", { input })),
   viewExtension: (input: ExtensionViewInput) =>
@@ -102,38 +104,59 @@ export const commands = {
   saveExtensionArtifact: (
     id: string,
     expectedSha256: string,
+    expectedGeneration: number,
     artifact: ExtensionArtifact,
   ) =>
     typedError<string | null, NativeError>(
       __TAURI_INVOKE("save_extension_artifact", {
         id,
         expectedSha256,
+        expectedGeneration,
         artifact,
       }),
     ),
-  extensionStorageInfo: (id: string, expectedSha256: string) =>
+  extensionStorageInfo: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
     typedError<ExtensionStorageInfo, NativeError>(
-      __TAURI_INVOKE("extension_storage_info", { id, expectedSha256 }),
+      __TAURI_INVOKE("extension_storage_info", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+      }),
     ),
   clearExtensionStorage: (
     id: string,
     expectedSha256: string,
+    expectedGeneration: number,
     expectedRevision: number,
   ) =>
     typedError<null, NativeError>(
       __TAURI_INVOKE("clear_extension_storage", {
         id,
         expectedSha256,
+        expectedGeneration,
         expectedRevision,
       }),
     ),
-  extensionCredentialSlots: (id: string, expectedSha256: string) =>
+  extensionCredentialSlots: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
     typedError<ExtensionCredentialSlot[], NativeError>(
-      __TAURI_INVOKE("extension_credential_slots", { id, expectedSha256 }),
+      __TAURI_INVOKE("extension_credential_slots", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+      }),
     ),
   setExtensionCredential: (
     id: string,
     expectedSha256: string,
+    expectedGeneration: number,
     origin: string,
     alias: string,
     secret: string,
@@ -142,6 +165,7 @@ export const commands = {
       __TAURI_INVOKE("set_extension_credential", {
         id,
         expectedSha256,
+        expectedGeneration,
         origin,
         alias,
         secret,
@@ -150,6 +174,7 @@ export const commands = {
   deleteExtensionCredential: (
     id: string,
     expectedSha256: string,
+    expectedGeneration: number,
     origin: string,
     alias: string,
   ) =>
@@ -157,6 +182,7 @@ export const commands = {
       __TAURI_INVOKE("delete_extension_credential", {
         id,
         expectedSha256,
+        expectedGeneration,
         origin,
         alias,
       }),
@@ -165,12 +191,14 @@ export const commands = {
     id: string,
     commandId: string,
     expectedSha256: string,
+    expectedGeneration: number,
   ) =>
     typedError<null, NativeError>(
       __TAURI_INVOKE("open_extension_window", {
         id,
         commandId,
         expectedSha256,
+        expectedGeneration,
       }),
     ),
   greet: (name: string, language: string | null) =>
@@ -629,6 +657,7 @@ export type ExtensionIcon =
 
 export type ExtensionInfo = {
   package: ExtensionPreview;
+  generation: number;
   enabled: boolean;
   grantedPermissions: ExtensionPermission[];
   origin: ExtensionOrigin;
@@ -679,6 +708,7 @@ export type ExtensionRunInput = {
   id: string;
   commandId: string;
   expectedSha256: string;
+  expectedGeneration: number;
   inputText: string;
   fileIds: string[];
   url: string | null;
@@ -780,6 +810,7 @@ export type ExtensionViewInput = {
   id: string;
   commandId: string;
   expectedSha256: string;
+  expectedGeneration: number;
   request: ExtensionViewRequest;
   data?: ExtensionViewDataInput | null;
 };

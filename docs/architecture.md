@@ -53,7 +53,7 @@ flowchart LR
 | `workbench.rs` / `workbench_commands.rs`                      | 原生路径授权、文件原子保存、扫描 / 哈希任务与持久历史              |
 | `data_commands.rs`                                            | 分页笔记、草稿、批量操作与逻辑备份的命令入口                       |
 | `extensions.rs` / `extension_commands.rs`                     | 扩展包、可选授权、来源与回退、2 个执行位 / 16 项有界队列及管理 IPC |
-| `extension_execution.rs` / `extension_host.rs`                | 命令执行、类型化效果往返与 60 秒总预算、存储与凭据服务编排         |
+| `extension_execution.rs` / `extension_host.rs`                | 命令执行、类型化效果往返与 60 秒合作取消预算、存储与凭据服务编排   |
 | `extension_network.rs` / `extension_storage.rs`               | 精确公网 / 本机网络 broker、系统凭据引用、按插件隔离的 KV CAS      |
 | `extension_runtime.rs` / `extension_worker.rs`                | 固定无界面子进程、整体执行时限、新实例与编译 LRU                   |
 | `extension_view.rs` / `extension_windows.rs`                  | 有界声明式视图、结果产物与可信本地宿主窗口                         |
@@ -92,7 +92,7 @@ CSV 导入通过 `features/data-studio/csv.ts` 有界解析、字段映射和逐
 
 Wasm 扩展采用包格式 3 / API 2。清单按命令贡献输入、结果、能力门槛和侧栏 / 窗口入口，必需与可选能力在插件级授权；命令复用 CommandsProvider。文本工具主动提交数据，视图初始化与按钮调用使用同一执行入口；插件可返回有界 HTTP / KV 效果，宿主校验后以结构化结果再次调用插件，不执行网页代码。通用渲染器支持表单、字段错误、图表、分页表格、内嵌图片与用户确认保存的产物，页面和独立窗口共享组件。
 
-ExtensionsProvider 汇集快照、每窗口会话和动态入口；原生端按窗口串行、最多 2 项执行与 16 项排队。固定当前应用的无界面 worker 在 Tauri 初始化前分派，每次创建新 Wasm 实例，复用有界编译 LRU；15 秒 worker 时限覆盖编译，完整效果编排另有 60 秒预算，取消后持有租约到实际工作结束。独立注册表、私有 KV、凭据别名和市场信任各自有数据边界，不并入设置或笔记 schema。协议、开发态不兼容处理、线上市场待发布与验收边界统一见 [扩展指南](./extensions.md)。
+ExtensionsProvider 汇集快照、每窗口会话和动态入口；原生端按窗口串行、最多 2 项执行与 16 项排队。固定当前应用的无界面 worker 在 Tauri 初始化前分派，每次创建新 Wasm 实例，复用有界编译 LRU；15 秒 worker 时限覆盖编译，完整效果编排另有 60 秒合作取消预算，排队不计入，同步操作系统 I/O 不能硬性限时；取消后持有租约到实际工作结束。安装记录的 generation 在安装 / 替换 / 回退时更换，启用 / 授权调整保留，身份相关 IPC 同时核对模块哈希和 generation，防止旧管理请求影响新身份。独立注册表、私有 KV、凭据别名和市场信任各自有数据边界，不并入设置或笔记 schema。协议、开发态不兼容处理、线上市场待发布与验收边界统一见 [扩展指南](./extensions.md)。
 
 原生能力页使用 NativePage 说明浏览器限制并展示当前页面的操作流程，不生成原生结果；通信页保留表单与代码，实际提交仍由门面检查。两者都不伪造 IPC 成功。
 

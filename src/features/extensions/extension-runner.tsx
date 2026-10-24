@@ -43,7 +43,7 @@ import { ExtensionSessionImport } from "./extension-session-import";
 import { extensionSessionIdentity } from "./extension-session";
 
 type FileChoice = Pick<ExtensionFileChoice, "id" | "name">;
-type PendingRun = { id: string; done: Promise<void> };
+type PendingRun = { id: string; generation: number; done: Promise<void> };
 
 export function ExtensionRunner({
   items,
@@ -85,6 +85,8 @@ export function ExtensionRunner({
   const selection = useRef<Promise<void> | null>(null);
   const exportLock = useRef(false);
   const selector = useRef<HTMLButtonElement>(null);
+  const latestItems = useRef(items);
+  latestItems.current = items;
   const enabled = items.filter((item) => item.enabled);
   const choices = enabled.flatMap((item) =>
     item.package.manifest.commands
@@ -96,12 +98,25 @@ export function ExtensionRunner({
       .map((command) => ({
         item,
         command,
-        key: item.package.manifest.id + ":" + command.id,
+        key: `${item.package.manifest.id}:${command.id}:${item.generation}`,
       })),
   );
   const choice =
     choices.find((value) => value.key === selected) ??
-    (selected ? undefined : choices[0]);
+    (selected
+      ? undefined
+      : (choices.find(
+          (value) =>
+            value.item.package.manifest.id === requestedExtension &&
+            value.command.id === requestedCommand,
+        ) ?? choices[0]));
+  const lastChoice = useRef<typeof choice>(undefined);
+  const exportChoice = choice ?? lastChoice.current;
+  useEffect(() => {
+    if (!choice) return;
+    lastChoice.current = choice;
+    if (!selected) setSelected(choice.key);
+  }, [choice, selected]);
   const item = choice?.item;
   const phase = useExtensionPhase(runs, item?.package.manifest.id ?? "");
   const grants = item?.grantedPermissions ?? [];
@@ -113,24 +128,31 @@ export function ExtensionRunner({
   const locked = busy || exporting || picking;
   useEffect(() => {
     // Navigation from the command palette does not overwrite an unsaved session.
-    const key = requestedExtension + ":" + requestedCommand;
+    const request = requestedExtension + ":" + requestedCommand;
+    const requested = choices.find(
+      (value) =>
+        value.item.package.manifest.id === requestedExtension &&
+        value.command.id === requestedCommand,
+    );
     if (
-      !requestedExtension ||
-      !requestedCommand ||
+      !requested ||
       dirty ||
       current.current ||
-      appliedRequest.current === key
+      appliedRequest.current === request
     )
       return;
-    appliedRequest.current = key;
-    setSelected(key);
-  }, [requestedExtension, requestedCommand, dirty]);
+    appliedRequest.current = request;
+    setSelected(requested.key);
+  }, [requestedExtension, requestedCommand, dirty, choices]);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
       if (current.current)
-        void cancelExtension(current.current.id).catch(() => {});
+        void cancelExtension(
+          current.current.id,
+          current.current.generation,
+        ).catch(() => {});
     };
   }, []);
   useEffect(() => {
@@ -156,7 +178,7 @@ export function ExtensionRunner({
     signal?.throwIfAborted();
     const pending = current.current;
     if (pending) {
-      await cancelExtension(pending.id);
+      await cancelExtension(pending.id, pending.generation);
       await pending.done;
       signal?.throwIfAborted();
     }
@@ -177,8 +199,11 @@ export function ExtensionRunner({
         {
           formatVersion: 1,
           kind: "tool",
-          ...(item && choice
-            ? extensionSessionIdentity(item, choice.command.id)
+          ...(exportChoice
+            ? extensionSessionIdentity(
+                exportChoice.item,
+                exportChoice.command.id,
+              )
             : {}),
           fields: {},
           view: null,
@@ -243,17 +268,31 @@ export function ExtensionRunner({
     setBusy(true);
     setStopping(false);
     setError(null);
-    const pending: PendingRun = { id: extensionId, done: Promise.resolve() };
+    const pending: PendingRun = {
+      id: extensionId,
+      generation: item.generation,
+      done: Promise.resolve(),
+    };
     current.current = pending;
     pending.done = runExtension({
       id: extensionId,
       commandId: choice.command.id,
       expectedSha256: item.package.sha256,
+      expectedGeneration: item.generation,
       inputText: hasText ? input : "",
       fileIds: hasFiles ? files.map((file) => file.id) : [],
       url: hasNetwork && url.trim() ? url.trim() : null,
     })
       .then((text) => {
+        if (
+          current.current !== pending ||
+          !latestItems.current.some(
+            (installed) =>
+              installed.package.manifest.id === extensionId &&
+              installed.generation === pending.generation,
+          )
+        )
+          return;
         lastOutput.current = {
           extensionId,
           commandId: choice.command.id,
@@ -266,15 +305,26 @@ export function ExtensionRunner({
         }
       })
       .catch((reason: unknown) => {
-        if (alive.current) setError(reason);
+        if (
+          alive.current &&
+          current.current === pending &&
+          latestItems.current.some(
+            (installed) =>
+              installed.package.manifest.id === extensionId &&
+              installed.generation === pending.generation,
+          )
+        )
+          setError(reason);
       })
       .finally(() => {
-        if (current.current === pending) current.current = null;
-        if (alive.current) {
-          setBusy(false);
-          setStopping(false);
-          void onSettled();
+        if (current.current === pending) {
+          current.current = null;
+          if (alive.current) {
+            setBusy(false);
+            setStopping(false);
+          }
         }
+        void onSettled();
       });
   }
   async function stop() {
@@ -282,7 +332,7 @@ export function ExtensionRunner({
     if (!pending || stopping) return;
     setStopping(true);
     try {
-      await cancelExtension(pending.id);
+      await cancelExtension(pending.id, pending.generation);
     } catch (reason) {
       if (alive.current) {
         setError(reason);
@@ -291,12 +341,23 @@ export function ExtensionRunner({
     }
   }
   function chooseFiles() {
-    if (locked || selection.current) return;
+    if (locked || selection.current || !item) return;
+    const selectedItem = item;
     setPicking(true);
     setError(null);
     const pending = pickExtensionFiles()
       .then((documents) => {
-        if (!documents.length || !alive.current) return;
+        if (
+          !documents.length ||
+          !alive.current ||
+          !latestItems.current.some(
+            (installed) =>
+              installed.package.manifest.id ===
+                selectedItem.package.manifest.id &&
+              installed.generation === selectedItem.generation,
+          )
+        )
+          return;
         if (
           documents.length > 16 ||
           documents.reduce((sum, file) => sum + (file.bytes ?? Infinity), 0) >

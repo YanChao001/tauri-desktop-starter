@@ -21,6 +21,7 @@ describe("路由配置与匹配", () => {
   });
   it("按命令类型、侧栏声明和可选授权过滤扩展入口", () => {
     const item: ExtensionInfo = {
+      generation: 1,
       origin: { kind: "local" },
       enabled: true,
       grantedPermissions: [],

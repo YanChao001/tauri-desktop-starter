@@ -41,12 +41,20 @@ export function ExtensionSessionImport({
   const [review, setReview] = useState<ExtensionSessionExport | null>(null);
   const pending = useRef(false);
   const generation = useRef(0);
-  useEffect(
-    () => () => {
-      generation.current++;
-    },
-    [],
-  );
+  useEffect(() => {
+    const instance = ++generation.current;
+    setReview(null);
+    return () => {
+      generation.current = instance + 1;
+    };
+  }, [
+    item.generation,
+    item.package.sha256,
+    item.package.manifest.id,
+    item.package.manifest.version,
+    commandId,
+    kind,
+  ]);
   return (
     <div className="space-y-2">
       <Label htmlFor={`${id}-session`}>{t("ext.importSession")}</Label>

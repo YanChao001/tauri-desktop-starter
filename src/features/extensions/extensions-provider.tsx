@@ -16,6 +16,8 @@ import {
   type ExtensionView,
 } from "@/lib/tauri";
 
+import { extensionInstallationIdentity } from "./extension-model";
+
 export type ExtensionSession = {
   identity: string;
   view: ExtensionView | null;
@@ -63,8 +65,7 @@ export function ExtensionsProvider({ children }: { children: ReactNode }) {
             !snapshot.items.some(
               (item) =>
                 item.package.manifest.id === extensionId &&
-                `${item.package.sha256}:${item.package.manifest.version}` ===
-                  session.identity,
+                extensionInstallationIdentity(item) === session.identity,
             )
           )
             sessions.current.delete(key);

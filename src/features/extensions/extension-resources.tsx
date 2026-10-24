@@ -56,11 +56,20 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
   const hasNetwork = manifest.network.length > 0;
   const extensionId = manifest.id;
   const expectedSha256 = item.package.sha256;
+  const expectedGeneration = item.generation;
   const load = useCallback(async () => {
     const request = ++generation.current;
     const [nextStorage, nextSlots] = await Promise.allSettled([
-      hasStorage ? extensionStorageInfo(extensionId, expectedSha256) : null,
-      hasNetwork ? extensionCredentialSlots(extensionId, expectedSha256) : [],
+      hasStorage
+        ? extensionStorageInfo(extensionId, expectedSha256, expectedGeneration)
+        : null,
+      hasNetwork
+        ? extensionCredentialSlots(
+            extensionId,
+            expectedSha256,
+            expectedGeneration,
+          )
+        : [],
     ]);
     if (!alive.current || generation.current !== request) return;
     if (nextStorage.status === "fulfilled") setStorage(nextStorage.value);
@@ -72,7 +81,7 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
           ? nextSlots.reason
           : null,
     );
-  }, [extensionId, expectedSha256, hasStorage, hasNetwork]);
+  }, [extensionId, expectedSha256, expectedGeneration, hasStorage, hasNetwork]);
   useEffect(() => {
     alive.current = true;
     void load().catch((reason: unknown) => {
@@ -163,6 +172,7 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
                         await clearExtensionStorage(
                           manifest.id,
                           item.package.sha256,
+                          item.generation,
                           storage.revision,
                         );
                         if (alive.current) setConfirm(false);
@@ -187,6 +197,7 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
               await setExtensionCredential(
                 manifest.id,
                 item.package.sha256,
+                item.generation,
                 origin,
                 alias.trim(),
                 secret,
@@ -217,6 +228,7 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
                     deleteExtensionCredential(
                       manifest.id,
                       item.package.sha256,
+                      item.generation,
                       slot.origin,
                       slot.alias,
                     ),

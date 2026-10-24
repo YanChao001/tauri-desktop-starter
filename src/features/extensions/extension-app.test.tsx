@@ -36,6 +36,7 @@ vi.mock("@/providers/unsaved-work", () => ({
   },
 }));
 const item: native.ExtensionInfo = {
+  generation: 1,
   origin: { kind: "local" },
   package: {
     manifest: {
@@ -126,6 +127,7 @@ it("renders third-party controls as text and sends one initialized request in St
     id: item.package.manifest.id,
     commandId: "open",
     expectedSha256: item.package.sha256,
+    expectedGeneration: item.generation,
     data: undefined,
     request: {
       version: 2,
@@ -242,6 +244,7 @@ it("shows queued status for this window and lets the user cancel its waiting ope
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith(
       item.package.manifest.id,
+      item.generation,
     ),
   );
   await act(async () => pending.reject({ code: "USER_CANCELLED" }));
@@ -255,7 +258,7 @@ it("waits for native completion before ending a session and clears its unsaved r
   fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
   fireEvent.click(screen.getByRole("button", { name: "End session" }));
   await waitFor(() =>
-    expect(native.cancelExtension).toHaveBeenCalledWith("third-party.form"),
+    expect(native.cancelExtension).toHaveBeenCalledWith("third-party.form", 1),
   );
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => pending.resolve(first));
@@ -541,6 +544,51 @@ it("starts a fresh session for a higher package version even when the Wasm hash 
   );
 });
 
+it("isolates retained sessions and late cancellation across same-hash installation generations", async () => {
+  const late = deferred<native.ExtensionView>();
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockReturnValueOnce(late.promise)
+    .mockResolvedValueOnce(first);
+  function Workspace() {
+    const [generation, setGeneration] = useState(1);
+    return (
+      <ExtensionsProvider>
+        <button onClick={() => setGeneration(2)}>Replace installation</button>
+        <ExtensionApp
+          key={generation}
+          item={{ ...item, generation }}
+          commandId="open"
+          runs={[]}
+          onClose={onClose}
+          onSettled={onSettled}
+        />
+      </ExtensionsProvider>
+    );
+  }
+  render(<Workspace />);
+  const query = await screen.findByLabelText("Query");
+  fireEvent.change(query, { target: { value: "Old installation draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Replace installation" }));
+  await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(3));
+  expect(native.cancelExtension).toHaveBeenCalledWith(
+    item.package.manifest.id,
+    1,
+  );
+  expect(screen.getByLabelText("Query")).toHaveValue("Original");
+  await act(async () =>
+    late.resolve({ ...first, display: "Late old installation result" }),
+  );
+  expect(
+    screen.queryByText("Late old installation result"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Query")).toHaveValue("Original");
+  expect(native.viewExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({ expectedGeneration: 2 }),
+  );
+});
+
 it("observes a retained run directly after remount and preserves its failure feedback", async () => {
   const pending = deferred<native.ExtensionView>();
   vi.mocked(native.viewExtension)
@@ -683,6 +731,7 @@ it("saves a typed generated artifact only after the user activates its button", 
     expect(native.saveExtensionArtifact).toHaveBeenCalledWith(
       item.package.manifest.id,
       item.package.sha256,
+      item.generation,
       artifact,
     ),
   );

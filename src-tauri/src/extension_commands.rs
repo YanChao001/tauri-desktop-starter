@@ -169,14 +169,16 @@ pub async fn uninstall_extension(
 }
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_extension(
+pub async fn cancel_extension(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
     id: String,
+    expected_generation: i32,
 ) -> NativeResult<()> {
     bounded_text(&id, 80, "Extension ID")?;
-    app.state::<ExtensionStore>().cancel(&id, window.label());
-    Ok(())
+    let store = app.state::<ExtensionStore>().inner().clone();
+    let owner = window.label().to_owned();
+    blocking::run(move || store.cancel_for_generation(&id, expected_generation, &owner)).await
 }
 #[tauri::command]
 #[specta::specta]
@@ -218,11 +220,12 @@ pub async fn save_extension_artifact(
     app: tauri::AppHandle,
     id: String,
     expected_sha256: String,
+    expected_generation: i32,
     artifact: ExtensionArtifact,
 ) -> NativeResult<Option<String>> {
     blocking::run(move || {
         app.state::<ExtensionStore>()
-            .current_entry(&id, &expected_sha256)?;
+            .current_entry(&id, &expected_sha256, expected_generation)?;
         let bytes = validate_artifact(&artifact)?;
         workbench::save_binary_content(&app, &artifact.name, &bytes)
     })
@@ -234,10 +237,11 @@ pub async fn extension_storage_info(
     app: tauri::AppHandle,
     id: String,
     expected_sha256: String,
+    expected_generation: i32,
 ) -> NativeResult<ExtensionStorageInfo> {
     blocking::run(move || {
         app.state::<ExtensionStore>()
-            .current_entry(&id, &expected_sha256)?;
+            .current_entry(&id, &expected_sha256, expected_generation)?;
         app.state::<ExtensionHostStore>().storage_info(&id)
     })
     .await
@@ -248,15 +252,20 @@ pub async fn clear_extension_storage(
     app: tauri::AppHandle,
     id: String,
     expected_sha256: String,
+    expected_generation: i32,
     expected_revision: i32,
 ) -> NativeResult<()> {
     blocking::run(move || {
-        app.state::<ExtensionStore>()
-            .with_current_entry(&id, &expected_sha256, |_| {
+        app.state::<ExtensionStore>().with_current_entry(
+            &id,
+            &expected_sha256,
+            expected_generation,
+            |_| {
                 app.state::<ExtensionHostStore>()
                     .clear_storage(&id, expected_revision)?;
                 Ok(())
-            })
+            },
+        )
     })
     .await
 }
@@ -266,11 +275,14 @@ pub async fn extension_credential_slots(
     app: tauri::AppHandle,
     id: String,
     expected_sha256: String,
+    expected_generation: i32,
 ) -> NativeResult<Vec<ExtensionCredentialSlot>> {
     blocking::run(move || {
-        let entry = app
-            .state::<ExtensionStore>()
-            .current_entry(&id, &expected_sha256)?;
+        let entry = app.state::<ExtensionStore>().current_entry(
+            &id,
+            &expected_sha256,
+            expected_generation,
+        )?;
         app.state::<ExtensionHostStore>()
             .credential_slots(&entry.package.manifest)
     })
@@ -282,20 +294,25 @@ pub async fn set_extension_credential(
     app: tauri::AppHandle,
     id: String,
     expected_sha256: String,
+    expected_generation: i32,
     origin: String,
     alias: String,
     secret: String,
 ) -> NativeResult<()> {
     blocking::run(move || {
-        app.state::<ExtensionStore>()
-            .with_current_entry(&id, &expected_sha256, |entry| {
+        app.state::<ExtensionStore>().with_current_entry(
+            &id,
+            &expected_sha256,
+            expected_generation,
+            |entry| {
                 app.state::<ExtensionHostStore>().set_credential(
                     &entry.package.manifest,
                     &origin,
                     &alias,
                     &secret,
                 )
-            })
+            },
+        )
     })
     .await
 }
@@ -305,18 +322,23 @@ pub async fn delete_extension_credential(
     app: tauri::AppHandle,
     id: String,
     expected_sha256: String,
+    expected_generation: i32,
     origin: String,
     alias: String,
 ) -> NativeResult<()> {
     blocking::run(move || {
-        app.state::<ExtensionStore>()
-            .with_current_entry(&id, &expected_sha256, |entry| {
+        app.state::<ExtensionStore>().with_current_entry(
+            &id,
+            &expected_sha256,
+            expected_generation,
+            |entry| {
                 app.state::<ExtensionHostStore>().delete_credential(
                     &entry.package.manifest,
                     &origin,
                     &alias,
                 )
-            })
+            },
+        )
     })
     .await
 }

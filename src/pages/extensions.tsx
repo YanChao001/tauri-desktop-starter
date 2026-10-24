@@ -326,6 +326,7 @@ export default function Extensions() {
                       item.package.manifest.id,
                       commandId,
                       item.package.sha256,
+                      item.generation,
                     ),
                   )
                 }

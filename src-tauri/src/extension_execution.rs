@@ -3,7 +3,8 @@ use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     extension_host::{
-        ExtensionEffect, ExtensionHostStore, ExtensionHttpRequest, ExtensionHttpResponse,
+        ExtensionEffect, ExtensionEffectResult, ExtensionHostStore, ExtensionHttpRequest,
+        ExtensionHttpResponse,
     },
     extension_runtime,
     extension_view::{ExtensionView, ExtensionViewInput, MAX_VIEW_BYTES},
@@ -27,6 +28,9 @@ use tauri::Manager;
 const FILE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_EFFECTS: usize = 16;
 const MAX_ROUNDS: usize = 8;
+// 存档本身不超过 1 MiB；另留 context 的权限与 JSON 包装开销。
+const HOST_CONTEXT_RESERVE: usize = 1024 * 1024 + 4096;
+const EFFECT_RECEIPT_RESERVE: usize = 512;
 fn invalid(message: &str) -> NativeError {
     NativeError::new(ErrorCode::InvalidArgument, message)
 }
@@ -243,7 +247,9 @@ pub async fn execute(
     let token = store.window_run_token(owner)?;
     let id = input.id.clone();
     let expected = input.expected_sha256.clone();
-    let prepared = blocking::run(move || store.prepare_for_window(&id, &expected, token)).await?;
+    let generation = input.expected_generation;
+    let prepared =
+        blocking::run(move || store.prepare_for_window(&id, &expected, generation, token)).await?;
     let deadline = Deadline::new(prepared.stop.clone());
     let result = async {
         let command = command(&prepared, &input.command_id)?;
@@ -292,34 +298,176 @@ pub async fn execute_view(
     let token = store.window_run_token(owner)?;
     let id = input.id.clone();
     let expected = input.expected_sha256.clone();
-    let prepared = blocking::run(move || store.prepare_for_window(&id, &expected, token)).await?;
+    let generation = input.expected_generation;
+    let prepared =
+        blocking::run(move || store.prepare_for_window(&id, &expected, generation, token)).await?;
     let deadline = Deadline::new(prepared.stop.clone());
     let result = async {
         let command = command(&prepared, &input.command_id)?;
-        if command.result_format != ExtensionResultFormat::View { return Err(invalid("Command does not declare a view")); }
-        let data = if let Some(data) = input.data { Some(collect_data(app, ExtensionRunInput { id: input.id, command_id: input.command_id, expected_sha256: input.expected_sha256, input_text: data.input_text, file_ids: data.file_ids, url: data.url }, &prepared).await?) } else { None };
+        if command.result_format != ExtensionResultFormat::View {
+            return Err(invalid("Command does not declare a view"));
+        }
+        let data = if let Some(data) = input.data {
+            Some(
+                collect_data(
+                    app,
+                    ExtensionRunInput {
+                        id: input.id,
+                        command_id: input.command_id,
+                        expected_sha256: input.expected_sha256,
+                        expected_generation: input.expected_generation,
+                        input_text: data.input_text,
+                        file_ids: data.file_ids,
+                        url: data.url,
+                    },
+                    &prepared,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
         let host = app.state::<ExtensionHostStore>().inner().clone();
-        let mut request = serde_json::to_value(&input.request).map_err(|_| invalid("Cannot encode view request"))?;
-        if let Some(data) = data { request["data"] = serde_json::to_value(data).map_err(|_| invalid("Cannot encode supplied data"))?; }
-        let mut effects = HashSet::new();
-        for round in 0..MAX_ROUNDS {
-            cancelled(&prepared)?;
-            let service = host.clone(); let manifest = prepared.package.manifest.clone(); let grants = prepared.grants.clone();
-            request["host"] = serde_json::to_value(blocking::run(move || service.context(&manifest, &grants)).await?).map_err(|_| invalid("Cannot encode host context"))?;
-            let payload = encode(&request)?; let module = prepared.module.clone(); let function = command.function.clone(); let stop = prepared.stop.clone();
-            let output = blocking::run(move || extension_runtime::run(&module, &function, &payload, stop)).await?;
-            let mut view = ExtensionView::parse(&output)?;
-            if view.effects.is_empty() { return Ok(view); }
-            if round + 1 == MAX_ROUNDS { return Err(NativeError::new(ErrorCode::ExtensionRunFailed, "Extension exceeded 8 host-effect rounds")); }
-            let pending = std::mem::take(&mut view.effects); let mut results = Vec::new();
-            for effect in pending {
-                if !effects.insert(effect.id().to_owned()) || effects.len() > MAX_EFFECTS { return Err(NativeError::new(ErrorCode::ExtensionRunFailed, "Extension repeated an effect or exceeded 16 effects")); }
-                cancelled(&prepared)?;
-                let result = host.execute_effect(&prepared.package.manifest, &prepared.grants, effect, prepared.stop.clone()).await;
-                cancelled(&prepared)?; results.push(result); encode(&results)?;
-            }
-            request = serde_json::json!({"version": 2, "action": "host-result", "state": view.state, "fields": view.fields.iter().map(|field| (field.id.clone(),field.value.clone())).collect::<BTreeMap<_,_>>(), "locale":input.request.locale, "results":results});
-        } Err(NativeError::new(ErrorCode::ExtensionRunFailed, "Extension effect budget exceeded"))
-    }.await;
+        let mut request = serde_json::to_value(&input.request)
+            .map_err(|_| invalid("Cannot encode view request"))?;
+        if let Some(data) = data {
+            request["data"] =
+                serde_json::to_value(data).map_err(|_| invalid("Cannot encode supplied data"))?;
+        }
+        drive_view(
+            &host,
+            &prepared,
+            &command.function,
+            request,
+            &input.request.locale,
+        )
+        .await
+    }
+    .await;
     deadline.finish(result)
 }
+
+fn admit_effects(seen: &mut HashSet<String>, pending: &[ExtensionEffect]) -> NativeResult<()> {
+    // 在第一项副作用前检查整个批次，不能在写入之后才发现后面的重复 ID。
+    let mut next = seen.clone();
+    if pending
+        .iter()
+        .any(|effect| !next.insert(effect.id().to_owned()))
+        || next.len() > MAX_EFFECTS
+    {
+        return Err(NativeError::new(
+            ErrorCode::ExtensionRunFailed,
+            "Extension repeated an effect or exceeded 16 effects",
+        ));
+    }
+    *seen = next;
+    Ok(())
+}
+
+fn effect_reply(view: &ExtensionView, locale: &str) -> NativeResult<(serde_json::Value, usize)> {
+    let request = serde_json::json!({
+        "version": 2, "action": "host-result", "state": view.state,
+        "fields": view.fields.iter().map(|field| (field.id.clone(), field.value.clone())).collect::<BTreeMap<_, _>>(),
+        "locale": locale, "host": null, "results": []
+    });
+    let base = encode(&request)?.len();
+    let budget = MAX_VIEW_BYTES
+        .checked_sub(base + HOST_CONTEXT_RESERVE)
+        .filter(|remaining| *remaining >= view.effects.len() * EFFECT_RECEIPT_RESERVE)
+        .ok_or_else(|| {
+            NativeError::new(
+                ErrorCode::InputTooLong,
+                "View state and fields leave insufficient room for host-effect results",
+            )
+        })?;
+    Ok((request, budget))
+}
+
+fn bounded_receipt(mut result: ExtensionEffectResult, budget: usize) -> ExtensionEffectResult {
+    if serde_json::to_vec(&result).is_ok_and(|bytes| bytes.len() <= budget) {
+        return result;
+    }
+    // 操作已经完成。保留对应 ID 的明确回执，不能丢掉整批结果导致插件重试写入。
+    let completed = result.error.is_none();
+    result.value = None;
+    result.error = Some(NativeError::new(
+        ErrorCode::InputTooLong,
+        if completed {
+            "Effect completed; response omitted because the host-result budget was exceeded. Do not retry the operation automatically."
+        } else {
+            "Effect failed; error details exceeded the host-result budget"
+        },
+    ));
+    result
+}
+
+async fn drive_view(
+    host: &ExtensionHostStore,
+    prepared: &PreparedRun,
+    function: &str,
+    mut request: serde_json::Value,
+    locale: &str,
+) -> NativeResult<ExtensionView> {
+    let mut effects = HashSet::new();
+    for round in 0..MAX_ROUNDS {
+        cancelled(prepared)?;
+        let service = host.clone();
+        let manifest = prepared.package.manifest.clone();
+        let grants = prepared.grants.clone();
+        request["host"] =
+            serde_json::to_value(blocking::run(move || service.context(&manifest, &grants)).await?)
+                .map_err(|_| invalid("Cannot encode host context"))?;
+        let payload = encode(&request)?;
+        let module = prepared.module.clone();
+        let function = function.to_owned();
+        let stop = prepared.stop.clone();
+        let output =
+            blocking::run(move || extension_runtime::run(&module, &function, &payload, stop))
+                .await?;
+        let view = ExtensionView::parse(&output)?;
+        if view.effects.is_empty() {
+            return Ok(view);
+        }
+        if round + 1 == MAX_ROUNDS {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionRunFailed,
+                "Extension exceeded 8 host-effect rounds",
+            ));
+        }
+        admit_effects(&mut effects, &view.effects)?;
+        let (mut next, budget) = effect_reply(&view, locale)?;
+        let mut results = Vec::new();
+        let mut used = 0;
+        let count = view.effects.len();
+        for (index, effect) in view.effects.into_iter().enumerate() {
+            cancelled(prepared)?;
+            let result = host
+                .execute_effect(
+                    &prepared.package.manifest,
+                    &prepared.grants,
+                    effect,
+                    prepared.stop.clone(),
+                )
+                .await;
+            cancelled(prepared)?;
+            let available = budget - used - (count - index - 1) * EFFECT_RECEIPT_RESERVE - 1;
+            let result = bounded_receipt(result, available);
+            used += serde_json::to_vec(&result)
+                .map_err(|_| invalid("Cannot encode effect result"))?
+                .len()
+                + 1;
+            results.push(result);
+        }
+        next["results"] =
+            serde_json::to_value(results).map_err(|_| invalid("Cannot encode effect results"))?;
+        request = next;
+    }
+    Err(NativeError::new(
+        ErrorCode::ExtensionRunFailed,
+        "Extension effect budget exceeded",
+    ))
+}
+
+#[cfg(test)]
+#[path = "extension_execution_tests.rs"]
+mod tests;

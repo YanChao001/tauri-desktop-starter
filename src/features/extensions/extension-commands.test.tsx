@@ -25,6 +25,7 @@ const snapshot: ExtensionSnapshot = {
   runs: [],
   items: [
     {
+      generation: 1,
       origin: { kind: "local" },
       enabled: true,
       grantedPermissions: [],

@@ -24,6 +24,7 @@ vi.mock("@/providers/i18n", async () => {
   return { useI18n: () => ({ t: createTranslator(en), language: "en" }) };
 });
 const item: native.ExtensionInfo = {
+  generation: 1,
   origin: { kind: "local" },
   enabled: true,
   grantedPermissions: ["storage", "network:https"],
@@ -77,6 +78,7 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
     expect(native.setExtensionCredential).toHaveBeenCalledWith(
       "example.resources",
       item.package.sha256,
+      item.generation,
       "https://service.example",
       "api",
       "test-token",
@@ -91,6 +93,7 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
     expect(native.deleteExtensionCredential).toHaveBeenCalledWith(
       "example.resources",
       item.package.sha256,
+      item.generation,
       "https://service.example",
       "api",
     ),
@@ -115,6 +118,7 @@ it("requires confirmation and the displayed storage revision to clear private da
     expect(native.clearExtensionStorage).toHaveBeenCalledWith(
       "example.resources",
       item.package.sha256,
+      item.generation,
       4,
     ),
   );

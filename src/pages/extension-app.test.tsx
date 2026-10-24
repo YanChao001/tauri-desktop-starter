@@ -57,6 +57,7 @@ vi.mock("@/components/window-background", () => ({
 }));
 
 const item: native.ExtensionInfo = {
+  generation: 1,
   origin: { kind: "local" },
   enabled: true,
   grantedPermissions: [],
@@ -159,7 +160,25 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
       "example.lab",
       "open",
       item.package.sha256,
+      item.generation,
     ),
+  );
+});
+
+it("starts a fresh view session when the installation changes without changing the module hash or version", async () => {
+  workspace();
+  const draft = await screen.findByLabelText("Draft");
+  fireEvent.change(draft, { target: { value: "Old source draft" } });
+  snapshot = { ...snapshot, revision: 2, items: [{ ...item, generation: 2 }] };
+  await act(async () => changed());
+  await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(2));
+  expect(screen.getByLabelText("Draft")).toHaveValue("initial");
+  expect(native.viewExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      expectedSha256: item.package.sha256,
+      expectedGeneration: 2,
+      request: expect.objectContaining({ state: "", fields: {} }),
+    }),
   );
 });
 

@@ -94,6 +94,7 @@ it("previews without installing, then installs disabled and requires every conse
       revision: 1,
       items: [
         {
+          generation: 1,
           origin: { kind: "local" },
           package: preview,
           enabled: false,
@@ -275,6 +276,7 @@ it("offers numeric version updates and retains the installed package when downlo
   const user = userEvent.setup();
   snapshot.items = [
     {
+      generation: 1,
       origin: { kind: "local" },
       package: {
         ...preview,
@@ -374,6 +376,7 @@ it("keeps installation unavailable for an incompatible registry and recovers aft
 it("shows a bundled app once in the installed list and opens a normal route without executing or reinstalling", async () => {
   snapshot.items = [
     {
+      generation: 1,
       origin: { kind: "local" },
       package: {
         ...preview,
@@ -423,6 +426,7 @@ it("restores keyboard focus to the action that opened the consent dialog", async
   const user = userEvent.setup();
   snapshot.items = [
     {
+      generation: 1,
       origin: { kind: "local" },
       package: preview,
       enabled: false,
@@ -455,6 +459,7 @@ it("enables offline commands without optional networking and allows grants to ch
   };
   snapshot.items = [
     {
+      generation: 1,
       origin: { kind: "local" },
       package: offline,
       enabled: false,

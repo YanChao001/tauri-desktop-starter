@@ -20,6 +20,7 @@ vi.mock("@/providers/i18n", async () => {
   return { useI18n: () => ({ t: createTranslator(en), language: "en" }) };
 });
 const item: native.ExtensionInfo = {
+  generation: 1,
   origin: { kind: "local" },
   enabled: true,
   grantedPermissions: [],

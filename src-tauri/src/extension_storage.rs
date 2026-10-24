@@ -217,6 +217,10 @@ impl ExtensionStorageStore {
         {
             return Err(corrupt());
         }
+        // 外部 JSON 的短指数数字在重新编码后可能显著展开；宿主上下文按规范化体积预留额度。
+        if serde_json::to_vec(&document).map_err(|_| corrupt())?.len() > MAX_STORAGE_BYTES {
+            return Err(corrupt());
+        }
         Ok(ExtensionStorageSnapshot {
             revision: document.revision,
             values: document.values,
@@ -577,6 +581,36 @@ mod tests {
             ErrorCode::InvalidArgument
         );
         assert_eq!(store.snapshot("org.example.nested").unwrap().revision, 0);
+    }
+
+    #[test]
+    fn external_short_exponents_cannot_exceed_the_canonical_storage_quota() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
+        let numbers = std::iter::repeat_n("1e15", 80_000)
+            .collect::<Vec<_>>()
+            .join(",");
+        let contents = format!(
+            r#"{{"schemaVersion":1,"extensionId":"{ID}","revision":1,"values":{{"numbers":[{numbers}]}}}}"#
+        )
+        .into_bytes();
+        assert!(contents.len() < MAX_STORAGE_BYTES);
+        let document: StorageDocument = serde_json::from_slice(&contents).unwrap();
+        assert!(serde_json::to_vec(&document).unwrap().len() > MAX_STORAGE_BYTES);
+        fs::create_dir_all(&store.root).unwrap();
+        let path = store.path(ID).unwrap();
+        fs::write(&path, &contents).unwrap();
+
+        assert_eq!(
+            store.snapshot(ID).unwrap_err().code,
+            ErrorCode::StorageCorrupt
+        );
+        assert_eq!(fs::read(&path).unwrap(), contents);
+        assert_eq!(
+            store.clear(ID, 1).unwrap_err().code,
+            ErrorCode::StorageCorrupt
+        );
+        assert_eq!(fs::read(&path).unwrap(), contents);
     }
 
     #[test]

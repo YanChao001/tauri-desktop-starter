@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import * as native from "@/lib/tauri";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import { ExtensionRunner } from "./extension-runner";
@@ -30,6 +31,7 @@ vi.mock("@/providers/unsaved-work", () => ({
   },
 }));
 const tool: native.ExtensionInfo = {
+  generation: 1,
   origin: { kind: "local" },
   package: {
     manifest: {
@@ -150,7 +152,7 @@ it("keeps its run occupied until native cancellation completes and cancels on un
   fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
   fireEvent.click(screen.getByRole("button", { name: "Request stop" }));
   await waitFor(() =>
-    expect(native.cancelExtension).toHaveBeenCalledWith("test.tool"),
+    expect(native.cancelExtension).toHaveBeenCalledWith("test.tool", 1),
   );
   expect(screen.getByRole("button", { name: "Run extension" })).toBeDisabled();
   expect(lifecycle.work?.dirty).toBe(true);
@@ -211,4 +213,48 @@ it("waits for an active file picker and exports the selection that actually comp
     expect.stringContaining('"new-selection.txt"'),
   );
   expect(lifecycle.work?.dirty).toBe(false);
+});
+
+it("keeps an old installation's exportable draft without sending it to a same-hash replacement", async () => {
+  const user = userEvent.setup();
+  const late = deferred<string>();
+  vi.mocked(native.runExtension)
+    .mockResolvedValueOnce("Previous result")
+    .mockReturnValueOnce(late.promise)
+    .mockResolvedValueOnce("New installation result");
+  const props = { runs: [], onSettled: vi.fn().mockResolvedValue(undefined) };
+  const mounted = render(<ExtensionRunner items={[tool]} {...props} />);
+  fireEvent.change(screen.getByLabelText("Input text"), {
+    target: { value: "Old installation draft" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  await screen.findByText("Previous result");
+  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  mounted.rerender(
+    <ExtensionRunner items={[{ ...tool, generation: 2 }]} {...props} />,
+  );
+  await act(async () => late.resolve("Late old result"));
+  expect(screen.queryByText("Late old result")).not.toBeInTheDocument();
+  expect(screen.getByText("Previous result")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Run extension" })).toBeDisabled();
+  await act(async () => lifecycle.work!.save());
+  const saved = JSON.parse(
+    String(vi.mocked(native.saveTextExport).mock.calls.at(-1)?.[1]),
+  ) as { extensionId: string; inputText: string; result: { text: string } };
+  expect(saved).toMatchObject({
+    extensionId: "test.tool",
+    inputText: "Old installation draft",
+    result: { text: "Previous result" },
+  });
+  screen.getByRole("combobox", { name: "Select an extension command" }).focus();
+  await user.keyboard("{ArrowDown}");
+  const option = await screen.findByRole("option", { name: "Test tool · Run" });
+  option.focus();
+  await user.keyboard("{Enter}");
+  expect(screen.getByLabelText("Input text")).toHaveValue("");
+  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  await screen.findByText("New installation result");
+  expect(native.runExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({ expectedGeneration: 2, inputText: "" }),
+  );
 });

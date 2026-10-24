@@ -41,6 +41,7 @@ pub async fn open_extension_window(
     id: String,
     command_id: String,
     expected_sha256: String,
+    expected_generation: i32,
 ) -> NativeResult<()> {
     blocking::run(move || {
         let state = app.state::<ExtensionWindows>();
@@ -48,9 +49,12 @@ pub async fn open_extension_window(
             .0
             .lock()
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Window creation unavailable"))?;
-        let item =
-            app.state::<ExtensionStore>()
-                .window_entry(&id, &command_id, &expected_sha256)?;
+        let item = app.state::<ExtensionStore>().window_entry(
+            &id,
+            &command_id,
+            &expected_sha256,
+            expected_generation,
+        )?;
         let window_label = label(&id, &command_id);
         let failed = |error| {
             NativeError::operation(

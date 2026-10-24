@@ -110,6 +110,7 @@ pub struct ExtensionPreview {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionInfo {
     pub package: ExtensionPreview,
+    pub generation: i32,
     pub enabled: bool,
     pub granted_permissions: Vec<ExtensionPermission>,
     pub origin: ExtensionOrigin,
@@ -171,6 +172,7 @@ pub struct ExtensionRunInput {
     pub id: String,
     pub command_id: String,
     pub expected_sha256: String,
+    pub expected_generation: i32,
     pub input_text: String,
     pub file_ids: Vec<String>,
     pub url: Option<String>,
@@ -768,7 +770,9 @@ impl ExtensionStore {
         for item in &registry.extensions {
             item.package.manifest.validate()?;
             item.origin.validate()?;
-            if !valid_digest(&item.package.sha256)
+            if item.generation <= 0
+                || item.generation > registry.revision
+                || !valid_digest(&item.package.sha256)
                 || item.package.bytes == 0
                 || item.package.bytes as usize > BINARY_LIMIT
                 || !ids.insert(&item.package.manifest.id)
@@ -988,6 +992,7 @@ impl ExtensionStore {
             self.cache_bundle(&bundle, &registry)?;
             registry.extensions.push(ExtensionInfo {
                 package: bundle.preview,
+                generation: registry.revision.checked_add(1).ok_or_else(conflict)?,
                 enabled: false,
                 granted_permissions: vec![],
                 origin: ExtensionOrigin::Bundled,
@@ -999,8 +1004,15 @@ impl ExtensionStore {
         self.write(&mut registry)?;
         Ok(())
     }
-    pub fn current_entry(&self, id: &str, expected_hash: &str) -> NativeResult<ExtensionInfo> {
-        self.with_current_entry(id, expected_hash, |item| Ok(item.clone()))
+    pub fn current_entry(
+        &self,
+        id: &str,
+        expected_hash: &str,
+        expected_generation: i32,
+    ) -> NativeResult<ExtensionInfo> {
+        self.with_current_entry(id, expected_hash, expected_generation, |item| {
+            Ok(item.clone())
+        })
     }
     /// Serialize capability metadata mutations with uninstall, replacement and rollback.
     /// The callback must not reenter this store.
@@ -1008,6 +1020,7 @@ impl ExtensionStore {
         &self,
         id: &str,
         expected_hash: &str,
+        expected_generation: i32,
         operation: impl FnOnce(&ExtensionInfo) -> NativeResult<T>,
     ) -> NativeResult<T> {
         let _guard = self
@@ -1019,7 +1032,11 @@ impl ExtensionStore {
         let item = registry
             .extensions
             .iter()
-            .find(|item| item.package.manifest.id == id && item.package.sha256 == expected_hash)
+            .find(|item| {
+                item.package.manifest.id == id
+                    && item.package.sha256 == expected_hash
+                    && item.generation == expected_generation
+            })
             .ok_or_else(conflict)?;
         operation(item)
     }
@@ -1027,9 +1044,10 @@ impl ExtensionStore {
         &self,
         id: &str,
         expected_hash: &str,
+        expected_generation: i32,
         permission: ExtensionPermission,
     ) -> NativeResult<()> {
-        let item = self.current_entry(id, expected_hash)?;
+        let item = self.current_entry(id, expected_hash, expected_generation)?;
         if !item.enabled || !item.granted_permissions.contains(&permission) {
             return Err(invalid("This extension capability has not been granted"));
         }
@@ -1040,8 +1058,9 @@ impl ExtensionStore {
         id: &str,
         command: &str,
         expected_hash: &str,
+        expected_generation: i32,
     ) -> NativeResult<ExtensionInfo> {
-        let item = self.current_entry(id, expected_hash)?;
+        let item = self.current_entry(id, expected_hash, expected_generation)?;
         let entry = item
             .package
             .manifest
@@ -1084,6 +1103,7 @@ impl ExtensionStore {
         if registry.revision != expected_revision {
             return Err(conflict());
         }
+        let generation = registry.revision.checked_add(1).ok_or_else(conflict)?;
         let id = bundle.preview.manifest.id.clone();
         let position = registry
             .extensions
@@ -1139,6 +1159,7 @@ impl ExtensionStore {
         }
         let item = ExtensionInfo {
             package: bundle.preview,
+            generation,
             enabled: preserve_grants,
             granted_permissions: grants,
             origin,
@@ -1223,6 +1244,7 @@ impl ExtensionStore {
         if registry.revision != revision {
             return Err(conflict());
         }
+        let generation = registry.revision.checked_add(1).ok_or_else(conflict)?;
         let item = registry
             .extensions
             .iter_mut()
@@ -1246,6 +1268,7 @@ impl ExtensionStore {
         before_rollback(item)?;
         item.previous_package = Some(std::mem::replace(&mut item.package, previous.clone()));
         item.previous_origin = Some(std::mem::replace(&mut item.origin, previous_origin));
+        item.generation = generation;
         item.enabled = false;
         item.granted_permissions.clear();
         self.stop_id(id);
@@ -1341,6 +1364,28 @@ impl ExtensionStore {
     }
     pub fn cancel(&self, id: &str, owner: &str) {
         self.stop_matching(|run| run.id == id && run.owner == owner);
+    }
+    pub fn cancel_for_generation(
+        &self,
+        id: &str,
+        expected_generation: i32,
+        owner: &str,
+    ) -> NativeResult<()> {
+        let _guard = self
+            .0
+            .writing
+            .lock()
+            .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+        let registry = self.read()?;
+        if !registry
+            .extensions
+            .iter()
+            .any(|item| item.package.manifest.id == id && item.generation == expected_generation)
+        {
+            return Ok(());
+        }
+        self.cancel(id, owner);
+        Ok(())
     }
     #[cfg(test)]
     fn cancel_window(&self, label: &str) {
@@ -1447,12 +1492,20 @@ impl ExtensionStore {
         expected_hash: &str,
         owner: String,
     ) -> NativeResult<PreparedRun> {
-        self.prepare_for_window(id, expected_hash, self.window_run_token(owner)?)
+        let generation = self
+            .snapshot()?
+            .items
+            .iter()
+            .find(|item| item.package.manifest.id == id && item.package.sha256 == expected_hash)
+            .map(|item| item.generation)
+            .ok_or_else(conflict)?;
+        self.prepare_for_window(id, expected_hash, generation, self.window_run_token(owner)?)
     }
     pub fn prepare_for_window(
         &self,
         id: &str,
         expected_hash: &str,
+        expected_generation: i32,
         token: WindowRunToken,
     ) -> NativeResult<PreparedRun> {
         let (package, module, grants, stop) = {
@@ -1473,7 +1526,7 @@ impl ExtensionStore {
                     )
                 })?;
             item.package.manifest.validate()?;
-            if item.package.sha256 != expected_hash {
+            if item.package.sha256 != expected_hash || item.generation != expected_generation {
                 return Err(conflict());
             }
             let module = read_binary(&self.asset(expected_hash)?)?;
@@ -1610,6 +1663,7 @@ mod tests {
                 .check_permission(
                     &item.package.manifest.id,
                     &item.package.sha256,
+                    item.generation,
                     ExtensionPermission::Storage
                 )
                 .is_err()
@@ -1629,6 +1683,7 @@ mod tests {
                 .check_permission(
                     &item.package.manifest.id,
                     &item.package.sha256,
+                    item.generation,
                     ExtensionPermission::Storage
                 )
                 .is_ok()
@@ -1645,19 +1700,117 @@ mod tests {
         let item = &snapshot.items[0];
         let id = &item.package.manifest.id;
         let hash = &item.package.sha256;
-        assert!(!store.current_entry(id, hash).unwrap().enabled);
+        assert!(
+            !store
+                .current_entry(id, hash, item.generation)
+                .unwrap()
+                .enabled
+        );
         store
-            .with_current_entry(id, hash, |item| {
+            .with_current_entry(id, hash, item.generation, |item| {
                 assert!(!item.enabled);
                 Ok(())
             })
             .unwrap();
         assert!(
             store
-                .check_permission(id, hash, ExtensionPermission::TextRead)
+                .check_permission(id, hash, item.generation, ExtensionPermission::TextRead)
                 .is_err()
         );
         assert!(store.prepare(id, hash).is_err());
+    }
+    #[test]
+    fn installation_generation_rejects_old_identity_even_when_the_wasm_is_unchanged() {
+        let (_dir, store) = store();
+        let content = demo_package();
+        let hash = preview_package(&content).unwrap().sha256;
+        let installed = store
+            .install_with_origin(&content, 0, false, &hash, ExtensionOrigin::Bundled)
+            .unwrap();
+        let initial = enable(&store, &installed);
+        let original = &initial.items[0];
+        let id = original.package.manifest.id.clone();
+        assert_eq!(
+            original.generation, installed.items[0].generation,
+            "Enabling does not change installation identity"
+        );
+        let late = store.window_run_token("late-window".into()).unwrap();
+        let mut replacement: serde_json::Value = serde_json::from_str(&content).unwrap();
+        replacement["manifest"]["version"] = "1.0.1".into();
+        replacement["manifest"]["name"] = "Different source, same Wasm".into();
+        let replaced = store
+            .install(&replacement.to_string(), initial.revision, true, &hash)
+            .unwrap();
+        assert_eq!(replaced.items[0].package.sha256, hash);
+        assert!(replaced.items[0].generation > original.generation);
+        assert_eq!(replaced.items[0].generation, replaced.revision);
+        let enabled = enable(&store, &replaced);
+        let current = &enabled.items[0];
+        assert_eq!(current.generation, replaced.items[0].generation);
+        let invoked = std::cell::Cell::new(false);
+        assert_eq!(
+            store
+                .with_current_entry(&id, &hash, original.generation, |_| {
+                    invoked.set(true);
+                    Ok(())
+                })
+                .unwrap_err()
+                .code,
+            ErrorCode::Conflict
+        );
+        assert!(
+            !invoked.get(),
+            "An old source cannot write administrative data into the replacement"
+        );
+        assert_eq!(
+            store
+                .prepare_for_window(&id, &hash, original.generation, late)
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::Conflict
+        );
+        let run = store
+            .prepare_for_window(
+                &id,
+                &hash,
+                current.generation,
+                store.window_run_token("current-window".into()).unwrap(),
+            )
+            .unwrap();
+        store
+            .cancel_for_generation(&id, original.generation, "current-window")
+            .unwrap();
+        assert!(
+            !run.stop.load(Ordering::Relaxed),
+            "An old session cannot cancel the replacement's execution"
+        );
+        store
+            .cancel_for_generation(&id, current.generation, "current-window")
+            .unwrap();
+        assert!(run.stop.load(Ordering::Relaxed));
+        drop(run);
+        store
+            .with_current_entry(&id, &hash, current.generation, |_| Ok(()))
+            .unwrap();
+        let rolled_back = store.rollback(&id, enabled.revision).unwrap();
+        assert!(rolled_back.items[0].generation > current.generation);
+        assert_eq!(rolled_back.items[0].generation, rolled_back.revision);
+        assert!(store.current_entry(&id, &hash, current.generation).is_err());
+        let removed = store.uninstall(&id, rolled_back.revision).unwrap();
+        store
+            .cancel_for_generation(&id, rolled_back.items[0].generation, "current-window")
+            .unwrap();
+        let reinstalled = store
+            .install(&content, removed.revision, false, &hash)
+            .unwrap();
+        assert!(reinstalled.items[0].generation > rolled_back.items[0].generation);
+        assert_eq!(reinstalled.items[0].generation, reinstalled.revision);
+        assert!(
+            store
+                .current_entry(&id, &hash, rolled_back.items[0].generation)
+                .is_err()
+        );
     }
     #[test]
     fn queue_is_bounded_cancellable_and_retains_active_leases() {
@@ -1914,6 +2067,7 @@ mod tests {
     fn capability_metadata_mutation_is_serialized_with_uninstall_cleanup() {
         let (_dir, store) = store();
         let snapshot = enable(&store, &install(&store));
+        let generation = snapshot.items[0].generation;
         let id = snapshot.items[0].package.manifest.id.clone();
         let hash = snapshot.items[0].package.sha256.clone();
         let (entered_send, entered_recv) = std::sync::mpsc::channel();
@@ -1923,7 +2077,7 @@ mod tests {
             let id = id.clone();
             let hash = hash.clone();
             std::thread::spawn(move || {
-                store.with_current_entry(&id, &hash, |_| {
+                store.with_current_entry(&id, &hash, generation, |_| {
                     entered_send.send(()).unwrap();
                     release_recv.recv().unwrap();
                     Ok(())
@@ -1954,7 +2108,7 @@ mod tests {
         let invoked = std::cell::Cell::new(false);
         assert!(
             store
-                .with_current_entry(&id, &hash, |_| {
+                .with_current_entry(&id, &hash, generation, |_| {
                     invoked.set(true);
                     Ok(())
                 })
@@ -2024,18 +2178,33 @@ mod tests {
         assert_eq!(store.snapshot().unwrap().revision, snapshot.revision);
         assert!(
             store
-                .window_entry("starter.extension-lab", "open", &item.package.sha256)
+                .window_entry(
+                    "starter.extension-lab",
+                    "open",
+                    &item.package.sha256,
+                    item.generation
+                )
                 .is_err()
         );
         let enabled = enable(&store, &snapshot);
         assert!(
             store
-                .window_entry("starter.extension-lab", "open", &item.package.sha256)
+                .window_entry(
+                    "starter.extension-lab",
+                    "open",
+                    &item.package.sha256,
+                    item.generation
+                )
                 .is_ok()
         );
         assert!(
             store
-                .window_entry("starter.extension-lab", "missing", &item.package.sha256)
+                .window_entry(
+                    "starter.extension-lab",
+                    "missing",
+                    &item.package.sha256,
+                    item.generation
+                )
                 .is_err()
         );
         store
@@ -2149,7 +2318,11 @@ mod tests {
         );
         store.reopen_window("extension-owner").unwrap();
         assert_eq!(
-            store.prepare_for_window(id, hash, late).err().unwrap().code,
+            store
+                .prepare_for_window(id, hash, item.generation, late)
+                .err()
+                .unwrap()
+                .code,
             ErrorCode::ExtensionUnavailable
         );
         let run = store

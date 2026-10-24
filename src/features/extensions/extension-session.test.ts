@@ -11,6 +11,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   validateExtensionView: vi.fn(),
 }));
 const item: native.ExtensionInfo = {
+  generation: 1,
   origin: { kind: "local" },
   enabled: true,
   grantedPermissions: [],
@@ -84,6 +85,19 @@ it("restores an exported empty view session without initializing the plugin", as
   );
   expect(restored.view).toBeNull();
   expect(native.validateExtensionView).not.toHaveBeenCalled();
+});
+it("allows a user-confirmed export to move between installations of the exact same package", async () => {
+  await expect(
+    parseExtensionSession(
+      JSON.stringify(session()),
+      { ...item, generation: 2 },
+      "open",
+      "view",
+    ),
+  ).resolves.toMatchObject({
+    extensionId: item.package.manifest.id,
+    sha256: item.package.sha256,
+  });
 });
 it("restores the exact package session with native view validation and keeps only file names", async () => {
   const restored = await parseExtensionSession(

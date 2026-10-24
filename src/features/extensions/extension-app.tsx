@@ -18,6 +18,7 @@ import {
   ExtensionView as ViewRenderer,
   extensionFieldBytes,
 } from "./extension-view";
+import { extensionInstallationIdentity } from "./extension-model";
 import { useExtensionPhase } from "./use-extension-phase";
 import { ExtensionSessionImport } from "./extension-session-import";
 import {
@@ -45,10 +46,10 @@ export function ExtensionApp({
   const { t, language } = useI18n();
   const manifest = item.package.manifest;
   const phase = useExtensionPhase(runs, manifest.id);
-  const workId = `extension-app:${manifest.id}:${commandId}:${item.package.sha256}:${manifest.version}`;
+  const workId = `extension-app:${manifest.id}:${commandId}:${extensionInstallationIdentity(item)}`;
   const session = useExtensionSession(
     `${manifest.id}:${commandId}`,
-    `${item.package.sha256}:${manifest.version}`,
+    extensionInstallationIdentity(item),
   );
   const [view, setView] = useState<ExtensionView | null>(session.view);
   const latest = useRef<ExtensionView | null>(session.view);
@@ -113,6 +114,7 @@ export function ExtensionApp({
       id: manifest.id,
       commandId,
       expectedSha256: item.package.sha256,
+      expectedGeneration: item.generation,
       data,
       request: {
         version: 2,
@@ -163,9 +165,10 @@ export function ExtensionApp({
     return () => {
       disposed = true;
       alive.current = false;
-      if (session.pending) void cancelExtension(manifest.id).catch(() => {});
+      if (session.pending)
+        void cancelExtension(manifest.id, item.generation).catch(() => {});
     };
-  }, [manifest.id, session]);
+  }, [manifest.id, item.generation, session]);
   useEffect(() => {
     let stopped = false;
     const pending = session.pending;
@@ -234,7 +237,7 @@ export function ExtensionApp({
     signal?.throwIfAborted();
     const pending = session.pending;
     if (pending) {
-      await cancelExtension(manifest.id);
+      await cancelExtension(manifest.id, item.generation);
       await pending;
       signal?.throwIfAborted();
     }
@@ -408,6 +411,7 @@ export function ExtensionApp({
                   const saving = saveExtensionArtifact(
                     manifest.id,
                     item.package.sha256,
+                    item.generation,
                     artifact,
                   )
                     .then(() => {})

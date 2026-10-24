@@ -74,6 +74,7 @@ export function ExtensionPage({
                     item.package.manifest.id,
                     command.id,
                     item.package.sha256,
+                    item.generation,
                   )
                     .catch((reason: unknown) => setWindowError(reason))
                     .finally(() => setOpening(false));
@@ -90,7 +91,7 @@ export function ExtensionPage({
             </p>
           ) : null}
           <ExtensionApp
-            key={`${item.package.sha256}:${item.package.manifest.version}:${extensionId}:${commandId}`}
+            key={`${item.generation}:${item.package.sha256}:${item.package.manifest.version}:${extensionId}:${commandId}`}
             item={item}
             commandId={command.id}
             runs={data?.runs ?? []}

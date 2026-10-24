@@ -99,9 +99,15 @@ export async function openExtensionWindow(
   id: string,
   commandId: string,
   expectedSha256: string,
+  expectedGeneration: number,
 ): Promise<void> {
   await callNative((commands) =>
-    commands.openExtensionWindow(id, commandId, expectedSha256),
+    commands.openExtensionWindow(
+      id,
+      commandId,
+      expectedSha256,
+      expectedGeneration,
+    ),
   );
 }
 export function installExtension(
@@ -170,56 +176,85 @@ export function validateExtensionView(content: string): Promise<ExtensionView> {
 export function saveExtensionArtifact(
   id: string,
   expectedSha256: string,
+  expectedGeneration: number,
   artifact: ExtensionArtifact,
 ): Promise<string | null> {
   return callNative((commands) =>
-    commands.saveExtensionArtifact(id, expectedSha256, artifact),
+    commands.saveExtensionArtifact(
+      id,
+      expectedSha256,
+      expectedGeneration,
+      artifact,
+    ),
   );
 }
 export function extensionStorageInfo(
   id: string,
   expectedSha256: string,
+  expectedGeneration: number,
 ): Promise<ExtensionStorageInfo> {
   return callNative((commands) =>
-    commands.extensionStorageInfo(id, expectedSha256),
+    commands.extensionStorageInfo(id, expectedSha256, expectedGeneration),
   );
 }
 export function clearExtensionStorage(
   id: string,
   expectedSha256: string,
+  expectedGeneration: number,
   expectedRevision: number,
 ): Promise<void> {
   return callNative((commands) =>
-    commands.clearExtensionStorage(id, expectedSha256, expectedRevision),
+    commands.clearExtensionStorage(
+      id,
+      expectedSha256,
+      expectedGeneration,
+      expectedRevision,
+    ),
   ).then(() => undefined);
 }
 export function extensionCredentialSlots(
   id: string,
   expectedSha256: string,
+  expectedGeneration: number,
 ): Promise<ExtensionCredentialSlot[]> {
   return callNative((commands) =>
-    commands.extensionCredentialSlots(id, expectedSha256),
+    commands.extensionCredentialSlots(id, expectedSha256, expectedGeneration),
   );
 }
 export function setExtensionCredential(
   id: string,
   expectedSha256: string,
+  expectedGeneration: number,
   origin: string,
   alias: string,
   secret: string,
 ): Promise<void> {
   return callNative((commands) =>
-    commands.setExtensionCredential(id, expectedSha256, origin, alias, secret),
+    commands.setExtensionCredential(
+      id,
+      expectedSha256,
+      expectedGeneration,
+      origin,
+      alias,
+      secret,
+    ),
   ).then(() => undefined);
 }
 export function deleteExtensionCredential(
   id: string,
   expectedSha256: string,
+  expectedGeneration: number,
   origin: string,
   alias: string,
 ): Promise<void> {
   return callNative((commands) =>
-    commands.deleteExtensionCredential(id, expectedSha256, origin, alias),
+    commands.deleteExtensionCredential(
+      id,
+      expectedSha256,
+      expectedGeneration,
+      origin,
+      alias,
+    ),
   ).then(() => undefined);
 }
 export function uninstallExtension(
@@ -233,8 +268,13 @@ export function uninstallExtension(
 export function runExtension(input: ExtensionRunInput): Promise<string> {
   return callNative((commands) => commands.runExtension(input));
 }
-export async function cancelExtension(id: string): Promise<void> {
-  await callNative((commands) => commands.cancelExtension(id));
+export async function cancelExtension(
+  id: string,
+  expectedGeneration: number,
+): Promise<void> {
+  await callNative((commands) =>
+    commands.cancelExtension(id, expectedGeneration),
+  );
 }
 export function onExtensionsChanged(handler: () => void): Promise<() => void> {
   return onNativeEvent("app://extensions-changed", handler);

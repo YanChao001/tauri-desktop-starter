@@ -92,7 +92,7 @@ export function ExtensionCard({
           <ExtensionDetails value={item.package} origin={item.origin} />
           {details ? (
             <ExtensionResources
-              key={`${item.package.sha256}:${manifest.version}`}
+              key={`${item.generation}:${item.package.sha256}:${manifest.version}`}
               item={item}
             />
           ) : null}
