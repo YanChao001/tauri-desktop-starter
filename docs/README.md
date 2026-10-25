@@ -8,6 +8,7 @@
 | 体验完整 demo、新增页面 / IPC、按需裁剪    | [模块指南](./demo-modules.md)                                                               |
 | 运行结构、数据归属与模块边界               | [架构说明](./architecture.md)                                                               |
 | Extism Wasm 扩展、官方市场、应用视图与开发 | [扩展指南](./extensions.md)                                                                 |
+| 市场仓库的插件收录、构建、测试与签名发布   | [市场文档索引](../marketplace/docs/README.md)（需初始化子模块）                             |
 | 环境、初始化、命令、调试与浏览器部署       | [开发指南](./development.md)                                                                |
 | 测试选择、无头界面、原生及安装验收         | [测试规范](./testing.md)                                                                    |
 | 版本、产物、签名、更新与发布恢复           | [构建与发布](./build-release.md)、[代码签名策略](./code-signing-policy.md)                  |

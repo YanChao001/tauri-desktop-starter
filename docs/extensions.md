@@ -121,7 +121,9 @@ origin 必须是标准化的精确协议 / 主机 / 端口，不带路径、凭�
 
 ## 开发带界面的应用插件
 
-复制 [apps 示例](../examples/extensions/apps/) 或 [TypeScript notebook](../examples/extensions/typescript/)，在单条命令声明 JSON 输入、`view` 结果和需要的入口。宿主绘制通用组件，不执行插件 HTML、CSS、JavaScript 或 React，不接受远程页面或远程图片。
+复制 [apps 示例](../examples/extensions/apps/) 或 [TypeScript notebook](../examples/extensions/typescript/)，在单条命令声明 JSON 输入、`view` 结果和需要的入口。插件返回描述字段、按钮、展示块和状态的 JSON，由 [宿主 React 渲染器](../src/features/extensions/extension-view.tsx) 生成 HTML / DOM 并应用主题样式，因此插件作者不需要单独提供 HTML 或 CSS。普通文本命令可以只返回文本，不提供视图。
+
+Rust / JavaScript / TypeScript 是插件逻辑的实现语言，编译结果均为符合宿主 Extism ABI 的 Wasm；这里的 JavaScript 运行在 Wasm 内的引擎中，不作为网页脚本执行。宿主不加载插件自定义 HTML、CSS、React 组件或远程页面，不开放 DOM、Canvas 与任意 WebView。需要自由网页布局的功能超出当前视图协议，不能通过在包中添加 `index.html` 获得支持。
 
 首次请求 `version: 2`、`action: null`、空 `state` / `fields` 和当前语言；后续动作交回不透明状态与当前字段。宿主添加 `host`（当前授权与可用存储快照），插件不能通过前端伪造它。只有用户点击“发送所选数据”时才额外附加 `data`，`action` 为 `host-data`；普通动作不会重新读取已选文件或重复发送这个输入。但插件可在拥有网络授权时返回 HTTP 效果，不能将“未点击发送所选数据”理解为禁止插件发起已授权效果。
 
@@ -231,7 +233,7 @@ worker 不继承宿主环境、预开目录或插件标准输出，不提供直�
 
 市场使用固定仓库、公钥与签名目录，支持发现、分类、推荐与版本提示。下载先进入审阅，明确确认后才安装；原生市场安装入口重新核对验签目录、完整包和来源收据，本地导入不能伪装市场来源。来源记录包括仓库、公钥指纹、目录 revision 和完整包哈希。
 
-**当前客户端要求目录 schema 2；线上旧 schema 1 目录尚未配套发布。** 维护者需要在独立市场仓库完成格式 3 / API 2 插件构建、验签和新目录发布，才可恢复线上发现 / 下载；本地包与内置实验室可独立工作。代码、离线 fixture 或 CI 配置更新不代表市场已在线完成升级。
+**当前客户端要求目录 schema 2。** 若线上 latest 仍为旧 schema 1 目录，维护者需要在独立市场仓库完成格式 3 / API 2 插件构建、验签和新目录发布，才可提供兼容的线上发现 / 下载；本地包与内置实验室可独立工作。实际状态应核对公开 Release，代码、离线 fixture 或 CI 配置更新不代表市场已在线完成升级。
 
 市场错误按可信校验结果区分：验签成功但目录协议不支持时提示“不兼容”；当前协议的有效签名目录到期时提示“已过期”，需维护者续签并发布更高修订；坏签名、无效时间范围或包完整性不一致仍提示“校验失败”。前两类也不允许安装，不通过接受旧协议、修改公钥或删除信任状态恢复。仅推送分支同样不会更新市场，需按市场发布流程生成新的已签名 Release 并设为 latest。刷新失败时可保留最后已验证目录作展示，但下载和安装仍由原生重新核验。
 
@@ -245,7 +247,7 @@ git submodule update --init --recursive
 
 目录 schema 2 的签名 payload 包含 `issuedAt` / `expiresAt`（UTC Unix 秒）、完整清单、模块与包哈希、大小、分类及附件位置。宿主最多接受 30 天有效期和 5 分钟签发时钟容差，当前发布工具生成 7 天有效期；到期前需发布更高 revision。验签后的进程缓存最多 5 分钟且不能超过签名截止；失败可显示该进程旧目录并标为过期，安装 / 下载不得依靠过期目录。目录内容缓存不跨重启恢复，已知最高 revision 和摘要则原子持久化到 `extension-market/trust.json`，按仓库与公钥指纹隔离，拒绝回退和同 revision 内容替换；损坏或未来 trust 存档拒写，不自动重置信任。
 
-维护者通过 [市场仓库](https://github.com/YanChao001/tauri-desktop-starter-extensions#readme) 的收录清单和发布流程控制上架。本地市场源码包含文字工坊、2048、数织和创作骰子，玩法、权限、构建和离线验收统一见 [市场说明](../marketplace/README.md)。市场构建使用宿主开发 CLI 对真实模块进行权威校验和手写 fixture 验收；离线检查使用临时测试密钥，不代表已用生产公钥发布。
+维护者通过 [市场仓库](https://github.com/YanChao001/tauri-desktop-starter-extensions#readme) 的收录清单和发布流程控制上架。本地市场源码包含文字工坊、2048、数织和创作骰子，入口见 [市场说明](../marketplace/README.md)，开发、测试、安全与发布操作见 [市场文档索引](../marketplace/docs/README.md)。市场当前构建流程固定使用 Rust / Cargo，宿主的 JS / TS 示例并不自动接入市场构建。市场构建使用宿主开发 CLI 对真实模块进行权威校验和手写 fixture 验收；离线检查使用临时测试密钥，不代表已用生产公钥发布。
 
 先审核源码、许可、权限和宿主实际运行，再构建、签名、核对所有附件并发布；私钥仅在仓库外临时文件和受控 Secret 中使用。下架通过移除收录项并发布更高 revision，停止新下载，不远程删除已安装包。用户显式回退上一包与目录防回退是不同操作，不能靠降低目录 revision 回滚分发。
 
