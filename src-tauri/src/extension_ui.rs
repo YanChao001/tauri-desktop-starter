@@ -8,6 +8,7 @@ pub const UI_TOTAL_LIMIT: usize = 2 * 1024 * 1024;
 const UI_CACHE_LIMIT: u64 = 64 * 1024 * 1024;
 const MAX_LEASES: usize = 64;
 const SDK: &str = include_str!("../../sdk/extension-ui.js");
+
 pub const UI_CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; sandbox allow-scripts";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -338,32 +339,44 @@ pub fn close_extension_ui(
 
 pub fn document_response(document: NativeResult<String>) -> tauri::http::Response<Vec<u8>> {
     let (status, body) = match document {
-        Ok(html) => (
-            200,
-            format!(
-                "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><script>{SDK}</script></head><body>{html}</body></html>"
-            ),
-        ),
+        Ok(html) => (200, html),
         Err(_) => (403, "UI unavailable".to_owned()),
     };
+    response(status, "text/html; charset=utf-8", body)
+}
+fn response(status: u16, content_type: &str, body: String) -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
         .status(status)
-        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Content-Type", content_type)
         .header("Content-Security-Policy", UI_CSP)
         .header("X-Content-Type-Options", "nosniff")
         .header("Referrer-Policy", "no-referrer")
+        .header("X-DNS-Prefetch-Control", "off")
         .header("Cache-Control", "no-store")
         .body(body.into_bytes())
         .expect("Static UI response headers")
 }
 
 pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    builder.register_asynchronous_uri_scheme_protocol(
-        "extension-ui",
-        |context, request, responder| {
+    // Tauri documents main-frame-only initialization as unsupported on WebView2.
+    // Use its supported custom transport hook to withhold the invoke key from all
+    // subframes, while retaining upstream serialization and both IPC transports.
+    let ipc = include_str!("native-ipc.js").replace(
+        "__STARTER_OS_NAME__",
+        &serde_json::to_string(std::env::consts::OS).expect("Static OS name"),
+    );
+    builder
+        .invoke_system(ipc)
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("extension-ui")
+                .js_init_script_on_all_frames(SDK)
+                .build(),
+        )
+        .register_asynchronous_uri_scheme_protocol("extension-ui", |context, request, responder| {
             let app = context.app_handle().clone();
             let owner = context.webview_label().to_owned();
-            let token = request.uri().path().trim_start_matches('/').to_owned();
+            let path = request.uri().path().trim_start_matches('/');
+            let token = path.to_owned();
             let valid =
                 request.method() == tauri::http::Method::GET && request.uri().query().is_none();
             tauri::async_runtime::spawn(async move {
@@ -380,8 +393,7 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
                 .await;
                 responder.respond(document_response(document));
             });
-        },
-    )
+        })
 }
 
 #[cfg(test)]
@@ -544,7 +556,8 @@ mod tests {
     }
     #[test]
     fn ui_responses_deny_external_resources_and_expose_no_native_bootstrap() {
-        let response = document_response(Ok("<main>hello</main>".into()));
+        let response = document_response(Ok("<!doctype html><main>hello</main>".into()));
+        assert_eq!(response.headers()["X-DNS-Prefetch-Control"], "off");
         let csp = response.headers()["Content-Security-Policy"]
             .to_str()
             .unwrap();
@@ -559,7 +572,7 @@ mod tests {
         }
         let body = String::from_utf8(response.into_body()).unwrap();
         assert!(body.starts_with("<!doctype html>"));
-        assert!(body.contains("starter:ready"));
+        assert!(body.contains("<main>hello</main>"));
         assert!(!body.contains("__TAURI_INVOKE_KEY__"));
         assert_eq!(document_response(Err(invalid("no"))).status(), 403);
     }

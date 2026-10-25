@@ -87,6 +87,7 @@ export const enExtensions = {
   "ext.appExport": "Export session",
   "ext.appClose": "End session",
   "ext.sessionTools": "Extension tools",
+  "ext.reloadUi": "Reload interface",
   "ext.appCloseTitle": "End this session?",
   "ext.appCloseDescription":
     "Current inputs, progress and results have not been exported. Ending this session clears them. Saved plugin private data is retained. Export the session first or discard this progress.",

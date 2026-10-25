@@ -89,6 +89,7 @@ export const zhExtensions = {
   "ext.appExport": "导出会话",
   "ext.appClose": "结束会话",
   "ext.sessionTools": "扩展工具",
+  "ext.reloadUi": "重新加载界面",
   "ext.appCloseTitle": "结束当前会话？",
   "ext.appCloseDescription":
     "当前输入、进度和结果尚未导出。结束会话会清空这些内容；已保存的插件私有数据会保留。可以先导出会话，或放弃本次进度。",

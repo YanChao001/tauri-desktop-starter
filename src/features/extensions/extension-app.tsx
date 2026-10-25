@@ -75,6 +75,7 @@ export function ExtensionApp({
   const [stopping, setStopping] = useState(false);
   const [closed, setClosed] = useState(false);
   const [error, setError] = useState<unknown>(session.error);
+  const [surfaceRevision, setSurfaceRevision] = useState(0);
   const alive = useRef(false);
   const closing = useRef(false);
   const init = useRef(() => {});
@@ -528,6 +529,15 @@ export function ExtensionApp({
         tools={
           <>
             {tools}{" "}
+            {documentId ? (
+              <Button
+                variant="outline"
+                disabled={blocked}
+                onClick={() => setSurfaceRevision((value) => value + 1)}
+              >
+                {t("ext.reloadUi")}
+              </Button>
+            ) : null}
             <ExtensionData
               item={item}
               blocked={blocked || invalidFields.size > 0}
@@ -602,6 +612,7 @@ export function ExtensionApp({
         <div className="min-w-0 space-y-5" aria-busy={busy}>
           {documentId ? (
             <ExtensionCustomUi
+              key={surfaceRevision}
               item={item}
               commandId={commandId}
               view={view}

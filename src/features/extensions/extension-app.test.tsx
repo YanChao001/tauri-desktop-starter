@@ -849,3 +849,47 @@ it("saves a typed generated artifact only after the user activates its button", 
     ),
   );
 });
+
+it("waits for the artifact picker before lifecycle discard and preserves progress when discard is aborted", async () => {
+  const exporting = deferred<string | null>();
+  const artifact: native.ExtensionArtifact = {
+    name: "draft.txt",
+    mediaType: "text/plain",
+    encoding: "utf8",
+    content: "draft",
+  };
+  vi.mocked(native.viewExtension).mockResolvedValueOnce({
+    ...first,
+    artifacts: [artifact],
+  });
+  vi.mocked(native.saveExtensionArtifact).mockReturnValueOnce(
+    exporting.promise,
+  );
+  render(app());
+  fireEvent.change(await screen.findByLabelText("Query"), {
+    target: { value: "Keep this draft" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft.txt" }));
+  const controller = new AbortController();
+  let discarded = false;
+  const pending = Promise.resolve(
+    lifecycle.work!.discard(controller.signal),
+  ).then(
+    () => {
+      discarded = true;
+    },
+    (reason: unknown) => reason,
+  );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(discarded).toBe(false);
+  controller.abort();
+  await act(async () => {
+    exporting.resolve(null);
+    await pending;
+  });
+  expect(screen.getByLabelText("Query")).toHaveValue("Keep this draft");
+  expect(lifecycle.work?.dirty).toBe(true);
+  expect(onClose).not.toHaveBeenCalled();
+});

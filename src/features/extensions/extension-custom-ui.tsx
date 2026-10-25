@@ -87,9 +87,16 @@ export function ExtensionCustomUi({
         grantedPermissions: item.grantedPermissions,
         theme: {
           mode: resolvedTheme === "dark" ? "dark" : "light",
-          tokens: Object.fromEntries(
-            TOKENS.map((name) => [name, styles.getPropertyValue(name).trim()]),
-          ),
+          tokens: {
+            ...Object.fromEntries(
+              TOKENS.map((name) => [
+                name,
+                styles.getPropertyValue(name).trim(),
+              ]),
+            ),
+            "--host-font-size": styles.fontSize,
+            "--host-font-family": styles.fontFamily,
+          },
         },
       },
     };
@@ -114,23 +121,26 @@ export function ExtensionCustomUi({
     setLease(null);
     setError(null);
     setConnected(false);
-    void openExtensionUi(
-      item.package.manifest.id,
-      commandId,
-      item.package.sha256,
-      item.generation,
-    )
-      .then((next) => {
-        token = next.token;
-        if (disposed) {
-          void closeExtensionUi(next.token).catch(() => {});
-          return;
-        }
-        setLease(next);
-      })
-      .catch((reason: unknown) => {
-        if (!disposed) setError(reason);
-      });
+    queueMicrotask(() => {
+      if (disposed) return;
+      void openExtensionUi(
+        item.package.manifest.id,
+        commandId,
+        item.package.sha256,
+        item.generation,
+      )
+        .then((next) => {
+          token = next.token;
+          if (disposed) {
+            void closeExtensionUi(next.token).catch(() => {});
+            return;
+          }
+          setLease(next);
+        })
+        .catch((reason: unknown) => {
+          if (!disposed) setError(reason);
+        });
+    });
     return () => {
       disposed = true;
       bridge.current?.close();
@@ -154,7 +164,6 @@ export function ExtensionCustomUi({
     }, 10000);
     const listener = (event: MessageEvent<unknown>) => {
       if (
-        accepted ||
         event.source !== frame.current?.contentWindow ||
         event.origin !== "null" ||
         typeof event.data !== "object" ||
@@ -164,10 +173,17 @@ export function ExtensionCustomUi({
       const data = event.data as Record<string, unknown>;
       if (
         Object.keys(data).sort().join(",") !== "type,version" ||
-        data.type !== "starter:ready" ||
+        !["starter:ready", "starter:failed"].includes(String(data.type)) ||
         data.version !== 1
       )
         return;
+      if (data.type === "starter:failed") {
+        window.clearTimeout(timer);
+        bridge.current?.close();
+        setError(new Error("Extension UI could not initialize"));
+        return;
+      }
+      if (accepted) return;
       accepted = true;
       window.clearTimeout(timer);
       const channel = new MessageChannel();
@@ -195,6 +211,40 @@ export function ExtensionCustomUi({
       bridge.current = null;
     };
   }, [lease]);
+  useLayoutEffect(() => {
+    const node = frame.current;
+    if (!node) return;
+    let scheduled = 0;
+    const measure = () => {
+      const container = node.closest(".app-page-content");
+      const padding = container
+        ? parseFloat(getComputedStyle(container).paddingBottom)
+        : 24;
+      const height = Math.max(
+        240,
+        Math.floor(
+          window.innerHeight -
+            node.getBoundingClientRect().top -
+            Math.max(24, padding),
+        ),
+      );
+      if (node.style.height !== `${height}px`)
+        node.style.height = `${height}px`;
+    };
+    const schedule = () => {
+      cancelAnimationFrame(scheduled);
+      scheduled = requestAnimationFrame(measure);
+    };
+    const observer = new ResizeObserver(schedule);
+    if (node.parentElement) observer.observe(node.parentElement);
+    window.addEventListener("resize", schedule);
+    measure();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      cancelAnimationFrame(scheduled);
+    };
+  }, [lease, connected, error, palette]);
   return (
     <div className="min-w-0">
       {error ? (
@@ -226,7 +276,7 @@ export function ExtensionCustomUi({
           sandbox="allow-scripts"
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
           referrerPolicy="no-referrer"
-          className="block h-[max(28rem,calc(100dvh-10rem))] w-full border-0 bg-background"
+          className="block w-full border-0 bg-background"
         />
       ) : null}
     </div>

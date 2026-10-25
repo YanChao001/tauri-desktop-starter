@@ -1,6 +1,48 @@
 /* Injected only into opaque extension frames. No native API or host DOM is exposed. */
 (() => {
   "use strict";
+  if (window === window.top) return;
+  // WebRTC transports are outside connect-src. This UI surface has no RTC capability.
+  // Lock their globals before author code; descendants also inherit opaque sandbox origins.
+  for (const name of [
+    "RTCPeerConnection",
+    "webkitRTCPeerConnection",
+    "mozRTCPeerConnection",
+    "RTCIceGatherer",
+    "RTCIceTransport",
+    "RTCDtlsTransport",
+    "RTCSctpTransport",
+    "RTCQuicTransport",
+  ]) {
+    let scope = window;
+    while (scope) {
+      const descriptor = Object.getOwnPropertyDescriptor(scope, name);
+      if (descriptor && (descriptor.configurable || descriptor.writable))
+        Object.defineProperty(scope, name, {
+          value: undefined,
+          writable: false,
+          configurable: false,
+        });
+      scope = Object.getPrototypeOf(scope);
+    }
+    if (!Object.hasOwn(window, name))
+      Object.defineProperty(window, name, {
+        value: undefined,
+        writable: false,
+        configurable: false,
+      });
+    if (window[name] !== undefined) {
+      parent.postMessage({ type: "starter:failed", version: 1 }, "*");
+      return;
+    }
+  }
+  // Only packaged UI documents receive the host bridge. Descendant realms are
+  // hardened above, but cannot acquire their parent's session channel.
+  if (
+    location.protocol !== "extension-ui:" &&
+    location.hostname !== "extension-ui.localhost"
+  )
+    return;
   let port, current;
   let sequence = 0;
   const pending = new Map(),
@@ -23,6 +65,8 @@
           current = message.value;
           const theme = current.theme;
           document.documentElement.style.colorScheme = theme.mode;
+          document.documentElement.style.fontSize =
+            theme.tokens["--host-font-size"] || "16px";
           for (const [name, value] of Object.entries(theme.tokens))
             document.documentElement.style.setProperty(name, value);
           document.documentElement.lang = current.locale;
