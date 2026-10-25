@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "example.rust-text",
   "version": "1.0.0",
-  "name": "rust text tools",
+  "name": "文本统计",
   "author": "Example author",
   "description": "Unicode case conversion and typed API 2 selected-data summaries using the Extism Rust PDK.",
   "commands": [

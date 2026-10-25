@@ -32,6 +32,7 @@
     "test:e2e": "node e2e/run.mjs",
     "test:browser": "playwright test",
     "test:ui": "pnpm build:web && pnpm test:browser",
+    "test:extensions:ui": "tsc --noEmit -p e2e/extensions/tsconfig.json && node e2e/extension-ui.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

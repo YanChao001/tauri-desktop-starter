@@ -4,15 +4,16 @@
 
 ## 测试分层
 
-| 层         | 工具                             | 关注点                                                                   |
-| ---------- | -------------------------------- | ------------------------------------------------------------------------ |
-| 前端纯逻辑 | Vitest                           | 设置迁移、并发同步、命令 / 快捷键、翻译和错误归一化                      |
-| 组件       | Testing Library + jsdom          | 路由恢复、保存 / 重试、输入保留、键盘操作和无障碍                        |
-| 工程脚本   | `node --test`                    | 版本、归档、路径边界、初始化事务 / 并发保护、诊断误判                    |
-| Rust       | `cargo test`                     | 入参边界、错误码、原子存储、revision、SQLite 迁移 / 冲突、更新策略与脱敏 |
-| IPC 契约   | tauri-specta 导出 + 少量调用断言 | 生成绑定未漂移、命令名 / 参数名 / DTO 一致                               |
-| 浏览器构建 | Playwright + axe                 | 子路径资源、刷新、偏好恢复、键盘、虚拟列表和自动无障碍扫描               |
-| 真实桌面   | WebdriverIO + 内嵌 WebDriver     | 启动显示、原生 IPC、语言、窗口和进程重启后的设置                         |
+| 层             | 工具                             | 关注点                                                                   |
+| -------------- | -------------------------------- | ------------------------------------------------------------------------ |
+| 前端纯逻辑     | Vitest                           | 设置迁移、并发同步、命令 / 快捷键、翻译和错误归一化                      |
+| 组件           | Testing Library + jsdom          | 路由恢复、保存 / 重试、输入保留、键盘操作和无障碍                        |
+| 工程脚本       | `node --test`                    | 版本、归档、路径边界、初始化事务 / 并发保护、诊断误判                    |
+| Rust           | `cargo test`                     | 入参边界、错误码、原子存储、revision、SQLite 迁移 / 冲突、更新策略与脱敏 |
+| IPC 契约       | tauri-specta 导出 + 少量调用断言 | 生成绑定未漂移、命令名 / 参数名 / DTO 一致                               |
+| 浏览器构建     | Playwright + axe                 | 子路径资源、刷新、偏好恢复、键盘、虚拟列表和自动无障碍扫描               |
+| 自定义扩展界面 | Playwright + axe + 原生 CLI      | 真实打包 HTML、受控消息桥、真实离线 Wasm、草稿、主题和隔离负例           |
+| 真实桌面       | WebdriverIO + 内嵌 WebDriver     | 启动显示、原生 IPC、语言、窗口和进程重启后的设置                         |
 
 按风险验证用户能感知的行为，不为覆盖率数字测试 getter、静态样式或实现细节。修复缺陷时优先增加可复现的回归。
 
@@ -103,6 +104,27 @@ pnpm verify
 浏览器视觉验收选择受影响的语言、主题、窗口尺寸和侧栏状态，检查溢出、弹层焦点与可读性；全局布局改动需覆盖默认最小窗口 880×600，主题改动补充明暗与高对比度检查。持续动效应在运行和暂停时分别观察实际位置或播放状态；单张截图和 jsdom 不能证明运动正确。浏览器原生能力页只能展示说明与导览，真实 IPC、系统操作和持久化仍由桌面 E2E 验证。
 
 浏览器演示发布前执行 `pnpm build:web` 并通过 `pnpm exec vite preview --outDir dist-web` 预览，复核项目子路径下的资源加载、HashRouter 页面直接访问与刷新、localStorage 偏好恢复和窄屏布局。构建及部署方式见 [开发指南](./development.md#浏览器演示构建与部署)。桌面 E2E 与安装版验收分别提供原生行为和分发证据。
+
+## 自定义扩展界面
+
+从宿主根目录准备 CLI、内置 Wasm 和市场 Wasm，然后运行无头检查：
+
+```powershell
+pnpm build
+cargo build --locked --manifest-path src-tauri/Cargo.toml --bin extension-tool
+pnpm extension:demos:check
+$env:MARKET_REVISION = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+Push-Location marketplace
+node scripts/check.mjs
+Pop-Location
+pnpm test:extensions:ui
+```
+
+需先初始化 marketplace 子模块和安装 Wasm 目标。已有匹配源码的构建可直接运行最后一条；变更插件 Rust 后必须重新编译对应模块。`STARTER_EXTENSION_TOOL` 可指定实际 CLI 绝对路径。报告与截图位于 `artifacts/extensions/custom-ui/`，报告记录 Wasm / UI 哈希和每轮真实动作。
+
+检查使用生产 React 外壳、完整包内 HTML 和 SDK，每个动作由真实 extension-tool / worker 执行 Wasm。浏览器 fixture 仅替换协议传输、窗口与系统对话框边界，不访问用户数据；取消保存返回取消。覆盖中英、明暗、360px 大字号独立窗口、键盘、草稿保留、界面重载、无障碍、溢出、直接网络 / 存储 / WebRTC / 子框绕过与导航负例。源代码不暴露测试入口到生产应用。
+
+它仍不验证真实 Tauri IPC、WebView2 / WKWebView / WebKitGTK 注入和原生文件对话框。原生传输的脚本回归另检查顶层通信、子框拒绝、序列化、二进制和失败回退；跨平台真实 WebView 与正式安装仍需独立验收。
 
 ## Rust 测试
 

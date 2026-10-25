@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "starter.text-tools",
   "version": "1.0.0",
-  "name": "Text tools",
+  "name": "文本工具",
   "author": "Tauri Desktop Starter",
   "description": "Extism example: ASCII case conversion that preserves UTF-8 text.",
   "commands": [

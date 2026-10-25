@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "extism.count-vowels",
   "version": "1.0.0",
-  "name": "Count vowels",
+  "name": "上游示例",
   "author": "The Extism Authors",
   "description": "Unmodified Extism count_vowels module v1.1.1",
   "commands": [

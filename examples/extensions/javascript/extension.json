@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "example.javascript-text",
   "version": "1.0.0",
-  "name": "javascript text tools",
+  "name": "文本摘要",
   "author": "Example author",
   "description": "Unicode case conversion using the Extism JavaScript PDK.",
   "commands": [

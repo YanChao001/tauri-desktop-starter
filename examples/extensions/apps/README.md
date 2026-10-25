@@ -1,6 +1,8 @@
-# 内置扩展实验室
+# 扩展实验室
 
 一个实际安装并运行的 Extism 应用，使用包格式 3、API 2 和视图 2。清单中的权限均为可选；未授权网络或存储时，文本、数据预览和六关点灯游戏仍可离线使用。协议及宿主边界见[扩展指南](../../../docs/extensions.md)。
+
+正文由 [ui/main.html](./ui/main.html) 自定义，页签、棋盘、结果与操作按业务布局；规则及效果校验留在 Wasm。通用导入 / 导出、显式发送数据和窗口操作集中在宿主“扩展工具”。界面重载恢复已报告的字段与检查点，未保存内容通过既有离页协商保护。
 
 ## 体验
 
@@ -14,6 +16,7 @@
 
 | 模块            | 职责                                         |
 | --------------- | -------------------------------------------- |
+| `ui/main.html`  | 本地单文件界面、安全文本节点、分页与业务布局 |
 | `src/app.rs`    | 请求分派、会话版本、页签和协议响应           |
 | `src/view.rs`   | 简单视图构造、翻译和 UTF-8 边界工具          |
 | `src/text.rs`   | 文本转换、统计和结果文件                     |
@@ -32,7 +35,7 @@ cargo test --manifest-path examples/extensions/apps/Cargo.toml --locked
 cargo fmt --manifest-path examples/extensions/apps/Cargo.toml --check
 pnpm extension:demos:build
 pnpm extension:demos:check
-pnpm extension:test --manifest examples/extensions/apps/extension.json --wasm resources/extensions/demo-apps.wasm --fixture examples/extensions/apps/smoke.json
+pnpm extension:test --manifest examples/extensions/apps/extension.json --wasm resources/extensions/demo-apps.wasm --ui-dir examples/extensions/apps/ui --fixture examples/extensions/apps/smoke.json
 ```
 
 原生单元测试编译纯业务逻辑；Extism 导出入口只在 Wasm 目标启用。`smoke.json` 通过真实 Wasm 校验中英视图、文件产物、可选权限和效果请求，不访问外部服务。宿主的真实 Wasm 与效果往返回归另在 Rust 扩展测试中维护。

@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>扩展实验室</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font:
+          var(--host-font-size, 15px)/1.6 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1120px;
+        margin: auto;
+        padding: 12px;
+      }
+      nav {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 14px;
+      }
+      h1 {
+        font-size: 26px;
+        line-height: 1.3;
+        margin: 18px 0 7px;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      h3 {
+        font-size: 16px;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: var(--foreground);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 8px 11px;
+        min-width: 0;
+      }
+      button {
+        cursor: pointer;
+        min-height: 40px;
+      }
+      button:hover {
+        background: var(--muted);
+      }
+      button.primary,
+      button[aria-selected="true"] {
+        background: var(--primary);
+        color: var(--primary-foreground);
+      }
+      button[aria-disabled="true"] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 3px;
+      }
+      button {
+        overflow-wrap: anywhere;
+      }
+      input:not([type="checkbox"]),
+      select,
+      textarea {
+        width: 100%;
+      }
+      textarea {
+        min-height: 240px;
+        line-height: 1.7;
+        resize: vertical;
+        font-family: ui-monospace, monospace;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--primary);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(250px, 0.95fr) minmax(0, 1.1fr);
+        gap: 22px;
+        margin-top: 18px;
+      }
+      .layout.single {
+        grid-template-columns: 1fr;
+      }
+      .fields {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+      }
+      .field {
+        display: grid;
+        gap: 5px;
+      }
+      .check {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .actions {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .blocks {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+        align-content: start;
+      }
+      .block {
+        min-width: 0;
+      }
+      .block p {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .block pre {
+        background: var(--muted);
+        padding: 14px;
+        border-radius: 10px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 45vh;
+        overflow: auto;
+      }
+      .block code {
+        font-family: ui-monospace, monospace;
+        font-size: 0.9em;
+      }
+      .metrics {
+        display: flex;
+        gap: 9px;
+        flex-wrap: wrap;
+      }
+      .metric {
+        background: var(--muted);
+        padding: 10px 14px;
+        border-radius: 12px;
+        flex: 1;
+        min-width: 110px;
+      }
+      .metric small {
+        display: block;
+        color: var(--muted-foreground);
+      }
+      .metric strong {
+        font-size: 22px;
+      }
+      .table-scroll {
+        overflow: auto;
+        max-width: 100%;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 12px;
+      }
+      caption {
+        text-align: left;
+        font-weight: 650;
+        margin-bottom: 6px;
+      }
+      th,
+      td {
+        padding: 7px 9px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        max-width: 260px;
+        overflow-wrap: anywhere;
+      }
+      thead {
+        background: var(--muted);
+      }
+      .pager {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      .chart {
+        max-width: 100%;
+        width: 100%;
+        height: 170px;
+      }
+      .board {
+        display: grid;
+        gap: 7px;
+        max-width: 430px;
+        margin: 10px auto;
+      }
+      .cell {
+        aspect-ratio: 1;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 650;
+        min-width: 0;
+        font-size: 17px;
+        background: var(--muted);
+        padding: 3px;
+      }
+      .cell.primary {
+        background: var(--primary);
+        color: var(--primary-foreground);
+      }
+      .game-actions {
+        justify-content: center;
+      }
+      progress {
+        width: 100%;
+        accent-color: var(--primary);
+      }
+      img {
+        display: block;
+        max-width: 100%;
+        max-height: 400px;
+        object-fit: contain;
+      }
+      .error {
+        color: var(--destructive);
+        font-size: 12px;
+      }
+      .field-error {
+        min-height: 1em;
+      }
+      #description {
+        margin: 0;
+        font-size: 13px;
+      }
+      #error {
+        margin-top: 14px;
+      }
+      #artifacts {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      @media (max-width: 680px) {
+        main {
+          padding: 8px;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        h1 {
+          font-size: 23px;
+        }
+        nav button {
+          padding: 7px 10px;
+        }
+        textarea {
+          min-height: 210px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav id="tabs" role="tablist" aria-label="实验室功能"></nav>
+      <section id="panel" role="tabpanel">
+        <h1 id="heading">扩展实验室</h1>
+        <p id="description" class="muted"></p>
+        <div id="board"></div>
+        <div id="game-actions" class="actions game-actions"></div>
+        <div id="layout" class="layout">
+          <section id="form-pane">
+            <div id="fields" class="fields"></div>
+            <div id="actions" class="actions"></div>
+          </section>
+          <section id="results" class="blocks"></section>
+        </div>
+        <div id="artifacts"></div>
+        <p id="error" class="error" role="alert"></p>
+      </section>
+    </main>
+    <script>
+      (() => {
+        const $ = (id) => document.getElementById(id),
+          create = (tag, text) => {
+            const node = document.createElement(tag);
+            if (text !== undefined) node.textContent = text;
+            return node;
+          };
+        let current,
+          working = false,
+          signature = "",
+          force = false,
+          pages = {};
+        const tr = (zh, en) => (current?.locale === "en" ? en : zh);
+        const values = () =>
+          Object.fromEntries(
+            [...document.querySelectorAll("[data-field]")].map((input) => [
+              input.dataset.field,
+              input.type === "checkbox" ? String(input.checked) : input.value,
+            ]),
+          );
+        function retain(dirty = true) {
+          return starter.checkpoint({ fields: values(), pages }, dirty);
+        }
+        function inline(node, text) {
+          for (const token of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
+            if (token.startsWith("**") && token.endsWith("**"))
+              node.append(create("strong", token.slice(2, -2)));
+            else if (token.startsWith("`") && token.endsWith("`"))
+              node.append(create("code", token.slice(1, -1)));
+            else node.append(document.createTextNode(token));
+          }
+        }
+        function markdown(text) {
+          const box = create("div");
+          let code = [],
+            list;
+          const flush = () => {
+            if (code.length) {
+              box.append(create("pre", code.join("\n")));
+              code = [];
+            }
+          };
+          for (const line of text.split("\n")) {
+            if (line.startsWith("    ")) {
+              code.push(line.slice(4));
+              continue;
+            }
+            flush();
+            if (!line.trim()) {
+              list = undefined;
+              continue;
+            }
+            const heading = line.match(/^(#{1,4})\s+(.*)/);
+            if (heading) {
+              const node = create(heading[1].length === 1 ? "h2" : "h3");
+              inline(node, heading[2]);
+              box.append(node);
+              list = undefined;
+            } else if (/^[-*] /.test(line)) {
+              if (!list) {
+                list = create("ul");
+                box.append(list);
+              }
+              const li = create("li");
+              inline(li, line.slice(2));
+              list.append(li);
+            } else {
+              list = undefined;
+              const p = create("p");
+              inline(p, line);
+              box.append(p);
+            }
+          }
+          flush();
+          return box;
+        }
+        function table(columns, rows, key, label) {
+          const wrap = create("div"),
+            scroll = create("div"),
+            node = create("table"),
+            head = create("thead"),
+            header = create("tr"),
+            body = create("tbody");
+          scroll.className = "table-scroll";
+          node.append(create("caption", label ?? tr("数据表", "Data table")));
+          columns.forEach((column) => {
+            const cell = create("th", column);
+            cell.scope = "col";
+            header.append(cell);
+          });
+          head.append(header);
+          node.append(head, body);
+          scroll.append(node);
+          wrap.append(scroll);
+          let page = Number.isInteger(pages[key])
+            ? Math.min(pages[key], Math.max(0, Math.ceil(rows.length / 20) - 1))
+            : 0;
+          const pager = create("div"),
+            previous = create("button", tr("上一页", "Previous")),
+            next = create("button", tr("下一页", "Next")),
+            status = create("span");
+          pager.className = "pager";
+          previous.type = next.type = "button";
+          status.setAttribute("role", "status");
+          function draw() {
+            body.replaceChildren(
+              ...rows.slice(page * 20, (page + 1) * 20).map((row) => {
+                const tr = create("tr");
+                row.forEach((value) => tr.append(create("td", String(value))));
+                return tr;
+              }),
+            );
+            status.textContent = `${page + 1} / ${Math.max(1, Math.ceil(rows.length / 20))}`;
+            previous.disabled = page === 0;
+            next.disabled = (page + 1) * 20 >= rows.length;
+          }
+          previous.onclick = () => {
+            page--;
+            pages[key] = page;
+            draw();
+            void retain(current.dirty).catch(report);
+          };
+          next.onclick = () => {
+            page++;
+            pages[key] = page;
+            draw();
+            void retain(current.dirty).catch(report);
+          };
+          draw();
+          if (rows.length > 20) {
+            pager.append(previous, status, next);
+            wrap.append(pager);
+          }
+          return wrap;
+        }
+        function chart(block, key) {
+          const wrap = create("div"),
+            svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
+            title = document.createElementNS(svg.namespaceURI, "title");
+          svg.classList.add("chart");
+          svg.setAttribute("viewBox", "0 0 640 170");
+          svg.setAttribute("role", "img");
+          svg.setAttribute("aria-label", block.label);
+          title.textContent = block.label;
+          svg.append(title);
+          const numbers = block.series
+              .flatMap((series) => series.values)
+              .filter((value) => typeof value === "number"),
+            min = Math.min(0, ...numbers),
+            max = Math.max(1, ...numbers),
+            range = max - min;
+          block.series.forEach((series, index) => {
+            const points = series.values.map((value, i) =>
+              typeof value === "number"
+                ? [
+                    24 + (i * 592) / Math.max(1, block.labels.length - 1),
+                    146 - ((value - min) * 124) / range,
+                  ]
+                : null,
+            );
+            if (block.chartType === "line") {
+              let segment = [];
+              const flush = () => {
+                if (segment.length) {
+                  const line = document.createElementNS(
+                    svg.namespaceURI,
+                    "polyline",
+                  );
+                  line.setAttribute(
+                    "points",
+                    segment.map((point) => point.join(",")).join(" "),
+                  );
+                  line.setAttribute("fill", "none");
+                  line.setAttribute("stroke", "var(--primary)");
+                  line.setAttribute("stroke-width", "3");
+                  line.setAttribute("opacity", String(1 - index * 0.18));
+                  svg.append(line);
+                  segment = [];
+                }
+              };
+              points.forEach((point) =>
+                point ? segment.push(point) : flush(),
+              );
+              flush();
+            } else
+              points.forEach((point, i) => {
+                if (!point) return;
+                const rect = document.createElementNS(svg.namespaceURI, "rect"),
+                  zero = 146 - ((0 - min) * 124) / range,
+                  width = Math.max(
+                    3,
+                    500 /
+                      Math.max(1, block.labels.length) /
+                      Math.max(1, block.series.length),
+                  );
+                rect.setAttribute(
+                  "x",
+                  String(
+                    22 +
+                      (i * 592) / Math.max(1, block.labels.length) -
+                      (width * block.series.length) / 2 +
+                      index * width,
+                  ),
+                );
+                rect.setAttribute("y", String(Math.min(zero, point[1])));
+                rect.setAttribute("width", String(width));
+                rect.setAttribute(
+                  "height",
+                  String(Math.max(1, Math.abs(zero - point[1]))),
+                );
+                rect.setAttribute("fill", "var(--primary)");
+                rect.setAttribute("opacity", String(1 - index * 0.18));
+                svg.append(rect);
+              });
+          });
+          wrap.append(
+            svg,
+            table(
+              [
+                tr("项目", "Item"),
+                ...block.series.map((series) => series.label),
+              ],
+              block.labels.map((label, index) => [
+                label,
+                ...block.series.map((series) => series.values[index] ?? "—"),
+              ]),
+              `${key}-data`,
+              block.label,
+            ),
+          );
+          return wrap;
+        }
+        function blocks(view) {
+          $("results").replaceChildren(
+            ...(view.blocks ?? []).map((block, index) => {
+              let node;
+              if (block.kind === "markdown") node = markdown(block.text);
+              else if (block.kind === "metrics") {
+                node = create("div");
+                node.className = "metrics";
+                block.items.forEach((item) => {
+                  const card = create("div");
+                  card.className = "metric";
+                  card.append(
+                    create("small", item.label),
+                    create("strong", item.value),
+                  );
+                  node.append(card);
+                });
+              } else if (block.kind === "table")
+                node = table(block.columns, block.rows, `table-${index}`);
+              else if (block.kind === "chart")
+                node = chart(block, `chart-${index}`);
+              else if (block.kind === "image") {
+                node = create("img");
+                node.alt = block.alt;
+                if (block.src.startsWith("data:image/")) node.src = block.src;
+              } else {
+                node = create("label", block.label);
+                const progress = create("progress");
+                if (block.value !== null) progress.value = block.value;
+                if (block.max !== null) progress.max = block.max;
+                node.append(progress);
+              }
+              node.classList.add("block");
+              return node;
+            }),
+          );
+        }
+        function actionButton(action) {
+          const button = create("button", action.label);
+          button.type = "button";
+          button.dataset.action = action.id;
+          button.classList.toggle("primary", action.primary);
+          button.setAttribute("aria-label", action.ariaLabel ?? action.label);
+          button.onclick = () => void act(action.id);
+          return button;
+        }
+        function build(view) {
+          const active = document.hasFocus() ? document.activeElement : null,
+            focus = active?.dataset.field ?? active?.dataset.action,
+            selection =
+              active instanceof HTMLTextAreaElement
+                ? [active.selectionStart, active.selectionEnd]
+                : null;
+          $("tabs").replaceChildren(
+            ...(view.tabs ?? []).map((tab) => {
+              const button = actionButton({ ...tab, primary: tab.active });
+              button.setAttribute("role", "tab");
+              button.setAttribute("aria-selected", String(tab.active));
+              button.setAttribute("aria-controls", "panel");
+              button.id = `tab-${tab.id}`;
+              button.tabIndex = tab.active ? 0 : -1;
+              if (tab.active)
+                $("panel").setAttribute("aria-labelledby", button.id);
+              return button;
+            }),
+          );
+          $("fields").replaceChildren(
+            ...[...view.fields]
+              .sort((a, b) => (a.kind === "textarea") - (b.kind === "textarea"))
+              .map((field) => {
+                const label = create("label"),
+                  caption = create("span", field.label),
+                  input = create(
+                    field.kind === "textarea"
+                      ? "textarea"
+                      : field.kind === "select"
+                        ? "select"
+                        : "input",
+                  ),
+                  error = create("span");
+                label.className = field.kind === "checkbox" ? "check" : "field";
+                input.dataset.field = field.id;
+                input.id = `field-${field.id}`;
+                caption.id = `label-${field.id}`;
+                input.setAttribute("aria-labelledby", caption.id);
+                error.id = `error-${field.id}`;
+                error.className = "field-error error";
+                input.setAttribute("aria-describedby", error.id);
+                if (input instanceof HTMLInputElement)
+                  input.type =
+                    field.kind === "checkbox"
+                      ? "checkbox"
+                      : field.kind === "date"
+                        ? "date"
+                        : field.kind === "number"
+                          ? "number"
+                          : "text";
+                if (input instanceof HTMLSelectElement)
+                  (field.options ?? []).forEach((option) =>
+                    input.append(new Option(option.label, option.value)),
+                  );
+                input.addEventListener(
+                  field.kind === "checkbox" || field.kind === "select"
+                    ? "change"
+                    : "input",
+                  () => {
+                    if (working || current.busy) {
+                      force = true;
+                      render();
+                      return;
+                    }
+                    void retain(true).catch(report);
+                  },
+                );
+                label.append(caption, input, error);
+                return label;
+              }),
+          );
+          $("actions").replaceChildren();
+          $("board").replaceChildren();
+          $("game-actions").replaceChildren();
+          view.groups.forEach((group) => {
+            if (group.board) {
+              const grid = create("div");
+              grid.className = "board";
+              grid.setAttribute("role", "group");
+              grid.setAttribute("aria-label", view.display);
+              grid.style.gridTemplateColumns = `repeat(${group.columns},minmax(0,1fr))`;
+              group.actions.forEach((action) => {
+                const cell = action.disabled
+                  ? create("span", action.label)
+                  : actionButton(action);
+                cell.classList.add("cell");
+                cell.classList.toggle("primary", action.primary);
+                if (action.disabled) {
+                  cell.setAttribute("role", "img");
+                  cell.setAttribute(
+                    "aria-label",
+                    action.ariaLabel ?? action.label,
+                  );
+                }
+                grid.append(cell);
+              });
+              $("board").append(grid);
+            } else
+              group.actions.forEach((action) =>
+                $(
+                  view.groups.some((group) => group.board)
+                    ? "game-actions"
+                    : "actions",
+                ).append(actionButton(action)),
+              );
+          });
+          const hasBoard = view.groups.some((group) => group.board);
+          $("form-pane").hidden =
+            view.fields.length === 0 && (hasBoard || view.groups.length === 0);
+          $("game-actions").hidden = !hasBoard;
+          $("board").hidden = !hasBoard;
+          $("layout").classList.toggle("single", view.fields.length === 0);
+          blocks(view);
+          $("artifacts").replaceChildren(
+            ...(view.artifacts ?? []).map((artifact, index) => {
+              const button = create(
+                "button",
+                tr("保存 ", "Save ") + artifact.name,
+              );
+              button.type = "button";
+              button.dataset.artifact = String(index);
+              button.onclick = () => {
+                if (working || current.busy) return;
+                working = true;
+                render();
+                void starter
+                  .saveArtifact(index)
+                  .catch(report)
+                  .finally(() => {
+                    working = false;
+                    render();
+                  });
+              };
+              return button;
+            }),
+          );
+          if (focus) {
+            const replacement = [
+              ...document.querySelectorAll("[data-field],[data-action]"),
+            ].find(
+              (node) =>
+                node.dataset.field === focus || node.dataset.action === focus,
+            );
+            replacement?.focus();
+            if (selection && replacement instanceof HTMLTextAreaElement)
+              replacement.setSelectionRange(...selection);
+          }
+        }
+        function render() {
+          if (!current?.view) return;
+          document
+            .querySelector("main")
+            .setAttribute("aria-busy", String(working || current.busy));
+          document
+            .querySelectorAll("input, select, textarea")
+            .forEach((input) => {
+              input.disabled = false;
+            });
+          const view = current.view,
+            next = JSON.stringify([view, current.locale]);
+          if (next !== signature) {
+            signature = next;
+            build(view);
+          }
+          $("heading").textContent = view.display;
+          $("description").textContent = view.description;
+          $("tabs").setAttribute("aria-label", tr("实验室功能", "Lab tools"));
+          for (const field of view.fields) {
+            const input = document.querySelector(`[data-field="${field.id}"]`);
+            if (!input) continue;
+            const retained = force
+                ? undefined
+                : current.checkpoint?.fields?.[field.id],
+              value =
+                typeof retained === "string"
+                  ? retained
+                  : (current.fields[field.id] ?? field.value);
+            if (!working && (force || document.activeElement !== input)) {
+              if (input.type === "checkbox") input.checked = value === "true";
+              else input.value = value;
+            }
+            input.readOnly = working || current.busy;
+            input.setAttribute(
+              "aria-disabled",
+              String(working || current.busy),
+            );
+            const error = view.errors?.[field.id] ?? "";
+            document.getElementById(`error-${field.id}`).textContent = error;
+            input.setAttribute("aria-invalid", String(!!error));
+          }
+          force = false;
+          const actions = [
+            ...view.groups.flatMap((group) => group.actions),
+            ...(view.tabs ?? []).map((tab) => ({ ...tab, disabled: false })),
+          ];
+          document.querySelectorAll("[data-action]").forEach((button) => {
+            const action = actions.find(
+              (action) => action.id === button.dataset.action,
+            );
+            button.setAttribute(
+              "aria-disabled",
+              String(working || current.busy || !action || action.disabled),
+            );
+          });
+          document
+            .querySelectorAll("[data-artifact]")
+            .forEach((button) =>
+              button.setAttribute(
+                "aria-disabled",
+                String(working || current.busy),
+              ),
+            );
+        }
+        function report() {
+          $("error").textContent = tr(
+            "操作未完成，输入与上次结果已保留。",
+            "The operation did not finish. Your input and last result were retained.",
+          );
+        }
+        async function act(id) {
+          const view = current?.view,
+            tab = view?.tabs?.find((tab) => tab.id === id),
+            action = view?.groups
+              .flatMap((group) => group.actions)
+              .find((action) => action.id === id);
+          if (
+            working ||
+            current?.busy ||
+            tab?.active ||
+            (!tab && (!action || action.disabled))
+          )
+            return;
+          const submitted = values(),
+            previousDirty = current.dirty;
+          working = true;
+          render();
+          try {
+            $("error").textContent = "";
+            const next = await starter.run(id, submitted);
+            await starter.checkpoint(null, tab ? previousDirty : true);
+            current = {
+              ...current,
+              view: next,
+              fields: Object.fromEntries(
+                next.fields.map((field) => [field.id, field.value]),
+              ),
+              checkpoint: null,
+            };
+            force = true;
+          } catch {
+            report();
+          } finally {
+            working = false;
+            render();
+          }
+        }
+        $("tabs").onkeydown = (event) => {
+          if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+          const tabs = [...$("tabs").children],
+            index = tabs.indexOf(document.activeElement);
+          event.preventDefault();
+          tabs[
+            (index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
+              tabs.length
+          ]?.focus();
+        };
+        starter.onChange((snapshot) => {
+          current = snapshot;
+          if (
+            snapshot.checkpoint?.pages &&
+            typeof snapshot.checkpoint.pages === "object"
+          )
+            pages = snapshot.checkpoint.pages;
+          render();
+        });
+      })();
+    </script>
+  </body>
+</html>

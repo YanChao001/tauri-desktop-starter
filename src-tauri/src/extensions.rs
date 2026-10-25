@@ -728,10 +728,11 @@ pub fn bundled_package(id: &str) -> NativeResult<String> {
         "starter.extension-lab" => include_str!("../../examples/extensions/apps/extension.json"),
         _ => return Err(invalid("Unknown bundled extension")),
     };
-    Ok(format!(
-        "{{\"manifest\":{manifest},\"wasm\":\"{}\"}}",
-        STANDARD.encode(include_bytes!("../../resources/extensions/demo-apps.wasm"))
-    ))
+    Ok(serde_json::json!({
+        "manifest": serde_json::from_str::<serde_json::Value>(manifest).map_err(|_| invalid("Bundled manifest is invalid"))?,
+        "wasm": STANDARD.encode(include_bytes!("../../resources/extensions/demo-apps.wasm")),
+        "uiDocuments": {"main": include_str!("../../examples/extensions/apps/ui/main.html")},
+    }).to_string())
 }
 impl ExtensionStore {
     pub fn new(root: PathBuf, isolated: bool) -> Self {

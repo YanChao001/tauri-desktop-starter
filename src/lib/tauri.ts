@@ -40,6 +40,7 @@ export type {
   ExtensionStorageInfo,
   ExtensionRunStatus,
   ExtensionViewRequest,
+  ExtensionViewInput,
   ExtensionHostContext,
   ExtensionEffect,
   ExtensionEffectResult,

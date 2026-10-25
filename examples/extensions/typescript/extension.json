@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "example.typescript-report",
   "version": "1.0.0",
-  "name": "TypeScript report",
+  "name": "笔记工坊",
   "author": "Example author",
   "description": "Typed API 2 example: selected data report and a notebook with optional private storage and exported files.",
   "commands": [
