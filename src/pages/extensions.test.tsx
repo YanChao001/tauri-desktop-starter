@@ -94,43 +94,34 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it("previews without installing, then installs disabled and requires every consent to enable", async () => {
-  vi.mocked(native.installExtension).mockImplementation(async () => {
-    snapshot = {
-      ...snapshot,
-      revision: 1,
-      items: [
-        {
-          generation: 1,
-          origin: { kind: "local" },
-          package: preview,
-          enabled: false,
-          grantedPermissions: [],
-        },
-      ],
-    };
-    return snapshot;
-  });
-  vi.mocked(native.setExtensionEnabled).mockImplementation(async () => {
-    snapshot = {
-      ...snapshot,
-      revision: 2,
-      items: snapshot.items.map((item) => ({
-        ...item,
-        enabled: true,
-        grantedPermissions: ["text:read"],
-      })),
-    };
-    return snapshot;
-  });
-  render(
-    <MemoryRouter>
-      <ExtensionsProvider>
-        <Extensions />
-        <Location />
-      </ExtensionsProvider>
-    </MemoryRouter>,
+it("reviews permissions once and installs enabled without a separate activation step", async () => {
+  const packagePreview = {
+    ...preview,
+    manifest: {
+      ...preview.manifest,
+      optionalPermissions: ["storage" as const],
+    },
+  };
+  vi.mocked(native.previewExtension).mockResolvedValue(packagePreview);
+  vi.mocked(native.installExtension).mockImplementation(
+    async (_content, _revision, _replace, _hash, consent) => {
+      snapshot = {
+        revision: 1,
+        runs: [],
+        items: [
+          {
+            generation: 1,
+            origin: { kind: "local" },
+            package: packagePreview,
+            enabled: true,
+            grantedPermissions: consent.grantedPermissions,
+          },
+        ],
+      };
+      return snapshot;
+    },
   );
+  marketPage();
   const input = await screen.findByLabelText("Choose extension package");
   await waitFor(() => expect(input).toBeEnabled());
   const file = new File(["demo-package"], "example.starter-extension.json", {
@@ -142,8 +133,9 @@ it("previews without installing, then installs disabled and requires every conse
   const review = await screen.findByRole("dialog");
   expect(within(review).getByText(preview.sha256)).toBeVisible();
   expect(native.installExtension).not.toHaveBeenCalled();
+  expect(within(review).getByRole("checkbox")).not.toBeChecked();
   fireEvent.click(
-    within(review).getByRole("button", { name: "Install and keep disabled" }),
+    within(review).getByRole("button", { name: "Install and enable" }),
   );
   await waitFor(() =>
     expect(native.installExtension).toHaveBeenCalledWith(
@@ -151,34 +143,12 @@ it("previews without installing, then installs disabled and requires every conse
       0,
       false,
       preview.sha256,
-    ),
-  );
-  const enable = await screen.findByRole("button", {
-    name: "Enable",
-  });
-  expect(native.setExtensionEnabled).not.toHaveBeenCalled();
-  fireEvent.click(enable);
-  const decision = await screen.findByRole("dialog");
-  const confirm = within(decision).getByRole("button", {
-    name: "Enable",
-  });
-  expect(confirm).toBeDisabled();
-  const boxes = within(decision).getAllByRole("checkbox");
-  fireEvent.click(boxes[0]!);
-  expect(confirm).toBeDisabled();
-  fireEvent.click(boxes[1]!);
-  expect(confirm).toBeEnabled();
-  fireEvent.click(confirm);
-  await waitFor(() =>
-    expect(native.setExtensionEnabled).toHaveBeenCalledWith(
-      "test.example",
-      true,
-      ["text:read"],
-      1,
-      true,
+      { trusted: true, grantedPermissions: ["text:read"] },
     ),
   );
   await screen.findByRole("button", { name: "Disable" });
+  expect(native.setExtensionEnabled).not.toHaveBeenCalled();
+  expect(native.viewExtension).not.toHaveBeenCalled();
 });
 
 it("releases a subscription that arrives after unmount", async () => {
@@ -289,7 +259,7 @@ it("downloads a market package for review and installs only after confirmation w
   expect(native.installExtension).not.toHaveBeenCalled();
   expect(native.setExtensionEnabled).not.toHaveBeenCalled();
   await user.click(
-    within(review).getByRole("button", { name: "Install and keep disabled" }),
+    within(review).getByRole("button", { name: "Install and enable" }),
   );
   await waitFor(() =>
     expect(native.installMarketExtension).toHaveBeenCalledWith(
@@ -298,6 +268,7 @@ it("downloads a market package for review and installs only after confirmation w
       false,
       preview.sha256,
       marketSource,
+      { trusted: true, grantedPermissions: ["text:read"] },
     ),
   );
 });
@@ -513,9 +484,8 @@ it("enables offline commands without optional networking and allows grants to ch
   fireEvent.click(await screen.findByRole("button", { name: "Enable" }));
   const dialog = await screen.findByRole("dialog");
   const confirm = within(dialog).getByRole("button", { name: "Enable" });
-  fireEvent.click(within(dialog).getAllByRole("checkbox")[0]!);
   expect(confirm).toBeEnabled();
-  expect(within(dialog).getAllByRole("checkbox")[1]).not.toBeChecked();
+  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   fireEvent.click(confirm);
   await waitFor(() =>
     expect(native.setExtensionEnabled).toHaveBeenCalledWith(
@@ -530,7 +500,7 @@ it("enables offline commands without optional networking and allows grants to ch
     await screen.findByRole("button", { name: "Manage permissions" }),
   );
   const permissions = await screen.findByRole("dialog");
-  fireEvent.click(within(permissions).getAllByRole("checkbox")[1]!);
+  fireEvent.click(within(permissions).getByRole("checkbox"));
   fireEvent.click(
     within(permissions).getByRole("button", { name: "Save permissions" }),
   );
@@ -610,7 +580,7 @@ it("reviews a newer bundled lab and installs it only after confirmation using th
   expect(within(review).getByText("2.0.0")).toBeVisible();
   expect(native.installExtension).not.toHaveBeenCalled();
   fireEvent.click(
-    within(review).getByRole("button", { name: "Confirm upgrade" }),
+    within(review).getByRole("button", { name: "Update and enable" }),
   );
   await waitFor(() =>
     expect(native.installExtension).toHaveBeenCalledWith(
@@ -618,6 +588,7 @@ it("reviews a newer bundled lab and installs it only after confirmation using th
       23,
       true,
       bundledLab.sha256,
+      { trusted: true, grantedPermissions: ["text:read"] },
     ),
   );
   expect(native.setExtensionEnabled).not.toHaveBeenCalled();

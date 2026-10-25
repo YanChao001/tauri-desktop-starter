@@ -63,6 +63,32 @@ pub enum ExtensionPermission {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionConsent {
+    pub trusted: bool,
+    pub granted_permissions: Vec<ExtensionPermission>,
+}
+
+impl ExtensionConsent {
+    fn validate(&self, manifest: &ExtensionManifest) -> NativeResult<()> {
+        let grants = &self.granted_permissions;
+        if !self.trusted
+            || grants.iter().collect::<HashSet<_>>().len() != grants.len()
+            || grants.iter().any(|grant| !manifest.has_permission(*grant))
+            || manifest
+                .permissions
+                .iter()
+                .any(|permission| !grants.contains(permission))
+        {
+            return Err(invalid(
+                "Confirm trust and required capabilities before enabling",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionCommand {
     pub id: String,
     pub title: String,
@@ -1092,12 +1118,16 @@ impl ExtensionStore {
         replace_existing: bool,
         expected_hash: &str,
         origin: ExtensionOrigin,
+        consent: Option<ExtensionConsent>,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
         if bundle.preview.sha256 != expected_hash {
             return Err(conflict());
         }
         origin.validate()?;
+        if let Some(consent) = &consent {
+            consent.validate(&bundle.preview.manifest)?;
+        }
         let _guard = self
             .0
             .writing
@@ -1161,10 +1191,12 @@ impl ExtensionStore {
         if let Some(previous) = previous {
             before_replace(previous, &origin)?;
         }
+        let enabled = consent.is_some() || preserve_grants;
+        let grants = consent.map_or(grants, |consent| consent.granted_permissions);
         let item = ExtensionInfo {
             package: bundle.preview,
             generation,
-            enabled: preserve_grants,
+            enabled,
             granted_permissions: grants,
             origin,
             previous_package: position.map(|index| registry.extensions[index].package.clone()),
@@ -1180,6 +1212,7 @@ impl ExtensionStore {
         self.cleanup(&registry);
         Ok(result)
     }
+    #[cfg(test)]
     pub fn install(
         &self,
         content: &str,
@@ -1195,6 +1228,7 @@ impl ExtensionStore {
             ExtensionOrigin::Local,
         )
     }
+    #[cfg(test)]
     pub(crate) fn install_with_origin(
         &self,
         content: &str,
@@ -1212,6 +1246,7 @@ impl ExtensionStore {
             |_, _| Ok(()),
         )
     }
+    #[cfg(test)]
     pub(crate) fn install_with_origin_and_cleanup(
         &self,
         content: &str,
@@ -1227,6 +1262,27 @@ impl ExtensionStore {
             replace,
             expected_hash,
             origin,
+            None,
+            before_replace,
+        )
+    }
+    pub(crate) fn install_reviewed(
+        &self,
+        content: &str,
+        revision: i32,
+        replace: bool,
+        expected_hash: &str,
+        origin: ExtensionOrigin,
+        consent: ExtensionConsent,
+        before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
+    ) -> NativeResult<ExtensionSnapshot> {
+        self.install_bundle(
+            package(content)?,
+            revision,
+            replace,
+            expected_hash,
+            origin,
+            Some(consent),
             before_replace,
         )
     }
@@ -1303,22 +1359,11 @@ impl ExtensionStore {
             .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Extension not found"))?;
         if enabled {
             item.package.manifest.validate()?;
-            if !trusted
-                || grants.iter().collect::<HashSet<_>>().len() != grants.len()
-                || grants
-                    .iter()
-                    .any(|grant| !item.package.manifest.has_permission(*grant))
-                || item
-                    .package
-                    .manifest
-                    .permissions
-                    .iter()
-                    .any(|permission| !grants.contains(permission))
-            {
-                return Err(invalid(
-                    "Confirm trust and required capabilities before enabling",
-                ));
+            ExtensionConsent {
+                trusted,
+                granted_permissions: grants.clone(),
             }
+            .validate(&item.package.manifest)?;
         }
         let changed_grants = item.granted_permissions.len() != grants.len()
             || item
@@ -1650,6 +1695,109 @@ mod tests {
             );
             std::thread::yield_now();
         }
+    }
+    #[test]
+    fn reviewed_install_validates_consent_before_mutating_and_enables_in_one_revision() {
+        let (dir, store) = store();
+        let content = demo_package();
+        let preview = preview_package(&content).unwrap();
+        let required = preview.manifest.permissions.clone();
+        for consent in [
+            ExtensionConsent {
+                trusted: false,
+                granted_permissions: required.clone(),
+            },
+            ExtensionConsent {
+                trusted: true,
+                granted_permissions: vec![],
+            },
+            ExtensionConsent {
+                trusted: true,
+                granted_permissions: vec![
+                    ExtensionPermission::TextRead,
+                    ExtensionPermission::TextRead,
+                ],
+            },
+            ExtensionConsent {
+                trusted: true,
+                granted_permissions: vec![
+                    ExtensionPermission::TextRead,
+                    ExtensionPermission::Storage,
+                ],
+            },
+        ] {
+            assert!(
+                store
+                    .install_reviewed(
+                        &content,
+                        0,
+                        false,
+                        &preview.sha256,
+                        ExtensionOrigin::Local,
+                        consent,
+                        |_, _| panic!("Invalid consent must not revoke credentials")
+                    )
+                    .is_err()
+            );
+            assert_eq!(store.snapshot().unwrap().revision, 0);
+            assert!(!dir.path().join("extensions").exists());
+        }
+        let installed = store
+            .install_reviewed(
+                &content,
+                0,
+                false,
+                &preview.sha256,
+                ExtensionOrigin::Local,
+                ExtensionConsent {
+                    trusted: true,
+                    granted_permissions: required.clone(),
+                },
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(installed.revision, 1);
+        assert!(installed.items[0].enabled);
+        assert_eq!(installed.items[0].granted_permissions, required);
+        let restarted = ExtensionStore::new(dir.path().join("extensions"), false);
+        assert!(restarted.snapshot().unwrap().items[0].enabled);
+
+        let mut update: serde_json::Value = serde_json::from_str(&content).unwrap();
+        update["manifest"]["version"] = "2.0.0".into();
+        update["manifest"]["optionalPermissions"] = serde_json::json!(["storage"]);
+        let valid = ExtensionConsent {
+            trusted: true,
+            granted_permissions: vec![ExtensionPermission::TextRead, ExtensionPermission::Storage],
+        };
+        assert!(
+            store
+                .install_reviewed(
+                    &update.to_string(),
+                    0,
+                    true,
+                    &preview.sha256,
+                    ExtensionOrigin::Local,
+                    valid.clone(),
+                    |_, _| panic!("A stale review must not mutate credentials")
+                )
+                .is_err()
+        );
+        assert_eq!(store.snapshot().unwrap().revision, 1);
+        let upgraded = store
+            .install_reviewed(
+                &update.to_string(),
+                1,
+                true,
+                &preview.sha256,
+                ExtensionOrigin::Local,
+                valid,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(upgraded.revision, 2);
+        assert!(upgraded.items[0].enabled);
+        assert_eq!(upgraded.items[0].granted_permissions.len(), 2);
+        assert!(upgraded.items[0].previous_package.is_some());
     }
     #[test]
     fn optional_grants_allow_offline_use_and_changes_cancel_old_calls() {

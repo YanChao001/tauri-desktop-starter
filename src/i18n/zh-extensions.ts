@@ -101,7 +101,7 @@ export const zhExtensions = {
     "扩展在 Wasm 中运行。你可以管理必需与可选权限；文件仅通过所选资源访问，网络限定清单中的来源和方法，私有存储按插件隔离。",
   "ext.installFile": "选择扩展包",
   "ext.packageHint":
-    "选择 .starter-extension.json 包（最多 24 MiB）。预览与安装均不执行程序，安装后默认禁用。",
+    "选择 .starter-extension.json 包（最多 24 MiB），审阅权限后安装并启用。预览、安装和启用均不执行插件程序。",
   "ext.docs": "扩展开发与打包文档",
   "ext.host": "运行框架",
   "ext.empty":
@@ -113,10 +113,12 @@ export const zhExtensions = {
   "ext.hash": "Wasm 模块 SHA-256",
   "ext.hashHint": "内容哈希用于识别文件与发现修改，不证明作者身份或程序可信。",
   "ext.bytes": "Wasm 模块：{bytes} 字节",
-  "ext.install": "安装并保持禁用",
-  "ext.upgrade": "确认升级",
+  "ext.install": "安装并启用",
+  "ext.installConsent":
+    "确认后即启用扩展，并授予上方列出的必需权限及你勾选的可选权限。你可以随时修改授权或停用。",
+  "ext.upgrade": "升级并启用",
   "ext.upgradeHint":
-    "当前版本 {version}，仅接受更高数字版本。更新会重新核验信任来源与能力；同一可信来源且权限未扩大的兼容补丁可保留授权，其他更新会禁用并要求重新审阅。",
+    "当前版本 {version}。请审阅新版本来源及权限；确认后原子地更新并启用，旧版本保留用于回退。",
   "ext.enable": "启用",
   "ext.disable": "禁用",
   "ext.enabled": "已启用",

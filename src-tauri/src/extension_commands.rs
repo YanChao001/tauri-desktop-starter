@@ -7,9 +7,9 @@ use crate::{
     extension_market::{ExtensionMarket, MarketSource},
     extension_view::{ExtensionArtifact, ExtensionView, ExtensionViewInput, validate_artifact},
     extensions::{
-        self, ExtensionArchivePreview, ExtensionArchiveResult, ExtensionFileChoice,
-        ExtensionOrigin, ExtensionPermission, ExtensionPreview, ExtensionRunInput,
-        ExtensionSnapshot, ExtensionStore,
+        self, ExtensionArchivePreview, ExtensionArchiveResult, ExtensionConsent,
+        ExtensionFileChoice, ExtensionOrigin, ExtensionPermission, ExtensionPreview,
+        ExtensionRunInput, ExtensionSnapshot, ExtensionStore,
     },
     workbench,
 };
@@ -67,16 +67,18 @@ pub async fn install_extension(
     expected_revision: i32,
     replace_existing: bool,
     expected_sha256: String,
+    consent: ExtensionConsent,
 ) -> NativeResult<ExtensionSnapshot> {
     let store = app.state::<ExtensionStore>().inner().clone();
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
-        store.install_with_origin_and_cleanup(
+        store.install_reviewed(
             &content,
             expected_revision,
             replace_existing,
             &expected_sha256,
             ExtensionOrigin::Local,
+            consent,
             |old, _| host.clear_credentials(&old.package.manifest),
         )
     })
@@ -95,6 +97,7 @@ pub async fn install_market_extension(
     replace_existing: bool,
     expected_sha256: String,
     source: MarketSource,
+    consent: ExtensionConsent,
 ) -> NativeResult<ExtensionSnapshot> {
     let verified = app
         .state::<ExtensionMarket>()
@@ -103,12 +106,13 @@ pub async fn install_market_extension(
     let store = app.state::<ExtensionStore>().inner().clone();
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
-        store.install_with_origin_and_cleanup(
+        store.install_reviewed(
             &content,
             expected_revision,
             replace_existing,
             &expected_sha256,
             ExtensionOrigin::Market { source: verified },
+            consent,
             |old, next| {
                 if !old.origin.same_trusted_source(next) {
                     host.clear_credentials(&old.package.manifest)?;

@@ -6,7 +6,6 @@ import { ExternalLink } from "@/components/external-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -21,10 +20,7 @@ import { useExtensions } from "@/features/extensions/extensions-provider";
 import { extensionPath } from "@/routes";
 import { useI18n } from "@/providers/i18n";
 import { nativeErrorText } from "@/lib/native-error";
-import {
-  ExtensionDetails,
-  PERMISSION_LABELS,
-} from "@/features/extensions/extension-details";
+import { ExtensionDetails } from "@/features/extensions/extension-details";
 import { ExtensionRunner } from "@/features/extensions/extension-runner";
 import { ExtensionRecovery } from "@/features/extensions/extension-recovery";
 import { ExtensionCard } from "@/features/extensions/extension-card";
@@ -83,7 +79,6 @@ export default function Extensions() {
   const dialogTrigger = useRef<HTMLElement | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [trusted, setTrusted] = useState(false);
   const [grants, setGrants] = useState<ExtensionPermission[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const tab = search.get("tab") === "discover" ? "discover" : "installed";
@@ -119,6 +114,28 @@ export default function Extensions() {
       locked.current = false;
       if (alive.current) setBusy(false);
     }
+  }
+  function reviewPackage(value: Review) {
+    const current = data?.items.find(
+      (item) => item.package.manifest.id === value.preview.manifest.id,
+    );
+    setGrants(
+      current?.grantedPermissions.filter((permission) =>
+        value.preview.manifest.optionalPermissions.includes(permission),
+      ) ?? [],
+    );
+    setReview(value);
+  }
+  function consentFor(value: ExtensionPreview) {
+    return {
+      trusted: true,
+      grantedPermissions: [
+        ...value.manifest.permissions,
+        ...grants.filter((permission) =>
+          value.manifest.optionalPermissions.includes(permission),
+        ),
+      ],
+    };
   }
   async function inspect(file?: File) {
     if (!data) return;
@@ -163,7 +180,7 @@ export default function Extensions() {
         }
       }
       if (alive.current)
-        setReview({
+        reviewPackage({
           preview,
           content,
           revision: snapshot.revision,
@@ -178,7 +195,6 @@ export default function Extensions() {
         ? document.activeElement
         : null;
     setActionError(null);
-    setTrusted(action === "permissions");
     setGrants(action === "permissions" ? item.grantedPermissions : []);
     setDecision({ item, action, revision: data.revision });
   }
@@ -197,7 +213,7 @@ export default function Extensions() {
           entry.packageSha256,
         );
         if (alive.current)
-          setReview({
+          reviewPackage({
             content: downloaded.content,
             preview: downloaded.preview,
             source: downloaded.source,
@@ -468,12 +484,16 @@ export default function Extensions() {
             <>
               <ExtensionDetails
                 value={review.preview}
+                consent={{ grants, disabled: busy, onChange: setGrants }}
                 origin={
                   review.source
                     ? { kind: "market", source: review.source }
                     : { kind: "local" }
                 }
               />
+              <p className="text-sm text-muted-foreground">
+                {t("ext.installConsent")}
+              </p>
               {review.previous ? (
                 <p className="rounded-md bg-muted p-3 text-sm">
                   {t("ext.upgradeHint", { version: review.previous })}
@@ -509,6 +529,7 @@ export default function Extensions() {
                         review.previous !== null,
                         review.preview.sha256,
                         review.source,
+                        consentFor(review.preview),
                       );
                     else
                       await installExtension(
@@ -516,6 +537,7 @@ export default function Extensions() {
                         review.revision,
                         review.previous !== null,
                         review.preview.sha256,
+                        consentFor(review.preview),
                       );
                     if (alive.current) setReview(null);
                     await reload();
@@ -562,6 +584,11 @@ export default function Extensions() {
           </DialogHeader>
           {decision ? (
             <ExtensionDetails
+              consent={
+                ["enable", "permissions"].includes(decision.action)
+                  ? { grants, disabled: busy, onChange: setGrants }
+                  : undefined
+              }
               value={
                 decision.action === "rollback" && decision.item.previousPackage
                   ? decision.item.previousPackage
@@ -575,53 +602,9 @@ export default function Extensions() {
             />
           ) : null}
           {decision && ["enable", "permissions"].includes(decision.action) ? (
-            <div className="space-y-4">
-              <p className="text-sm">{t("ext.boundary")}</p>
-              <Label className="items-start leading-relaxed">
-                <Checkbox
-                  checked={trusted}
-                  disabled={busy}
-                  onCheckedChange={(value) => setTrusted(value === true)}
-                />
-                {t("ext.trust")}
-              </Label>
-              {[
-                {
-                  label: "ext.requiredPermissions" as const,
-                  permissions: decision.item.package.manifest.permissions,
-                },
-                {
-                  label: "ext.optionalPermissions" as const,
-                  permissions:
-                    decision.item.package.manifest.optionalPermissions,
-                },
-              ].map((group) =>
-                group.permissions.length ? (
-                  <div key={group.label} className="space-y-3">
-                    <h4 className="text-sm font-medium">{t(group.label)}</h4>
-                    {group.permissions.map((permission) => (
-                      <Label
-                        key={permission}
-                        className="items-start leading-relaxed"
-                      >
-                        <Checkbox
-                          checked={grants.includes(permission)}
-                          disabled={busy}
-                          onCheckedChange={(value) =>
-                            setGrants((current) =>
-                              value === true
-                                ? [...new Set([...current, permission])]
-                                : current.filter((item) => item !== permission),
-                            )
-                          }
-                        />
-                        {t(PERMISSION_LABELS[permission])}
-                      </Label>
-                    ))}
-                  </div>
-                ) : null,
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("ext.installConsent")}
+            </p>
           ) : null}
           {actionError ? (
             <p role="alert" className="text-sm text-destructive">
@@ -643,15 +626,7 @@ export default function Extensions() {
               variant={
                 decision?.action === "uninstall" ? "destructive" : "default"
               }
-              disabled={
-                busy ||
-                !decision ||
-                (["enable", "permissions"].includes(decision.action) &&
-                  (!trusted ||
-                    !decision.item.package.manifest.permissions.every(
-                      (permission) => grants.includes(permission),
-                    )))
-              }
+              disabled={busy || !decision}
               onClick={() => {
                 if (decision)
                   void act(async () => {
@@ -662,9 +637,9 @@ export default function Extensions() {
                       await setExtensionEnabled(
                         decision.item.package.manifest.id,
                         true,
-                        grants,
+                        consentFor(decision.item.package).grantedPermissions,
                         decision.revision,
-                        trusted,
+                        true,
                       );
                     else if (decision.action === "rollback")
                       await rollbackExtension(

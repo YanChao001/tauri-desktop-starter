@@ -42,6 +42,7 @@ export const commands = {
     expectedRevision: number,
     replaceExisting: boolean,
     expectedSha256: string,
+    consent: ExtensionConsent,
   ) =>
     typedError<ExtensionSnapshot, NativeError>(
       __TAURI_INVOKE("install_extension", {
@@ -49,6 +50,7 @@ export const commands = {
         expectedRevision,
         replaceExisting,
         expectedSha256,
+        consent,
       }),
     ),
   installMarketExtension: (
@@ -57,6 +59,7 @@ export const commands = {
     replaceExisting: boolean,
     expectedSha256: string,
     source: MarketSource,
+    consent: ExtensionConsent,
   ) =>
     typedError<ExtensionSnapshot, NativeError>(
       __TAURI_INVOKE("install_market_extension", {
@@ -65,6 +68,7 @@ export const commands = {
         replaceExisting,
         expectedSha256,
         source,
+        consent,
       }),
     ),
   rollbackExtension: (id: string, expectedRevision: number) =>
@@ -633,6 +637,11 @@ export type ExtensionCommand = {
   resultFormat: ExtensionResultFormat;
   ui?: ExtensionUi | null;
   permissions: ExtensionPermission[];
+};
+
+export type ExtensionConsent = {
+  trusted: boolean;
+  grantedPermissions: ExtensionPermission[];
 };
 
 export type ExtensionCredentialSlot = {

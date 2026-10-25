@@ -3,6 +3,7 @@ import type {
   DesktopStatus,
   DiagnosticsReport,
   ExtensionPermission,
+  ExtensionConsent,
   ExtensionArtifact,
   ExtensionCredentialSlot,
   ExtensionFileChoice,
@@ -133,6 +134,7 @@ export function installExtension(
   expectedRevision: number,
   replaceExisting: boolean,
   expectedSha256: string,
+  consent: ExtensionConsent,
 ): Promise<ExtensionSnapshot> {
   return callNative((commands) =>
     commands.installExtension(
@@ -140,6 +142,7 @@ export function installExtension(
       expectedRevision,
       replaceExisting,
       expectedSha256,
+      consent,
     ),
   );
 }
@@ -166,6 +169,7 @@ export function installMarketExtension(
   replaceExisting: boolean,
   expectedSha256: string,
   source: MarketSource,
+  consent: ExtensionConsent,
 ): Promise<ExtensionSnapshot> {
   return callNative((commands) =>
     commands.installMarketExtension(
@@ -174,6 +178,7 @@ export function installMarketExtension(
       replaceExisting,
       expectedSha256,
       source,
+      consent,
     ),
   );
 }

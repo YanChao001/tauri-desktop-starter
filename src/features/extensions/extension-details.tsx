@@ -1,4 +1,6 @@
 import { useI18n, type DictKey } from "@/providers/i18n";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import type {
   ExtensionInfo,
   ExtensionPermission,
@@ -16,9 +18,15 @@ export const PERMISSION_LABELS: Record<ExtensionPermission, DictKey> = {
 export function ExtensionDetails({
   value,
   origin,
+  consent,
 }: {
   value: ExtensionPreview;
   origin?: ExtensionInfo["origin"];
+  consent?: {
+    grants: ExtensionPermission[];
+    disabled: boolean;
+    onChange: (grants: ExtensionPermission[]) => void;
+  };
 }) {
   const { t } = useI18n();
   const manifest = value.manifest;
@@ -97,7 +105,31 @@ export function ExtensionDetails({
           <h4 className="font-medium">{t("ext.optionalPermissions")}</h4>
           <ul className="mt-2 list-inside list-disc space-y-1">
             {manifest.optionalPermissions.map((permission) => (
-              <li key={permission}>{t(PERMISSION_LABELS[permission])}</li>
+              <li
+                key={permission}
+                className={consent ? "list-none" : undefined}
+              >
+                {consent ? (
+                  <Label className="items-start leading-relaxed">
+                    <Checkbox
+                      checked={consent.grants.includes(permission)}
+                      disabled={consent.disabled}
+                      onCheckedChange={(checked) =>
+                        consent.onChange(
+                          checked === true
+                            ? [...new Set([...consent.grants, permission])]
+                            : consent.grants.filter(
+                                (grant) => grant !== permission,
+                              ),
+                        )
+                      }
+                    />
+                    {t(PERMISSION_LABELS[permission])}
+                  </Label>
+                ) : (
+                  t(PERMISSION_LABELS[permission])
+                )}
+              </li>
             ))}
           </ul>
         </div>

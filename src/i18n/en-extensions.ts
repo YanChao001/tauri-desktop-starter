@@ -107,7 +107,7 @@ export const enExtensions = {
     "Plugins run in Wasm. You control required and optional capabilities; file access uses selected resources, networking is restricted to declared origins and methods, and private storage is isolated per plugin.",
   "ext.installFile": "Choose extension package",
   "ext.packageHint":
-    "Choose a .starter-extension.json package, up to 24 MiB. Preview and installation do not execute it. New installations are disabled.",
+    "Choose a .starter-extension.json package, up to 24 MiB. Review permissions, then install and enable. Preview, installation and enabling do not execute plugin code.",
   "ext.docs": "Extension development and packaging",
   "ext.host": "Runtime",
   "ext.empty":
@@ -120,10 +120,12 @@ export const enExtensions = {
   "ext.hashHint":
     "The content hash identifies the file and detects changes. It does not authenticate the author or establish trust.",
   "ext.bytes": "Wasm module: {bytes} bytes",
-  "ext.install": "Install and keep disabled",
-  "ext.upgrade": "Confirm upgrade",
+  "ext.install": "Install and enable",
+  "ext.installConsent":
+    "Confirming enables the extension and grants the required capabilities listed above plus the optional capabilities you selected. You can change grants or disable it later.",
+  "ext.upgrade": "Update and enable",
   "ext.upgradeHint":
-    "Installed version: {version}. Only a higher numeric version is accepted. Updates recheck trust and capabilities: compatible patches from the same trusted source can retain consent; other updates disable the extension for review.",
+    "Installed version: {version}. Review the new source and permissions. Confirmation updates and enables atomically, retaining the previous version for rollback.",
   "ext.enable": "Enable",
   "ext.disable": "Disable",
   "ext.enabled": "Enabled",
