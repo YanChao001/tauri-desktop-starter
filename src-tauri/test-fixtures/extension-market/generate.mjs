@@ -92,34 +92,45 @@ const catalog = {
     },
   ],
 };
-const payload = Buffer.from(JSON.stringify(catalog));
-const signature = sign(
-  null,
-  createHash("blake2b512").update(payload).digest(),
-  key,
-);
-const trusted = "market revision:1";
-const global = sign(
-  null,
-  Buffer.concat([signature, Buffer.from(trusted)]),
-  key,
-);
-const envelope = {
-  payload: payload.toString("base64"),
-  signature: [
-    "untrusted comment: TEST ONLY extension market fixture",
-    Buffer.concat([Buffer.from("ED"), keyId, signature]).toString("base64"),
-    "trusted comment: " + trusted,
-    global.toString("base64"),
-    "",
-  ].join("\n"),
-};
+function signedEnvelope(catalog) {
+  const payload = Buffer.from(JSON.stringify(catalog));
+  const signature = sign(
+    null,
+    createHash("blake2b512").update(payload).digest(),
+    key,
+  );
+  const trusted = "market revision:1";
+  const global = sign(
+    null,
+    Buffer.concat([signature, Buffer.from(trusted)]),
+    key,
+  );
+  return {
+    payload: payload.toString("base64"),
+    signature: [
+      "untrusted comment: TEST ONLY extension market fixture",
+      Buffer.concat([Buffer.from("ED"), keyId, signature]).toString("base64"),
+      "trusted comment: " + trusted,
+      global.toString("base64"),
+      "",
+    ].join("\n"),
+  };
+}
 const root = import.meta.dirname;
 writeFileSync(join(root, "package.json"), pkg);
-writeFileSync(
-  join(root, "catalog.json"),
-  JSON.stringify(envelope, null, 2) + "\n",
-);
+// 历史 / 未来协议故意不满足当前 DTO，以验证版本诊断发生在验签后、
+// 完整反序列化之前；此处所有签名仍只使用上面的固定测试密钥。
+const { issuedAt: _issuedAt, expiresAt: _expiresAt, ...legacy } = catalog;
+for (const [filename, value] of [
+  ["catalog.json", catalog],
+  ["catalog-schema-1.json", { ...legacy, schemaVersion: 1 }],
+  ["catalog-schema-99.json", { schemaVersion: 99, futureFormat: true }],
+]) {
+  writeFileSync(
+    join(root, filename),
+    JSON.stringify(signedEnvelope(value), null, 2) + "\n",
+  );
+}
 writeFileSync(
   join(root, "public-key.txt"),
   Buffer.concat([Buffer.from("Ed"), keyId, raw]).toString("base64") + "\n",

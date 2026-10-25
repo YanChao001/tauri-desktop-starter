@@ -106,7 +106,7 @@ export function ExtensionMarket({
           {t("ext.market.loading")}
         </p>
       ) : null}
-      {snapshot?.stale ? (
+      {snapshot && (snapshot.stale || error) ? (
         <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">
           {t("ext.market.stale")}
         </p>

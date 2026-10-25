@@ -33,6 +33,8 @@ pub enum ErrorCode {
     ExtensionUnavailable,
     MarketNotConfigured,
     MarketUnavailable,
+    MarketIncompatible,
+    MarketExpired,
     MarketInvalid,
     MarketChanged,
     Internal,

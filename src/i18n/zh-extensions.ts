@@ -62,6 +62,10 @@ export const zhExtensions = {
   "ext.market.unavailable":
     "暂时无法连接插件市场，请检查网络后刷新。已安装扩展仍可使用。",
   "ext.market.invalid": "市场目录或扩展包校验失败，未安装或修改任何扩展。",
+  "ext.market.incompatible":
+    "已验签的市场目录协议与当前应用不兼容。需要市场维护者发布匹配的目录，或使用支持该目录的应用版本。已安装扩展和本地扩展包导入仍可使用。",
+  "ext.market.expired":
+    "已验签的市场目录已过期。需要市场维护者续签并发布更高修订号的目录，再刷新市场。已安装扩展和本地扩展包导入仍可使用。",
   "ext.market.changed": "该市场版本已变更或下架，请刷新目录后重新选择。",
   "ext.fieldLimit":
     "每个字段最多输入 {bytes} 个 UTF-8 字节，请缩短内容后再执行。",

@@ -196,9 +196,15 @@ struct VerifiedCatalog {
     valid_for: Duration,
 }
 impl VerifiedCatalog {
+    fn require_current(&self, now: Instant, wall_now: u64) -> NativeResult<()> {
+        validate_catalog_time(&self.catalog, wall_now)?;
+        if now.saturating_duration_since(self.verified_at) >= self.valid_for {
+            return Err(failure(ErrorCode::MarketExpired));
+        }
+        Ok(())
+    }
     fn is_valid(&self, now: Instant, wall_now: u64) -> bool {
-        now.saturating_duration_since(self.verified_at) < self.valid_for
-            && valid_catalog_time(&self.catalog, wall_now)
+        self.require_current(now, wall_now).is_ok()
     }
     fn is_fresh(&self, now: Instant, wall_now: u64) -> bool {
         self.is_valid(now, wall_now)
@@ -217,6 +223,10 @@ impl VerifiedCatalog {
 fn failure(code: ErrorCode) -> NativeError {
     let message = match code {
         ErrorCode::MarketNotConfigured => "Extension market is not configured",
+        ErrorCode::MarketIncompatible => {
+            "Signed extension market catalog uses an unsupported version"
+        }
+        ErrorCode::MarketExpired => "Signed extension market catalog has expired",
         ErrorCode::MarketInvalid => "Extension market verification failed",
         ErrorCode::MarketChanged => "Extension market changed; refresh before downloading",
         _ => "Extension market is unavailable",
@@ -244,12 +254,18 @@ fn now_seconds() -> NativeResult<u64> {
         .map(|duration| duration.as_secs())
         .map_err(|_| failure(ErrorCode::MarketInvalid))
 }
-fn valid_catalog_time(catalog: &MarketCatalog, now: u64) -> bool {
-    catalog.issued_at > 0
-        && catalog.issued_at <= now.saturating_add(FUTURE_TOLERANCE)
-        && catalog.expires_at > now
-        && catalog.expires_at > catalog.issued_at
-        && catalog.expires_at - catalog.issued_at <= SIGNATURE_LIFETIME
+fn validate_catalog_time(catalog: &MarketCatalog, now: u64) -> NativeResult<()> {
+    if catalog.issued_at == 0
+        || catalog.issued_at > now.saturating_add(FUTURE_TOLERANCE)
+        || catalog.expires_at <= catalog.issued_at
+        || catalog.expires_at - catalog.issued_at > SIGNATURE_LIFETIME
+    {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    if catalog.expires_at <= now {
+        return Err(failure(ErrorCode::MarketExpired));
+    }
+    Ok(())
 }
 fn verify_catalog(bytes: &[u8], config: &MarketConfig) -> NativeResult<VerifiedCatalog> {
     verify_catalog_at(bytes, config, now_seconds()?)
@@ -278,12 +294,22 @@ fn verify_catalog_at(
         Signature::decode(&signed.signature).map_err(|_| failure(ErrorCode::MarketInvalid))?;
     key.verify(&payload, &signature, false)
         .map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    // 只有验签后的版本字段可用于兼容性诊断；先识别版本，避免旧版或未来
+    // DTO 缺失当前字段时被误报为完整性校验失败。
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CatalogVersion {
+        schema_version: u32,
+    }
+    let version: CatalogVersion =
+        serde_json::from_slice(&payload).map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    if version.schema_version != 2 {
+        return Err(failure(ErrorCode::MarketIncompatible));
+    }
     let catalog: MarketCatalog =
         serde_json::from_slice(&payload).map_err(|_| failure(ErrorCode::MarketInvalid))?;
     validate_catalog(&catalog, config)?;
-    if !valid_catalog_time(&catalog, now) {
-        return Err(failure(ErrorCode::MarketInvalid));
-    }
+    validate_catalog_time(&catalog, now)?;
     let valid_for = Duration::from_secs(catalog.expires_at - now);
     Ok(VerifiedCatalog {
         catalog,
@@ -295,8 +321,10 @@ fn verify_catalog_at(
     })
 }
 fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeResult<()> {
-    if catalog.schema_version != 2
-        || catalog.revision == 0
+    if catalog.schema_version != 2 {
+        return Err(failure(ErrorCode::MarketIncompatible));
+    }
+    if catalog.revision == 0
         || !catalog.repository.eq_ignore_ascii_case(&config.repository)
         || catalog.entries.len() > 100
     {
@@ -748,13 +776,9 @@ impl ExtensionMarket {
             entry.package_bytes as usize,
         )
         .await?;
-        if !catalog.is_valid(Instant::now(), now_seconds()?) {
-            return Err(failure(ErrorCode::MarketInvalid));
-        }
+        catalog.require_current(Instant::now(), now_seconds()?)?;
         let download = blocking::run(move || verify_package(&bytes, &entry, source)).await?;
-        if !catalog.is_valid(Instant::now(), now_seconds()?) {
-            return Err(failure(ErrorCode::MarketInvalid));
-        }
+        catalog.require_current(Instant::now(), now_seconds()?)?;
         Ok(download)
     }
     pub async fn verify_install_source(
@@ -775,9 +799,7 @@ impl ExtensionMarket {
         let source =
             blocking::run(move || verify_install(&current, &content, &expected_sha256, &source))
                 .await?;
-        if !catalog.is_valid(Instant::now(), now_seconds()?) {
-            return Err(failure(ErrorCode::MarketInvalid));
-        }
+        catalog.require_current(Instant::now(), now_seconds()?)?;
         Ok(source)
     }
 }
@@ -786,6 +808,10 @@ impl ExtensionMarket {
 mod tests {
     use super::*;
     const SIGNED: &[u8] = include_bytes!("../test-fixtures/extension-market/catalog.json");
+    const SIGNED_SCHEMA_1: &[u8] =
+        include_bytes!("../test-fixtures/extension-market/catalog-schema-1.json");
+    const SIGNED_SCHEMA_99: &[u8] =
+        include_bytes!("../test-fixtures/extension-market/catalog-schema-99.json");
     const PACKAGE: &[u8] = include_bytes!("../test-fixtures/extension-market/package.json");
     const TEST_NOW: u64 = 1_800_000_000;
     fn verified() -> VerifiedCatalog {
@@ -876,6 +902,84 @@ mod tests {
         assert!(verify_catalog(&vec![b' '; CATALOG_LIMIT + 1], &config()).is_err());
     }
     #[test]
+    fn only_verified_catalog_versions_report_incompatibility() {
+        for signed in [SIGNED_SCHEMA_1, SIGNED_SCHEMA_99] {
+            let error = verify_catalog_at(signed, &config(), TEST_NOW)
+                .err()
+                .unwrap();
+            assert_eq!(error.code, ErrorCode::MarketIncompatible);
+            assert!(!error.retryable);
+        }
+        // 未来或历史版本必须先通过同一固定公钥验签，不能依据篡改的
+        // schemaVersion 把坏签名伪装成可通过升级 / 重发解决的兼容问题。
+        let mut signed: serde_json::Value = serde_json::from_slice(SIGNED).unwrap();
+        let mut payload: serde_json::Value = serde_json::from_slice(
+            &STANDARD
+                .decode(signed["payload"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        payload["schemaVersion"] = 99.into();
+        signed["payload"] = STANDARD
+            .encode(serde_json::to_vec(&payload).unwrap())
+            .into();
+        let error = verify_catalog_at(&serde_json::to_vec(&signed).unwrap(), &config(), TEST_NOW)
+            .err()
+            .unwrap();
+        assert_eq!(error.code, ErrorCode::MarketInvalid);
+        assert!(!error.retryable);
+
+        let mut signed: serde_json::Value = serde_json::from_slice(SIGNED_SCHEMA_99).unwrap();
+        signed["signature"] = "invalid signature".into();
+        let error = verify_catalog_at(&serde_json::to_vec(&signed).unwrap(), &config(), TEST_NOW)
+            .err()
+            .unwrap();
+        assert_eq!(error.code, ErrorCode::MarketInvalid);
+        assert!(!error.retryable);
+    }
+    #[test]
+    fn expired_verified_catalogs_report_expiry_without_relaxing_other_time_checks() {
+        assert!(verify_catalog_at(SIGNED, &config(), TEST_NOW).is_ok());
+        for now in [TEST_NOW + 3600, TEST_NOW + 3601] {
+            let error = verify_catalog_at(SIGNED, &config(), now).err().unwrap();
+            assert_eq!(error.code, ErrorCode::MarketExpired);
+            assert!(!error.retryable);
+        }
+        let error = verify_catalog_at(SIGNED, &config(), TEST_NOW - FUTURE_TOLERANCE - 1)
+            .err()
+            .unwrap();
+        assert_eq!(error.code, ErrorCode::MarketInvalid);
+        assert!(!error.retryable);
+        let mut catalog = verified().catalog;
+        catalog.expires_at = catalog.issued_at;
+        assert_eq!(
+            validate_catalog_time(&catalog, TEST_NOW + 3600)
+                .unwrap_err()
+                .code,
+            ErrorCode::MarketInvalid
+        );
+        catalog.expires_at = catalog.issued_at + SIGNATURE_LIFETIME + 1;
+        assert_eq!(
+            validate_catalog_time(&catalog, catalog.expires_at + 1)
+                .unwrap_err()
+                .code,
+            ErrorCode::MarketInvalid
+        );
+    }
+    #[test]
+    fn market_error_retryability_is_explicit() {
+        for (code, retryable) in [
+            (ErrorCode::MarketNotConfigured, false),
+            (ErrorCode::MarketUnavailable, true),
+            (ErrorCode::MarketIncompatible, false),
+            (ErrorCode::MarketExpired, false),
+            (ErrorCode::MarketInvalid, false),
+            (ErrorCode::MarketChanged, true),
+        ] {
+            assert_eq!(failure(code).retryable, retryable, "{code:?}");
+        }
+    }
+    #[test]
     fn cache_expiration_uses_elapsed_time_instead_of_wall_clock() {
         let mut cached = verified();
         cached.fetched_at = 0.0;
@@ -883,8 +987,22 @@ mod tests {
         cached.fetched_at = f64::MAX;
         assert!(!cached.is_fresh(cached.verified_at + CACHE_DURATION, TEST_NOW));
         assert!(!cached.is_valid(cached.verified_at, cached.catalog.expires_at));
+        assert_eq!(
+            cached
+                .require_current(cached.verified_at, cached.catalog.expires_at)
+                .unwrap_err()
+                .code,
+            ErrorCode::MarketExpired
+        );
         // 时钟回拨也不能延长本次已验证签名的剩余寿命。
         assert!(!cached.is_valid(cached.verified_at + cached.valid_for, TEST_NOW));
+        assert_eq!(
+            cached
+                .require_current(cached.verified_at + cached.valid_for, TEST_NOW)
+                .unwrap_err()
+                .code,
+            ErrorCode::MarketExpired
+        );
     }
     #[test]
     fn signed_catalogs_require_bounded_current_validity() {
@@ -893,9 +1011,9 @@ mod tests {
         assert!(verify_catalog_at(SIGNED, &config(), TEST_NOW + 3600).is_err());
         let mut catalog = verified().catalog;
         catalog.expires_at = catalog.issued_at;
-        assert!(!valid_catalog_time(&catalog, TEST_NOW));
+        assert!(validate_catalog_time(&catalog, TEST_NOW).is_err());
         catalog.expires_at = catalog.issued_at + SIGNATURE_LIFETIME + 1;
-        assert!(!valid_catalog_time(&catalog, TEST_NOW));
+        assert!(validate_catalog_time(&catalog, TEST_NOW).is_err());
     }
     #[test]
     fn trust_watermark_survives_restart_and_is_scoped_to_repository_and_key() {

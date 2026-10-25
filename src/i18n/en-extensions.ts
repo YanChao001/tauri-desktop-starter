@@ -63,6 +63,10 @@ export const enExtensions = {
     "This app has no official market configured. Import a local extension package instead.",
   "ext.market.unavailable":
     "The plugin market is unavailable. Check your connection and refresh. Installed extensions remain available.",
+  "ext.market.incompatible":
+    "The signed market catalog uses a protocol this app does not support. The market maintainer needs to publish a compatible catalog, or you need an app version that supports it. Installed extensions and local package imports remain available.",
+  "ext.market.expired":
+    "The signed market catalog has expired. The market maintainer needs to sign and publish a renewed catalog with a higher revision; then refresh the market. Installed extensions and local package imports remain available.",
   "ext.market.invalid":
     "Market catalog or package verification failed. No extensions were installed or changed.",
   "ext.market.changed":

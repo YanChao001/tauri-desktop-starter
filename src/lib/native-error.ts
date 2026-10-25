@@ -4,6 +4,8 @@ import { isRecord } from "./settings-model";
 const ERROR_KEYS: Record<string, MessageKey> = {
   MARKET_NOT_CONFIGURED: "ext.market.notConfigured",
   MARKET_UNAVAILABLE: "ext.market.unavailable",
+  MARKET_INCOMPATIBLE: "ext.market.incompatible",
+  MARKET_EXPIRED: "ext.market.expired",
   MARKET_INVALID: "ext.market.invalid",
   MARKET_CHANGED: "ext.market.changed",
   EXTENSION_INCOMPATIBLE: "ext.error.incompatible",
