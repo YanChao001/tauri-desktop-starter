@@ -209,6 +209,8 @@ export const commands = {
         expectedGeneration,
       }),
     ),
+  openExtensionCenter: () =>
+    typedError<null, NativeError>(__TAURI_INVOKE("open_extension_center")),
   greet: (name: string, language: string | null) =>
     typedError<string, NativeError>(
       __TAURI_INVOKE("greet", { name, language }),

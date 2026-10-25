@@ -28,7 +28,6 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-http = "2"
-tauri-plugin-shell = "2"
 tauri-plugin-window-state = "2"
 # 正式构建默认不显示控制台，文件日志用于定位运行问题
 tauri-plugin-log = "2"

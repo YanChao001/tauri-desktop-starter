@@ -84,7 +84,7 @@ export const enExtensions = {
   "ext.appStatus": "Execution status",
   "ext.appExport": "Export session",
   "ext.appClose": "End session",
-  "ext.sessionTools": "Session tools",
+  "ext.sessionTools": "Extension tools",
   "ext.appCloseTitle": "End this session?",
   "ext.appCloseDescription":
     "Current inputs, progress and results have not been exported. Ending this session clears them. Saved plugin private data is retained. Export the session first or discard this progress.",
@@ -159,8 +159,6 @@ export const enExtensions = {
   "ext.urlHint":
     "Sending a URL asks the host for one GET to a declared origin. Plugins can make further authorized HTTP requests through the host broker; credentials are scoped to configured origins and aliases.",
   "ext.run": "Run extension",
-  "ext.runHint":
-    "Commands enter a bounded queue with up to two active runs. Wasm execution has memory, compute and time budgets; compilation can take longer. Each operation uses a fresh instance.",
   "ext.stop": "Request stop",
   "ext.stopping": "Waiting for the extension to stop…",
   "ext.output": "Result",

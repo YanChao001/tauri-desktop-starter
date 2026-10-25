@@ -1,5 +1,4 @@
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -46,24 +45,9 @@ import {
 } from "@/lib/tauri";
 import { useSettings } from "@/providers/settings";
 import { APP_ROUTES } from "@/routes";
+import { CommandsContext } from "./commands-context";
 
-type CommandsContextValue = {
-  commands: AppCommand[];
-  execute: (id: string, invocation?: CommandInvocation) => Promise<boolean>;
-  register: (commands: readonly AppCommand[]) => () => void;
-  paletteOpen: boolean;
-  setPaletteOpen: (open: boolean) => void;
-  aboutOpen: boolean;
-  setAboutOpen: (open: boolean) => void;
-  fullscreen: boolean;
-};
-
-const CommandsContext = createContext<CommandsContextValue | null>(null);
 const STANDALONE_COMMANDS = new Set([
-  "toggle-theme",
-  "theme-light",
-  "theme-dark",
-  "theme-system",
   "minimize-window",
   "toggle-maximize",
   "close-window",
@@ -312,7 +296,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
     const result = new Map(builtins.map((command) => [command.id, command]));
     for (const registration of extensions.values())
       for (const command of registration) result.set(command.id, command);
-    // 独立会话只暴露自身的窗口与外观操作，避免快捷键把它导航到宿主页面。
+    // 独立会话只保留基础窗口操作，避免快捷键改变宿主偏好或导航到宿主页面。
     return [...result.values()].filter(
       (command) => !standalone || STANDALONE_COMMANDS.has(command.id),
     );

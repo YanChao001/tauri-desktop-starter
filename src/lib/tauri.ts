@@ -110,6 +110,9 @@ export function viewExtension(
 ): Promise<ExtensionView> {
   return callNative((commands) => commands.viewExtension(input));
 }
+export async function openExtensionCenter(): Promise<void> {
+  await callNative((commands) => commands.openExtensionCenter());
+}
 export async function openExtensionWindow(
   id: string,
   commandId: string,

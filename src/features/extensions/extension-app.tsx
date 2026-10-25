@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
 import { useUnsavedWork } from "@/providers/unsaved-work";
@@ -29,6 +29,7 @@ import {
 import { ExtensionData } from "./extension-data";
 import { useExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS } from "./control-styles";
+import { ExtensionFrame } from "./extension-frame";
 
 /** The renderer has no calculator/game rules. Every action runs the declared Wasm export. */
 export function ExtensionApp({
@@ -37,12 +38,14 @@ export function ExtensionApp({
   runs,
   onClose,
   onSettled,
+  tools,
 }: {
   item: ExtensionInfo;
   commandId: string;
   runs: ExtensionSnapshot["runs"];
   onClose: () => void;
   onSettled: () => Promise<void>;
+  tools?: ReactNode;
 }) {
   const { t, language } = useI18n();
   const manifest = item.package.manifest;
@@ -377,171 +380,169 @@ export function ExtensionApp({
   );
   return (
     <section className="min-w-0 space-y-5" hidden={closed}>
-      <div className="min-w-0 space-y-5" aria-busy={busy}>
-        {view ? (
+      <ExtensionFrame
+        item={item}
+        feedback={feedback}
+        tools={
           <>
-            <div className="min-w-0 space-y-2">
-              <div className="flex items-start justify-between gap-3">
-                <output
-                  className="block min-w-0 flex-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-2xl font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-live="polite"
-                  aria-label={t("ext.output")}
-                  tabIndex={0}
-                >
-                  {view.display}
-                </output>
-                {feedback}
-              </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {view.description}
-              </p>
-            </div>
-            <ViewRenderer
-              view={view}
-              fields={fields}
+            {tools}{" "}
+            <ExtensionData
+              item={item}
+              blocked={blocked || invalidFields.size > 0}
+              session={session}
+              onDirty={() => setDirty(true)}
+              onPickingChange={(value) => {
+                if (alive.current) setPicking(value);
+              }}
+              onSend={(data) => run("host-data", data)}
+            />
+            <ExtensionSessionImport
+              item={item}
+              commandId={commandId}
+              kind="view"
               blocked={blocked}
-              invalidFields={invalidFields}
-              onAction={run}
-              onField={(id, value) => {
-                const next = { ...latestFields.current, [id]: value };
-                latestFields.current = next;
-                session.fields = next;
+              onError={(reason) => {
+                if (alive.current) setError(reason);
+              }}
+              onPending={(pending, completed) => {
+                if (pending !== null || session.selecting === completed) {
+                  session.selecting = pending;
+                  if (alive.current) setPicking(pending !== null);
+                }
+              }}
+              onRestore={(imported: ExtensionSessionExport) => {
+                latest.current = imported.view;
+                latestFields.current = imported.fields;
+                session.view = imported.view;
+                session.fields = imported.fields;
+                session.draft = {
+                  inputText: imported.inputText,
+                  url: imported.url,
+                  files: [],
+                };
                 session.dirty = true;
-                setFields(next);
+                setView(imported.view);
+                setFields(imported.fields);
                 setDirty(true);
+                setError(null);
               }}
             />
-          </>
-        ) : (
-          <>
-            {feedback}
-            <Button
-              disabled={blocked || !item.enabled}
-              data-operation-locked={blocked && item.enabled}
-              className={LOCKED_CONTROL_CLASS}
-              onClick={() => run(null)}
-            >
-              {t("ext.appLoad")}
-            </Button>
-          </>
-        )}
-      </div>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {nativeErrorText(error, t)}
-        </p>
-      ) : null}
-      {view?.artifacts?.length ? (
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium">{t("ext.artifacts")}</h4>
-          <div className="flex flex-wrap gap-2">
-            {view.artifacts.map((artifact) => (
+            <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button
-                key={artifact.name}
                 variant="outline"
-                disabled={blocked}
-                onClick={() => {
-                  if (session.exporting || session.pending) return;
-                  setSaving(true);
-                  const saving = saveExtensionArtifact(
-                    manifest.id,
-                    item.package.sha256,
-                    item.generation,
-                    artifact,
-                  )
-                    .then(() => {})
-                    .catch((reason: unknown) => {
-                      if (alive.current) setError(reason);
-                    })
-                    .finally(() => {
-                      session.exporting = null;
-                      if (alive.current) setSaving(false);
-                    });
-                  session.exporting = saving;
-                }}
+                disabled={saving || stopping || picking || !view}
+                data-operation-locked={
+                  (saving || stopping || picking) && view !== null
+                }
+                className={LOCKED_CONTROL_CLASS}
+                title={t("ext.appExportHint")}
+                onClick={() =>
+                  void save().catch((reason: unknown) => {
+                    if (alive.current) setError(reason);
+                  })
+                }
               >
-                {t("ext.saveArtifact", { name: artifact.name })}
+                {t("ext.appExport")}
               </Button>
-            ))}
-          </div>
+              <ExtensionSessionClose
+                dirty={dirty || session.dirty}
+                busy={busy}
+                disabled={saving || stopping || picking}
+                onSave={save}
+                onClose={close}
+              />
+            </div>
+          </>
+        }
+      >
+        <div className="min-w-0 space-y-5" aria-busy={busy}>
+          {view ? (
+            <>
+              <div className="min-w-0 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <output
+                    className="block min-w-0 flex-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-2xl font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-live="polite"
+                    aria-label={t("ext.output")}
+                    tabIndex={0}
+                  >
+                    {view.display}
+                  </output>
+                </div>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {view.description}
+                </p>
+              </div>
+              <ViewRenderer
+                view={view}
+                fields={fields}
+                blocked={blocked}
+                invalidFields={invalidFields}
+                onAction={run}
+                onField={(id, value) => {
+                  const next = { ...latestFields.current, [id]: value };
+                  latestFields.current = next;
+                  session.fields = next;
+                  session.dirty = true;
+                  setFields(next);
+                  setDirty(true);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <Button
+                disabled={blocked || !item.enabled}
+                data-operation-locked={blocked && item.enabled}
+                className={LOCKED_CONTROL_CLASS}
+                onClick={() => run(null)}
+              >
+                {t("ext.appLoad")}
+              </Button>
+            </>
+          )}
         </div>
-      ) : null}
-      <details className="min-w-0 rounded-xl border bg-card p-4">
-        <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {t("ext.sessionTools")}
-        </summary>
-        <div className="mt-4 space-y-4">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {t("ext.appSessionHint")}
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {nativeErrorText(error, t)}
           </p>
-          <ExtensionData
-            item={item}
-            blocked={blocked || invalidFields.size > 0}
-            session={session}
-            onDirty={() => setDirty(true)}
-            onPickingChange={(value) => {
-              if (alive.current) setPicking(value);
-            }}
-            onSend={(data) => run("host-data", data)}
-          />
-          <ExtensionSessionImport
-            item={item}
-            commandId={commandId}
-            kind="view"
-            blocked={blocked}
-            onError={(reason) => {
-              if (alive.current) setError(reason);
-            }}
-            onPending={(pending, completed) => {
-              if (pending !== null || session.selecting === completed) {
-                session.selecting = pending;
-                if (alive.current) setPicking(pending !== null);
-              }
-            }}
-            onRestore={(imported: ExtensionSessionExport) => {
-              latest.current = imported.view;
-              latestFields.current = imported.fields;
-              session.view = imported.view;
-              session.fields = imported.fields;
-              session.draft = {
-                inputText: imported.inputText,
-                url: imported.url,
-                files: [],
-              };
-              session.dirty = true;
-              setView(imported.view);
-              setFields(imported.fields);
-              setDirty(true);
-              setError(null);
-            }}
-          />
-          <div className="flex flex-wrap gap-2 border-t pt-4">
-            <Button
-              variant="outline"
-              disabled={saving || stopping || picking || !view}
-              data-operation-locked={
-                (saving || stopping || picking) && view !== null
-              }
-              className={LOCKED_CONTROL_CLASS}
-              title={t("ext.appExportHint")}
-              onClick={() =>
-                void save().catch((reason: unknown) => {
-                  if (alive.current) setError(reason);
-                })
-              }
-            >
-              {t("ext.appExport")}
-            </Button>
-            <ExtensionSessionClose
-              dirty={dirty || session.dirty}
-              busy={busy}
-              disabled={saving || stopping || picking}
-              onSave={save}
-              onClose={close}
-            />
+        ) : null}
+        {view?.artifacts?.length ? (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">{t("ext.artifacts")}</h4>
+            <div className="flex flex-wrap gap-2">
+              {view.artifacts.map((artifact) => (
+                <Button
+                  key={artifact.name}
+                  variant="outline"
+                  disabled={blocked}
+                  onClick={() => {
+                    if (session.exporting || session.pending) return;
+                    setSaving(true);
+                    const saving = saveExtensionArtifact(
+                      manifest.id,
+                      item.package.sha256,
+                      item.generation,
+                      artifact,
+                    )
+                      .then(() => {})
+                      .catch((reason: unknown) => {
+                        if (alive.current) setError(reason);
+                      })
+                      .finally(() => {
+                        session.exporting = null;
+                        if (alive.current) setSaving(false);
+                      });
+                    session.exporting = saving;
+                  }}
+                >
+                  {t("ext.saveArtifact", { name: artifact.name })}
+                </Button>
+              ))}
+            </div>
           </div>
-        </div>
-      </details>
+        ) : null}
+      </ExtensionFrame>
     </section>
   );
 }

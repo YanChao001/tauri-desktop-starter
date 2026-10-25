@@ -77,7 +77,7 @@ export function extensionNavigation(
         path: extensionPath(manifest.id, command.id),
         labelKey: "ext.title" as const,
         label:
-          manifest.commands.length === 1
+          manifest.commands.filter((entry) => entry.ui?.sidebar).length === 1
             ? manifest.name
             : `${manifest.name}: ${command.title}`,
         icon: PuzzleIcon,

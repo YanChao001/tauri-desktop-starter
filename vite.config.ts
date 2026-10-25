@@ -61,6 +61,7 @@ export default defineConfig(({ mode }) => ({
         "**/dist/**",
         "**/dist-web/**",
         "**/coverage/**",
+        "**/.cache/**",
       ],
     },
   },

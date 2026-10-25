@@ -19,8 +19,7 @@ fn window_config(mut config: WindowConfig, id: &str, command: &str, title: Strin
     config.label = label(id, command);
     config.url = WebviewUrl::App(format!("index.html#/extension-window/{id}/{command}").into());
     config.title = title;
-    config.width = 1000.0;
-    config.height = 760.0;
+    // 初始尺寸沿用主窗口配置；后续由统一几何服务按窗口记忆并适配显示器。
     config.min_width = Some(360.0);
     config.min_height = Some(480.0);
     // 平台装饰继承主窗口；前端复用自绘标题栏，macOS 保留 Overlay 红绿灯。
@@ -106,6 +105,22 @@ pub async fn open_extension_window(
     .await
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn open_extension_center(app: tauri::AppHandle) -> NativeResult<()> {
+    use tauri::Emitter;
+    app.emit_to("main", "app://workspace-route", "/extensions")
+        .map_err(|error| {
+            NativeError::operation(
+                ErrorCode::WindowError,
+                "Cannot open extension center",
+                error,
+            )
+        })?;
+    crate::desktop::request_show_main(&app);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +151,8 @@ mod tests {
                 config.resizable && config.minimizable && config.maximizable && config.closable
             );
             assert_eq!(config.title, "Lab");
+            assert_eq!(actual["width"], main["width"]);
+            assert_eq!(actual["height"], main["height"]);
             assert_eq!(
                 config.url,
                 WebviewUrl::App("index.html#/extension-window/starter.lab/open".into())

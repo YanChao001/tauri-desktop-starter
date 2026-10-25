@@ -30,6 +30,7 @@ export function AppShell() {
   const { data } = useExtensions();
   const extensionRoutes = extensionNavigation(data?.items ?? []);
   const dynamicRoute = extensionRoutes.find((route) => route.path === pathname);
+  const extensionSurface = pathname.startsWith("/extensions/app/");
   const current = dynamicRoute ?? matchRoute(pathname);
   const group =
     NAVIGATION_GROUPS.find(({ id }) => id === current.group) ??
@@ -93,24 +94,26 @@ export function AppShell() {
       <AppSidebar routes={routes} />
       <main ref={content} className="app-main app-scroll-region" tabIndex={-1}>
         <div className="app-page-content">
-          <nav
-            aria-label={t("navContext.location")}
-            className="app-route-context"
-          >
-            <ol>
-              <li className="app-route-context-group">
-                <span className="app-route-context-dot" aria-hidden="true" />
-                {t(group.labelKey)}
-              </li>
-              <li aria-hidden="true">
-                <ChevronRightIcon />
-              </li>
-              <li aria-current="page">
-                {dynamicRoute?.label ?? t(current.labelKey)}
-              </li>
-            </ol>
-          </nav>
-          <JourneyGuide />
+          {!extensionSurface ? (
+            <nav
+              aria-label={t("navContext.location")}
+              className="app-route-context"
+            >
+              <ol>
+                <li className="app-route-context-group">
+                  <span className="app-route-context-dot" aria-hidden="true" />
+                  {t(group.labelKey)}
+                </li>
+                <li aria-hidden="true">
+                  <ChevronRightIcon />
+                </li>
+                <li aria-current="page">
+                  {dynamicRoute?.label ?? t(current.labelKey)}
+                </li>
+              </ol>
+            </nav>
+          ) : null}
+          {!extensionSurface ? <JourneyGuide /> : null}
           <Suspense
             fallback={
               <div

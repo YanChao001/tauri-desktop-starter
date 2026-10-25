@@ -160,17 +160,17 @@ describe("TitleBar 窗口订阅", () => {
     expect(screen.getByRole("button", { name: "title.file" })).toBeVisible();
   });
 
-  it("keeps theme, language and native controls available in a standalone window", () => {
+  it("keeps only native controls in a standalone window", () => {
     vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
     renderTitleBar(true);
     expect(screen.queryByRole("button", { name: "title.file" })).toBeNull();
     expect(screen.queryByRole("button", { name: "commands.open" })).toBeNull();
     expect(
-      screen.getByRole("button", { name: "title.toggleTheme" }),
-    ).toBeVisible();
+      screen.queryByRole("button", { name: "title.toggleTheme" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "common.language" }),
-    ).toBeVisible();
+      screen.queryByRole("combobox", { name: "common.language" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "title.minimize" }));
     fireEvent.click(screen.getByRole("button", { name: "title.maximize" }));
     fireEvent.click(screen.getByRole("button", { name: "title.close" }));

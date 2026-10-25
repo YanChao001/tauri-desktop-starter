@@ -387,7 +387,6 @@ export function ExtensionRunner({
       aria-label={t("ext.runner")}
     >
       <h3 className="font-semibold">{t("ext.runner")}</h3>
-      <p className="text-sm text-muted-foreground">{t("ext.runHint")}</p>
       {choices.length ? (
         <div className="space-y-2">
           <Label htmlFor={`${id}-extension`}>{t("ext.choose")}</Label>

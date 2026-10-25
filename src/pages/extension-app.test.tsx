@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import * as native from "@/lib/tauri";
 import { ExtensionsProvider } from "@/features/extensions/extensions-provider";
 import { AppShell } from "@/layouts/app-shell";
@@ -22,6 +22,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   onExtensionsChanged: vi.fn(),
   viewExtension: vi.fn(),
   openExtensionWindow: vi.fn(),
+  openExtensionCenter: vi.fn(),
   closeWindow: vi.fn(),
   saveTextExport: vi.fn(),
   setWindowWorkState: vi.fn(),
@@ -124,7 +125,7 @@ function workspace(standalone = false) {
         <ExtensionsProvider>
           <MemoryRouter initialEntries={["/extensions/app/example.lab/open"]}>
             <Routes>
-              <Route element={<AppShell />}>
+              <Route element={standalone ? <Outlet /> : <AppShell />}>
                 <Route
                   path="/extensions/app/:extensionId/:commandId"
                   element={<ExtensionPage standalone={standalone} />}
@@ -152,6 +153,11 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   fireEvent.click(link);
   expect(await screen.findByLabelText("Draft")).toHaveValue("Keep this edit");
   expect(native.viewExtension).toHaveBeenCalledOnce();
+  expect(document.querySelector(".app-route-context")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Open in separate window" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Open in separate window" }),
   );
@@ -163,6 +169,18 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
       item.generation,
     ),
   );
+});
+
+it("uses the same tools entry in standalone mode and opens the center in the main window", async () => {
+  vi.mocked(native.openExtensionCenter).mockResolvedValue(undefined);
+  workspace(true);
+  await screen.findByLabelText("Draft");
+  fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
+  fireEvent.click(screen.getByRole("button", { name: "Extensions" }));
+  await waitFor(() =>
+    expect(native.openExtensionCenter).toHaveBeenCalledOnce(),
+  );
+  expect(native.closeWindow).not.toHaveBeenCalled();
 });
 
 it("starts a fresh view session when the installation changes without changing the module hash or version", async () => {
@@ -187,7 +205,7 @@ it("closes an unavailable standalone entry without navigating into the host appl
   workspace(true);
   await screen.findByText(/This extension is disabled/);
   expect(
-    screen.queryByRole("link", { name: "Extension center" }),
+    screen.queryByRole("link", { name: "Extensions" }),
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   await waitFor(() => expect(native.closeWindow).toHaveBeenCalledOnce());
@@ -234,6 +252,7 @@ it("keeps an edited session mounted and exportable when a snapshot refresh fails
   expect(draft).toHaveValue("Keep through snapshot failure");
   expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Lab app"]);
   expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
   fireEvent.click(screen.getByRole("button", { name: "Export session" }));
   await waitFor(() =>
     expect(native.saveTextExport).toHaveBeenCalledWith(

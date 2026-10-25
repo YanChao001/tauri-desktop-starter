@@ -87,6 +87,18 @@ export default function Extensions() {
   const [grants, setGrants] = useState<ExtensionPermission[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const tab = search.get("tab") === "discover" ? "discover" : "installed";
+  const requestedExtension = search.get("extension") ?? "";
+  const [runnerOpened, setRunnerOpened] = useState(!!requestedExtension);
+  useEffect(() => {
+    if (!requestedExtension) return;
+    setRunnerOpened(true);
+    const frame = requestAnimationFrame(() =>
+      document
+        .getElementById("extension-runner")
+        ?.scrollIntoView({ block: "start" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [requestedExtension]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -405,13 +417,7 @@ export default function Extensions() {
               {t("ext.docs")}
             </ExternalLink>
           </section>
-          {data &&
-          (data.items.length === 0 ||
-            data.items.some((item) =>
-              item.package.manifest.commands.some(
-                (command) => command.resultFormat !== "view",
-              ),
-            )) ? (
+          {data && runnerOpened ? (
             <div id="extension-runner">
               <ExtensionRunner
                 items={data.items}

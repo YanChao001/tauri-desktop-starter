@@ -207,6 +207,28 @@ function Location() {
   return <p data-testid="location">{location.pathname + location.search}</p>;
 }
 
+it("keeps the generic command runner out of the center until a tool is explicitly opened", async () => {
+  snapshot = {
+    revision: 1,
+    runs: [],
+    items: [
+      {
+        package: preview,
+        generation: 1,
+        enabled: true,
+        grantedPermissions: ["text:read"],
+        origin: { kind: "local" },
+      },
+    ],
+  };
+  marketPage();
+  await screen.findByRole("button", { name: "Disable" });
+  expect(document.getElementById("extension-runner")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  await screen.findByRole("heading", { name: "Run a tool" });
+  expect(document.getElementById("extension-runner")).toBeVisible();
+});
+
 const marketEntry: native.MarketEntry = {
   package: { ...preview, manifest: { ...preview.manifest, version: "1.10.0" } },
   category: "text",

@@ -5,12 +5,15 @@ import { useTheme } from "next-themes";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
 import { ExtensionApp } from "@/features/extensions/extension-app";
-import { ExtensionIcon } from "@/features/extensions/extension-icon";
 import { useExtensions } from "@/features/extensions/extensions-provider";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { canRunExtensionCommand } from "@/features/extensions/extension-model";
-import { closeWindow, openExtensionWindow } from "@/lib/tauri";
+import {
+  closeWindow,
+  openExtensionCenter,
+  openExtensionWindow,
+} from "@/lib/tauri";
 
 export function ExtensionPage({
   standalone = false,
@@ -54,49 +57,48 @@ export function ExtensionPage({
         <p role="status">{t("common.loading")}</p>
       ) : item && command ? (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
-              {!standalone ? (
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/extensions">
-                    <ArrowLeftIcon className="size-4" />
-                    {t("ext.title")}
-                  </Link>
-                </Button>
-              ) : null}
-              <span className="shrink-0 rounded-xl bg-primary/10 p-2 text-primary">
-                <ExtensionIcon name={item.package.manifest.icon} />
-              </span>
-              <h2 className="min-w-0 break-words text-sm font-medium text-foreground">
-                {item.package.manifest.name}
-              </h2>
-            </div>
-            {!standalone && command.ui?.window ? (
-              <Button
-                variant="outline"
-                disabled={opening}
-                onClick={() => {
-                  setOpening(true);
-                  setWindowError(null);
-                  void openExtensionWindow(
-                    item.package.manifest.id,
-                    command.id,
-                    item.package.sha256,
-                    item.generation,
-                  )
-                    .catch((reason: unknown) => setWindowError(reason))
-                    .finally(() => setOpening(false));
-                }}
-              >
-                <ExternalLinkIcon className="size-4" />
-                {t("ext.openWindow")}
-              </Button>
-            ) : null}
-          </div>
           <ExtensionApp
             key={`${item.generation}:${item.package.sha256}:${item.package.manifest.version}:${extensionId}:${commandId}`}
             item={item}
             commandId={command.id}
+            tools={
+              <div className="flex flex-wrap gap-2 border-b pb-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (standalone)
+                      void openExtensionCenter().catch((reason: unknown) =>
+                        setWindowError(reason),
+                      );
+                    else navigate("/extensions");
+                  }}
+                >
+                  <ArrowLeftIcon />
+                  {t("ext.title")}
+                </Button>
+                {!standalone && command.ui?.window ? (
+                  <Button
+                    variant="outline"
+                    disabled={opening}
+                    onClick={() => {
+                      setOpening(true);
+                      setWindowError(null);
+                      void openExtensionWindow(
+                        item.package.manifest.id,
+                        command.id,
+                        item.package.sha256,
+                        item.generation,
+                      )
+                        .catch((reason: unknown) => setWindowError(reason))
+                        .finally(() => setOpening(false));
+                    }}
+                  >
+                    <ExternalLinkIcon />
+                    {t("ext.openWindow")}
+                  </Button>
+                ) : null}
+              </div>
+            }
             runs={data?.runs ?? []}
             onSettled={reload}
             onClose={() => {

@@ -87,7 +87,7 @@ export const zhExtensions = {
   "ext.appStatus": "运行状态",
   "ext.appExport": "导出会话",
   "ext.appClose": "结束会话",
-  "ext.sessionTools": "会话工具",
+  "ext.sessionTools": "扩展工具",
   "ext.appCloseTitle": "结束当前会话？",
   "ext.appCloseDescription":
     "当前输入、进度和结果尚未导出。结束会话会清空这些内容；已保存的插件私有数据会保留。可以先导出会话，或放弃本次进度。",
@@ -148,8 +148,6 @@ export const zhExtensions = {
   "ext.urlHint":
     "发送 URL 后，宿主向已声明来源发起一次 GET。插件还可通过受控 HTTP 能力发起已授权请求；凭据仅按配置的来源与别名使用。",
   "ext.run": "运行扩展",
-  "ext.runHint":
-    "命令进入有界队列，最多同时运行两个。Wasm 执行受内存、计算量和时间预算限制，编译可能更久；每次操作使用新实例。",
   "ext.stop": "请求停止",
   "ext.stopping": "正在等待扩展停止…",
   "ext.output": "运行结果",

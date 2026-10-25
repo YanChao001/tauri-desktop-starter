@@ -108,8 +108,8 @@ function app(runningId: string | null = null) {
   );
 }
 function openSessionTools() {
-  const summary = screen.getByText("Session tools", { selector: "summary" });
-  if (!summary.closest("details")?.open) fireEvent.click(summary);
+  if (!screen.queryByRole("region", { name: "Extension tools" }))
+    fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
 }
 function sessionButton(name: string) {
   openSessionTools();
@@ -158,8 +158,8 @@ it("keeps session tools out of the main workflow and preserves a draft when endi
   render(app());
   const input = await screen.findByLabelText("Query");
   expect(
-    screen.getByText("Export session", { selector: "button" }),
-  ).not.toBeVisible();
+    screen.queryByText("Export session", { selector: "button" }),
+  ).not.toBeInTheDocument();
   expect(
     screen.getByText("Request stop", { selector: "button" }),
   ).not.toBeVisible();
@@ -803,6 +803,7 @@ it("requires confirmation before importing a version-bound session and never res
     type: "application/json",
   });
   file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
+  openSessionTools();
   fireEvent.change(screen.getByLabelText("Import session JSON"), {
     target: { files: [file] },
   });
