@@ -44,7 +44,7 @@ export default tseslint.config(
   },
   {
     // 应用源码是浏览器环境：误用 process、Buffer 这类 Node API 会直接报错
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "sdk/*.{js,ts}"],
     languageOptions: { globals: globals.browser },
   },
   {

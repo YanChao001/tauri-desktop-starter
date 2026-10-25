@@ -1,4 +1,6 @@
 export const enExtensions = {
+  "ext.uiUnavailable":
+    "The extension interface is unavailable. Your session has been retained.",
   "ext.recovery.title": "Extension archive recovery",
   "ext.checkBundledUpdate": "Check bundled lab for updates",
   "ext.bundledCurrent": "The bundled lab is already up to date.",

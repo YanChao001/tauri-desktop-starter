@@ -9,7 +9,7 @@ export const commands = {
       __TAURI_INVOKE("save_text_export", { name, content }),
     ),
   extensionSnapshot: () =>
-    typedError<ExtensionSnapshot, NativeError>(
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("extension_snapshot"),
     ),
   previewExtensionArchive: () =>
@@ -21,18 +21,18 @@ export const commands = {
       __TAURI_INVOKE("archive_legacy_extensions", { expectedSha256 }),
     ),
   extensionMarketSnapshot: (refresh: boolean) =>
-    typedError<MarketSnapshot, NativeError>(
+    typedError<MarketSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("extension_market_snapshot", { refresh }),
     ),
   downloadMarketExtension: (id: string, expectedPackageSha256: string) =>
-    typedError<MarketDownload, NativeError>(
+    typedError<MarketDownload_Serialize, NativeError>(
       __TAURI_INVOKE("download_market_extension", {
         id,
         expectedPackageSha256,
       }),
     ),
   previewExtension: (content: string) =>
-    typedError<ExtensionPreview, NativeError>(
+    typedError<ExtensionPreview_Serialize, NativeError>(
       __TAURI_INVOKE("preview_extension", { content }),
     ),
   extensionDemo: (id: string | null) =>
@@ -44,7 +44,7 @@ export const commands = {
     expectedSha256: string,
     consent: ExtensionConsent,
   ) =>
-    typedError<ExtensionSnapshot, NativeError>(
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("install_extension", {
         content,
         expectedRevision,
@@ -61,7 +61,7 @@ export const commands = {
     source: MarketSource,
     consent: ExtensionConsent,
   ) =>
-    typedError<ExtensionSnapshot, NativeError>(
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("install_market_extension", {
         content,
         expectedRevision,
@@ -72,7 +72,7 @@ export const commands = {
       }),
     ),
   rollbackExtension: (id: string, expectedRevision: number) =>
-    typedError<ExtensionSnapshot, NativeError>(
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("rollback_extension", { id, expectedRevision }),
     ),
   setExtensionEnabled: (
@@ -82,7 +82,7 @@ export const commands = {
     expectedRevision: number,
     trusted: boolean,
   ) =>
-    typedError<ExtensionSnapshot, NativeError>(
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("set_extension_enabled", {
         id,
         enabled,
@@ -92,7 +92,7 @@ export const commands = {
       }),
     ),
   uninstallExtension: (id: string, expectedRevision: number) =>
-    typedError<ExtensionSnapshot, NativeError>(
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("uninstall_extension", { id, expectedRevision }),
     ),
   cancelExtension: (id: string, expectedGeneration: number) =>
@@ -215,6 +215,24 @@ export const commands = {
     ),
   openExtensionCenter: () =>
     typedError<null, NativeError>(__TAURI_INVOKE("open_extension_center")),
+  openExtensionUi: (
+    id: string,
+    commandId: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
+    typedError<string, NativeError>(
+      __TAURI_INVOKE("open_extension_ui", {
+        id,
+        commandId,
+        expectedSha256,
+        expectedGeneration,
+      }),
+    ),
+  closeExtensionUi: (token: string) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("close_extension_ui", { token }),
+    ),
   greet: (name: string, language: string | null) =>
     typedError<string, NativeError>(
       __TAURI_INVOKE("greet", { name, language }),
@@ -629,13 +647,26 @@ export type ExtensionChartSeries = {
 
 export type ExtensionChartType = "bar" | "line";
 
-export type ExtensionCommand = {
+export type ExtensionCommand =
+  ExtensionCommand_Serialize | ExtensionCommand_Deserialize;
+
+export type ExtensionCommand_Deserialize = {
   id: string;
   title: string;
   function: string;
   inputFormat: ExtensionInputFormat;
   resultFormat: ExtensionResultFormat;
-  ui?: ExtensionUi | null;
+  ui?: ExtensionUi_Deserialize | null;
+  permissions: ExtensionPermission[];
+};
+
+export type ExtensionCommand_Serialize = {
+  id: string;
+  title: string;
+  function: string;
+  inputFormat: ExtensionInputFormat;
+  resultFormat: ExtensionResultFormat;
+  ui: ExtensionUi_Serialize | null;
   permissions: ExtensionPermission[];
 };
 
@@ -690,19 +721,34 @@ export type ExtensionHttpRequest = {
 export type ExtensionIcon =
   "puzzle" | "calculator" | "gamepad" | "notebook" | "terminal";
 
-export type ExtensionInfo = {
-  package: ExtensionPreview;
+export type ExtensionInfo = ExtensionInfo_Serialize | ExtensionInfo_Deserialize;
+
+export type ExtensionInfo_Deserialize = {
+  package: ExtensionPreview_Deserialize;
   generation: number;
   enabled: boolean;
   grantedPermissions: ExtensionPermission[];
   origin: ExtensionOrigin;
-  previousPackage?: ExtensionPreview | null;
+  previousPackage?: ExtensionPreview_Deserialize | null;
   previousOrigin?: ExtensionOrigin | null;
+};
+
+export type ExtensionInfo_Serialize = {
+  package: ExtensionPreview_Serialize;
+  generation: number;
+  enabled: boolean;
+  grantedPermissions: ExtensionPermission[];
+  origin: ExtensionOrigin;
+  previousPackage: ExtensionPreview_Serialize | null;
+  previousOrigin: ExtensionOrigin | null;
 };
 
 export type ExtensionInputFormat = "text" | "json";
 
-export type ExtensionManifest = {
+export type ExtensionManifest =
+  ExtensionManifest_Serialize | ExtensionManifest_Deserialize;
+
+export type ExtensionManifest_Deserialize = {
   formatVersion: number;
   apiVersion: number;
   minHostVersion: string;
@@ -712,7 +758,23 @@ export type ExtensionManifest = {
   author: string;
   description: string;
   icon?: ExtensionIcon | null;
-  commands: ExtensionCommand[];
+  commands: ExtensionCommand_Deserialize[];
+  permissions: ExtensionPermission[];
+  optionalPermissions: ExtensionPermission[];
+  network: ExtensionNetworkRule[];
+};
+
+export type ExtensionManifest_Serialize = {
+  formatVersion: number;
+  apiVersion: number;
+  minHostVersion: string;
+  id: string;
+  version: string;
+  name: string;
+  author: string;
+  description: string;
+  icon: ExtensionIcon | null;
+  commands: ExtensionCommand_Serialize[];
   permissions: ExtensionPermission[];
   optionalPermissions: ExtensionPermission[];
   network: ExtensionNetworkRule[];
@@ -731,10 +793,21 @@ export type ExtensionOrigin =
 export type ExtensionPermission =
   "text:read" | "files:read" | "network:https" | "network:local" | "storage";
 
-export type ExtensionPreview = {
-  manifest: ExtensionManifest;
+export type ExtensionPreview =
+  ExtensionPreview_Serialize | ExtensionPreview_Deserialize;
+
+export type ExtensionPreview_Deserialize = {
+  manifest: ExtensionManifest_Deserialize;
   sha256: string;
   bytes: number;
+  uiDocuments?: ExtensionUiDocument[];
+};
+
+export type ExtensionPreview_Serialize = {
+  manifest: ExtensionManifest_Serialize;
+  sha256: string;
+  bytes: number;
+  uiDocuments?: ExtensionUiDocument[];
 };
 
 export type ExtensionResultFormat = "text" | "json" | "markdown" | "view";
@@ -757,9 +830,18 @@ export type ExtensionRunStatus = {
   phase: ExtensionRunPhase;
 };
 
-export type ExtensionSnapshot = {
+export type ExtensionSnapshot =
+  ExtensionSnapshot_Serialize | ExtensionSnapshot_Deserialize;
+
+export type ExtensionSnapshot_Deserialize = {
   revision: number;
-  items: ExtensionInfo[];
+  items: ExtensionInfo_Deserialize[];
+  runs: ExtensionRunStatus[];
+};
+
+export type ExtensionSnapshot_Serialize = {
+  revision: number;
+  items: ExtensionInfo_Serialize[];
   runs: ExtensionRunStatus[];
 };
 
@@ -774,9 +856,24 @@ export type ExtensionStorageSnapshot = {
   values: { [key in string]: JsonValue };
 };
 
-export type ExtensionUi = {
+export type ExtensionUi = ExtensionUi_Serialize | ExtensionUi_Deserialize;
+
+export type ExtensionUiDocument = {
+  id: string;
+  sha256: string;
+  bytes: number;
+};
+
+export type ExtensionUi_Deserialize = {
   sidebar: boolean;
   window: boolean;
+  document?: string | null;
+};
+
+export type ExtensionUi_Serialize = {
+  sidebar: boolean;
+  window: boolean;
+  document?: string | null;
 };
 
 export type ExtensionView = {
@@ -903,25 +1000,47 @@ export type LifecycleRequest = {
   windows: string[];
 };
 
-export type MarketCatalog = {
+export type MarketCatalog = MarketCatalog_Serialize | MarketCatalog_Deserialize;
+
+export type MarketCatalog_Deserialize = {
   schemaVersion: number;
   revision: number;
   repository: string;
   issuedAt: number | null;
   expiresAt: number | null;
-  entries: MarketEntry[];
+  entries: MarketEntry_Deserialize[];
+};
+
+export type MarketCatalog_Serialize = {
+  schemaVersion: number;
+  revision: number;
+  repository: string;
+  issuedAt: number | null;
+  expiresAt: number | null;
+  entries: MarketEntry_Serialize[];
 };
 
 export type MarketCategory = "text" | "data" | "tools" | "games";
 
-export type MarketDownload = {
+export type MarketDownload =
+  MarketDownload_Serialize | MarketDownload_Deserialize;
+
+export type MarketDownload_Deserialize = {
   content: string;
-  preview: ExtensionPreview;
+  preview: ExtensionPreview_Deserialize;
   source: MarketSource;
 };
 
-export type MarketEntry = {
-  package: ExtensionPreview;
+export type MarketDownload_Serialize = {
+  content: string;
+  preview: ExtensionPreview_Serialize;
+  source: MarketSource;
+};
+
+export type MarketEntry = MarketEntry_Serialize | MarketEntry_Deserialize;
+
+export type MarketEntry_Deserialize = {
+  package: ExtensionPreview_Deserialize;
   category: MarketCategory;
   featured: boolean;
   releaseTag: string;
@@ -930,8 +1049,27 @@ export type MarketEntry = {
   packageBytes: number;
 };
 
-export type MarketSnapshot = {
-  catalog: MarketCatalog;
+export type MarketEntry_Serialize = {
+  package: ExtensionPreview_Serialize;
+  category: MarketCategory;
+  featured: boolean;
+  releaseTag: string;
+  asset: string;
+  packageSha256: string;
+  packageBytes: number;
+};
+
+export type MarketSnapshot =
+  MarketSnapshot_Serialize | MarketSnapshot_Deserialize;
+
+export type MarketSnapshot_Deserialize = {
+  catalog: MarketCatalog_Deserialize;
+  fetchedAt: number | null;
+  stale: boolean;
+};
+
+export type MarketSnapshot_Serialize = {
+  catalog: MarketCatalog_Serialize;
   fetchedAt: number | null;
   stale: boolean;
 };

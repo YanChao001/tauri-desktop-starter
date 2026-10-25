@@ -50,6 +50,7 @@ walkdir = "2"
 sha2 = "0.10"
 keyring = "4.2"
 tokio = { version = "1", features = ["sync", "time"] }
+getrandom = "0.3"
 
 # 单实例只在桌面端有意义，移动端不编译这个 crate
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

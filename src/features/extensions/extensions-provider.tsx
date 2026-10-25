@@ -1,5 +1,9 @@
 import {
-  createContext,
+  ExtensionsContext as Context,
+  type ExtensionSession,
+} from "./extensions-context";
+export type { ExtensionSession } from "./extensions-context";
+import {
   useCallback,
   useContext,
   useEffect,
@@ -13,34 +17,9 @@ import {
   isTauri,
   onExtensionsChanged,
   type ExtensionSnapshot,
-  type ExtensionView,
 } from "@/lib/tauri";
 
 import { extensionInstallationIdentity } from "./extension-model";
-
-export type ExtensionSession = {
-  identity: string;
-  view: ExtensionView | null;
-  fields: Record<string, string>;
-  dirty: boolean;
-  pending: Promise<void> | null;
-  exporting: Promise<void> | null;
-  selecting: Promise<void> | null;
-  error: unknown;
-  draft: {
-    inputText: string;
-    url: string;
-    files: { id: string; name: string }[];
-  };
-};
-type ExtensionsContext = {
-  data: ExtensionSnapshot | null;
-  loading: boolean;
-  error: unknown;
-  reload: () => Promise<void>;
-  sessions: Map<string, ExtensionSession>;
-};
-const Context = createContext<ExtensionsContext | null>(null);
 
 /** One snapshot subscription per host window; sessions stay in this window's memory. */
 export function ExtensionsProvider({ children }: { children: ReactNode }) {
@@ -129,6 +108,7 @@ export function useExtensionSession(key: string, identity: string) {
     if (previous?.identity === identity) return previous;
     const next: ExtensionSession = {
       identity,
+      uiState: null,
       view: null,
       fields: {},
       dirty: false,

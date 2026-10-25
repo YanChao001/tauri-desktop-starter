@@ -30,6 +30,8 @@ import { ExtensionData } from "./extension-data";
 import { useExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS } from "./control-styles";
 import { ExtensionFrame } from "./extension-frame";
+import { ExtensionCustomUi } from "./extension-custom-ui";
+import type { ExtensionUiRequest } from "./extension-ui-bridge";
 
 /** The renderer has no calculator/game rules. Every action runs the declared Wasm export. */
 export function ExtensionApp({
@@ -49,6 +51,12 @@ export function ExtensionApp({
 }) {
   const { t, language } = useI18n();
   const manifest = item.package.manifest;
+  const documentId = manifest.commands.find(
+    (command) => command.id === commandId,
+  )?.ui?.document;
+  const documentHash = item.package.uiDocuments?.find(
+    (document) => document.id === documentId,
+  )?.sha256;
   const phase = useExtensionPhase(runs, manifest.id);
   const workId = `extension-app:${manifest.id}:${commandId}:${extensionInstallationIdentity(item)}`;
   const session = useExtensionSession(
@@ -56,6 +64,7 @@ export function ExtensionApp({
     extensionInstallationIdentity(item),
   );
   const [view, setView] = useState<ExtensionView | null>(session.view);
+  const [uiState, setUiState] = useState(session.uiState ?? null);
   const latest = useRef<ExtensionView | null>(session.view);
   const [fields, setFields] = useState<Record<string, string>>(session.fields);
   const latestFields = useRef(fields);
@@ -101,13 +110,17 @@ export function ExtensionApp({
       ? t(phase === "queued" ? "ext.queued" : "ext.appWorking")
       : "";
 
-  function run(action: string | null, data?: ExtensionViewDataInput) {
+  function run(
+    action: string | null,
+    data?: ExtensionViewDataInput,
+    validatedUiFields = false,
+  ) {
     if (
       session.pending ||
       session.exporting ||
       session.selecting ||
       closing.current ||
-      invalidFields.size > 0 ||
+      (!validatedUiFields && invalidFields.size > 0) ||
       !item.enabled
     )
       return;
@@ -157,6 +170,7 @@ export function ExtensionApp({
         void onSettled();
       });
     session.pending = pending;
+    return pending;
   }
   init.current = () => run(null);
   useEffect(() => {
@@ -235,10 +249,14 @@ export function ExtensionApp({
     const timer = window.setInterval(() => void onSettled(), 750);
     return () => window.clearInterval(timer);
   }, [busy, onSettled]);
-  async function settle(signal?: AbortSignal) {
+  async function settle(signal?: AbortSignal, waitForExport = false) {
     signal?.throwIfAborted();
     await session.selecting;
     signal?.throwIfAborted();
+    if (waitForExport) {
+      await session.exporting;
+      signal?.throwIfAborted();
+    }
     const pending = session.pending;
     if (pending) {
       await cancelExtension(manifest.id, item.generation);
@@ -269,6 +287,14 @@ export function ExtensionApp({
               result: null,
               view: session.view,
               fields: session.fields,
+              ...(documentHash
+                ? {
+                    ui: {
+                      sha256: documentHash,
+                      state: session.uiState ?? null,
+                    },
+                  }
+                : {}),
               inputText: session.draft.inputText,
               files: session.draft.files.map((file) => file.name),
               url: session.draft.url,
@@ -300,16 +326,18 @@ export function ExtensionApp({
     dirty: !closed && (dirty || busy || saving || picking),
     save,
     discard: async (signal) => {
-      await settle(signal);
+      await settle(signal, true);
       signal?.throwIfAborted();
       latest.current = null;
       latestFields.current = {};
       session.view = null;
+      session.uiState = null;
       session.fields = {};
       session.dirty = false;
       session.draft = { inputText: "", url: "", files: [] };
       if (alive.current) {
         setView(null);
+        setUiState(null);
         setFields({});
         setDirty(false);
       }
@@ -334,6 +362,7 @@ export function ExtensionApp({
       latest.current = null;
       latestFields.current = {};
       session.view = null;
+      session.uiState = null;
       session.fields = {};
       session.dirty = false;
       session.draft = { inputText: "", url: "", files: [] };
@@ -345,6 +374,119 @@ export function ExtensionApp({
       }
       throw reason;
     }
+  }
+  function updateUiFields(patch: Record<string, string>) {
+    if (
+      session.pending ||
+      session.exporting ||
+      session.selecting ||
+      closing.current
+    )
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "Session is busy",
+        retryable: false,
+      });
+    const next = { ...session.fields, ...patch };
+    if (
+      Object.entries(next).some(([id, value]) => {
+        const field = session.view?.fields.find((field) => field.id === id);
+        return (
+          !field ||
+          new TextEncoder().encode(value).length > extensionFieldBytes(field)
+        );
+      }) ||
+      Object.values(next).reduce(
+        (sum, value) => sum + new TextEncoder().encode(value).length,
+        0,
+      ) >
+        1024 * 1024
+    )
+      throw new NativeBridgeError({
+        code: "INVALID_ARGUMENT",
+        message: "Invalid UI fields",
+        retryable: false,
+      });
+    session.fields = next;
+    latestFields.current = next;
+    session.dirty = true;
+    if (alive.current) {
+      setFields(next);
+      setDirty(true);
+    }
+  }
+  async function saveArtifact(index: number) {
+    const artifact = session.view?.artifacts?.[index];
+    if (
+      !artifact ||
+      session.pending ||
+      session.exporting ||
+      session.selecting ||
+      closing.current
+    )
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "Artifact is unavailable or session is busy",
+        retryable: false,
+      });
+    let saved = false;
+    if (alive.current) setSaving(true);
+    const pending = saveExtensionArtifact(
+      manifest.id,
+      item.package.sha256,
+      item.generation,
+      artifact,
+    )
+      .then((path) => {
+        saved = path !== null;
+      })
+      .finally(() => {
+        session.exporting = null;
+        if (alive.current) setSaving(false);
+      });
+    session.exporting = pending;
+    await pending;
+    return saved;
+  }
+  async function executeUi(request: ExtensionUiRequest): Promise<unknown> {
+    if (closed || closing.current || !item.enabled)
+      throw new NativeBridgeError({
+        code: "EXTENSION_UNAVAILABLE",
+        message: "Session is closed",
+        retryable: false,
+      });
+    if (request.method === "artifact") return saveArtifact(request.index);
+    if (request.method === "checkpoint") {
+      if (
+        session.exporting ||
+        closing.current ||
+        (!request.dirty && (session.pending || session.selecting))
+      )
+        throw new NativeBridgeError({
+          code: "CONFLICT",
+          message: "Session is busy",
+          retryable: false,
+        });
+      session.uiState = request.value;
+      session.dirty = request.dirty;
+      if (alive.current) {
+        setUiState(request.value);
+        setDirty(request.dirty);
+      }
+      return null;
+    }
+    updateUiFields(request.fields);
+    if (request.method === "fields") return null;
+    const pending = run(request.action, undefined, true);
+    if (!pending)
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "Session is busy",
+        retryable: false,
+      });
+    await pending;
+    if (session.error) throw session.error;
+    return session.view;
   }
   const feedback = (
     <div className="flex min-h-8 items-center justify-between gap-3">
@@ -414,6 +556,7 @@ export function ExtensionApp({
                 latest.current = imported.view;
                 latestFields.current = imported.fields;
                 session.view = imported.view;
+                session.uiState = imported.ui?.state ?? null;
                 session.fields = imported.fields;
                 session.draft = {
                   inputText: imported.inputText,
@@ -422,6 +565,7 @@ export function ExtensionApp({
                 };
                 session.dirty = true;
                 setView(imported.view);
+                setUiState(session.uiState);
                 setFields(imported.fields);
                 setDirty(true);
                 setError(null);
@@ -456,7 +600,18 @@ export function ExtensionApp({
         }
       >
         <div className="min-w-0 space-y-5" aria-busy={busy}>
-          {view ? (
+          {documentId ? (
+            <ExtensionCustomUi
+              item={item}
+              commandId={commandId}
+              view={view}
+              fields={fields}
+              checkpoint={uiState}
+              busy={blocked}
+              dirty={dirty}
+              execute={executeUi}
+            />
+          ) : view ? (
             <>
               <div className="min-w-0 space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -507,33 +662,19 @@ export function ExtensionApp({
             {nativeErrorText(error, t)}
           </p>
         ) : null}
-        {view?.artifacts?.length ? (
+        {!documentId && view?.artifacts?.length ? (
           <div className="space-y-2">
             <h4 className="text-sm font-medium">{t("ext.artifacts")}</h4>
             <div className="flex flex-wrap gap-2">
-              {view.artifacts.map((artifact) => (
+              {view.artifacts.map((artifact, index) => (
                 <Button
                   key={artifact.name}
                   variant="outline"
                   disabled={blocked}
                   onClick={() => {
-                    if (session.exporting || session.pending) return;
-                    setSaving(true);
-                    const saving = saveExtensionArtifact(
-                      manifest.id,
-                      item.package.sha256,
-                      item.generation,
-                      artifact,
-                    )
-                      .then(() => {})
-                      .catch((reason: unknown) => {
-                        if (alive.current) setError(reason);
-                      })
-                      .finally(() => {
-                        session.exporting = null;
-                        if (alive.current) setSaving(false);
-                      });
-                    session.exporting = saving;
+                    void saveArtifact(index).catch((reason: unknown) => {
+                      if (alive.current) setError(reason);
+                    });
                   }}
                 >
                   {t("ext.saveArtifact", { name: artifact.name })}

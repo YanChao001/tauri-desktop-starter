@@ -34,6 +34,8 @@ pub fn builder() -> Builder<tauri::Wry> {
             extension_commands::delete_extension_credential,
             crate::extension_windows::open_extension_window,
             crate::extension_windows::open_extension_center,
+            crate::extensions::ui::open_extension_ui,
+            crate::extensions::ui::close_extension_ui,
             commands::greet,
             wallpaper_commands::list_wallpapers,
             wallpaper_commands::add_wallpaper,

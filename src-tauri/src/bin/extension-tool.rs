@@ -16,7 +16,10 @@ use std::{
 use tauri_desktop_starter_lib::{
     extension_runtime,
     extension_view::{ExtensionView, ExtensionViewRequest},
-    extensions::{ExtensionInputFormat, ExtensionManifest, ExtensionResultFormat, TEXT_LIMIT},
+    extensions::{
+        ExtensionInputFormat, ExtensionManifest, ExtensionResultFormat, TEXT_LIMIT,
+        validate_ui_documents,
+    },
 };
 
 const MODULE_LIMIT: u64 = 16 * 1024 * 1024;
@@ -66,7 +69,7 @@ fn arguments(
     }
     let mut options = HashMap::new();
     while let Some(key) = args.next() {
-        if !["--manifest", "--wasm", "--fixture"].contains(&key.as_str())
+        if !["--manifest", "--wasm", "--fixture", "--ui"].contains(&key.as_str())
             || (key == "--fixture" && command != "test")
         {
             return Err(format!("Unknown option: {key}").into());
@@ -220,6 +223,14 @@ fn execute() -> ToolResult<Value> {
     let manifest: ExtensionManifest =
         serde_json::from_slice(&read_bounded(&options["--manifest"], MANIFEST_LIMIT)?)?;
     manifest.validate()?;
+    let documents = options
+        .get("--ui")
+        .map(|path| read_bounded(path, 12 * 1024 * 1024))
+        .transpose()?
+        .map(|bytes| serde_json::from_slice(&bytes))
+        .transpose()?
+        .unwrap_or_default();
+    let ui_documents = validate_ui_documents(&manifest, &documents)?;
     let module = read_bounded(&options["--wasm"], MODULE_LIMIT)?;
     let exports: Vec<&str> = manifest
         .commands
@@ -253,6 +264,7 @@ fn execute() -> ToolResult<Value> {
         "version": manifest.version,
         "commands": manifest.commands.iter().map(|command| &command.id).collect::<Vec<_>>(),
         "validated": true,
+        "uiDocuments": ui_documents,
         "smoke": smoke,
     }))
 }

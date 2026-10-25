@@ -1,10 +1,10 @@
 # Extism 扩展开发与安装
 
-扩展中心位于 `/extensions`。宿主使用 Extism 运行 Rust / JavaScript / TypeScript 编译的 Wasm，通过清单登记命令、侧栏与独立窗口，用类型化效果连接已授权的网络和私有数据，统一绘制声明式界面。长期取舍见 [ADR 0011](./adr/0011-capability-extension-host.md)。浏览器演示提供限制说明，安装、运行和系统凭据需要桌面环境。
+扩展中心位于 `/extensions`。宿主使用 Extism 运行 Rust / JavaScript / TypeScript 编译的 Wasm，通过清单登记命令、侧栏与独立窗口，用类型化效果连接已授权的网络和私有数据，提供通用视图和隔离的自定义界面。长期取舍见 [ADR 0011](./adr/0011-capability-extension-host.md)。浏览器演示提供限制说明，安装、运行和系统凭据需要桌面环境。
 
 ## 架构与兼容范围
 
-当前契约为 **包格式 3、API 2、视图版本 2、注册表 schema 3**。每条命令分别声明输入、结果、入口和所需能力；同一插件可以同时提供普通文本工具与应用视图。宿主复用 Extism ABI，不加载插件原生程序、动态库、Node.js 或任意网页，不提供 VS Code API 兼容层。
+当前契约为 **包格式 3、API 2、视图版本 2、注册表 schema 3**。每条命令分别声明输入、结果、入口和所需能力；同一插件可以同时提供普通文本工具与应用视图。宿主复用 Extism ABI，不加载插件原生程序、动态库、Node.js 或远程网页，不提供 VS Code API 兼容层。
 
 只依赖标准 Extism 能力的模块可保留原始 Wasm，补充本应用清单后调用真实导出函数；其他应用的专用 Host Functions 或界面协议仍需适配。插件的业务状态、动作和数据格式由插件自行校验；生成的 TypeScript 类型不能代替 Rust 和插件边界校验。
 
@@ -125,13 +125,13 @@ origin 必须是标准化的精确协议 / 主机 / 端口，不带路径、凭�
 
 当前视图适合表单、文本工具、数据展示与回合制操作。`fields/groups/blocks` 的布局由宿主固定组织，尚不能任意交错控件与内容，也没有通用方向键、指针 / 拖拽事件或实时渲染能力。2048 和故事骰子能运行，不表示界面已达到独立应用的交互水平。
 
-Wasm 是业务逻辑与宿主能力边界，不要求 UI 必须使用固定表单。为复杂应用提供隔离的本地自定义界面、同时保留简单工具视图的方案见 [ADR 0012（提议中）](./adr/0012-extension-ui-surfaces.md)。该能力尚未实现，不能把 HTML / CSS 放入当前包后直接运行，也不通过放开宿主 DOM 或任意 IPC 临时实现。
+Wasm 继续负责业务逻辑与受控能力。需要自由布局的应用使用下文的 [自定义界面](#自定义界面)，简单工具可以继续选择通用视图；两者共享授权和执行服务。
 
 ## 开发带界面的应用插件
 
 复制 [apps 示例](../examples/extensions/apps/) 或 [TypeScript notebook](../examples/extensions/typescript/)，在单条命令声明 JSON 输入、`view` 结果和需要的入口。插件返回描述字段、按钮、展示块和状态的 JSON，由 [宿主 React 渲染器](../src/features/extensions/extension-view.tsx) 生成 HTML / DOM 并应用主题样式，因此插件作者不需要单独提供 HTML 或 CSS。普通文本命令可以只返回文本，不提供视图。
 
-Rust / JavaScript / TypeScript 是插件逻辑的实现语言，编译结果均为符合宿主 Extism ABI 的 Wasm；这里的 JavaScript 运行在 Wasm 内的引擎中，不作为网页脚本执行。宿主不加载插件自定义 HTML、CSS、React 组件或远程页面，不开放 DOM、Canvas 与任意 WebView。需要自由网页布局的功能超出当前视图协议，不能通过在包中添加 `index.html` 获得支持。
+Rust / JavaScript / TypeScript 可编译为符合宿主 Extism ABI 的 Wasm；Wasm 中的 JavaScript 与隔离界面的网页脚本属于不同上下文。通用视图由宿主绘制，自定义界面可使用 HTML、CSS、DOM、Canvas 或框架构建结果；均不开放宿主 DOM、任意原生 IPC 或远程入口。
 
 首次请求 `version: 2`、`action: null`、空 `state` / `fields` 和当前语言；后续动作交回不透明状态与当前字段。宿主添加 `host`（当前授权与可用存储快照），插件不能通过前端伪造它。只有用户点击“发送所选数据”时才额外附加 `data`，`action` 为 `host-data`；普通动作不会重新读取已选文件或重复发送这个输入。但插件可在拥有网络授权时返回 HTTP 效果，不能将“未点击发送所选数据”理解为禁止插件发起已授权效果。
 
@@ -272,3 +272,17 @@ Extism 使用 BSD-3-Clause，Wasmtime 使用 Apache-2.0 WITH LLVM-exception，�
 `pnpm extension:test:worker` 在开发工具可执行程序中检查真实 worker 的取消后重建、断连、实例隔离、帧与 I/O 超限，不启动 WebView；worker 期限单元测试另外检查整体超时。普通 `cargo test` 的进程内运行时测试不能替代这项进程边界检查。存储 / 网络 / 效果、调度、市场过期和跨重启防回退使用隔离数据的服务回归；前端检查授权、入口撤回、会话导入、单独保存与失败输入保留，无头浏览器检查布局与原生限制。
 
 当前线上旧目录与新协议不兼容，线上联通检查须等市场配套发布后执行。正式安装版、系统 keyring、真实多窗口退出 / 更新及各目标平台仍需独立环境验收；不能把源码中存在测试、CI 配置或浏览器 mock 写成这些项目已实测通过。
+
+## 自定义界面
+
+视图命令可在 ui 中增加 document（例如 main），作者将自包含 HTML 放在 ui/main.html，通过打包脚本的 --ui-dir 指定目录。HTML 可以内嵌 CSS、JavaScript、数据图片或框架构建结果，插件独立组织业务布局；普通工具仍可使用通用视图。清单、Wasm 和 uiDocuments 一起进入包，目录预览额外绑定文档 ID、SHA-256 与字节数，市场签名覆盖完整包。Rust 规则与资源服务见 [extension_ui.rs](../src-tauri/src/extension_ui.rs)，无需另写 UI 布局语言。
+
+单文档最多 512 KiB、每包合计 2 MiB、最多 32 份，仅接受实际被引用的文档；ID 不包含路径。缓存以内容哈希命名，上限 64 MiB，不跟随链接。打开和回退都会核验内容，未知未来注册表或损坏资源不会被重建覆盖。包 / API / 视图版本保持不变，UI 字段是可选扩展；旧宿主拒绝带未知字段的新包，新宿主无需归档现有 schema 3 数据。
+
+UI 在无同源权限的 sandbox frame 中运行。专用原生协议按宿主窗口和随机令牌读取文档，重新检查安装代次、启用和命令授权。子文档 CSP 禁止直接网络、外部脚本、子 frame、worker、表单与基址修改；宿主 CSP 仅开放专用 frame 来源，主界面脚本策略不放宽。Tauri IPC 保留在可信主 frame，子界面仅获得 [界面 SDK](../sdk/README.md) 的 MessagePort；不共享宿主 DOM、凭据或原生对象。该机制不等于操作系统级 UI 进程资源沙箱。
+
+桥绑定具体内容框实例、来源和安装身份，只接收已声明字段、当前命令动作、草稿检查点或当前视图产物索引。单请求最多 2 MiB、每秒最多 60 次、至多 4 个在途请求；宿主状态推送最多 12 MiB，以容纳原有完整视图、当前字段与检查点，请求序号递增；畸形、重放或超额消息关闭端口。Wasm、网络、文件与 KV 继续由 Rust 能力 broker 校验，每条请求都受现有执行及取消预算约束。界面被卸载、禁用、替换或关闭后旧端口失效，晚到结果不操作新实例。
+
+插件使用 checkpoint(value, dirty) 明确登记最多 256 KiB 的 JSON 草稿，并从后续快照恢复；局部动画、布局和焦点不调用 Wasm。通用导出包含检查点并绑定文档哈希，导入不执行插件，文件需重选，凭据不导出。插件可用自己的按钮保存业务数据，再将 dirty 设为 false；宿主生命周期中的保存仍明确表示导出会话。保存中不能改变草稿或把仍在运行的工作报告为已保存。
+
+实现取舍与分层验收见 [ADR 0012](./adr/0012-extension-ui-surfaces.md)。浏览器 CSP / 布局回归、原生资源与真实 Wasm 回归、实际桌面 WebView 验收分别记录，不能互相替代。

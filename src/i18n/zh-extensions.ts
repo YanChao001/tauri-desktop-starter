@@ -1,4 +1,5 @@
 export const zhExtensions = {
+  "ext.uiUnavailable": "扩展界面暂时无法打开，会话内容已保留。",
   "ext.recovery.title": "扩展存档恢复",
   "ext.checkBundledUpdate": "检查内置实验室更新",
   "ext.bundledCurrent": "内置实验室已是当前版本。",

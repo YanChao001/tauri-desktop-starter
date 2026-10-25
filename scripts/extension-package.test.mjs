@@ -82,6 +82,33 @@ test("校验失败不生成包且清理临时快照", async (t) => {
   await assert.rejects(access(snapshot.manifestPath));
 });
 
+test("自定义 UI 和模块使用同一份受校验快照，源 HTML 后续修改不进入包", async (t) => {
+  const options = await fixture(t);
+  options.uiDir = join(options.manifestPath, "..");
+  const original = "<main>已审阅的界面</main>";
+  await writeFile(join(options.uiDir, "main.html"), original);
+  await writeFile(
+    options.manifestPath,
+    JSON.stringify({ ...manifest, commands: [{ ui: { document: "main" } }] }),
+  );
+  await packExtension(options, {
+    runTool: async (_command, paths) => {
+      assert.deepEqual(JSON.parse(await readFile(paths.uiPath, "utf8")), {
+        main: original,
+      });
+      await writeFile(
+        join(options.uiDir, "main.html"),
+        "<script>changed</script>",
+      );
+      return { validated: true };
+    },
+  });
+  assert.deepEqual(
+    JSON.parse(await readFile(options.outputPath, "utf8")).uiDocuments,
+    { main: original },
+  );
+});
+
 test("拒绝原生程序与超限输入，且不调用 Rust", async (t) => {
   const options = await fixture(t);
   const failIfCalled = {

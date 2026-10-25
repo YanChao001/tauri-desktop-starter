@@ -76,6 +76,55 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(native.validateExtensionView).mockResolvedValue(view);
 });
+
+it("binds custom UI checkpoints to the exact document hash and preserves valid drafts", async () => {
+  const uiItem: native.ExtensionInfo = {
+    ...item,
+    package: {
+      ...item.package,
+      uiDocuments: [{ id: "main", sha256: "b".repeat(64), bytes: 20 }],
+      manifest: {
+        ...item.package.manifest,
+        commands: item.package.manifest.commands.map((command) =>
+          command.id === "open"
+            ? {
+                ...command,
+                ui: { sidebar: true, window: true, document: "main" },
+              }
+            : command,
+        ),
+      },
+    },
+  };
+  const ui = {
+    sha256: "b".repeat(64),
+    state: JSON.stringify({ draft: "保留这段草稿" }),
+  };
+  const saved = { ...session(), ui };
+  const restored = await parseExtensionSession(
+    JSON.stringify(saved),
+    uiItem,
+    "open",
+    "view",
+  );
+  expect(restored.ui).toEqual(ui);
+  await expect(
+    parseExtensionSession(
+      JSON.stringify({ ...saved, ui: { ...ui, sha256: "c".repeat(64) } }),
+      uiItem,
+      "open",
+      "view",
+    ),
+  ).rejects.toThrow();
+  await expect(
+    parseExtensionSession(
+      JSON.stringify({ ...saved, ui: { ...ui, state: "broken" } }),
+      uiItem,
+      "open",
+      "view",
+    ),
+  ).rejects.toThrow();
+});
 it("restores an exported empty view session without initializing the plugin", async () => {
   const restored = await parseExtensionSession(
     JSON.stringify({ ...session(), view: null, fields: {} }),

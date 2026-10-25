@@ -9,7 +9,7 @@ use crate::{
     extensions::{
         self, ExtensionArchivePreview, ExtensionArchiveResult, ExtensionConsent,
         ExtensionFileChoice, ExtensionOrigin, ExtensionPermission, ExtensionPreview,
-        ExtensionRunInput, ExtensionSnapshot, ExtensionStore,
+        ExtensionRunInput, ExtensionSnapshot, ExtensionStore, InstallCondition,
     },
     workbench,
 };
@@ -74,9 +74,11 @@ pub async fn install_extension(
     let result = blocking::run(move || {
         store.install_reviewed(
             &content,
-            expected_revision,
-            replace_existing,
-            &expected_sha256,
+            InstallCondition {
+                revision: expected_revision,
+                replace: replace_existing,
+                sha256: &expected_sha256,
+            },
             ExtensionOrigin::Local,
             consent,
             |old, _| host.clear_credentials(&old.package.manifest),
@@ -108,9 +110,11 @@ pub async fn install_market_extension(
     let result = blocking::run(move || {
         store.install_reviewed(
             &content,
-            expected_revision,
-            replace_existing,
-            &expected_sha256,
+            InstallCondition {
+                revision: expected_revision,
+                replace: replace_existing,
+                sha256: &expected_sha256,
+            },
             ExtensionOrigin::Market { source: verified },
             consent,
             |old, next| {

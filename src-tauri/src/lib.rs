@@ -110,8 +110,10 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(desktop::DesktopState::default())
         .manage(extension_windows::ExtensionWindows::default())
+        .manage(extensions::ui::ExtensionUiStore::default())
         .manage(lifecycle::LifecycleState::default())
         .manage(system_commands::ActivationInbox::default());
+    let builder = extensions::ui::register_protocol(builder);
 
     // 单实例必须最先注册，让重复启动在初始化日志等共享资源前退出。
     #[cfg(desktop)]
@@ -266,6 +268,10 @@ pub fn run() {
                 workbench::handle_drop(window.app_handle(), window.label(), paths.clone());
             }
             if let tauri::WindowEvent::Destroyed = event {
+                window
+                    .app_handle()
+                    .state::<extensions::ui::ExtensionUiStore>()
+                    .close_window(window.label());
                 if let Err(error) = window
                     .app_handle()
                     .state::<extensions::ExtensionStore>()

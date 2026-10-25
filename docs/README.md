@@ -2,24 +2,25 @@
 
 工程文档按职责维护；先从下表找到任务入口，不必顺序通读。
 
-| 任务                                       | 权威文档                                                                                    |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| 项目介绍、启动与派生入口                   | [README](../README.md)、[English quick start](../README.en.md)                              |
-| 体验完整 demo、新增页面 / IPC、按需裁剪    | [模块指南](./demo-modules.md)                                                               |
-| 运行结构、数据归属与模块边界               | [架构说明](./architecture.md)                                                               |
-| Extism Wasm 扩展、官方市场、应用视图与开发 | [扩展指南](./extensions.md)                                                                 |
-| 市场仓库的插件收录、构建、测试与签名发布   | [市场文档索引](../marketplace/docs/README.md)（需初始化子模块）                             |
-| 环境、初始化、命令、调试与浏览器部署       | [开发指南](./development.md)                                                                |
-| 测试选择、无头界面、原生及安装验收         | [测试规范](./testing.md)                                                                    |
-| 版本、产物、签名、更新与发布恢复           | [构建与发布](./build-release.md)、[代码签名策略](./code-signing-policy.md)                  |
-| IPC、权限、CSP、凭据与依赖审计             | [安全规范](./security.md)、[漏洞报告](../SECURITY.md)                                       |
-| 启动、窗口、构建与存储故障                 | [排障手册](./troubleshooting.md)                                                            |
-| 命名、类型、组件与抽象                     | [代码风格](./conventions/code-style.md)                                                     |
-| 主题、布局、控件、动效与无障碍             | [界面规范](./conventions/ui-guidelines.md)、[皮肤资源](../resources/skins/README.md)        |
-| 分支、提交、评审与合并                     | [Git 协作](./conventions/git-workflow.md)、[贡献流程](../CONTRIBUTING.md)                   |
-| 跨模块、兼容或高影响设计                   | [设计门槛](./engineering-at-scale.md#设计评审与-adr-门槛)、[提案模板](./design-template.md) |
-| 长期技术取舍与历史                         | [ADR 索引](./adr/README.md)                                                                 |
-| 编码智能体工作约束                         | [AGENTS.md](../AGENTS.md)                                                                   |
+| 任务                                        | 权威文档                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 项目介绍、启动与派生入口                    | [README](../README.md)、[English quick start](../README.en.md)                              |
+| 体验完整 demo、新增页面 / IPC、按需裁剪     | [模块指南](./demo-modules.md)                                                               |
+| 运行结构、数据归属与模块边界                | [架构说明](./architecture.md)                                                               |
+| Extism Wasm 扩展、官方市场、应用视图与开发  | [扩展指南](./extensions.md)                                                                 |
+| 编写隔离的插件 HTML / CSS / JavaScript 界面 | [界面 SDK](../sdk/README.md)                                                                |
+| 市场仓库的插件收录、构建、测试与签名发布    | [市场文档索引](../marketplace/docs/README.md)（需初始化子模块）                             |
+| 环境、初始化、命令、调试与浏览器部署        | [开发指南](./development.md)                                                                |
+| 测试选择、无头界面、原生及安装验收          | [测试规范](./testing.md)                                                                    |
+| 版本、产物、签名、更新与发布恢复            | [构建与发布](./build-release.md)、[代码签名策略](./code-signing-policy.md)                  |
+| IPC、权限、CSP、凭据与依赖审计              | [安全规范](./security.md)、[漏洞报告](../SECURITY.md)                                       |
+| 启动、窗口、构建与存储故障                  | [排障手册](./troubleshooting.md)                                                            |
+| 命名、类型、组件与抽象                      | [代码风格](./conventions/code-style.md)                                                     |
+| 主题、布局、控件、动效与无障碍              | [界面规范](./conventions/ui-guidelines.md)、[皮肤资源](../resources/skins/README.md)        |
+| 分支、提交、评审与合并                      | [Git 协作](./conventions/git-workflow.md)、[贡献流程](../CONTRIBUTING.md)                   |
+| 跨模块、兼容或高影响设计                    | [设计门槛](./engineering-at-scale.md#设计评审与-adr-门槛)、[提案模板](./design-template.md) |
+| 长期技术取舍与历史                          | [ADR 索引](./adr/README.md)                                                                 |
+| 编码智能体工作约束                          | [AGENTS.md](../AGENTS.md)                                                                   |
 
 ## 维护规则
 

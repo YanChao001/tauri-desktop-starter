@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildEnvironment } from "./build-lib.mjs";
+import { readUiDocuments } from "./extension-ui-resources.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const MODULE_LIMIT = 16 * 1024 * 1024;
@@ -66,6 +67,7 @@ export function runExtensionTool(command, options) {
     options.wasmPath,
   ];
   if (options.fixturePath) arguments_.push("--fixture", options.fixturePath);
+  if (options.uiPath) arguments_.push("--ui", options.uiPath);
   const executable = process.env.STARTER_EXTENSION_TOOL || "cargo";
   const args = process.env.STARTER_EXTENSION_TOOL
     ? arguments_
@@ -111,6 +113,7 @@ async function withValidatedFiles(options, command, runTool, consume) {
   ]);
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   preflight(manifest, wasm);
+  const uiDocuments = await readUiDocuments(manifest, options.uiDir);
   // 校验与打包使用同一份快照，源文件在 Cargo 构建期间变化也不会绕过校验。
   const temporary = await mkdtemp(join(tmpdir(), "starter-extension-tool-"));
   try {
@@ -118,15 +121,22 @@ async function withValidatedFiles(options, command, runTool, consume) {
       manifestPath: join(temporary, "extension.json"),
       wasmPath: join(temporary, "plugin.wasm"),
       ...(fixtureBytes ? { fixturePath: join(temporary, "fixture.json") } : {}),
+      ...(Object.keys(uiDocuments).length
+        ? { uiPath: join(temporary, "ui.json") }
+        : {}),
     };
     await Promise.all([
       writeFile(snapshot.manifestPath, manifestBytes, { mode: 0o600 }),
       writeFile(snapshot.wasmPath, wasm, { mode: 0o600 }),
       fixtureBytes &&
         writeFile(snapshot.fixturePath, fixtureBytes, { mode: 0o600 }),
+      snapshot.uiPath &&
+        writeFile(snapshot.uiPath, JSON.stringify(uiDocuments), {
+          mode: 0o600,
+        }),
     ]);
     const report = await runTool(command, snapshot);
-    return await consume({ manifest, wasm, report });
+    return await consume({ manifest, wasm, uiDocuments, report });
   } finally {
     // temporary 由本函数创建，且从未接受调用方提供的删除目标。
     await rm(temporary, { recursive: true, force: true });
@@ -167,10 +177,17 @@ export async function packExtension(
     options,
     "validate",
     runTool,
-    async ({ manifest, wasm, report }) => {
+    async ({ manifest, wasm, uiDocuments, report }) => {
       const content =
-        JSON.stringify({ manifest, wasm: wasm.toString("base64") }, null, 2) +
-        "\n";
+        JSON.stringify(
+          {
+            manifest,
+            wasm: wasm.toString("base64"),
+            ...(Object.keys(uiDocuments).length ? { uiDocuments } : {}),
+          },
+          null,
+          2,
+        ) + "\n";
       if (Buffer.byteLength(content) > PACKAGE_LIMIT)
         throw new Error("扩展包超过 24 MiB");
       await mkdir(dirname(resolve(outputPath)), { recursive: true });
@@ -195,6 +212,7 @@ export function parseArguments(args) {
     const key = {
       "--manifest": "manifestPath",
       "--wasm": "wasmPath",
+      "--ui-dir": "uiDir",
       ...(command === "pack" ? { "--out": "outputPath" } : {}),
       ...(command === "test" ? { "--fixture": "fixturePath" } : {}),
     }[args[index]];

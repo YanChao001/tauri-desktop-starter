@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "extensions",
-  "description": "宿主扩展窗口的事件、窗口控制与外链；不加载插件网页或开放直接文件 / 网络插件能力",
+  "description": "可信宿主扩展窗口的事件、窗口控制与外链；插件 HTML 在无同源权限的内容框运行，不授予 Tauri API 或直接文件 / 网络能力",
   "windows": ["extension-*"],
   "permissions": [
     "core:default",

@@ -1,5 +1,9 @@
 import {
-  createContext,
+  UnsavedWorkContext as Context,
+  type UnsavedWork,
+} from "./unsaved-work-context";
+export type { UnsavedWork } from "./unsaved-work-context";
+import {
   useCallback,
   useContext,
   useEffect,
@@ -27,19 +31,6 @@ import {
   setWindowWorkState,
   type LifecycleRequest,
 } from "@/lib/tauri";
-
-export type UnsavedWork = {
-  id: string;
-  label: string;
-  dirty: boolean;
-  save: (signal?: AbortSignal) => Promise<void>;
-  discard: (signal?: AbortSignal) => void | Promise<void>;
-};
-type Registry = {
-  register: (work: UnsavedWork) => void;
-  unregister: (id: string) => void;
-};
-const Context = createContext<Registry | null>(null);
 
 /** 脏工作在离页后仍保留最后一个保存动作，保存成功或明确放弃后移除。 */
 export function useUnsavedWork(work: UnsavedWork) {

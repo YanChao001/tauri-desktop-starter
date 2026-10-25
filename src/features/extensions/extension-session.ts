@@ -5,6 +5,7 @@ import {
   type ExtensionView,
   type ExtensionResultFormat,
 } from "@/lib/tauri";
+import { validateUiCheckpoint } from "./extension-ui-bridge";
 
 export const EXTENSION_SESSION_BYTES = 8 * 1024 * 1024;
 export type ExtensionSessionExport = {
@@ -14,6 +15,7 @@ export type ExtensionSessionExport = {
   commandId: string;
   extensionVersion: string;
   sha256: string;
+  ui?: { sha256: string; state: string | null };
   inputText: string;
   url: string;
   files: string[];
@@ -57,6 +59,12 @@ export async function parseExtensionSession(
   kind: "view" | "tool",
 ): Promise<ExtensionSessionExport> {
   if (!text(content, EXTENSION_SESSION_BYTES)) invalid();
+  const documentId = item.package.manifest.commands.find(
+    (command) => command.id === commandId,
+  )?.ui?.document;
+  const document = item.package.uiDocuments?.find(
+    (document) => document.id === documentId,
+  );
   let value: unknown;
   try {
     value = JSON.parse(content) as unknown;
@@ -66,9 +74,37 @@ export async function parseExtensionSession(
   if (
     !record(value) ||
     Object.keys(value).sort().join(",") !==
-      "commandId,extensionId,extensionVersion,fields,files,formatVersion,inputText,kind,result,sha256,url,view"
+      [
+        "commandId",
+        "extensionId",
+        "extensionVersion",
+        "fields",
+        "files",
+        "formatVersion",
+        "inputText",
+        "kind",
+        "result",
+        "sha256",
+        "url",
+        "view",
+        ...(document ? ["ui"] : []),
+      ]
+        .sort()
+        .join(",")
   )
     invalid();
+  let ui: ExtensionSessionExport["ui"];
+  if (document) {
+    if (
+      kind !== "view" ||
+      !record(value.ui) ||
+      Object.keys(value.ui).sort().join(",") !== "sha256,state" ||
+      value.ui.sha256 !== document.sha256 ||
+      (value.ui.state !== null && !validateUiCheckpoint(value.ui.state))
+    )
+      invalid();
+    ui = { sha256: document.sha256, state: value.ui.state };
+  }
   const identity = extensionSessionIdentity(item, commandId);
   if (
     value.formatVersion !== 1 ||
@@ -177,6 +213,7 @@ export async function parseExtensionSession(
     formatVersion: 1,
     kind,
     ...identity,
+    ...(ui ? { ui } : {}),
     inputText: value.inputText,
     url: value.url,
     files: value.files as string[],

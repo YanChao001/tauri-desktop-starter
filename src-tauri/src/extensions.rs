@@ -22,6 +22,9 @@ use std::{
 #[path = "extension_recovery.rs"]
 mod recovery;
 pub use recovery::{ExtensionArchivePreview, ExtensionArchiveResult, ExtensionArchiveStatus};
+#[path = "extension_ui.rs"]
+pub mod ui;
+pub use ui::{ExtensionUiDocument, validate_ui_documents};
 
 pub const EXTENSIONS_EVENT: &str = "app://extensions-changed";
 pub const TEXT_LIMIT: usize = 1024 * 1024;
@@ -67,6 +70,11 @@ pub struct ExtensionConsent {
     pub trusted: bool,
     pub granted_permissions: Vec<ExtensionPermission>,
 }
+pub(crate) struct InstallCondition<'a> {
+    pub revision: i32,
+    pub replace: bool,
+    pub sha256: &'a str,
+}
 
 impl ExtensionConsent {
     fn validate(&self, manifest: &ExtensionManifest) -> NativeResult<()> {
@@ -110,6 +118,9 @@ pub struct ExtensionNetworkRule {
 pub struct ExtensionUi {
     pub sidebar: bool,
     pub window: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub document: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -135,6 +146,9 @@ pub struct ExtensionPreview {
     pub manifest: ExtensionManifest,
     pub sha256: String,
     pub bytes: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[specta(optional)]
+    pub ui_documents: Vec<ExtensionUiDocument>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -246,14 +260,17 @@ pub struct ExtensionRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Package {
     manifest: ExtensionManifest,
     wasm: String,
+    #[serde(default)]
+    ui_documents: std::collections::BTreeMap<String, String>,
 }
 struct Bundle {
     preview: ExtensionPreview,
     binary: Vec<u8>,
+    ui_documents: std::collections::BTreeMap<String, String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -478,6 +495,16 @@ impl ExtensionManifest {
             if command.ui.is_some() && command.result_format != ExtensionResultFormat::View {
                 return Err(invalid("UI contributions require a view result"));
             }
+            if command
+                .ui
+                .as_ref()
+                .and_then(|ui| ui.document.as_deref())
+                .is_some_and(|id| !ui::valid_document_id(id))
+            {
+                return Err(invalid(
+                    "UI document IDs must be bounded lowercase identifiers",
+                ));
+            }
             if command.input_format == ExtensionInputFormat::Text
                 && command.permissions.iter().any(|permission| {
                     matches!(
@@ -654,6 +681,7 @@ fn package(content: &str) -> NativeResult<Bundle> {
     let package: Package = serde_json::from_str(content.trim_start_matches('\u{feff}'))
         .map_err(|_| invalid("Invalid Wasm extension package JSON"))?;
     package.manifest.validate()?;
+    let ui_documents = validate_ui_documents(&package.manifest, &package.ui_documents)?;
     if package.wasm.len() > BINARY_LIMIT.div_ceil(3) * 4 {
         return Err(invalid("Extension module exceeds 16 MiB"));
     }
@@ -678,8 +706,10 @@ fn package(content: &str) -> NativeResult<Bundle> {
             manifest: package.manifest,
             sha256: digest(&binary),
             bytes: binary.len() as u32,
+            ui_documents,
         },
         binary,
+        ui_documents: package.ui_documents,
     })
 }
 pub fn preview_package(content: &str) -> NativeResult<ExtensionPreview> {
@@ -799,6 +829,7 @@ impl ExtensionStore {
         let mut ids = HashSet::new();
         for item in &registry.extensions {
             item.package.manifest.validate()?;
+            item.package.validate_ui()?;
             item.origin.validate()?;
             if item.generation <= 0
                 || item.generation > registry.revision
@@ -830,6 +861,7 @@ impl ExtensionStore {
             }
             if let Some(previous) = &item.previous_package {
                 previous.manifest.validate()?;
+                previous.validate_ui()?;
                 if previous.manifest.id != item.package.manifest.id
                     || !valid_digest(&previous.sha256)
                     || previous.bytes == 0
@@ -885,6 +917,7 @@ impl ExtensionStore {
     }
 
     fn cleanup(&self, registry: &Registry) {
+        self.cleanup_ui(registry);
         let packages = self.0.root.join("packages");
         if directory(&packages, false) != Ok(true) {
             return;
@@ -937,6 +970,7 @@ impl ExtensionStore {
     }
     fn cache_bundle(&self, bundle: &Bundle, registry: &Registry) -> NativeResult<()> {
         self.cleanup(registry);
+        self.cache_ui(bundle)?;
         directory(&self.0.root, true)?;
         let packages = self.0.root.join("packages");
         directory(&packages, true)?;
@@ -1114,13 +1148,16 @@ impl ExtensionStore {
     fn install_bundle(
         &self,
         bundle: Bundle,
-        expected_revision: i32,
-        replace_existing: bool,
-        expected_hash: &str,
+        condition: InstallCondition<'_>,
         origin: ExtensionOrigin,
         consent: Option<ExtensionConsent>,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
+        let InstallCondition {
+            revision: expected_revision,
+            replace: replace_existing,
+            sha256: expected_hash,
+        } = condition;
         if bundle.preview.sha256 != expected_hash {
             return Err(conflict());
         }
@@ -1258,9 +1295,11 @@ impl ExtensionStore {
     ) -> NativeResult<ExtensionSnapshot> {
         self.install_bundle(
             package(content)?,
-            revision,
-            replace,
-            expected_hash,
+            InstallCondition {
+                revision,
+                replace,
+                sha256: expected_hash,
+            },
             origin,
             None,
             before_replace,
@@ -1269,18 +1308,14 @@ impl ExtensionStore {
     pub(crate) fn install_reviewed(
         &self,
         content: &str,
-        revision: i32,
-        replace: bool,
-        expected_hash: &str,
+        condition: InstallCondition<'_>,
         origin: ExtensionOrigin,
         consent: ExtensionConsent,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
         self.install_bundle(
             package(content)?,
-            revision,
-            replace,
-            expected_hash,
+            condition,
             origin,
             Some(consent),
             before_replace,
@@ -1319,6 +1354,9 @@ impl ExtensionStore {
             .clone()
             .ok_or_else(|| invalid("Incomplete rollback record"))?;
         let module = read_binary(&self.asset(&previous.sha256)?)?;
+        for document in &previous.ui_documents {
+            self.read_ui(document)?;
+        }
         if digest(&module) != previous.sha256 {
             return Err(NativeError::new(
                 ErrorCode::StorageCorrupt,
@@ -1730,9 +1768,11 @@ mod tests {
                 store
                     .install_reviewed(
                         &content,
-                        0,
-                        false,
-                        &preview.sha256,
+                        InstallCondition {
+                            revision: 0,
+                            replace: false,
+                            sha256: &preview.sha256
+                        },
                         ExtensionOrigin::Local,
                         consent,
                         |_, _| panic!("Invalid consent must not revoke credentials")
@@ -1745,9 +1785,11 @@ mod tests {
         let installed = store
             .install_reviewed(
                 &content,
-                0,
-                false,
-                &preview.sha256,
+                InstallCondition {
+                    revision: 0,
+                    replace: false,
+                    sha256: &preview.sha256,
+                },
                 ExtensionOrigin::Local,
                 ExtensionConsent {
                     trusted: true,
@@ -1773,9 +1815,11 @@ mod tests {
             store
                 .install_reviewed(
                     &update.to_string(),
-                    0,
-                    true,
-                    &preview.sha256,
+                    InstallCondition {
+                        revision: 0,
+                        replace: true,
+                        sha256: &preview.sha256
+                    },
                     ExtensionOrigin::Local,
                     valid.clone(),
                     |_, _| panic!("A stale review must not mutate credentials")
@@ -1786,9 +1830,11 @@ mod tests {
         let upgraded = store
             .install_reviewed(
                 &update.to_string(),
-                1,
-                true,
-                &preview.sha256,
+                InstallCondition {
+                    revision: 1,
+                    replace: true,
+                    sha256: &preview.sha256,
+                },
                 ExtensionOrigin::Local,
                 valid,
                 |_, _| Ok(()),
@@ -2292,6 +2338,7 @@ mod tests {
         manifest.commands[1].result_format = ExtensionResultFormat::View;
         manifest.commands[1].permissions = vec![ExtensionPermission::NetworkHttps];
         manifest.commands[1].ui = Some(ExtensionUi {
+            document: None,
             sidebar: true,
             window: true,
         });

@@ -5843,6 +5843,7 @@ version = "0.1.4"
 dependencies = [
  "base64 0.22.1",
  "extism",
+ "getrandom 0.3.4",
  "keyring",
  "log",
  "minisign-verify",

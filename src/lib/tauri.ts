@@ -114,6 +114,21 @@ export function viewExtension(
 export async function openExtensionCenter(): Promise<void> {
   await callNative((commands) => commands.openExtensionCenter());
 }
+export async function openExtensionUi(
+  id: string,
+  commandId: string,
+  expectedSha256: string,
+  expectedGeneration: number,
+): Promise<{ token: string; url: string }> {
+  const token = await callNative((commands) =>
+    commands.openExtensionUi(id, commandId, expectedSha256, expectedGeneration),
+  );
+  const { convertFileSrc } = await import("@tauri-apps/api/core");
+  return { token, url: convertFileSrc(token, "extension-ui") };
+}
+export async function closeExtensionUi(token: string): Promise<void> {
+  await callNative((commands) => commands.closeExtensionUi(token));
+}
 export async function openExtensionWindow(
   id: string,
   commandId: string,

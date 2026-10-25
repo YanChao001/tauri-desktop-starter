@@ -337,6 +337,10 @@ fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeRes
             .manifest
             .validate_structure()
             .map_err(|_| failure(ErrorCode::MarketInvalid))?;
+        entry
+            .package
+            .validate_ui()
+            .map_err(|_| failure(ErrorCode::MarketInvalid))?;
         if !ids.insert(&entry.package.manifest.id)
             || !valid_digest(&entry.package.sha256)
             || !valid_digest(&entry.package_sha256)
