@@ -339,32 +339,54 @@ export function ExtensionView({
                 gridTemplateColumns: `repeat(${group.columns}, minmax(0, 1fr))`,
               }}
             >
-              {group.actions.map((action) => (
-                <Button
-                  key={action.id}
-                  variant={action.primary ? "default" : "outline"}
-                  aria-label={action.ariaLabel ?? undefined}
-                  className={cn(
-                    "h-auto min-h-11 min-w-0 whitespace-normal break-words",
-                    LOCKED_CONTROL_CLASS,
-                    group.board &&
-                      "aspect-square min-h-0 rounded-xl p-0 leading-none shadow-sm disabled:opacity-100",
-                    group.board &&
-                      (group.columns >= 6 || action.label.length >= 5
+              {group.actions.map((action) =>
+                group.board && action.disabled ? (
+                  <span
+                    key={action.id}
+                    role={action.ariaLabel ? "group" : undefined}
+                    aria-label={action.ariaLabel ?? undefined}
+                    className={cn(
+                      "flex aspect-square min-w-0 items-center justify-center rounded-xl border bg-card p-0 text-center font-semibold leading-none text-card-foreground",
+                      group.columns >= 6 || action.label.length >= 5
                         ? "text-sm"
                         : action.label.length >= 3
                           ? "text-xl"
-                          : "text-3xl"),
-                  )}
-                  disabled={actionsBlocked || action.disabled}
-                  data-operation-locked={
-                    blocked && !action.disabled && invalidFields.size === 0
-                  }
-                  onClick={() => onAction(action.id)}
-                >
-                  {action.label}
-                </Button>
-              ))}
+                          : "text-3xl",
+                    )}
+                  >
+                    {action.label}
+                  </span>
+                ) : (
+                  <Button
+                    key={action.id}
+                    variant={action.primary ? "default" : "outline"}
+                    aria-label={action.ariaLabel ?? undefined}
+                    className={cn(
+                      "h-auto min-h-11 min-w-0 whitespace-normal break-words",
+                      LOCKED_CONTROL_CLASS,
+                      group.board &&
+                        "aspect-square min-h-0 rounded-xl p-0 leading-none shadow-sm disabled:opacity-100",
+                      group.board &&
+                        (group.columns >= 6 || action.label.length >= 5
+                          ? "text-sm"
+                          : action.label.length >= 3
+                            ? "text-xl"
+                            : "text-3xl"),
+                    )}
+                    disabled={invalidFields.size > 0 || action.disabled}
+                    aria-disabled={actionsBlocked || action.disabled}
+                    data-operation-locked={
+                      blocked && !action.disabled && invalidFields.size === 0
+                    }
+                    onClick={() => {
+                      if (!actionsBlocked && !action.disabled)
+                        onAction(action.id);
+                    }}
+                  >
+                    {action.label}
+                  </Button>
+                ),
+              )}
             </div>
           ))}
         </div>
@@ -381,18 +403,24 @@ export function ExtensionView({
   const tabs = view.tabs ?? [];
   if (!tabs.length) return body;
   return (
-    <Tabs value={tabs.find((tab) => tab.active)?.id} onValueChange={onAction}>
+    <Tabs
+      value={tabs.find((tab) => tab.active)?.id}
+      onValueChange={(action) => {
+        if (!actionsBlocked) onAction(action);
+      }}
+    >
       <TabsList
-        className={cn(
-          "mb-4 grid w-full grid-cols-2 gap-1 bg-muted/50 p-1 group-data-horizontal/tabs:h-auto sm:grid-cols-3",
-          tabs.length > 5 ? "lg:grid-cols-6" : "lg:grid-cols-5",
-        )}
+        className="mb-4 grid w-full gap-1 bg-muted/50 p-1 group-data-horizontal/tabs:h-auto"
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 8rem), 1fr))",
+        }}
       >
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
             value={tab.id}
-            disabled={actionsBlocked}
+            disabled={invalidFields.size > 0}
+            aria-disabled={actionsBlocked}
             data-operation-locked={blocked && invalidFields.size === 0}
             className={cn(
               "h-auto min-h-9 min-w-0 whitespace-normal",

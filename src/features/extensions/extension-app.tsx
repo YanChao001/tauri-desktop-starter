@@ -21,6 +21,7 @@ import {
 import { extensionInstallationIdentity } from "./extension-model";
 import { useExtensionPhase } from "./use-extension-phase";
 import { ExtensionSessionImport } from "./extension-session-import";
+import { ExtensionSessionClose } from "./extension-session-close";
 import {
   extensionSessionIdentity,
   type ExtensionSessionExport,
@@ -314,12 +315,19 @@ export function ExtensionApp({
   useEffect(() => {
     if (closed) onClose();
   }, [closed, onClose]);
-  async function close() {
-    if (session.exporting || closing.current) return;
+  async function close(signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (session.exporting || closing.current)
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "Session is busy",
+        retryable: false,
+      });
     closing.current = true;
     setStopping(true);
     try {
-      await settle();
+      await settle(signal);
+      signal?.throwIfAborted();
       latest.current = null;
       latestFields.current = {};
       session.view = null;
@@ -330,26 +338,60 @@ export function ExtensionApp({
     } catch (reason) {
       closing.current = false;
       if (alive.current) {
-        setError(reason);
         setStopping(false);
       }
+      throw reason;
     }
   }
+  const feedback = (
+    <div className="flex min-h-8 items-center justify-between gap-3">
+      <p
+        role="status"
+        aria-label={t("ext.appStatus")}
+        aria-live="polite"
+        aria-atomic="true"
+        title={status || undefined}
+        className="min-w-0 truncate text-sm text-muted-foreground"
+      >
+        {status}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        hidden={!busy && !stopping}
+        disabled={!busy || stopping}
+        title={t("ext.appStopHint")}
+        onClick={() => {
+          setStopping(true);
+          void settle().catch((reason: unknown) => {
+            if (alive.current) {
+              setError(reason);
+              setStopping(false);
+            }
+          });
+        }}
+      >
+        {t("ext.stop")}
+      </Button>
+    </div>
+  );
   return (
     <section className="min-w-0 space-y-5" hidden={closed}>
-      <p className="text-sm text-muted-foreground">{t("ext.appSessionHint")}</p>
       <div className="min-w-0 space-y-5" aria-busy={busy}>
         {view ? (
           <>
-            <div className="min-w-0 space-y-2 rounded-xl border bg-muted/20 p-5">
-              <output
-                className="block max-h-28 overflow-auto whitespace-pre-wrap break-words text-2xl font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-live="polite"
-                aria-label={t("ext.output")}
-                tabIndex={0}
-              >
-                {view.display}
-              </output>
+            <div className="min-w-0 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <output
+                  className="block min-w-0 flex-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-2xl font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-live="polite"
+                  aria-label={t("ext.output")}
+                  tabIndex={0}
+                >
+                  {view.display}
+                </output>
+                {feedback}
+              </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {view.description}
               </p>
@@ -371,26 +413,19 @@ export function ExtensionApp({
             />
           </>
         ) : (
-          <Button
-            disabled={blocked || !item.enabled}
-            data-operation-locked={blocked && item.enabled}
-            className={LOCKED_CONTROL_CLASS}
-            onClick={() => run(null)}
-          >
-            {t("ext.appLoad")}
-          </Button>
+          <>
+            {feedback}
+            <Button
+              disabled={blocked || !item.enabled}
+              data-operation-locked={blocked && item.enabled}
+              className={LOCKED_CONTROL_CLASS}
+              onClick={() => run(null)}
+            >
+              {t("ext.appLoad")}
+            </Button>
+          </>
         )}
       </div>
-      <ExtensionData
-        item={item}
-        blocked={blocked || invalidFields.size > 0}
-        session={session}
-        onDirty={() => setDirty(true)}
-        onPickingChange={(value) => {
-          if (alive.current) setPicking(value);
-        }}
-        onSend={(data) => run("host-data", data)}
-      />
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {nativeErrorText(error, t)}
@@ -431,93 +466,82 @@ export function ExtensionApp({
           </div>
         </div>
       ) : null}
-      <ExtensionSessionImport
-        item={item}
-        commandId={commandId}
-        kind="view"
-        blocked={blocked}
-        onError={(reason) => {
-          if (alive.current) setError(reason);
-        }}
-        onPending={(pending, completed) => {
-          if (pending !== null || session.selecting === completed) {
-            session.selecting = pending;
-            if (alive.current) setPicking(pending !== null);
-          }
-        }}
-        onRestore={(imported: ExtensionSessionExport) => {
-          latest.current = imported.view;
-          latestFields.current = imported.fields;
-          session.view = imported.view;
-          session.fields = imported.fields;
-          session.draft = {
-            inputText: imported.inputText,
-            url: imported.url,
-            files: [],
-          };
-          session.dirty = true;
-          setView(imported.view);
-          setFields(imported.fields);
-          setDirty(true);
-          setError(null);
-        }}
-      />
-      <p
-        role="status"
-        aria-label={t("ext.appStatus")}
-        aria-live="polite"
-        aria-atomic="true"
-        title={status || undefined}
-        className="h-5 truncate text-sm text-muted-foreground"
-      >
-        {status}
-      </p>
-      <div className="flex flex-wrap gap-2 border-t pt-4">
-        <Button
-          variant="outline"
-          disabled={saving || stopping || picking || !view}
-          data-operation-locked={
-            (saving || stopping || picking) && view !== null
-          }
-          className={LOCKED_CONTROL_CLASS}
-          title={t("ext.appExportHint")}
-          onClick={() =>
-            void save().catch((reason: unknown) => {
+      <details className="min-w-0 rounded-xl border bg-card p-4">
+        <summary className="cursor-pointer rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {t("ext.sessionTools")}
+        </summary>
+        <div className="mt-4 space-y-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {t("ext.appSessionHint")}
+          </p>
+          <ExtensionData
+            item={item}
+            blocked={blocked || invalidFields.size > 0}
+            session={session}
+            onDirty={() => setDirty(true)}
+            onPickingChange={(value) => {
+              if (alive.current) setPicking(value);
+            }}
+            onSend={(data) => run("host-data", data)}
+          />
+          <ExtensionSessionImport
+            item={item}
+            commandId={commandId}
+            kind="view"
+            blocked={blocked}
+            onError={(reason) => {
               if (alive.current) setError(reason);
-            })
-          }
-        >
-          {t("ext.appExport")}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!busy || stopping}
-          data-operation-locked={busy && stopping}
-          className={LOCKED_CONTROL_CLASS}
-          title={t("ext.appStopHint")}
-          onClick={() => {
-            setStopping(true);
-            void settle().catch((reason: unknown) => {
-              if (alive.current) {
-                setError(reason);
-                setStopping(false);
+            }}
+            onPending={(pending, completed) => {
+              if (pending !== null || session.selecting === completed) {
+                session.selecting = pending;
+                if (alive.current) setPicking(pending !== null);
               }
-            });
-          }}
-        >
-          {t("ext.stop")}
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={saving || stopping || picking}
-          data-operation-locked={saving || stopping || picking}
-          className={LOCKED_CONTROL_CLASS}
-          title={t("ext.appCloseHint")}
-          onClick={() => void close()}
-        >
-          {t("ext.appClose")}
-        </Button>
-      </div>
+            }}
+            onRestore={(imported: ExtensionSessionExport) => {
+              latest.current = imported.view;
+              latestFields.current = imported.fields;
+              session.view = imported.view;
+              session.fields = imported.fields;
+              session.draft = {
+                inputText: imported.inputText,
+                url: imported.url,
+                files: [],
+              };
+              session.dirty = true;
+              setView(imported.view);
+              setFields(imported.fields);
+              setDirty(true);
+              setError(null);
+            }}
+          />
+          <div className="flex flex-wrap gap-2 border-t pt-4">
+            <Button
+              variant="outline"
+              disabled={saving || stopping || picking || !view}
+              data-operation-locked={
+                (saving || stopping || picking) && view !== null
+              }
+              className={LOCKED_CONTROL_CLASS}
+              title={t("ext.appExportHint")}
+              onClick={() =>
+                void save().catch((reason: unknown) => {
+                  if (alive.current) setError(reason);
+                })
+              }
+            >
+              {t("ext.appExport")}
+            </Button>
+            <ExtensionSessionClose
+              dirty={dirty || session.dirty}
+              busy={busy}
+              disabled={saving || stopping || picking}
+              onSave={save}
+              onClose={close}
+            />
+          </div>
+        </div>
+      </details>
     </section>
   );
 }

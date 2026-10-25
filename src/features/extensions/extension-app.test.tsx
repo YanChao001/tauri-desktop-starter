@@ -107,6 +107,14 @@ function app(runningId: string | null = null) {
     />
   );
 }
+function openSessionTools() {
+  const summary = screen.getByText("Session tools", { selector: "summary" });
+  if (!summary.closest("details")?.open) fireEvent.click(summary);
+}
+function sessionButton(name: string) {
+  openSessionTools();
+  return screen.getByRole("button", { name });
+}
 beforeEach(() => {
   vi.clearAllMocks();
   lifecycle.work = null;
@@ -145,6 +153,89 @@ it("renders third-party controls as text and sends one initialized request in St
   result.focus();
   expect(result).toHaveFocus();
 });
+
+it("keeps session tools out of the main workflow and preserves a draft when ending is cancelled", async () => {
+  render(app());
+  const input = await screen.findByLabelText("Query");
+  expect(
+    screen.getByText("Export session", { selector: "button" }),
+  ).not.toBeVisible();
+  expect(
+    screen.getByText("Request stop", { selector: "button" }),
+  ).not.toBeVisible();
+  fireEvent.change(input, { target: { value: "Keep my progress" } });
+  const end = sessionButton("End session");
+  fireEvent.click(end);
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  expect(input).toHaveValue("Keep my progress");
+  expect(end).toHaveFocus();
+  expect(lifecycle.work?.dirty).toBe(true);
+  expect(onClose).not.toHaveBeenCalled();
+  expect(native.cancelExtension).not.toHaveBeenCalled();
+});
+
+it("retains progress when session export is cancelled and only ends after a successful export", async () => {
+  vi.mocked(native.saveTextExport)
+    .mockResolvedValueOnce(null)
+    .mockResolvedValueOnce("session.json");
+  render(app());
+  const input = await screen.findByLabelText("Query");
+  fireEvent.change(input, { target: { value: "Export before ending" } });
+  fireEvent.click(sessionButton("End session"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Export session and end" }),
+  );
+  await within(dialog).findByRole("alert");
+  expect(input).toHaveValue("Export before ending");
+  expect(lifecycle.work?.dirty).toBe(true);
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Export session and end" }),
+  );
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(native.saveTextExport).toHaveBeenLastCalledWith(
+    "third-party.form-session.json",
+    expect.stringContaining("Export before ending"),
+  );
+  expect(lifecycle.work?.dirty).toBe(false);
+});
+
+it("cancels a pending export-and-end decision without clearing the session after the file picker returns", async () => {
+  const exporting = deferred<string | null>();
+  vi.mocked(native.saveTextExport).mockReturnValueOnce(exporting.promise);
+  render(app());
+  const input = await screen.findByLabelText("Query");
+  fireEvent.change(input, { target: { value: "Keep after abort" } });
+  fireEvent.click(sessionButton("End session"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Export session and end" }),
+  );
+  await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await act(async () => exporting.resolve("saved.json"));
+  expect(input).toHaveValue("Keep after abort");
+  expect(lifecycle.work?.dirty).toBe(true);
+  expect(onClose).not.toHaveBeenCalled();
+  const end = sessionButton("End session");
+  expect(end).toBeEnabled();
+  expect(end).toHaveFocus();
+  fireEvent.click(end);
+  expect(
+    await screen.findByRole("dialog", { name: "End this session?" }),
+  ).toBeVisible();
+});
 it("serializes actions and preserves both input and the previous view after failure", async () => {
   const pending = deferred<native.ExtensionView>();
   vi.mocked(native.viewExtension)
@@ -172,7 +263,7 @@ it("serializes actions and preserves both input and the previous view after fail
       },
     }),
   );
-  expect(submit).toBeDisabled();
+  expect(submit).toHaveAttribute("aria-disabled", "true");
   await act(async () =>
     pending.resolve({
       ...first,
@@ -195,8 +286,8 @@ it("keeps feedback and footer controls mounted across running, stopping and sett
     .mockReturnValueOnce(pending.promise);
   const mounted = render(app());
   const submit = await screen.findByRole("button", { name: "Submit" });
-  const stop = screen.getByRole("button", { name: "Request stop" });
-  const end = screen.getByRole("button", { name: "End session" });
+  const stop = screen.getByText("Request stop", { selector: "button" });
+  const end = sessionButton("End session");
   const status = screen.getByRole("status", { name: "Execution status" });
   expect(stop).toBeDisabled();
   expect(status).toBeEmptyDOMElement();
@@ -207,14 +298,14 @@ it("keeps feedback and footer controls mounted across running, stopping and sett
   expect(status).toHaveTextContent("Waiting for the extension to stop…");
   expect(stop).toBeDisabled();
   await act(async () => pending.resolve(first));
-  expect(screen.getByRole("button", { name: "Request stop" })).toBe(stop);
-  expect(screen.getByRole("button", { name: "End session" })).toBe(end);
+  expect(screen.getByText("Request stop", { selector: "button" })).toBe(stop);
+  expect(sessionButton("End session")).toBe(end);
   expect(screen.getByRole("status", { name: "Execution status" })).toBe(status);
   expect(status).toBeEmptyDOMElement();
   expect(stop).toBeDisabled();
   mounted.rerender(app("test.other"));
   expect(status).toBeEmptyDOMElement();
-  expect(submit).toBeEnabled();
+  expect(submit).toHaveAttribute("aria-disabled", "false");
   expect(stop).toBeDisabled();
 });
 it("shows queued status for this window and lets the user cancel its waiting operation", async () => {
@@ -240,7 +331,7 @@ it("shows queued status for this window and lets the user cancel its waiting ope
       screen.getByRole("status", { name: "Execution status" }),
     ).toHaveTextContent("Queued, waiting for a runtime slot…"),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Request stop" }));
+  fireEvent.click(screen.getByText("Request stop", { selector: "button" }));
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith(
       item.package.manifest.id,
@@ -256,7 +347,14 @@ it("waits for native completion before ending a session and clears its unsaved r
     .mockReturnValueOnce(pending.promise);
   render(app());
   fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
-  fireEvent.click(screen.getByRole("button", { name: "End session" }));
+  fireEvent.click(sessionButton("End session"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  expect(native.cancelExtension).not.toHaveBeenCalled();
+  fireEvent.click(
+    within(confirmation).getByRole("button", { name: "Discard and end" }),
+  );
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith("third-party.form", 1),
   );
@@ -348,15 +446,18 @@ it("keeps a session locked when returning while its export is still pending", as
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "Export this draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Export session" }));
+  fireEvent.click(sessionButton("Export session"));
   await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   expect(screen.getByLabelText("Query")).toHaveValue("Export this draft");
   expect(screen.getByLabelText("Query")).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Export session" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "End session" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Submit" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(sessionButton("Export session")).toBeDisabled();
+  expect(sessionButton("End session")).toBeDisabled();
   await act(async () => exporting.resolve("saved.json"));
   await waitFor(() => expect(screen.getByLabelText("Query")).toBeEnabled());
   expect(lifecycle.work?.dirty).toBe(false);
@@ -380,11 +481,11 @@ it("reports the UTF-8 field limit before invoking Wasm and allows correcting the
   );
   expect(input).toBeEnabled();
   const submit = screen.getByRole("button", { name: "Submit" });
-  expect(submit).toBeDisabled();
+  expect(submit).toHaveAttribute("aria-disabled", "true");
   expect(native.viewExtension).toHaveBeenCalledOnce();
   fireEvent.change(input, { target: { value: "中".repeat(682) } });
   expect(input).not.toBeInvalid();
-  expect(submit).toBeEnabled();
+  expect(submit).toHaveAttribute("aria-disabled", "false");
   fireEvent.click(submit);
   await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(2));
   expect(native.viewExtension).toHaveBeenLastCalledWith(
@@ -411,7 +512,7 @@ it("preserves the draft and unlocks a remounted session when its export is cance
   fireEvent.change(screen.getByLabelText("Query"), {
     target: { value: "Keep this draft after cancellation" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Export session" }));
+  fireEvent.click(sessionButton("Export session"));
   await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
@@ -422,7 +523,7 @@ it("preserves the draft and unlocks a remounted session when its export is cance
     "Keep this draft after cancellation",
   );
   expect(lifecycle.work?.dirty).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Export session" }));
+  fireEvent.click(sessionButton("Export session"));
   await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(lifecycle.work?.dirty).toBe(false));
 });
@@ -445,6 +546,7 @@ it("transfers host data only on explicit send and omits it from ordinary actions
     />,
   );
   await screen.findByRole("button", { name: "Submit" });
+  openSessionTools();
   fireEvent.click(screen.getByText("Host data · explicit transfer"));
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "Explicit input" },
@@ -486,6 +588,7 @@ it("omits retained host-data drafts when their optional permissions are revoked"
   );
   const mounted = render(view(["text:read", "network:https"]));
   await screen.findByRole("button", { name: "Submit" });
+  openSessionTools();
   fireEvent.click(screen.getByText("Host data · explicit transfer"));
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "keep text" },
@@ -607,8 +710,13 @@ it("observes a retained run directly after remount and preserves its failure fee
   fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
-  expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Request stop" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Submit" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(
+    screen.getByText("Request stop", { selector: "button" }),
+  ).toBeEnabled();
   expect(lifecycle.work?.dirty).toBe(true);
   await act(async () => pending.reject({ code: "EXTENSION_RUN_FAILED" }));
   await screen.findByRole("alert");
@@ -638,6 +746,7 @@ it("preserves file choices on picker cancellation and waits for selection before
     />,
   );
   await screen.findByRole("button", { name: "Submit" });
+  openSessionTools();
   fireEvent.click(screen.getByText("Host data · explicit transfer"));
   fireEvent.click(
     screen.getByRole("button", { name: "Choose files for this run" }),
@@ -646,9 +755,12 @@ it("preserves file choices on picker cancellation and waits for selection before
   fireEvent.click(
     screen.getByRole("button", { name: "Choose files for this run" }),
   );
-  expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Export session" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "End session" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Submit" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(sessionButton("Export session")).toBeDisabled();
+  expect(sessionButton("End session")).toBeDisabled();
   const saving = lifecycle.work!.save();
   expect(native.saveTextExport).not.toHaveBeenCalled();
   await act(async () => {

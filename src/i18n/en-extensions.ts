@@ -84,6 +84,12 @@ export const enExtensions = {
   "ext.appStatus": "Execution status",
   "ext.appExport": "Export session",
   "ext.appClose": "End session",
+  "ext.sessionTools": "Session tools",
+  "ext.appCloseTitle": "End this session?",
+  "ext.appCloseDescription":
+    "Current inputs, progress and results have not been exported. Ending this session clears them. Saved plugin private data is retained. Export the session first or discard this progress.",
+  "ext.appDiscardClose": "Discard and end",
+  "ext.appSaveClose": "Export session and end",
   "ext.appExportHint":
     "Save current inputs, state and results as JSON. Import into the same command and exact package version to restore. Files must be selected again; credentials are never exported.",
   "ext.appStopHint":
@@ -95,8 +101,8 @@ export const enExtensions = {
   "catalog.extensions":
     "Install Extism Wasm plugins with explicit text, file and network data access. Develop in Rust, JavaScript or TypeScript.",
   "ext.title": "Extensions",
-  "ext.description":
-    "Open plugins like apps or launch tools from the command palette, with cross-language Extism Wasm and interactive app views.",
+  "ext.description": "Find and manage plugins, then open your tools and apps.",
+  "ext.dataBoundary": "Permissions and data",
   "ext.boundary":
     "Plugins run in Wasm. You control required and optional capabilities; file access uses selected resources, networking is restricted to declared origins and methods, and private storage is isolated per plugin.",
   "ext.installFile": "Choose extension package",

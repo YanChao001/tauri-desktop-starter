@@ -73,8 +73,8 @@ export const zhExtensions = {
   "catalog.extensions":
     "安装 Extism Wasm 扩展，按需授权输入、文件和网络数据；支持 Rust、JavaScript 与 TypeScript 开发。",
   "ext.title": "扩展中心",
-  "ext.description":
-    "像打开应用一样使用插件，也可通过命令面板运行工具。支持 Extism 跨语言 Wasm 与交互式应用视图。",
+  "ext.description": "安装和管理扩展，打开你常用的工具与应用。",
+  "ext.dataBoundary": "权限与数据说明",
   "ext.installed": "已安装扩展",
   "ext.open": "打开",
   "ext.openNamed": "打开 {name}",
@@ -87,6 +87,12 @@ export const zhExtensions = {
   "ext.appStatus": "运行状态",
   "ext.appExport": "导出会话",
   "ext.appClose": "结束会话",
+  "ext.sessionTools": "会话工具",
+  "ext.appCloseTitle": "结束当前会话？",
+  "ext.appCloseDescription":
+    "当前输入、进度和结果尚未导出。结束会话会清空这些内容；已保存的插件私有数据会保留。可以先导出会话，或放弃本次进度。",
+  "ext.appDiscardClose": "放弃进度并结束",
+  "ext.appSaveClose": "导出会话并结束",
   "ext.appExportHint":
     "将当前输入、状态和结果保存为 JSON，可在同一命令和完全相同的包版本中导入恢复。文件需重新选择，凭据不会导出。",
   "ext.appStopHint": "请求取消当前操作并等待实际停止，保留输入与上次结果。",

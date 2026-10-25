@@ -101,10 +101,12 @@ export function NativePage({
   const { t } = useI18n();
   return (
     <div className="studio-page">
-      <div className="studio-intro">
-        <h2>{title}</h2>
-        <p>{description}</p>
-      </div>
+      {title || description ? (
+        <div className="studio-intro">
+          {title ? <h2>{title}</h2> : null}
+          {description ? <p>{description}</p> : null}
+        </div>
+      ) : null}
       {isTauri() ? (
         children
       ) : (

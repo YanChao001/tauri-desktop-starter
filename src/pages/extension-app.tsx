@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ExternalLinkIcon, PuzzleIcon } from "lucide-react";
+import { ArrowLeftIcon, ExternalLinkIcon, PuzzleIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
@@ -40,8 +40,8 @@ export function ExtensionPage({
   );
   return (
     <NativePage
-      title={item?.package.manifest.name ?? t("ext.title")}
-      description={item?.package.manifest.description ?? t("ext.description")}
+      title={item ? "" : t("ext.title")}
+      description={item ? "" : t("ext.description")}
     >
       <ResourceError
         error={error ?? windowError}
@@ -56,12 +56,20 @@ export function ExtensionPage({
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
-              <span className="rounded-xl bg-primary/10 p-3 text-primary">
+              {!standalone ? (
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/extensions">
+                    <ArrowLeftIcon className="size-4" />
+                    {t("ext.title")}
+                  </Link>
+                </Button>
+              ) : null}
+              <span className="shrink-0 rounded-xl bg-primary/10 p-2 text-primary">
                 <ExtensionIcon name={item.package.manifest.icon} />
               </span>
-              <span>
-                {command.title} · v{item.package.manifest.version}
-              </span>
+              <h2 className="min-w-0 break-words text-sm font-medium text-foreground">
+                {item.package.manifest.name}
+              </h2>
             </div>
             {!standalone && command.ui?.window ? (
               <Button
@@ -85,11 +93,6 @@ export function ExtensionPage({
               </Button>
             ) : null}
           </div>
-          {standalone ? (
-            <p className="text-xs text-muted-foreground">
-              {t("ext.windowHint")}
-            </p>
-          ) : null}
           <ExtensionApp
             key={`${item.generation}:${item.package.sha256}:${item.package.manifest.version}:${extensionId}:${commandId}`}
             item={item}

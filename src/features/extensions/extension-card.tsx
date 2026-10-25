@@ -54,7 +54,7 @@ export function ExtensionCard({
             else if (!commands.length) onPermissions();
             else onOpen();
           }}
-          className="flex min-w-0 flex-1 items-center gap-4 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-4 rounded-lg text-left text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t("ext.openNamed", { name: manifest.name })}
         >
           <span className="shrink-0 rounded-2xl bg-primary/10 p-4 text-primary">
@@ -64,15 +64,15 @@ export function ExtensionCard({
             <span className="block break-words font-semibold">
               {manifest.name}
             </span>
-            <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
-              {manifest.description}
-            </span>
           </span>
         </button>
         <Badge variant={item.enabled ? "default" : "secondary"}>
           {t(item.enabled ? "ext.enabled" : "ext.disabled")}
         </Badge>
       </div>
+      <p className="break-words text-sm leading-relaxed text-muted-foreground">
+        {manifest.description}
+      </p>
       {item.enabled && commands.length !== manifest.commands.length ? (
         <p className="text-xs text-muted-foreground">
           {t("ext.limitedCommands", {

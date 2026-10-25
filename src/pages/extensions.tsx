@@ -226,9 +226,14 @@ export default function Extensions() {
   }
   return (
     <NativePage title={t("ext.title")} description={t("ext.description")}>
-      <p className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
-        {t("ext.boundary")}
-      </p>
+      <details className="rounded-lg border bg-card px-4 py-3 text-sm">
+        <summary className="cursor-pointer rounded-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {t("ext.dataBoundary")}
+        </summary>
+        <p className="mt-3 leading-relaxed text-muted-foreground">
+          {t("ext.boundary")}
+        </p>
+      </details>
       <ResourceError error={error} retry={() => void reload()} />
       <ExtensionRecovery error={error} reload={reload} />
       {!dialogOpen ? (
@@ -264,6 +269,70 @@ export default function Extensions() {
           hidden={tab !== "installed"}
           className="space-y-5 pt-4"
         >
+          {data?.runs.length ? (
+            <p role="status" className="text-sm">
+              {t("ext.queueSummary", { count: data.runs.length })}
+            </p>
+          ) : null}
+          <h3 className="font-semibold">{t("ext.installed")}</h3>
+          {data?.items.some(
+            (item) => item.package.manifest.id === "starter.extension-lab",
+          ) ? (
+            <p className="text-sm text-muted-foreground">
+              {t("ext.bundledHint")}
+            </p>
+          ) : null}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {data?.items.map((item) => (
+              <ExtensionCard
+                key={item.package.manifest.id}
+                item={item}
+                busy={busy}
+                update={
+                  marketUpdate(market.data?.catalog.entries ?? [], item) ?? null
+                }
+                onOpen={(commandId) => open(item, commandId)}
+                onWindow={(commandId) =>
+                  void act(() =>
+                    openExtensionWindow(
+                      item.package.manifest.id,
+                      commandId,
+                      item.package.sha256,
+                      item.generation,
+                    ),
+                  )
+                }
+                onEnable={() => decide(item, "enable")}
+                onPermissions={() => decide(item, "permissions")}
+                onUninstall={() => decide(item, "uninstall")}
+                onRollback={() => decide(item, "rollback")}
+                onUpdate={() => {
+                  const update = marketUpdate(
+                    market.data?.catalog.entries ?? [],
+                    item,
+                  );
+                  if (update) void inspectMarket(update);
+                }}
+                onDisable={() =>
+                  void act(async () => {
+                    await setExtensionEnabled(
+                      item.package.manifest.id,
+                      false,
+                      [],
+                      data.revision,
+                      false,
+                    );
+                    await reload();
+                  })
+                }
+              />
+            ))}
+          </div>
+          {data && !data.items.length ? (
+            <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+              {t("ext.empty")}
+            </p>
+          ) : null}
           <section className="space-y-4 rounded-xl border bg-card p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 font-semibold">
@@ -336,70 +405,6 @@ export default function Extensions() {
               {t("ext.docs")}
             </ExternalLink>
           </section>
-          {data?.runs.length ? (
-            <p role="status" className="text-sm">
-              {t("ext.queueSummary", { count: data.runs.length })}
-            </p>
-          ) : null}
-          <h3 className="font-semibold">{t("ext.installed")}</h3>
-          {data?.items.some(
-            (item) => item.package.manifest.id === "starter.extension-lab",
-          ) ? (
-            <p className="text-sm text-muted-foreground">
-              {t("ext.bundledHint")}
-            </p>
-          ) : null}
-          <div className="grid gap-4 lg:grid-cols-2">
-            {data?.items.map((item) => (
-              <ExtensionCard
-                key={item.package.manifest.id}
-                item={item}
-                busy={busy}
-                update={
-                  marketUpdate(market.data?.catalog.entries ?? [], item) ?? null
-                }
-                onOpen={(commandId) => open(item, commandId)}
-                onWindow={(commandId) =>
-                  void act(() =>
-                    openExtensionWindow(
-                      item.package.manifest.id,
-                      commandId,
-                      item.package.sha256,
-                      item.generation,
-                    ),
-                  )
-                }
-                onEnable={() => decide(item, "enable")}
-                onPermissions={() => decide(item, "permissions")}
-                onUninstall={() => decide(item, "uninstall")}
-                onRollback={() => decide(item, "rollback")}
-                onUpdate={() => {
-                  const update = marketUpdate(
-                    market.data?.catalog.entries ?? [],
-                    item,
-                  );
-                  if (update) void inspectMarket(update);
-                }}
-                onDisable={() =>
-                  void act(async () => {
-                    await setExtensionEnabled(
-                      item.package.manifest.id,
-                      false,
-                      [],
-                      data.revision,
-                      false,
-                    );
-                    await reload();
-                  })
-                }
-              />
-            ))}
-          </div>
-          {data && !data.items.length ? (
-            <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-              {t("ext.empty")}
-            </p>
-          ) : null}
           {data &&
           (data.items.length === 0 ||
             data.items.some((item) =>

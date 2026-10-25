@@ -10,6 +10,95 @@ vi.mock("@/providers/i18n", () => ({
 }));
 afterEach(cleanup);
 
+it("keeps an action focused while it is running and ignores duplicate activation", () => {
+  const onAction = vi.fn();
+  const view: View = {
+    version: 2,
+    state: "",
+    display: "Tool",
+    description: "",
+    fields: [],
+    groups: [
+      {
+        columns: 1,
+        actions: [{ id: "run", label: "Run", primary: true, disabled: false }],
+      },
+    ],
+  };
+  const props = {
+    view,
+    fields: {},
+    invalidFields: new Set<string>(),
+    onField: vi.fn(),
+    onAction,
+  };
+  const mounted = render(<ExtensionView {...props} blocked={false} />);
+  const button = screen.getByRole("button", { name: "Run" });
+  button.focus();
+  fireEvent.click(button);
+  mounted.rerender(<ExtensionView {...props} blocked={true} />);
+  expect(button).toHaveFocus();
+  expect(button).toHaveAttribute("aria-disabled", "true");
+  expect(button).not.toBeDisabled();
+  fireEvent.click(button);
+  expect(onAction).toHaveBeenCalledTimes(1);
+  mounted.rerender(<ExtensionView {...props} blocked={false} />);
+  expect(button).toHaveFocus();
+  fireEvent.click(button);
+  expect(onAction).toHaveBeenCalledTimes(2);
+});
+
+it("exposes read-only board values as content instead of unavailable buttons", () => {
+  const onAction = vi.fn();
+  const view: View = {
+    version: 2,
+    state: "",
+    display: "Board",
+    description: "",
+    fields: [],
+    groups: [
+      {
+        columns: 2,
+        board: true,
+        actions: [
+          {
+            id: "score",
+            label: "16",
+            ariaLabel: "Tile value 16",
+            disabled: true,
+            primary: false,
+          },
+          {
+            id: "cell",
+            label: "Fill",
+            ariaLabel: "Fill this square",
+            disabled: false,
+            primary: false,
+          },
+        ],
+      },
+    ],
+  };
+  render(
+    <ExtensionView
+      view={view}
+      fields={{}}
+      blocked={false}
+      invalidFields={new Set()}
+      onField={vi.fn()}
+      onAction={onAction}
+    />,
+  );
+  expect(
+    screen.queryByRole("button", { name: "Tile value 16" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("group", { name: "Tile value 16" }),
+  ).toHaveTextContent("16");
+  fireEvent.click(screen.getByRole("button", { name: "Fill this square" }));
+  expect(onAction).toHaveBeenCalledWith("cell");
+});
+
 it("keeps the selected panel populated in the same commit when moving forward and backward", () => {
   const visible: boolean[] = [];
   function Surface({ active }: { active: string }) {
