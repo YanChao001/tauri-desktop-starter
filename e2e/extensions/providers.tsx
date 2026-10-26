@@ -99,6 +99,8 @@ export function useCommands() {
       if (id === "toggle-theme")
         toggle(payload?.point ?? { clientX: 0, clientY: 0 });
       if (id.startsWith("theme:")) setTheme(id.slice(6));
+      if (id === "toggle-sidebar")
+        update({ sidebarCollapsed: !settings.sidebarCollapsed });
       return true;
     },
   };

@@ -1,7 +1,16 @@
 import { expect } from "@playwright/test";
 
 /** The final local edit survives an overlapping, deliberately slow real-Wasm locale refresh. */
-export async function checkCalculatorBusyDraft({ page, frame, idle, reload }) {
+export async function checkCalculatorBusyDraft({
+  page,
+  frame,
+  idle,
+  reload,
+  phaseDelayMs = 0,
+  transportTimingMock = false,
+  errorDelayMs = 0,
+  errorAfterIdle = false,
+}) {
   const saved = await frame
     .locator("html")
     .evaluate(() =>
@@ -15,6 +24,7 @@ export async function checkCalculatorBusyDraft({ page, frame, idle, reload }) {
   const language = await page.evaluate(
     () => window.__extensionSettingsTest.read().language,
   );
+  const evidenceStart = Date.now();
   await frame.locator("#expression").fill("2468+1");
   await expect
     .poll(() =>
@@ -26,6 +36,40 @@ export async function checkCalculatorBusyDraft({ page, frame, idle, reload }) {
   await page.evaluate(() => {
     window.__extensionUiTest.viewDelayMs = 1000;
   });
+  if (phaseDelayMs) await page.waitForTimeout(phaseDelayMs);
+  if (transportTimingMock) {
+    const before = await page.evaluate(
+      () =>
+        window.__extensionUiTest.lifecycle.filter(
+          (event) => event.event === "view-start",
+        ).length,
+    );
+    await page.evaluate(
+      ({ language, errorDelayMs, errorAfterIdle }) => {
+        window.__extensionUiTest.transportTiming = {
+          busyMs: 400,
+          errorMs: errorDelayMs,
+          errorAfterIdle,
+        };
+        window.__extensionSettingsTest.update({
+          language: language === "zh" ? "en" : "zh",
+        });
+      },
+      { language, errorDelayMs, errorAfterIdle },
+    );
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              window.__extensionUiTest.lifecycle.filter(
+                (event) => event.event === "view-start",
+              ).length,
+          ),
+        { intervals: [10, 20, 30], timeout: 3000 },
+      )
+      .toBeGreaterThan(before);
+  }
   await frame.locator("#expression").fill("2468+12");
   await frame.locator("#graph").scrollIntoViewIfNeeded();
   const graph = await frame.locator("#graph").boundingBox();
@@ -39,13 +83,14 @@ export async function checkCalculatorBusyDraft({ page, frame, idle, reload }) {
     graph.y + graph.height * 0.5,
   );
   await page.mouse.up();
-  await page.evaluate(
-    (language) =>
-      window.__extensionSettingsTest.update({
-        language: language === "zh" ? "en" : "zh",
-      }),
-    language,
-  );
+  if (!transportTimingMock)
+    await page.evaluate(
+      (language) =>
+        window.__extensionSettingsTest.update({
+          language: language === "zh" ? "en" : "zh",
+        }),
+      language,
+    );
   await expect
     .poll(
       () => frame.locator("html").evaluate(() => window.__sdkSnapshot.busy),
@@ -76,11 +121,23 @@ export async function checkCalculatorBusyDraft({ page, frame, idle, reload }) {
     expect(retained.fields[id]).toBe(value);
     expect(retained.checkpoint.fields[id]).toBe(value);
   }
+  const receipts = await page.evaluate(
+    (start) => window.__protocolErrors.filter((event) => event.at >= start),
+    evidenceStart,
+  );
+  if (transportTimingMock)
+    expect(receipts.some((receipt) => receipt.error.code === "CONFLICT")).toBe(
+      true,
+    );
+  if (errorAfterIdle)
+    for (const receipt of receipts)
+      expect(receipt.deliveredHostBusy).toBe(false);
   await reload();
   for (const [id, value] of Object.entries(retained.inputs))
     await expect(frame.locator("#" + id)).toHaveValue(value);
   await page.evaluate((language) => {
     window.__extensionUiTest.viewDelayMs = 0;
+    window.__extensionUiTest.transportTiming = { busyMs: 0, errorMs: 0 };
     window.__extensionSettingsTest.update({ language });
   }, language);
   await idle();
@@ -97,6 +154,12 @@ export async function checkCalculatorBusyDraft({ page, frame, idle, reload }) {
     boundaryTimingMock: true,
     realWasm: true,
     delayMs: 1000,
+    phaseDelayMs,
+    transportTimingMock,
+    busyDeliveryDelayMs: transportTimingMock ? 400 : 0,
+    errorDelayMs,
+    errorAfterIdle,
+    realConflictReceipts: receipts,
     busyObserved: true,
     retained,
     reloadRetained: true,
@@ -287,39 +350,57 @@ async function statusFinished(page, index) {
   await page.waitForTimeout(80);
 }
 async function watchEnabled(frame, id) {
-  await frame.locator("html").evaluate((id) => {
-    window.__lanEnabledProbe = {
+  await frame.locator("html").evaluate((_node, id) => {
+    const previous = window.__lanEnabledProbe;
+    if (previous) {
+      previous.running = false;
+      clearInterval(previous.timer);
+      cancelAnimationFrame(previous.raf);
+    }
+    const probe = {
       running: true,
       frames: 0,
       disabledFrames: 0,
       samples: 0,
       disabledSamples: 0,
+      missingControls: 0,
     };
-    window.__lanEnabledProbe.timer = setInterval(() => {
-      const probe = window.__lanEnabledProbe;
+    window.__lanEnabledProbe = probe;
+    const disabled = () => {
+      const button = document.getElementById(id);
+      if (!button) {
+        probe.missingControls++;
+        return false;
+      }
+      return button.disabled;
+    };
+    probe.timer = setInterval(() => {
+      if (!probe.running) return;
       probe.samples++;
-      if (document.getElementById(id).disabled) probe.disabledSamples++;
+      if (disabled()) probe.disabledSamples++;
     }, 16);
     const sample = () => {
-      const probe = window.__lanEnabledProbe;
       if (!probe.running) return;
       probe.frames++;
-      if (document.getElementById(id).disabled) probe.disabledFrames++;
-      requestAnimationFrame(sample);
+      if (disabled()) probe.disabledFrames++;
+      probe.raf = requestAnimationFrame(sample);
     };
-    requestAnimationFrame(sample);
+    probe.raf = requestAnimationFrame(sample);
   }, id);
 }
 async function finishEnabled(frame) {
   const probe = await frame.locator("html").evaluate(() => {
     window.__lanEnabledProbe.running = false;
     clearInterval(window.__lanEnabledProbe.timer);
+    cancelAnimationFrame(window.__lanEnabledProbe.raf);
     delete window.__lanEnabledProbe.timer;
+    delete window.__lanEnabledProbe.raf;
     return window.__lanEnabledProbe;
   });
   expect(probe.samples).toBeGreaterThan(2);
   expect(probe.disabledFrames).toBe(0);
   expect(probe.disabledSamples).toBe(0);
+  expect(probe.missingControls).toBe(0);
   return probe;
 }
 

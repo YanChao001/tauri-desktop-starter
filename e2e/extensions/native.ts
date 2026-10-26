@@ -27,7 +27,13 @@ declare global {
       serviceTiming: { lanStatusMs: number; lanNicknameMs: number };
       lifecycle: { event: string; at: number; detail?: unknown }[];
       viewDelayMs: number;
+      transportTiming: {
+        busyMs: number;
+        errorMs: number;
+        errorAfterIdle?: boolean;
+      };
       sessionViewValidationBoundaryMockCalls: number;
+      permissionGrantBoundaryMock: boolean;
     };
   }
 }
@@ -41,11 +47,26 @@ window.__extensionUiTest = {
   serviceTiming: { lanStatusMs: 0, lanNicknameMs: 0 },
   lifecycle: [],
   viewDelayMs: 0,
+  transportTiming: { busyMs: 0, errorMs: 0 },
   sessionViewValidationBoundaryMockCalls: 0,
+  permissionGrantBoundaryMock: false,
 };
 const configuration = (await fetch("/fixture/config").then((response) =>
   response.json(),
 )) as { snapshot: ExtensionSnapshot };
+// A separate host-data dialog case grants only this declared optional permission.
+// The fifteen regular profiles retain their ungranted offline Lab experience.
+if (
+  new URLSearchParams(location.search).get("hostDataBoundaryMock") === "true"
+) {
+  const lab = configuration.snapshot.items.find(
+    (item) => item.package.manifest.id === "starter.extension-lab",
+  );
+  if (!lab?.package.manifest.optionalPermissions.includes("text:read"))
+    throw new Error("The host-data fixture requires declared text:read");
+  lab.grantedPermissions = [...lab.grantedPermissions, "text:read"];
+  window.__extensionUiTest.permissionGrantBoundaryMock = true;
+}
 const fixtureSession = crypto.randomUUID();
 const snapshotDelayUntil =
   performance.now() +
@@ -109,11 +130,27 @@ async function request<T>(path: string, body: unknown): Promise<T> {
     });
   return result as T;
 }
-export const viewExtension = (input: ExtensionViewInput) =>
-  request<ExtensionView>("view", {
+export const viewExtension = (input: ExtensionViewInput) => {
+  window.__extensionUiTest.lifecycle.push({
+    event: "view-start",
+    at: performance.timeOrigin + performance.now(),
+    detail: {
+      input: input.request.action,
+      expression: input.request.fields.expression,
+      delay: window.__extensionUiTest.viewDelayMs,
+    },
+  });
+  return request<ExtensionView>("view", {
     ...input,
     boundaryViewDelayMs: window.__extensionUiTest.viewDelayMs,
+  }).then((result) => {
+    window.__extensionUiTest.lifecycle.push({
+      event: "view-end",
+      at: performance.timeOrigin + performance.now(),
+    });
+    return result;
   });
+};
 // This UI-only import test reuses an unchanged export from real Wasm. It does not test Rust parsing.
 export const validateExtensionView = async (
   content: string,

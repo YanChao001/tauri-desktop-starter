@@ -34,6 +34,7 @@ import {
   checkToolsHelp,
   frameGeometry,
   stableFrameGeometry,
+  checkHostScroll,
 } from "./extensions/surface-checks.mjs";
 
 const root = resolve(import.meta.dirname, ".."),
@@ -69,9 +70,19 @@ const init =
     '(location.hostname !== "127.0.0.1" || !location.pathname.startsWith("/fixture/ui/"))',
   ) +
   `
-  window.__iframeProtocolRequests=[];
+  window.__iframeProtocolRequests=[];window.__protocolErrors=[];
   window.addEventListener("message",event=>{if(window===window.top&&event.data?.type==="fixture:protocol-probe")window.__iframeProtocolRequests.push(event.data.value);});
-  const postPortMessage=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...args){if(window!==window.top&&message?.version===1&&Number.isInteger(message.id)&&typeof message.method==="string")parent.postMessage({type:"fixture:protocol-probe",value:{method:message.method,id:message.id,at:performance.timeOrigin+performance.now()}},"*");return postPortMessage.call(this,message,...args);};
+  const postPortMessage=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...args){
+    if(window!==window.top&&message?.version===1&&Number.isInteger(message.id)&&typeof message.method==="string")parent.postMessage({type:"fixture:protocol-probe",value:{method:message.method,id:message.id,at:performance.timeOrigin+performance.now()}},"*");
+    if(window===window.top&&message?.type==="state")window.__latestHostBusy=message.value?.busy;
+    let receipt;if(window===window.top&&message?.error){receipt={at:performance.timeOrigin+performance.now(),id:message.id,error:message.error};window.__protocolErrors.push(receipt);}
+    const timing=window===window.top&&window.__extensionUiTest?.transportTiming;
+    const forward=()=>{if(receipt){receipt.deliveredAt=performance.timeOrigin+performance.now();receipt.deliveredHostBusy=window.__latestHostBusy;}return postPortMessage.call(this,message,...args);};
+    if(receipt&&timing?.errorAfterIdle){const queued=performance.now();const deliver=()=>{if(window.__latestHostBusy===true&&performance.now()-queued<10000)setTimeout(deliver,16);else forward();};setTimeout(deliver,16);return;}
+    const delay=message?.type==="state"&&message.value?.busy===true?timing?.busyMs:message?.error?timing?.errorMs:0;
+    if(delay>0){setTimeout(forward,delay);return;}
+    return forward();
+  };
   window.__audioResumeStates=[];window.__audioSuspendStates=[];
   if(window.AudioContext){const resume=AudioContext.prototype.resume;AudioContext.prototype.resume=function(...args){const result=resume.apply(this,args);result.then(()=>window.__audioResumeStates.push(this.state));return result;};}
   if(window.AudioContext){const suspend=AudioContext.prototype.suspend;AudioContext.prototype.suspend=function(...args){const result=suspend.apply(this,args);result.then(()=>window.__audioSuspendStates.push(this.state));return result;};}
@@ -88,6 +99,11 @@ const names = [
   "lan-chat",
   "wallpaper-browser",
   "lab",
+];
+const busyScenarios = [
+  { phaseDelayMs: 0 },
+  { transportTimingMock: true, errorDelayMs: 0 },
+  { transportTimingMock: true, errorAfterIdle: true },
 ];
 const selectedNames = process.argv
   .slice(2)
@@ -106,13 +122,25 @@ const sharedInputs = Object.fromEntries(
   await Promise.all(
     [
       "sdk/extension-ui.js",
+      "e2e/extension-ui.mjs",
       "src/features/extensions/extension-custom-ui.tsx",
       "src/features/extensions/extension-app.tsx",
       "src/features/extensions/extension-frame.tsx",
       "src/features/extensions/extension-chrome-slot.tsx",
       "src/features/extensions/extension-loading.tsx",
+      "src/features/extensions/extension-help.tsx",
+      "src/features/extensions/extension-data.tsx",
+      "src/features/extensions/extension-session-import.tsx",
+      "src/features/extensions/extension-session-close.tsx",
+      "src/features/extensions/extension-session.ts",
+      "src/features/extensions/extensions-provider.tsx",
+      "src/features/extensions/extension-ui-bridge.ts",
+      "src/layouts/app-shell.tsx",
+      "src/pages/extension-app.tsx",
       "src/pages/extension-window.tsx",
       "src/components/title-bar.tsx",
+      "src/components/app-sidebar.tsx",
+      "src/styles/app-navigation.css",
       "src/hooks/use-theme-switch.ts",
       "src-tauri/src/native-ipc.js",
       "src-tauri/src/extension_ui.rs",
@@ -184,8 +212,16 @@ async function cleanupFixture() {
 async function observeSdk(frame) {
   await frame.locator("html").evaluate(async () => {
     window.__sdkSnapshot = await starter.ready;
+    window.__sdkStateTransitions = [];
     starter.onChange((snapshot) => {
       window.__sdkSnapshot = snapshot;
+      window.__sdkStateTransitions.push({
+        at: performance.timeOrigin + performance.now(),
+        busy: snapshot.busy,
+        expression: snapshot.fields.expression,
+        checkpointExpression: snapshot.checkpoint?.fields?.expression,
+        xmin: snapshot.fields.xmin,
+      });
     });
   });
 }
@@ -540,6 +576,28 @@ try {
         profile,
         plugins.find((plugin) => plugin.name === name).manifest,
       );
+      if (process.argv.includes("--chrome-only")) {
+        expect(errors).toEqual([]);
+        expect(warnings).toEqual([]);
+        report.push({
+          plugin: name,
+          inputHashes: plugins.find((plugin) => plugin.name === name)
+            .inputHashes,
+          profile,
+          chrome,
+          initialPaint: {
+            visibleFrames: initialPaint.visible.length,
+            skeletonObserved: initialPaint.skeletonObserved,
+          },
+          errors,
+          warnings,
+          nativeIpc: false,
+          scope: "Navigation placement and first paint only; no business flow",
+        });
+        console.log(`PASS ${name} ${profile.width}px navigation placement`);
+        await page.close();
+        continue;
+      }
       async function action(id) {
         const previous = calls.length;
         await frame.locator(`[data-action="${id}"]`).click();
@@ -567,6 +625,54 @@ try {
           await frame.locator("#" + id).fill(value);
         await action("plot");
         await expect(frame.locator("#legend span")).toHaveCount(1);
+        if (process.argv.includes("--busy-only")) {
+          const timingRuns = [];
+          for (const timing of busyScenarios) {
+            const busyDraft = await checkCalculatorBusyDraft({
+              page,
+              frame,
+              ...timing,
+              idle: () => idle(page, frame),
+              reload: async () => {
+                const language = await page.evaluate(
+                  () => window.__extensionSettingsTest.read().language,
+                );
+                const old = await page.locator("iframe").elementHandle();
+                await page
+                  .getByRole("button", {
+                    name: language === "zh" ? "扩展工具" : "Extension tools",
+                    exact: true,
+                  })
+                  .click();
+                await page
+                  .getByRole("menuitem", {
+                    name:
+                      language === "zh" ? "重新加载界面" : "Reload interface",
+                    exact: true,
+                  })
+                  .click();
+                await page.keyboard.press("Escape");
+                await old.waitForElementState("hidden");
+                await observeSdk(frame);
+                await idle(page, frame);
+              },
+            });
+            await writeFile(
+              join(output, "calculator-busy-draft.json"),
+              JSON.stringify(busyDraft, null, 2),
+            );
+            timingRuns.push(busyDraft);
+            await writeFile(
+              join(output, "calculator-busy-timing-runs.json"),
+              JSON.stringify(timingRuns, null, 2),
+            );
+          }
+          console.log(
+            "PASS calculator busy-only last draft survives locale run and reload",
+          );
+          await page.close();
+          continue;
+        }
         const popup = await checkSelectPopup(frame, "#angle");
         await writeFile(
           join(
@@ -585,36 +691,42 @@ try {
               ).length,
             idle: () => idle(page, frame),
           });
-          const busyDraft = await checkCalculatorBusyDraft({
-            page,
-            frame,
-            idle: () => idle(page, frame),
-            reload: async () => {
-              const language = await page.evaluate(
-                () => window.__extensionSettingsTest.read().language,
-              );
-              const old = await page.locator("iframe").elementHandle();
-              await page
-                .getByRole("button", {
-                  name: language === "zh" ? "扩展工具" : "Extension tools",
-                  exact: true,
-                })
-                .click();
-              await page
-                .getByRole("button", {
-                  name: language === "zh" ? "重新加载界面" : "Reload interface",
-                  exact: true,
-                })
-                .click();
-              await page.keyboard.press("Escape");
-              await old.waitForElementState("hidden");
-              await observeSdk(frame);
-              await idle(page, frame);
-            },
-          });
+          const busyDrafts = [];
+          for (const timing of busyScenarios) {
+            const busyDraft = await checkCalculatorBusyDraft({
+              page,
+              frame,
+              ...timing,
+              idle: () => idle(page, frame),
+              reload: async () => {
+                const language = await page.evaluate(
+                  () => window.__extensionSettingsTest.read().language,
+                );
+                const old = await page.locator("iframe").elementHandle();
+                await page
+                  .getByRole("button", {
+                    name: language === "zh" ? "扩展工具" : "Extension tools",
+                    exact: true,
+                  })
+                  .click();
+                await page
+                  .getByRole("menuitem", {
+                    name:
+                      language === "zh" ? "重新加载界面" : "Reload interface",
+                    exact: true,
+                  })
+                  .click();
+                await page.keyboard.press("Escape");
+                await old.waitForElementState("hidden");
+                await observeSdk(frame);
+                await idle(page, frame);
+              },
+            });
+            busyDrafts.push(busyDraft);
+          }
           await writeFile(
             join(output, "calculator-busy-draft.json"),
-            JSON.stringify(busyDraft, null, 2),
+            JSON.stringify(busyDrafts, null, 2),
           );
           await writeFile(
             join(output, "calculator-pan-protocol.json"),
@@ -656,6 +768,63 @@ try {
           await page.evaluate(() => window.__extensionUiTest.artifacts.length),
         ).toBeGreaterThan(0);
         await expect(frame.locator("#artifacts button")).toBeVisible();
+        const artifactAttempts = await page.evaluate(
+          () => window.__extensionUiTest.artifacts.length,
+        );
+        const artifactGeometry = await frame
+          .locator("#artifacts button")
+          .evaluate((node) => ({
+            width: node.getBoundingClientRect().width,
+            height: node.getBoundingClientRect().height,
+            containerWidth: node.parentElement.getBoundingClientRect().width,
+            title: node.title,
+            text: node.textContent,
+          }));
+        expect(artifactGeometry.width).toBeLessThanOrEqual(
+          artifactGeometry.containerWidth + 1,
+        );
+        expect(artifactGeometry.title).toBe(artifactGeometry.text);
+        expect(artifactGeometry.height).toBeCloseTo(
+          parseFloat(profile.font) * 2,
+          0,
+        );
+        const beforeArtifactRetry = calls.length;
+        await frame.locator("#artifacts button").click();
+        await expect
+          .poll(() =>
+            page.evaluate(() => window.__extensionUiTest.artifacts.length),
+          )
+          .toBe(artifactAttempts + 1);
+        await idle(page, frame);
+        await expect(frame.locator("#artifacts button")).toBeVisible();
+        expect(calls.length).toBe(beforeArtifactRetry);
+        if (process.argv.includes("--artifact-only")) {
+          expect(errors).toEqual([]);
+          expect(warnings).toEqual([]);
+          expect(
+            await frame
+              .locator("html")
+              .evaluate((node) => node.scrollWidth > innerWidth + 1),
+          ).toBe(false);
+          report.push({
+            plugin: name,
+            profile,
+            inputHashes: plugins.find((plugin) => plugin.name === name)
+              .inputHashes,
+            artifactGeometry,
+            retainedAfterCancel: true,
+            retryWithoutWasmRun: true,
+            errors,
+            warnings,
+            nativeIpc: false,
+            scope: "Real calculator actions and cancelled artifact retry only",
+          });
+          console.log(
+            `PASS calculator ${profile.width}px cancelled artifact retry remains within its container`,
+          );
+          await page.close();
+          continue;
+        }
         await frame.locator("#expression").fill("42+1");
         await expect
           .poll(() =>
@@ -880,32 +1049,58 @@ try {
       // validation boundary is substituted; this must never execute another Wasm action.
       const toolsLabel =
         profile.language === "zh" ? "扩展工具" : "Extension tools";
-      await page.getByRole("button", { name: toolsLabel, exact: true }).click();
       const toolsHelp = await checkToolsHelp(page, toolsLabel);
+      await page.getByRole("button", { name: toolsLabel, exact: true }).click();
+      const toolsMenu = page.getByRole("menu", {
+        name: toolsLabel,
+        exact: true,
+      });
+      await expect(toolsMenu).toBeVisible();
+      await settled(page);
+      await expect(
+        toolsMenu.locator("input,textarea,select,button,p,h1,h2,h3"),
+      ).toHaveCount(0);
+      const menuBox = await toolsMenu.boundingBox();
+      expect(menuBox.width).toBeLessThanOrEqual(profile.width - 24);
+      const menuItems = toolsMenu.getByRole("menuitem");
+      expect(await menuItems.count()).toBeGreaterThanOrEqual(
+        profile.window === "true" ? 4 : 5,
+      );
+      for (const item of await menuItems.all()) {
+        await expect(item.locator("svg")).toHaveCount(1);
+        expect((await item.textContent()).trim().length).toBeGreaterThan(0);
+      }
+      await page.keyboard.press("Escape");
+      const toolsTrigger = page.getByRole("button", {
+        name: toolsLabel,
+        exact: true,
+      });
+      await expect(toolsMenu).toHaveCount(0);
+      await expect(toolsTrigger).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(menuItems.first()).toBeFocused();
+      await page.keyboard.press("End");
+      await expect(menuItems.last()).toBeFocused();
+      await page.keyboard.press("Home");
+      await expect(menuItems.first()).toBeFocused();
+      toolsHelp.menu = {
+        width: menuBox.width,
+        items: await menuItems.count(),
+        iconsAndText: true,
+        noInlineForms: true,
+        keyboardNavigation: true,
+      };
       const exportedBefore = await page.evaluate(
         () => window.__extensionUiTest.exports.length,
       );
       await settled(page);
-      const hostDefaultControl = await page
-        .getByRole("button", {
-          name: profile.language === "zh" ? "导出会话" : "Export session",
-          exact: true,
-        })
-        .evaluate((node) => ({
-          height: node.getBoundingClientRect().height,
-          fontSize: getComputedStyle(node).fontSize,
-          boxSizing: getComputedStyle(node).boxSizing,
-        }));
-      expect(hostDefaultControl.height).toBeCloseTo(
-        parseFloat(profile.font) * 2,
-        0,
-      );
       await page
-        .getByRole("button", {
+        .getByRole("menuitem", {
           name: profile.language === "zh" ? "导出会话" : "Export session",
           exact: true,
         })
         .click();
+      await expect(toolsMenu).toHaveCount(0);
       await expect
         .poll(() =>
           page.evaluate(() => window.__extensionUiTest.exports.length),
@@ -914,7 +1109,6 @@ try {
       const exported = await page.evaluate(() =>
         window.__extensionUiTest.exports.at(-1),
       );
-      await page.keyboard.press("Escape");
       if (name === "scientific-calculator")
         await frame.locator("#expression").fill("999");
       else if (name === "lab")
@@ -948,8 +1142,8 @@ try {
                       dialogs: [
                         ...document.querySelectorAll('[role="dialog"]'),
                       ].map((node) => node.textContent),
-                      regions: [
-                        ...document.querySelectorAll('[role="region"]'),
+                      menus: [
+                        ...document.querySelectorAll('[role="menu"]'),
                       ].map(
                         (node) =>
                           node.getAttribute("aria-label") ||
@@ -966,16 +1160,44 @@ try {
           true,
         );
       });
+      const importLabel =
+        profile.language === "zh" ? "导入会话 JSON" : "Import session JSON";
+      const importInput = await page
+        .getByLabel(importLabel, { exact: true })
+        .elementHandle();
+      const chooserPromise = page.waitForEvent("filechooser");
       await page
-        .getByLabel(
-          profile.language === "zh" ? "导入会话 JSON" : "Import session JSON",
-          { exact: true },
-        )
-        .setInputFiles({
-          name: exported.name,
-          mimeType: "application/json",
-          buffer: Buffer.from(exported.content),
-        });
+        .getByRole("menuitem", { name: importLabel, exact: true })
+        .click();
+      const chooser = await chooserPromise;
+      expect(await chooser.element().getAttribute("aria-label")).toBe(
+        importLabel,
+      );
+      await expect(toolsMenu).toHaveCount(0);
+      expect(await importInput.evaluate((node) => node.isConnected)).toBe(true);
+      toolsHelp.importInputRetainedAfterMenuClose = true;
+      await chooser.setFiles({
+        name: exported.name,
+        mimeType: "application/json",
+        buffer: Buffer.from(exported.content),
+      });
+      const importDialog = page.getByRole("dialog");
+      await expect(importDialog).toBeVisible();
+      await settled(page);
+      const hostDefaultControl = await importDialog
+        .getByRole("button", {
+          name: profile.language === "zh" ? "取消" : "Cancel",
+          exact: true,
+        })
+        .evaluate((node) => ({
+          height: node.getBoundingClientRect().height,
+          fontSize: getComputedStyle(node).fontSize,
+          boxSizing: getComputedStyle(node).boxSizing,
+        }));
+      expect(hostDefaultControl.height).toBeCloseTo(
+        parseFloat(profile.font) * 2,
+        0,
+      );
       await page
         .getByRole("dialog")
         .getByRole("button", {
@@ -1004,7 +1226,7 @@ try {
         })
         .click();
       await page
-        .getByRole("button", {
+        .getByRole("menuitem", {
           name: profile.language === "zh" ? "重新加载界面" : "Reload interface",
           exact: true,
         })
@@ -1219,6 +1441,7 @@ try {
           }),
         ).toBeVisible();
       }
+      const hostScroll = await checkHostScroll(page, profile);
       const violations = (
         await new AxeBuilder({ page })
           .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
@@ -1252,6 +1475,7 @@ try {
         shortCheckpointStable: true,
         chrome,
         toolsHelp,
+        hostScroll,
         initialPaint: {
           visibleFrames: initialPaint.visible.length,
           skeletonObserved: initialPaint.skeletonObserved,
@@ -1276,6 +1500,8 @@ try {
   if (
     !process.argv.includes("--security-only") &&
     !process.argv.includes("--regressions-only") &&
+    !process.argv.includes("--chrome-only") &&
+    !process.argv.includes("--artifact-only") &&
     (!selectedNames.length || selectedNames.includes("scientific-calculator"))
   ) {
     const context = await browser.newContext({
@@ -1403,6 +1629,91 @@ try {
     );
     await context.close();
   }
+  if (
+    ![
+      "--security-only",
+      "--settings-only",
+      "--regressions-only",
+      "--chrome-only",
+      "--artifact-only",
+    ].some((flag) => process.argv.includes(flag)) &&
+    (!selectedNames.length || selectedNames.includes("lab"))
+  ) {
+    const context = await browser.newContext({
+      viewport: { width: 360, height: 760 },
+      reducedMotion: "reduce",
+    });
+    await context.addInitScript({ content: init });
+    const page = await context.newPage(),
+      errors = [],
+      warnings = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type()))
+        warnings.push(message.text());
+    });
+    await page.goto(
+      `http://127.0.0.1:${port}/?plugin=lab&window=true&language=zh&theme=light&font=20px&hostDataBoundaryMock=true`,
+    );
+    const frame = page.frameLocator("iframe");
+    await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+    await observeSdk(frame);
+    await idle(page, frame);
+    const before = calls.length;
+    const trigger = page.getByRole("button", { name: "扩展工具", exact: true });
+    const menu = page.getByRole("menu", { name: "扩展工具", exact: true });
+    const dialog = page.getByRole("dialog", { name: "发送数据", exact: true });
+    await trigger.click();
+    await page
+      .getByRole("menuitem", { name: "发送数据…", exact: true })
+      .click();
+    await expect(menu).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    expect(
+      await dialog.evaluate((node) => node.contains(document.activeElement)),
+    ).toBe(true);
+    await dialog
+      .getByLabel("输入文本", { exact: true })
+      .fill("Retained host-data draft 你好");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await page
+      .getByRole("menuitem", { name: "发送数据…", exact: true })
+      .click();
+    await expect(dialog.getByLabel("输入文本", { exact: true })).toHaveValue(
+      "Retained host-data draft 你好",
+    );
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(calls.length).toBe(before);
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    await writeFile(
+      join(output, "data-dialog.json"),
+      JSON.stringify(
+        {
+          permissionGrantBoundaryMock: await page.evaluate(
+            () => window.__extensionUiTest.permissionGrantBoundaryMock,
+          ),
+          grantedPermission: "text:read",
+          initialFocusInsideDialog: true,
+          escapeReturnsFocus: true,
+          draftRetainedAfterReopen: true,
+          actualAdditionalWasmActions: calls.length - before,
+          nativePermissionApproval: false,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      "PASS compact menu opens independent data dialog; Escape, focus and draft retained",
+    );
+    await context.close();
+  }
   const securityPage = await browser.newPage();
   await securityPage.context().addInitScript({ content: init });
   let externalRequests = 0;
@@ -1482,13 +1793,20 @@ try {
       output,
       process.argv.includes("--regressions-only")
         ? "regressions-run.json"
-        : process.argv.includes("--security-only")
-          ? "security-run.json"
-          : "report.json",
+        : process.argv.includes("--chrome-only")
+          ? "chrome-run.json"
+          : process.argv.includes("--artifact-only")
+            ? "artifact-run.json"
+            : process.argv.includes("--security-only")
+              ? "security-run.json"
+              : "report.json",
     ),
     JSON.stringify(
       {
         cases: report,
+        inputHashes: Object.fromEntries(
+          plugins.map((plugin) => [plugin.name, plugin.inputHashes]),
+        ),
         provenance: plugins.map((plugin) => ({
           id: plugin.manifest.id,
           version: plugin.manifest.version,
@@ -1517,6 +1835,9 @@ try {
         state.protocolRequests = await page.evaluate(
           () => window.__iframeProtocolRequests,
         );
+        state.protocolErrors = await page.evaluate(
+          () => window.__protocolErrors,
+        );
         state.lifecycle = await page.evaluate(
           () => window.__extensionUiTest?.lifecycle,
         );
@@ -1531,6 +1852,37 @@ try {
               error: document.querySelector("#error")?.textContent,
               draft: document.querySelector("#draft")?.value,
               snapshotBusy: window.__sdkSnapshot?.busy,
+              expression: document.querySelector("#expression")?.value,
+              fields: window.__sdkSnapshot?.fields,
+              checkpoint: window.__sdkSnapshot?.checkpoint,
+              stateTransitions: window.__sdkStateTransitions,
+              overflow: {
+                viewport: innerWidth,
+                root: document.documentElement.scrollWidth,
+                nodes: [...document.querySelectorAll("body *")]
+                  .map((node) => {
+                    const rectangle = node.getBoundingClientRect();
+                    return {
+                      tag: node.tagName,
+                      id: node.id,
+                      className: node.className,
+                      left: rectangle.left,
+                      right: rectangle.right,
+                      width: rectangle.width,
+                      clientWidth: node.clientWidth,
+                      scrollWidth: node.scrollWidth,
+                      overflow: getComputedStyle(node).overflow,
+                      text: node.textContent.slice(0, 120),
+                    };
+                  })
+                  .filter(
+                    (node) =>
+                      node.right > innerWidth + 1 ||
+                      node.left < -1 ||
+                      node.scrollWidth > node.clientWidth + 1,
+                  )
+                  .slice(0, 40),
+              },
               defaultControl: [
                 ...document.querySelectorAll(
                   "#start,#field-todo,#network-mode",
@@ -1555,6 +1907,9 @@ try {
     JSON.stringify(
       {
         message: error.message,
+        inputHashes: Object.fromEntries(
+          plugins.map((plugin) => [plugin.name, plugin.inputHashes]),
+        ),
         pages,
         cases: report,
         services: services.calls,

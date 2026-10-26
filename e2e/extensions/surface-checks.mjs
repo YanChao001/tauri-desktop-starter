@@ -16,6 +16,20 @@ export async function checkChrome(page, profile, manifest) {
       .locator(".app-title-bar")
       .getByRole("img", { name: manifest.name, exact: true });
     await expect(icon.locator("svg")).toBeVisible();
+    const title = page.locator("[data-extension-window-title]");
+    await expect(title).toHaveText(manifest.name);
+    await expect(title).toHaveAttribute("title", manifest.name);
+    await expect(title).toBeVisible();
+    const titleGeometry = await title.evaluate((node) => ({
+      width: node.getBoundingClientRect().width,
+      overflow: getComputedStyle(node).overflow,
+      textOverflow: getComputedStyle(node).textOverflow,
+      whiteSpace: getComputedStyle(node).whiteSpace,
+    }));
+    expect(titleGeometry.width).toBeGreaterThan(0);
+    expect(titleGeometry.whiteSpace).toBe("nowrap");
+    expect(titleGeometry.textOverflow).toBe("ellipsis");
+    expect(titleGeometry.overflow).toBe("hidden");
     const theme = await page.locator("[data-theme-control]").boundingBox();
     const minimize = await page
       .getByRole("button", {
@@ -31,26 +45,80 @@ export async function checkChrome(page, profile, manifest) {
       tools: toolBox,
       minimize,
       manifestIcon: true,
+      title: { text: manifest.name, ...titleGeometry },
     };
   }
-  const navigation = page.locator("nav.app-route-context-extension");
-  await expect(
-    navigation
-      .locator('[data-extension-chrome="navigation"]')
-      .getByRole("button", {
-        name: profile.language === "zh" ? "扩展工具" : "Extension tools",
-        exact: true,
-      }),
-  ).toBeVisible();
-  await expect(navigation.locator("svg").first()).toBeVisible();
-  const box = await navigation.boundingBox();
-  expect(box.x + box.width - toolBox.x - toolBox.width).toBeLessThanOrEqual(
-    (16 * parseFloat(profile.font)) / 16,
+  await expect(page.locator(".app-route-context")).toHaveCount(0);
+  const sidebar = page.locator("#app-sidebar");
+  const row = sidebar.locator("[data-sidebar-extension]");
+  const link = row.locator("a.app-sidebar-link");
+  const slot = row.locator('[data-extension-chrome="navigation"]');
+  await expect(row).toHaveCount(1);
+  await expect(link).toHaveAttribute("aria-current", "page");
+  await expect(link.locator("svg")).toBeVisible();
+  await expect(slot.getByRole("button")).toHaveCount(1);
+  expect(await tools.evaluate((node) => node.closest("a") === null)).toBe(true);
+  const originalTool = await tools.elementHandle();
+  const originalFrame = await page.locator("iframe").elementHandle();
+  await row.scrollIntoViewIfNeeded();
+  const expandedLink = await link.boundingBox();
+  const expandedTool = await tools.boundingBox();
+  expect(expandedLink.x + expandedLink.width).toBeLessThanOrEqual(
+    expandedTool.x + 1,
   );
+  expect(
+    Math.abs(
+      expandedLink.y +
+        expandedLink.height / 2 -
+        expandedTool.y -
+        expandedTool.height / 2,
+    ),
+  ).toBeLessThanOrEqual(1);
+  await link.focus();
+  await page.keyboard.press("Tab");
+  await expect(tools).toBeFocused();
+  await page
+    .getByRole("button", {
+      name: profile.language === "zh" ? "折叠侧栏" : "Collapse sidebar",
+      exact: true,
+    })
+    .click();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await row.scrollIntoViewIfNeeded();
+  const collapsedSidebar = await sidebar.boundingBox();
+  const collapsedLink = await link.boundingBox();
+  const collapsedTool = await tools.boundingBox();
+  expect(collapsedSidebar.width).toBe(56);
+  expect(collapsedLink.y + collapsedLink.height).toBeLessThanOrEqual(
+    collapsedTool.y + 1,
+  );
+  expect(collapsedTool.x).toBeGreaterThanOrEqual(collapsedSidebar.x);
+  expect(collapsedTool.x + collapsedTool.width).toBeLessThanOrEqual(
+    collapsedSidebar.x + collapsedSidebar.width,
+  );
+  await link.focus();
+  await page.keyboard.press("Tab");
+  await expect(tools).toBeFocused();
+  expect(await originalTool.evaluate((node) => node.isConnected)).toBe(true);
+  expect(await originalFrame.evaluate((node) => node.isConnected)).toBe(true);
+  await page
+    .getByRole("button", {
+      name: profile.language === "zh" ? "展开侧栏" : "Expand sidebar",
+      exact: true,
+    })
+    .click();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
+  await row.scrollIntoViewIfNeeded();
   return {
-    placement: "navigation",
-    navigation: box,
-    tools: toolBox,
+    placement: "sidebar-navigation",
+    expandedLink,
+    expandedTool,
+    collapsedSidebar,
+    collapsedLink,
+    collapsedTool,
+    keyboardReachable: true,
+    toolAndFrameRetained: true,
+    toolsOutsideLink: true,
     manifestIcon: true,
   };
 }
@@ -60,20 +128,28 @@ export async function checkNormalControls(frame, name, fontSize) {
     "scientific-calculator":
       '[data-action="save"],#load,[data-action="export"],[data-action="history-clear"],#fit,#zoom-in,#zoom-out',
     "lan-chat": "#start,#stop,#rename,#refresh,#send,#export",
-    "wallpaper-browser": "#refresh,#import,#settings,#search",
+    "wallpaper-browser": "#refresh,#import,#settings",
     lab: '[data-action="todo-add"]',
   };
-  const controls = await frame.locator(selectors[name]).evaluateAll((nodes) =>
-    nodes
-      .filter((node) => node.getBoundingClientRect().height > 0)
-      .map((node) => ({
-        id: node.id,
-        action: node.dataset.action,
-        height: node.getBoundingClientRect().height,
-        boxSizing: getComputedStyle(node).boxSizing,
-        fontSize: getComputedStyle(node).fontSize,
-      })),
-  );
+  const controls = [];
+  for (const selector of selectors[name].split(",")) {
+    const control = frame.locator(selector);
+    await expect(control, `Required ordinary control ${selector}`).toHaveCount(
+      1,
+    );
+    await expect(control, `Visible ordinary control ${selector}`).toBeVisible();
+    const measured = await control.evaluate((node) => ({
+      id: node.id,
+      action: node.dataset.action,
+      height: node.getBoundingClientRect().height,
+      width: node.getBoundingClientRect().width,
+      boxSizing: getComputedStyle(node).boxSizing,
+      fontSize: getComputedStyle(node).fontSize,
+    }));
+    expect(measured.height, `Visible height of ${selector}`).toBeGreaterThan(0);
+    expect(measured.width, `Visible width of ${selector}`).toBeGreaterThan(0);
+    controls.push(measured);
+  }
   for (const control of controls) {
     expect(control.boxSizing).toBe("border-box");
     expect(control.height).toBeCloseTo(parseFloat(fontSize) * 2, 0);
@@ -159,14 +235,13 @@ export async function checkSelectPopup(frame, selector) {
 }
 
 export async function checkToolsHelp(page, label) {
-  const region = page.getByRole("region", { name: label, exact: true });
-  await expect(region.locator('[data-slot="popover-description"]')).toHaveCount(
-    0,
-  );
-  const info = region.locator("[data-extension-help]").first();
-  await expect(info).toBeVisible();
+  const trigger = page.getByRole("button", { name: label, exact: true });
+  await expect(
+    page.getByRole("menu", { name: label, exact: true }),
+  ).toHaveCount(0);
+  await expect(trigger).toBeVisible();
   await expect(page.getByRole("tooltip")).toHaveCount(0);
-  await info.evaluate((node) => {
+  await trigger.evaluate((node) => {
     window.__helpTiming = {
       entered: 0,
       opened: 0,
@@ -202,8 +277,9 @@ export async function checkToolsHelp(page, label) {
       { once: true },
     );
   });
-  await info.hover();
+  await trigger.hover();
   await expect(page.getByRole("tooltip")).toBeVisible({ timeout: 2000 });
+  await expect(page.getByRole("tooltip")).toHaveText(label);
   await expect
     .poll(() => page.evaluate(() => window.__helpTiming.opened))
     .toBeGreaterThan(0);
@@ -211,23 +287,18 @@ export async function checkToolsHelp(page, label) {
   expect(timing.opened - timing.entered).toBeGreaterThanOrEqual(600);
   const box = await page.getByRole("tooltip").boundingBox();
   expect(box.width).toBeLessThanOrEqual(page.viewportSize().width - 12);
-  const heading = await region
-    .getByRole("heading", { name: label, exact: true })
-    .boundingBox();
-  await page.mouse.move(
-    heading.x + heading.width / 2,
-    heading.y + heading.height / 2,
-    { steps: 6 },
-  );
-  await page.mouse.move(
-    heading.x + heading.width / 2 - 2,
-    heading.y + heading.height / 2,
-  );
+  const destination = {
+    x: page.viewportSize().width - 8,
+    y: page.viewportSize().height - 8,
+  };
+  await page.mouse.move(destination.x, destination.y, { steps: 6 });
+  await page.mouse.move(destination.x - 2, destination.y);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   return {
     delayed: true,
     delayMs: timing.opened - timing.entered,
     width: box.width,
+    triggerOnly: true,
     noPermanentDescription: true,
   };
 }
@@ -240,6 +311,39 @@ export async function frameGeometry(page) {
     viewport: innerHeight,
   }));
 }
+
+export async function checkHostScroll(page, profile) {
+  const main = page.locator("main.app-main");
+  await expect(main).toHaveAttribute("tabindex", "0");
+  const beforeMain =
+    profile.window === "true"
+      ? page.locator(".app-title-bar button").last()
+      : page.locator('#app-sidebar [role="separator"]');
+  await beforeMain.focus();
+  await page.keyboard.press("Tab");
+  await expect(main).toBeFocused();
+  const geometry = await main.evaluate((node) => ({
+    scrollHeight: node.scrollHeight,
+    clientHeight: node.clientHeight,
+    originalTop: node.scrollTop,
+  }));
+  let keyboardScrolled = false;
+  if (geometry.scrollHeight > geometry.clientHeight + 1) {
+    await main.evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    await page.keyboard.press("PageDown");
+    await expect
+      .poll(() => main.evaluate((node) => node.scrollTop))
+      .toBeGreaterThan(0);
+    keyboardScrolled = true;
+    await main.evaluate((node, top) => {
+      node.scrollTop = top;
+    }, geometry.originalTop);
+  }
+  return { ...geometry, tabReachable: true, keyboardScrolled };
+}
+
 export function stableFrameGeometry(before, after) {
   expect(Math.abs(before.y - after.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(before.height - after.height)).toBeLessThanOrEqual(1);

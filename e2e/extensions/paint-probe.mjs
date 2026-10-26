@@ -5,13 +5,20 @@ export function installPaintProbe() {
   const probe = {
     host: [],
     child: [],
+    visible: [],
+    completed: false,
     startedAt: performance.timeOrigin + performance.now(),
   };
   window.__extensionPaintProbe = probe;
   const top = window === window.top;
-  let frames = 0,
-    unsubscribe,
-    snapshot;
+  let unsubscribe,
+    snapshot,
+    raf,
+    revealedAt,
+    stopped = false;
+  let revealedFrames = 0;
+  const history = [],
+    notified = new WeakSet();
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -49,23 +56,62 @@ export function installPaintProbe() {
       top: rectangle.top,
     };
   }
-  if (top)
-    window.addEventListener("message", (event) => {
-      if (event.data?.type === "fixture:paint-probe" && event.origin === "null")
-        probe.child.push(event.data.value);
-    });
-  function sample() {
-    const at = performance.timeOrigin + performance.now();
-    if (++frames > (top ? 1200 : 240) || at - probe.startedAt > 20000) {
-      unsubscribe?.();
-      return;
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(raf);
+    unsubscribe?.();
+    window.removeEventListener("message", message);
+    window.removeEventListener("pagehide", stop);
+  }
+  function message(event) {
+    if (top) {
+      if (
+        event.data?.type !== "fixture:paint-probe" ||
+        event.origin !== "null" ||
+        ![...document.querySelectorAll("iframe")].some(
+          (node) => node.contentWindow === event.source,
+        )
+      )
+        return;
+      probe.child.push(...event.data.samples);
+      // A later visible host frame must never retroactively make an earlier
+      // hidden child frame visible. Use the last observation at or before it.
+      probe.visible = probe.child.filter((child) => {
+        const host = probe.host.findLast((sample) => sample.at <= child.at);
+        return (
+          host &&
+          host.frames.some((frame) => frame.url === child.url && frame.visible)
+        );
+      });
+      probe.completed = true;
+      stop();
+    } else if (
+      event.source === parent &&
+      event.data?.type === "fixture:paint-visible"
+    ) {
+      revealedAt ??= performance.timeOrigin + performance.now();
     }
+  }
+  window.addEventListener("message", message);
+  window.addEventListener("pagehide", stop);
+  function sample() {
+    if (stopped) return;
+    const at = performance.timeOrigin + performance.now();
+    // Wait for up to 60s of initial work, then capture the reveal burst. Child
+    // samples stay in a bounded local ring rather than posting every frame.
+    if (
+      (!revealedAt && at - probe.startedAt > 60000) ||
+      (revealedAt && at - revealedAt > 5000)
+    )
+      return stop();
     const root = document.documentElement;
     if (root) {
       if (top) {
-        probe.host.push({
+        const nodes = [...document.querySelectorAll("iframe")];
+        const host = {
           at,
-          frames: [...document.querySelectorAll("iframe")].map((node) => ({
+          frames: nodes.map((node) => ({
             url: node.src,
             ...visibility(node),
           })),
@@ -74,7 +120,18 @@ export function installPaintProbe() {
               '.app-main [data-slot="skeleton"],.app-main [data-extension-loading]',
             ),
           ].filter((node) => visibility(node).visible).length,
-        });
+        };
+        probe.host.push(host);
+        for (const [index, node] of nodes.entries()) {
+          if (host.frames[index].visible && !notified.has(node)) {
+            revealedAt ??= at;
+            notified.add(node);
+            node.contentWindow?.postMessage(
+              { type: "fixture:paint-visible" },
+              "*",
+            );
+          }
+        }
       } else {
         if (!unsubscribe && window.starter)
           unsubscribe = window.starter.onChange((value) => {
@@ -82,28 +139,30 @@ export function installPaintProbe() {
           });
         const rootStyle = getComputedStyle(root),
           bodyStyle = document.body && getComputedStyle(document.body);
-        parent.postMessage(
-          {
-            type: "fixture:paint-probe",
-            value: {
-              at,
-              url: location.href,
-              root: rgba(rootStyle.backgroundColor),
-              body: bodyStyle ? rgba(bodyStyle.backgroundColor) : [0, 0, 0, 0],
-              dark: root.classList.contains("dark"),
-              viewReady:
-                snapshot?.view !== null && snapshot?.view !== undefined,
-              hasContent: !!document.querySelector("main")?.textContent.trim(),
-              colorScheme: rootStyle.colorScheme,
-            },
-          },
-          "*",
-        );
+        history.push({
+          at,
+          url: location.href,
+          root: rgba(rootStyle.backgroundColor),
+          body: bodyStyle ? rgba(bodyStyle.backgroundColor) : [0, 0, 0, 0],
+          dark: root.classList.contains("dark"),
+          viewReady: snapshot?.view !== null && snapshot?.view !== undefined,
+          hasContent: !!document.querySelector("main")?.textContent.trim(),
+          colorScheme: rootStyle.colorScheme,
+        });
+        if (revealedAt) revealedFrames++;
+        else if (history.length > 32) history.shift();
+        if (revealedFrames >= 8) {
+          parent.postMessage(
+            { type: "fixture:paint-probe", samples: history },
+            "*",
+          );
+          return stop();
+        }
       }
     }
-    requestAnimationFrame(sample);
+    raf = requestAnimationFrame(sample);
   }
-  requestAnimationFrame(sample);
+  raf = requestAnimationFrame(sample);
 }
 
 export async function checkInitialPaint(page, expectedTheme) {
@@ -111,35 +170,17 @@ export async function checkInitialPaint(page, expectedTheme) {
     .poll(
       () =>
         page.evaluate(() => {
-          const probe = window.__extensionPaintProbe;
-          return probe.child.filter((sample) =>
-            probe.host.some(
-              (host) =>
-                Math.abs(host.at - sample.at) < 34 &&
-                host.frames.some(
-                  (frame) => frame.url === sample.url && frame.visible,
-                ),
-            ),
-          ).length;
+          return window.__extensionPaintProbe.visible.length;
         }),
       { timeout: 10000 },
     )
     .toBeGreaterThanOrEqual(3);
   const evidence = await page.evaluate(() => {
     const probe = window.__extensionPaintProbe;
-    const visible = probe.child.filter((sample) =>
-      probe.host.some(
-        (host) =>
-          Math.abs(host.at - sample.at) < 34 &&
-          host.frames.some(
-            (frame) => frame.url === sample.url && frame.visible,
-          ),
-      ),
-    );
     return {
       host: probe.host,
       child: probe.child,
-      visible,
+      visible: probe.visible,
       skeletonObserved: probe.host.some((sample) => sample.skeletons > 0),
     };
   });
@@ -156,7 +197,7 @@ export async function checkInitialPaint(page, expectedTheme) {
   return {
     ...evidence,
     method:
-      "Document-start rAF samples correlated with host iframe/ancestor opacity, display, visibility and viewport intersection",
+      "Bounded document-start rAF history and eight reveal frames, correlated only with the preceding host visibility observation; fixture-only reveal notification, not native pixel capture",
     nativeWebViewPaint: false,
   };
 }
