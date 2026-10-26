@@ -138,34 +138,100 @@ export function desktopUiChecks() {
       assert.equal(before.rootScrollTop, 0);
       const beforeLayout = await settingsLayout();
       for (const menu of await $$(".app-title-menu-trigger")) {
-        // 桌面驱动的 element.click 只发 DOM click；菜单同时以键盘入口验证。
-        await browser.execute((element) => element.focus(), menu);
-        await browser.keys("ArrowDown");
-        await $("[role=menu]").waitForDisplayed();
-        const after = await geometry();
-        if (!isDeepStrictEqual(after, before))
+        try {
+          // 桌面驱动的 element.click 只发 DOM click；菜单同时以键盘入口验证。
+          await browser.execute((element) => element.focus(), menu);
+          await browser.keys("ArrowDown");
+          await $("[role=menu]").waitForDisplayed();
+          // 可见早于 FocusScope 的挂载回调；等真实焦点就绪后再验证 Escape。
+          let focusedMenu;
+          let stableFocus = 0;
+          await browser.waitUntil(
+            async () => {
+              const current = await browser.execute(() => {
+                const content = document.querySelector(
+                  '[role="menu"][data-state="open"]',
+                );
+                return content?.contains(document.activeElement)
+                  ? content.id
+                  : null;
+              });
+              stableFocus =
+                current && current === focusedMenu ? stableFocus + 1 : 0;
+              focusedMenu = current;
+              return stableFocus >= 1;
+            },
+            {
+              interval: 100,
+              timeoutMsg:
+                "Opening a native menu did not move keyboard focus inside",
+            },
+          );
+          const after = await geometry();
+          if (!isDeepStrictEqual(after, before))
+            writeFileSync(
+              join(
+                "artifacts",
+                "e2e",
+                process.env.STARTER_E2E_PHASE,
+                "menu-layout.json",
+              ),
+              JSON.stringify(
+                {
+                  before,
+                  after,
+                  beforeLayout,
+                  afterLayout: await settingsLayout(),
+                },
+                null,
+                2,
+              ),
+            );
+          assert.deepEqual(after, before);
+          await browser.keys("Escape");
+          await $("[role=menu]").waitForExist({ reverse: true });
+          await browser.waitUntil(
+            () =>
+              browser.execute(
+                (trigger) => document.activeElement === trigger,
+                menu,
+              ),
+            {
+              timeoutMsg:
+                "Closing a native menu did not return focus to its trigger",
+            },
+          );
+          assert.deepEqual(await geometry(), before);
+        } catch (error) {
+          const focus = await browser.execute(() => ({
+            activeElement: document.activeElement?.outerHTML.slice(0, 2000),
+            triggers: [
+              ...document.querySelectorAll(".app-title-menu-trigger"),
+            ].map((trigger) => ({
+              text: trigger.textContent,
+              expanded: trigger.getAttribute("aria-expanded"),
+              state: trigger.getAttribute("data-state"),
+            })),
+            menus: [...document.querySelectorAll('[role="menu"]')].map(
+              (content) => ({
+                state: content.getAttribute("data-state"),
+                text: content.textContent,
+                containsFocus: content.contains(document.activeElement),
+                animation: getComputedStyle(content).animationName,
+              }),
+            ),
+          }));
           writeFileSync(
             join(
               "artifacts",
               "e2e",
               process.env.STARTER_E2E_PHASE,
-              "menu-layout.json",
+              "menu-keyboard.json",
             ),
-            JSON.stringify(
-              {
-                before,
-                after,
-                beforeLayout,
-                afterLayout: await settingsLayout(),
-              },
-              null,
-              2,
-            ),
+            JSON.stringify(focus, null, 2),
           );
-        assert.deepEqual(after, before);
-        await browser.keys("Escape");
-        await $("[role=menu]").waitForExist({ reverse: true });
-        assert.deepEqual(await geometry(), before);
+          throw error;
+        }
       }
       await $(".app-title-language").click();
       await $("[role=listbox]").waitForDisplayed();
