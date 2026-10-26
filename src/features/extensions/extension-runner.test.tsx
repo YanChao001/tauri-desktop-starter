@@ -77,7 +77,39 @@ beforeEach(() => {
   vi.mocked(native.cancelExtension).mockResolvedValue(undefined);
   vi.mocked(native.saveTextExport).mockResolvedValue("saved.json");
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+it("keeps short runs locked without flashing progress or changing the feedback controls", async () => {
+  const pending = deferred<string>();
+  vi.mocked(native.runExtension).mockReturnValueOnce(pending.promise);
+  render(
+    <ExtensionRunner
+      items={[tool]}
+      runs={[]}
+      onSettled={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+  const run = screen.getByRole("button", { name: "Run extension" });
+  const stop = screen.getByText("Request stop", { selector: "button" });
+  const status = screen.getByRole("status", { name: "Execution status" });
+  vi.useFakeTimers();
+  fireEvent.click(run);
+  expect(run).toBeDisabled();
+  expect(stop).not.toBeVisible();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(150);
+    pending.resolve("Fast result");
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(screen.getByText("Fast result")).toBeVisible();
+  expect(run).toBeEnabled();
+  expect(stop).not.toBeVisible();
+  expect(screen.getByRole("status", { name: "Execution status" })).toBe(status);
+  expect(status).toBeEmptyDOMElement();
+});
 
 it("exports the actual final result when completion races with lifecycle cancellation", async () => {
   const nativeRun = deferred<string>();
@@ -150,7 +182,10 @@ it("keeps its run occupied until native cancellation completes and cancels on un
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
-  fireEvent.click(screen.getByRole("button", { name: "Request stop" }));
+  expect(
+    screen.queryByRole("button", { name: "Request stop" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Request stop" }));
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith("test.tool", 1),
   );

@@ -6,6 +6,7 @@ import type { ExtensionSnapshot } from "@/lib/tauri";
 import * as native from "@/lib/tauri";
 import { ExtensionCommands } from "./extension-commands";
 import { ExtensionsProvider } from "./extensions-provider";
+import { TerminalIcon } from "lucide-react";
 
 const registered = vi.hoisted(() => ({
   commands: [] as readonly AppCommand[],
@@ -36,6 +37,7 @@ const snapshot: ExtensionSnapshot = {
           formatVersion: 3,
           apiVersion: 2,
           id: "test.plugin",
+          icon: "terminal",
           version: "1.0.0",
           name: "Plugin",
           author: "Test",
@@ -85,6 +87,7 @@ it("namespaces enabled commands and opens their runner without executing plugin 
   );
   await waitFor(() => expect(registered.commands).toHaveLength(1));
   expect(registered.commands[0]?.id).toBe("extension:test.plugin:run");
+  expect(registered.commands[0]?.icon).toBe(TerminalIcon);
   await act(async () => {
     await registered.commands[0]?.run();
   });

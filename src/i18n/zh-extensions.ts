@@ -89,6 +89,9 @@ export const zhExtensions = {
   "ext.appExport": "导出会话",
   "ext.appClose": "结束会话",
   "ext.sessionTools": "扩展工具",
+  "ext.tools.interface": "窗口与界面",
+  "ext.tools.session": "会话文件",
+  "ext.tools.lifecycle": "会话管理",
   "ext.reloadUi": "重新加载界面",
   "ext.appCloseTitle": "结束当前会话？",
   "ext.appCloseDescription":
@@ -247,4 +250,8 @@ export const zhExtensions = {
   "ext.source.bundled": "随宿主应用内置",
   "ext.source.local": "本地安装包（来源未经认证）",
   "ext.source.key": "市场签名公钥指纹：",
+  "ext.permission.messaging:lan":
+    "内网通信：主动监听和连接私有网段，发送和保存聊天记录（明文）",
+  "ext.permission.wallpapers:manage":
+    "壁纸管理：浏览许可明确的公共图片、导入与管理图库、切换应用背景",
 } as const;

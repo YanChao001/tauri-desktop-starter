@@ -48,6 +48,10 @@ import { APP_ROUTES } from "@/routes";
 import { CommandsContext } from "./commands-context";
 
 const STANDALONE_COMMANDS = new Set([
+  "toggle-theme",
+  "theme-light",
+  "theme-dark",
+  "theme-system",
   "minimize-window",
   "toggle-maximize",
   "close-window",

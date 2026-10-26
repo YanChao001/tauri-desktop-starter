@@ -15,6 +15,7 @@ import {
 import type { MessageKey as DictKey } from "@/i18n/zh-CN";
 import type { ExtensionInfo } from "@/lib/tauri";
 import { canRunExtensionCommand } from "@/features/extensions/extension-model";
+import { resolveExtensionIcon } from "@/features/extensions/extension-icon";
 import { matchPath } from "react-router-dom";
 
 type PageComponent = ComponentType | LazyExoticComponent<ComponentType>;
@@ -80,7 +81,7 @@ export function extensionNavigation(
           manifest.commands.filter((entry) => entry.ui?.sidebar).length === 1
             ? manifest.name
             : `${manifest.name}: ${command.title}`,
-        icon: PuzzleIcon,
+        icon: resolveExtensionIcon(manifest.icon),
         group: "extensions" as const,
         exact: true,
       }));

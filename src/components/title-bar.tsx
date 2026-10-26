@@ -245,30 +245,28 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
             </TooltipContent>
           </Tooltip>
         ) : null}
-        {!standalone ? <LanguageSwitch compact className="my-auto" /> : null}
-        {!standalone ? (
-          <Tooltip disableHoverableContent>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-10 rounded-none"
-                aria-label={t("title.toggleTheme")}
-                onClick={(event) =>
-                  void execute("toggle-theme", {
-                    point: { clientX: event.clientX, clientY: event.clientY },
-                  })
-                }
-              >
-                <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
-                <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {t("title.toggleTheme")}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
+        <LanguageSwitch compact className="my-auto" />
+        <Tooltip disableHoverableContent>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-10 rounded-none"
+              aria-label={t("title.toggleTheme")}
+              onClick={(event) =>
+                void execute("toggle-theme", {
+                  point: { clientX: event.clientX, clientY: event.clientY },
+                })
+              }
+            >
+              <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
+              <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t("title.toggleTheme")}
+          </TooltipContent>
+        </Tooltip>
 
         {native && !mac ? (
           <>

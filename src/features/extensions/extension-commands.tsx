@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalculatorIcon, Gamepad2Icon, PuzzleIcon } from "lucide-react";
 import type { AppCommand } from "@/commands/types";
 import { useRegisterCommands } from "@/providers/commands";
 import { isTauri } from "@/lib/tauri";
 import { extensionPath } from "@/routes";
 import { canRunExtensionCommand } from "./extension-model";
 import { useExtensions } from "./extensions-provider";
+import { resolveExtensionIcon } from "./extension-icon";
 
 /** Register enabled commands and navigate to their tool or application view. */
 export function ExtensionCommands() {
@@ -25,12 +25,7 @@ export function ExtensionCommands() {
               label: `${item.package.manifest.name}: ${command.title}`,
               description: item.package.manifest.description,
               group: "tools",
-              icon:
-                item.package.manifest.icon === "calculator"
-                  ? CalculatorIcon
-                  : item.package.manifest.icon === "gamepad"
-                    ? Gamepad2Icon
-                    : PuzzleIcon,
+              icon: resolveExtensionIcon(item.package.manifest.icon),
               keywords: [item.package.manifest.id, command.title],
               available: isTauri,
               run: () => {

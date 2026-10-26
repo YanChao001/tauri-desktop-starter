@@ -87,6 +87,9 @@ export const enExtensions = {
   "ext.appExport": "Export session",
   "ext.appClose": "End session",
   "ext.sessionTools": "Extension tools",
+  "ext.tools.interface": "Window and interface",
+  "ext.tools.session": "Session files",
+  "ext.tools.lifecycle": "Session lifecycle",
   "ext.reloadUi": "Reload interface",
   "ext.appCloseTitle": "End this session?",
   "ext.appCloseDescription":
@@ -273,4 +276,8 @@ export const enExtensions = {
   "ext.source.bundled": "Bundled with the host app",
   "ext.source.local": "Local package (source not authenticated)",
   "ext.source.key": "Market signing key fingerprint:",
+  "ext.permission.messaging:lan":
+    "LAN messaging: listen/connect to private addresses and store chat history (unencrypted)",
+  "ext.permission.wallpapers:manage":
+    "Wallpapers: browse licensed public images, manage the library and change the app background",
 } as const;

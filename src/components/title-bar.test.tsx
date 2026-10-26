@@ -44,18 +44,20 @@ vi.mock("@/providers/settings", () => ({
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
+const theme = vi.hoisted(() => ({ setTheme: vi.fn(), toggle: vi.fn() }));
 vi.mock("@/hooks/use-theme-switch", () => ({
   useThemeSwitch: () => ({
     theme: "light",
-    setTheme: vi.fn(),
-    toggle: vi.fn(),
+    ...theme,
   }),
 }));
 
 function renderTitleBar(standalone = false) {
   return render(
     <StrictMode>
-      <MemoryRouter>
+      <MemoryRouter
+        initialEntries={[standalone ? "/extension-window/test/open" : "/"]}
+      >
         <TooltipProvider>
           <CommandsProvider>
             <TitleBar standalone={standalone} />
@@ -160,17 +162,19 @@ describe("TitleBar 窗口订阅", () => {
     expect(screen.getByRole("button", { name: "title.file" })).toBeVisible();
   });
 
-  it("keeps only native controls in a standalone window", () => {
+  it("keeps language, theme and native controls without host navigation in a standalone window", () => {
     vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
     renderTitleBar(true);
     expect(screen.queryByRole("button", { name: "title.file" })).toBeNull();
     expect(screen.queryByRole("button", { name: "commands.open" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "title.toggleTheme" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "title.toggleTheme" }),
+    ).toBeVisible();
     expect(
-      screen.queryByRole("combobox", { name: "common.language" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("combobox", { name: "common.language" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "title.toggleTheme" }));
+    expect(theme.toggle).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "title.minimize" }));
     fireEvent.click(screen.getByRole("button", { name: "title.maximize" }));
     fireEvent.click(screen.getByRole("button", { name: "title.close" }));

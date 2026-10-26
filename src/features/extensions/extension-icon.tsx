@@ -4,6 +4,8 @@ import {
   NotebookPenIcon,
   PuzzleIcon,
   TerminalIcon,
+  ImageIcon,
+  MessageCircleIcon,
 } from "lucide-react";
 import type { ExtensionIcon as IconName } from "@/lib/tauri";
 
@@ -13,7 +15,12 @@ const ICONS = {
   notebook: NotebookPenIcon,
   terminal: TerminalIcon,
   puzzle: PuzzleIcon,
+  image: ImageIcon,
+  "message-circle": MessageCircleIcon,
 };
+export function resolveExtensionIcon(name?: IconName | null) {
+  return ICONS[name ?? "puzzle"];
+}
 export function ExtensionIcon({
   name,
   className = "size-6",
@@ -21,6 +28,6 @@ export function ExtensionIcon({
   name?: IconName | null;
   className?: string;
 }) {
-  const Icon = ICONS[name ?? "puzzle"];
+  const Icon = resolveExtensionIcon(name);
   return <Icon className={className} aria-hidden="true" />;
 }

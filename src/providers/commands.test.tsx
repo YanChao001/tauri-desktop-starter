@@ -241,7 +241,7 @@ describe("unified application commands", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByTestId("collapsed")).toHaveTextContent("false");
     fireEvent.click(screen.getByText("Light"));
-    expect(theme.setTheme).not.toHaveBeenCalled();
+    expect(theme.setTheme).toHaveBeenCalledWith("light");
   });
 
   it("dispatches registered commands from menus with the same availability", async () => {

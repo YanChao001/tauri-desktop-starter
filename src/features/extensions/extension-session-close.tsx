@@ -76,7 +76,6 @@ export function ExtensionSessionClose({
       <Button
         ref={trigger}
         variant="outline"
-        size="sm"
         disabled={disabled || working}
         title={t("ext.appCloseHint")}
         onClick={() => {

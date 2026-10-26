@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeftIcon, ExternalLinkIcon, PuzzleIcon } from "lucide-react";
+import { ExternalLinkIcon, PuzzleIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,7 @@ import { useExtensions } from "@/features/extensions/extensions-provider";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { canRunExtensionCommand } from "@/features/extensions/extension-model";
-import {
-  closeWindow,
-  openExtensionCenter,
-  openExtensionWindow,
-} from "@/lib/tauri";
+import { closeWindow, openExtensionWindow } from "@/lib/tauri";
 
 export function ExtensionPage({
   standalone = false,
@@ -62,42 +58,27 @@ export function ExtensionPage({
             item={item}
             commandId={command.id}
             tools={
-              <div className="flex flex-wrap gap-2 border-b pb-4">
+              !standalone && command.ui?.window ? (
                 <Button
                   variant="outline"
+                  disabled={opening}
                   onClick={() => {
-                    if (standalone)
-                      void openExtensionCenter().catch((reason: unknown) =>
-                        setWindowError(reason),
-                      );
-                    else navigate("/extensions");
+                    setOpening(true);
+                    setWindowError(null);
+                    void openExtensionWindow(
+                      item.package.manifest.id,
+                      command.id,
+                      item.package.sha256,
+                      item.generation,
+                    )
+                      .catch((reason: unknown) => setWindowError(reason))
+                      .finally(() => setOpening(false));
                   }}
                 >
-                  <ArrowLeftIcon />
-                  {t("ext.title")}
+                  <ExternalLinkIcon />
+                  {t("ext.openWindow")}
                 </Button>
-                {!standalone && command.ui?.window ? (
-                  <Button
-                    variant="outline"
-                    disabled={opening}
-                    onClick={() => {
-                      setOpening(true);
-                      setWindowError(null);
-                      void openExtensionWindow(
-                        item.package.manifest.id,
-                        command.id,
-                        item.package.sha256,
-                        item.generation,
-                      )
-                        .catch((reason: unknown) => setWindowError(reason))
-                        .finally(() => setOpening(false));
-                    }}
-                  >
-                    <ExternalLinkIcon />
-                    {t("ext.openWindow")}
-                  </Button>
-                ) : null}
-              </div>
+              ) : null
             }
             runs={data?.runs ?? []}
             onSettled={reload}

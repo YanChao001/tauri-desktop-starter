@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { APP_ROUTES, matchRoute, extensionNavigation } from "./routes";
 import type { ExtensionInfo } from "@/lib/tauri";
+import { NotebookPenIcon } from "lucide-react";
 
 describe("路由配置与匹配", () => {
   it("路径唯一且首页唯一", () => {
@@ -33,6 +34,7 @@ describe("路由配置与匹配", () => {
           apiVersion: 2,
           minHostVersion: "0.1.0",
           id: "example.mixed",
+          icon: "notebook",
           name: "Mixed",
           author: "Example",
           version: "1.0.0",
@@ -82,6 +84,7 @@ describe("路由配置与匹配", () => {
     expect(extensionNavigation([item]).map((entry) => entry.path)).toEqual([
       "/extensions/app/example.mixed/offline",
     ]);
+    expect(extensionNavigation([item])[0]?.icon).toBe(NotebookPenIcon);
     expect(
       extensionNavigation([
         { ...item, grantedPermissions: ["network:https"] },

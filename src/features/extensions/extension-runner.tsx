@@ -41,6 +41,8 @@ import {
 import { useExtensionPhase } from "./use-extension-phase";
 import { ExtensionSessionImport } from "./extension-session-import";
 import { extensionSessionIdentity } from "./extension-session";
+import { useDelayedBusy } from "./use-delayed-busy";
+import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 
 type FileChoice = Pick<ExtensionFileChoice, "id" | "name">;
 type PendingRun = { id: string; generation: number; done: Promise<void> };
@@ -77,6 +79,7 @@ export function ExtensionRunner({
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const showProgress = useDelayedBusy(busy || stopping);
   const [exporting, setExporting] = useState(false);
   const [picking, setPicking] = useState(false);
   const alive = useRef(false);
@@ -400,9 +403,10 @@ export function ExtensionRunner({
             }}
           >
             <SelectTrigger
+              data-operation-locked={locked}
               ref={selector}
               id={`${id}-extension`}
-              className="w-full"
+              className={`w-full ${LOCKED_CONTROL_CLASS}`}
             >
               <SelectValue placeholder={t("ext.choose")} />
             </SelectTrigger>
@@ -426,6 +430,8 @@ export function ExtensionRunner({
             rows={5}
 
             disabled={locked}
+            data-operation-locked={locked}
+            className={LOCKED_INPUT_CLASS}
             value={input}
             aria-invalid={tooLong}
             aria-describedby={`${id}-input-hint`}
@@ -444,6 +450,8 @@ export function ExtensionRunner({
           <Button
             variant="outline"
             disabled={locked}
+            data-operation-locked={locked}
+            className={LOCKED_CONTROL_CLASS}
             onClick={() => void chooseFiles()}
           >
             {t("ext.files")}
@@ -462,6 +470,8 @@ export function ExtensionRunner({
                 variant="ghost"
                 size="sm"
                 disabled={locked}
+                data-operation-locked={locked}
+                className={LOCKED_CONTROL_CLASS}
                 onClick={() => {
                   latestFiles.current = [];
                   setFiles([]);
@@ -483,6 +493,8 @@ export function ExtensionRunner({
             maxLength={4096}
             value={url}
             disabled={locked}
+            data-operation-locked={locked}
+            className={LOCKED_INPUT_CLASS}
             onChange={(event) => {
               setUrl(event.target.value);
               setDirty(true);
@@ -501,22 +513,19 @@ export function ExtensionRunner({
       <div className="flex flex-wrap gap-2">
         <Button
           disabled={!item || locked || (hasText && tooLong)}
+          data-operation-locked={
+            locked && Boolean(item) && !(hasText && tooLong)
+          }
+          className={LOCKED_CONTROL_CLASS}
           onClick={run}
         >
           {t("ext.run")}
         </Button>
-        {busy ? (
-          <Button
-            variant="outline"
-            disabled={stopping}
-            onClick={() => void stop()}
-          >
-            {t(stopping ? "ext.stopping" : "ext.stop")}
-          </Button>
-        ) : null}
         <Button
           variant="outline"
           disabled={locked || !dirty}
+          data-operation-locked={locked && dirty}
+          className={LOCKED_CONTROL_CLASS}
           onClick={() =>
             void save().catch((reason: unknown) => {
               if (alive.current) setError(reason);
@@ -525,26 +534,41 @@ export function ExtensionRunner({
         >
           {t("ext.export")}
         </Button>
+        <Button
+          variant="outline"
+          disabled={!showProgress || !busy || stopping}
+          aria-hidden={!showProgress}
+          tabIndex={showProgress ? 0 : -1}
+          style={{ visibility: showProgress ? undefined : "hidden" }}
+          onClick={() => void stop()}
+        >
+          {t("ext.stop")}
+        </Button>
       </div>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {nativeErrorText(error, t)}
         </p>
       ) : null}
-      {busy ? (
-        <p role="status" className="text-sm">
-          {t(
-            stopping
-              ? "ext.stopping"
-              : phase === "queued"
-                ? "ext.queued"
-                : "ext.running",
-            {
-              id: current.current?.id ?? "",
-            },
-          )}
-        </p>
-      ) : null}
+      <p
+        role="status"
+        aria-label={t("ext.appStatus")}
+        aria-atomic="true"
+        className="min-h-5 truncate text-sm text-muted-foreground"
+      >
+        {showProgress
+          ? t(
+              stopping
+                ? "ext.stopping"
+                : phase === "queued"
+                  ? "ext.queued"
+                  : "ext.running",
+              {
+                id: current.current?.id ?? "",
+              },
+            )
+          : ""}
+      </p>
       <div className="space-y-2">
         <h4 className="text-sm font-medium">
           {t("ext.output")}
@@ -559,6 +583,8 @@ export function ExtensionRunner({
         <Button
           variant="outline"
           disabled={locked}
+          data-operation-locked={locked}
+          className={LOCKED_CONTROL_CLASS}
           onClick={() => {
             if (exportLock.current) return;
             exportLock.current = true;
