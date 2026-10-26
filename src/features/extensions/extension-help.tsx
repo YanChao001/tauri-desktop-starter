@@ -30,7 +30,11 @@ export function ExtensionHelp({
             <InfoIcon className="size-3.5 text-muted-foreground" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-72 leading-relaxed">
+        <TooltipContent
+          side="bottom"
+          collisionPadding={8}
+          className="max-w-[min(18rem,var(--radix-tooltip-content-available-width))] leading-relaxed"
+        >
           {children}
         </TooltipContent>
       </Tooltip>

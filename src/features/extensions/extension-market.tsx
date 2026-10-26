@@ -155,15 +155,17 @@ export function ExtensionMarket({
           return (
             <article
               key={manifest.id}
-              className="min-w-0 space-y-4 rounded-xl border bg-card p-5"
+              className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border bg-card p-5"
             >
               <div className="flex items-start gap-3">
                 <span className="shrink-0 rounded-xl bg-primary/10 p-3 text-primary">
                   <ExtensionIcon name={manifest.icon} className="size-6" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h4 className="break-words font-semibold">{manifest.name}</h4>
-                  <p className="mt-1 break-words text-sm leading-relaxed text-muted-foreground">
+                  <h4 className="font-semibold wrap-anywhere">
+                    {manifest.name}
+                  </h4>
+                  <p className="mt-1 text-sm leading-relaxed wrap-anywhere text-muted-foreground">
                     {manifest.description}
                   </p>
                 </div>
@@ -171,13 +173,13 @@ export function ExtensionMarket({
                   <Badge variant="secondary">{t("ext.market.featured")}</Badge>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-start gap-2 self-start text-xs wrap-anywhere text-muted-foreground">
                 <span>v{manifest.version}</span>
                 <span>· {manifest.author}</span>
                 <span>· {t(`ext.market.category.${entry.category}`)}</span>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-end justify-between gap-3 self-end">
+                <p className="text-xs wrap-anywhere text-muted-foreground">
                   {current
                     ? t("ext.market.currentVersion", {
                         version: current.package.manifest.version,
