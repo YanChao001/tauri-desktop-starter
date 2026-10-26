@@ -78,7 +78,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:web
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: |
+          printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm exec playwright test
       - name: 保留浏览器截图、性能采样与失败 trace
         if: always()
