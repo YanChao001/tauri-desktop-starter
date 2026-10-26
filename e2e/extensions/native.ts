@@ -21,7 +21,12 @@ declare global {
         service: string;
         request: Record<string, unknown>;
         boundaryMock: true;
+        completed: boolean;
+        response?: unknown;
       }[];
+      serviceTiming: { lanStatusMs: number; lanNicknameMs: number };
+      lifecycle: { event: string; at: number; detail?: unknown }[];
+      viewDelayMs: number;
       sessionViewValidationBoundaryMockCalls: number;
     };
   }
@@ -33,15 +38,33 @@ window.__extensionUiTest = {
   artifacts: [],
   work: null,
   serviceCalls: [],
+  serviceTiming: { lanStatusMs: 0, lanNicknameMs: 0 },
+  lifecycle: [],
+  viewDelayMs: 0,
   sessionViewValidationBoundaryMockCalls: 0,
 };
 const configuration = (await fetch("/fixture/config").then((response) =>
   response.json(),
 )) as { snapshot: ExtensionSnapshot };
 const fixtureSession = crypto.randomUUID();
+const snapshotDelayUntil =
+  performance.now() +
+  Math.max(
+    0,
+    Math.min(
+      1000,
+      Number(new URLSearchParams(location.search).get("snapshotDelayMs") || 0),
+    ),
+  );
 export const isTauri = () => true;
-export const extensionSnapshot = async () =>
-  structuredClone(configuration.snapshot);
+export const extensionSnapshot = async () => {
+  const latency = snapshotDelayUntil - performance.now();
+  if (latency > 0)
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(latency, 1000)),
+    );
+  return structuredClone(configuration.snapshot);
+};
 export const onExtensionsChanged = async () => () => {};
 export const getCurrentWindowLabel = async () => "fixture";
 export const isWindowMaximized = async () => false;
@@ -87,12 +110,19 @@ async function request<T>(path: string, body: unknown): Promise<T> {
   return result as T;
 }
 export const viewExtension = (input: ExtensionViewInput) =>
-  request<ExtensionView>("view", input);
+  request<ExtensionView>("view", {
+    ...input,
+    boundaryViewDelayMs: window.__extensionUiTest.viewDelayMs,
+  });
 // This UI-only import test reuses an unchanged export from real Wasm. It does not test Rust parsing.
 export const validateExtensionView = async (
   content: string,
 ): Promise<ExtensionView> => {
   window.__extensionUiTest.sessionViewValidationBoundaryMockCalls++;
+  window.__extensionUiTest.lifecycle.push({
+    event: "validate-view",
+    at: performance.now(),
+  });
   return JSON.parse(content) as ExtensionView;
 };
 export const openExtensionUi = (
@@ -100,15 +130,25 @@ export const openExtensionUi = (
   commandId: string,
   expectedSha256: string,
   expectedGeneration: number,
-) =>
-  request<{ url: string; token: string }>("open", {
+) => {
+  window.__extensionUiTest.lifecycle.push({
+    event: "open-lease",
+    at: performance.now(),
+  });
+  return request<{ url: string; token: string }>("open", {
     id,
     commandId,
     expectedSha256,
     expectedGeneration,
   });
-export const closeExtensionUi = (token: string) =>
-  request<void>("close", { token });
+};
+export const closeExtensionUi = (token: string) => {
+  window.__extensionUiTest.lifecycle.push({
+    event: "close-lease",
+    at: performance.now(),
+  });
+  return request<void>("close", { token });
+};
 /** Explicit browser boundary substitute; native LAN/gallery services have separate tests. */
 export const requestExtensionService = (
   id: string,
@@ -117,11 +157,14 @@ export const requestExtensionService = (
   service: "lan" | "wallpaper",
   serviceRequest: Record<string, unknown>,
 ) => {
-  window.__extensionUiTest.serviceCalls.push({
+  const call = {
     service,
     request: serviceRequest,
-    boundaryMock: true,
-  });
+    boundaryMock: true as const,
+    completed: false,
+    response: undefined as unknown,
+  };
+  window.__extensionUiTest.serviceCalls.push(call);
   return request<unknown>("service", {
     id,
     expectedSha256,
@@ -129,7 +172,18 @@ export const requestExtensionService = (
     service,
     request: serviceRequest,
     boundaryMock: true,
-  });
+    boundaryTiming: window.__extensionUiTest.serviceTiming,
+  }).then(
+    (result) => {
+      call.completed = true;
+      call.response = result;
+      return result;
+    },
+    (error) => {
+      call.completed = true;
+      throw error;
+    },
+  );
 };
 export async function saveTextExport(name: string, content: string) {
   window.__extensionUiTest.exports.push({ name, content });

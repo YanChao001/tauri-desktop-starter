@@ -18,6 +18,23 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { readUiDocuments } from "../scripts/extension-ui-resources.mjs";
 import { createBoundaryServices } from "./extensions/service-fixture.mjs";
+import {
+  checkCalculatorGestures,
+  checkCalculatorBusyDraft,
+  checkLanPolling,
+} from "./extensions/regressions.mjs";
+import {
+  installPaintProbe,
+  checkInitialPaint,
+} from "./extensions/paint-probe.mjs";
+import {
+  checkChrome,
+  checkNormalControls,
+  checkSelectPopup,
+  checkToolsHelp,
+  frameGeometry,
+  stableFrameGeometry,
+} from "./extensions/surface-checks.mjs";
 
 const root = resolve(import.meta.dirname, ".."),
   cache = join(root, ".cache");
@@ -41,6 +58,7 @@ const bootstrap = await readFile(
   "utf8",
 );
 const init =
+  `(${installPaintProbe.toString()})();\n` +
   'Object.defineProperty(window,"__TAURI_INTERNALS__",{value:{}});\n' +
   bootstrap
     .replaceAll("__INVOKE_KEY__", JSON.stringify("fixture-invoke-key"))
@@ -51,6 +69,9 @@ const init =
     '(location.hostname !== "127.0.0.1" || !location.pathname.startsWith("/fixture/ui/"))',
   ) +
   `
+  window.__iframeProtocolRequests=[];
+  window.addEventListener("message",event=>{if(window===window.top&&event.data?.type==="fixture:protocol-probe")window.__iframeProtocolRequests.push(event.data.value);});
+  const postPortMessage=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...args){if(window!==window.top&&message?.version===1&&Number.isInteger(message.id)&&typeof message.method==="string")parent.postMessage({type:"fixture:protocol-probe",value:{method:message.method,id:message.id,at:performance.timeOrigin+performance.now()}},"*");return postPortMessage.call(this,message,...args);};
   window.__audioResumeStates=[];window.__audioSuspendStates=[];
   if(window.AudioContext){const resume=AudioContext.prototype.resume;AudioContext.prototype.resume=function(...args){const result=resume.apply(this,args);result.then(()=>window.__audioResumeStates.push(this.state));return result;};}
   if(window.AudioContext){const suspend=AudioContext.prototype.suspend;AudioContext.prototype.suspend=function(...args){const result=suspend.apply(this,args);result.then(()=>window.__audioSuspendStates.push(this.state));return result;};}
@@ -87,6 +108,9 @@ const sharedInputs = Object.fromEntries(
       "sdk/extension-ui.js",
       "src/features/extensions/extension-custom-ui.tsx",
       "src/features/extensions/extension-app.tsx",
+      "src/features/extensions/extension-frame.tsx",
+      "src/features/extensions/extension-chrome-slot.tsx",
+      "src/features/extensions/extension-loading.tsx",
       "src/pages/extension-window.tsx",
       "src/components/title-bar.tsx",
       "src/hooks/use-theme-switch.ts",
@@ -97,6 +121,9 @@ const sharedInputs = Object.fromEntries(
       "e2e/extensions/native.ts",
       "e2e/extensions/providers.tsx",
       "e2e/extensions/service-fixture.mjs",
+      "e2e/extensions/regressions.mjs",
+      "e2e/extensions/paint-probe.mjs",
+      "e2e/extensions/surface-checks.mjs",
     ].map(async (path) => [path, hash(await readFile(join(root, path)))]),
   ),
 );
@@ -163,6 +190,9 @@ async function observeSdk(frame) {
   });
 }
 async function idle(page, frame) {
+  await expect(page.locator("iframe")).toHaveCSS("opacity", "1", {
+    timeout: 15000,
+  });
   await expect
     .poll(
       () => frame.locator("html").evaluate(() => window.__sdkSnapshot?.busy),
@@ -360,7 +390,22 @@ try {
                   plugin.name !== "wallpaper-browser")
               )
                 throw Error("Undeclared boundary service");
-              return json(response, services.request(input));
+              const captured = services.request(input);
+              const latency =
+                input.service === "lan"
+                  ? Number(
+                      input.request.action === "status"
+                        ? input.boundaryTiming?.lanStatusMs
+                        : input.request.action === "nickname"
+                          ? input.boundaryTiming?.lanNicknameMs
+                          : 0,
+                    )
+                  : 0;
+              if (Number.isFinite(latency) && latency > 0)
+                await new Promise((resolve) =>
+                  setTimeout(resolve, Math.min(latency, 2000)),
+                );
+              return json(response, captured);
             }
             if (path === "/fixture/open") {
               const token = randomBytes(24).toString("hex");
@@ -368,6 +413,16 @@ try {
               return json(response, { token, url: `/fixture/ui/${token}` });
             }
             if (path === "/fixture/view") {
+              if (
+                Number.isFinite(input.boundaryViewDelayMs) &&
+                input.boundaryViewDelayMs > 0
+              )
+                await new Promise((resolve) =>
+                  setTimeout(
+                    resolve,
+                    Math.min(input.boundaryViewDelayMs, 2000),
+                  ),
+                );
               const fixturePath = join(temporary, `request-${++serial}.json`);
               await writeFile(
                 fixturePath,
@@ -467,13 +522,24 @@ try {
           warnings.push(message.text());
       });
       await page.goto(
-        `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: name })}`,
+        `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: name, snapshotDelayMs: "250" })}`,
       );
       const frame = page.frameLocator("iframe");
       await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
       await observeSdk(frame);
       await idle(page, frame);
+      const initialPaint = await checkInitialPaint(page, profile.theme);
+      expect(initialPaint.skeletonObserved).toBe(true);
+      await writeFile(
+        join(output, `${name}-${profile.language}-${profile.width}-paint.json`),
+        JSON.stringify(initialPaint, null, 2),
+      );
       const before = calls.length;
+      const chrome = await checkChrome(
+        page,
+        profile,
+        plugins.find((plugin) => plugin.name === name).manifest,
+      );
       async function action(id) {
         const previous = calls.length;
         await frame.locator(`[data-action="${id}"]`).click();
@@ -501,6 +567,78 @@ try {
           await frame.locator("#" + id).fill(value);
         await action("plot");
         await expect(frame.locator("#legend span")).toHaveCount(1);
+        const popup = await checkSelectPopup(frame, "#angle");
+        await writeFile(
+          join(
+            output,
+            `${name}-${profile.language}-${profile.width}-popup.json`,
+          ),
+          JSON.stringify(popup, null, 2),
+        );
+        if (process.argv.includes("--stress-pan") || profile.width === 1120) {
+          const gesture = await checkCalculatorGestures({
+            page,
+            frame,
+            plotCount: () =>
+              calls.filter(
+                (call) => call.plugin === name && call.action === "plot",
+              ).length,
+            idle: () => idle(page, frame),
+          });
+          const busyDraft = await checkCalculatorBusyDraft({
+            page,
+            frame,
+            idle: () => idle(page, frame),
+            reload: async () => {
+              const language = await page.evaluate(
+                () => window.__extensionSettingsTest.read().language,
+              );
+              const old = await page.locator("iframe").elementHandle();
+              await page
+                .getByRole("button", {
+                  name: language === "zh" ? "扩展工具" : "Extension tools",
+                  exact: true,
+                })
+                .click();
+              await page
+                .getByRole("button", {
+                  name: language === "zh" ? "重新加载界面" : "Reload interface",
+                  exact: true,
+                })
+                .click();
+              await page.keyboard.press("Escape");
+              await old.waitForElementState("hidden");
+              await observeSdk(frame);
+              await idle(page, frame);
+            },
+          });
+          await writeFile(
+            join(output, "calculator-busy-draft.json"),
+            JSON.stringify(busyDraft, null, 2),
+          );
+          await writeFile(
+            join(output, "calculator-pan-protocol.json"),
+            JSON.stringify(gesture, null, 2),
+          );
+          await expect(frame.locator("#graph")).toBeVisible();
+          await idle(page, frame);
+          if (process.argv.includes("--regressions-only")) {
+            report.push({
+              plugin: name,
+              inputHashes: plugins.find((plugin) => plugin.name === name)
+                .inputHashes,
+              profile,
+              regression: "calculator-pan",
+              maximumPerSecond: gesture.maximumPerSecond,
+              nativeIpc: false,
+            });
+            console.log(
+              `PASS calculator actual pan/wheel/keys: ${gesture.requests.length} requests, rolling 1s maximum ${gesture.maximumPerSecond}`,
+            );
+            await page.close();
+            continue;
+          }
+        }
         await frame.locator("#curve").selectOption("0");
         await frame.locator("#a").fill("0");
         await frame.locator("#b").fill("3");
@@ -571,6 +709,29 @@ try {
         );
         expect(replay.description).toMatch(/Wasm/);
       } else if (name === "lan-chat") {
+        if (process.argv.includes("--stress-poll") || profile.width === 1120) {
+          const polling = await checkLanPolling(page, frame);
+          await writeFile(
+            join(output, "lan-polling-regression.json"),
+            JSON.stringify(polling, null, 2),
+          );
+          console.log(
+            "PASS delayed stale LAN polls keep controls enabled and edits retained",
+          );
+          if (process.argv.includes("--regressions-only")) {
+            report.push({
+              plugin: name,
+              inputHashes: plugins.find((plugin) => plugin.name === name)
+                .inputHashes,
+              profile,
+              regression: "lan-polling",
+              polling,
+              nativeIpc: false,
+            });
+            await page.close();
+            continue;
+          }
+        }
         await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
         await frame.locator("#nickname").fill("Fixture tester");
         await frame.locator("#start").click();
@@ -646,6 +807,14 @@ try {
         ).toContain("Fixture message 你好");
       } else if (name === "wallpaper-browser") {
         await expect(frame.locator("#import")).toBeEnabled();
+        const popup = await checkSelectPopup(frame, "#network-mode");
+        await writeFile(
+          join(
+            output,
+            `${name}-${profile.language}-${profile.width}-popup.json`,
+          ),
+          JSON.stringify(popup, null, 2),
+        );
         await expect(frame.locator("#network-mode")).toHaveCSS(
           "box-sizing",
           "border-box",
@@ -712,6 +881,7 @@ try {
       const toolsLabel =
         profile.language === "zh" ? "扩展工具" : "Extension tools";
       await page.getByRole("button", { name: toolsLabel, exact: true }).click();
+      const toolsHelp = await checkToolsHelp(page, toolsLabel);
       const exportedBefore = await page.evaluate(
         () => window.__extensionUiTest.exports.length,
       );
@@ -756,8 +926,46 @@ try {
         await frame.locator("#query").fill("Changed after export");
       }
       const importedFrame = await page.locator("iframe").elementHandle();
+      const beforeImportGeometry = await frameGeometry(page);
       const callsBeforeImport = calls.length;
       await page.getByRole("button", { name: toolsLabel, exact: true }).click();
+      await page.evaluate(() => {
+        window.__importUiProbe = [];
+        document.addEventListener(
+          "change",
+          (event) => {
+            if (
+              event.target instanceof HTMLInputElement &&
+              event.target.type === "file"
+            ) {
+              for (const delay of [0, 1, 10, 30, 80, 160, 320])
+                setTimeout(
+                  () =>
+                    window.__importUiProbe.push({
+                      at: performance.now(),
+                      delay,
+                      inputConnected: event.target.isConnected,
+                      dialogs: [
+                        ...document.querySelectorAll('[role="dialog"]'),
+                      ].map((node) => node.textContent),
+                      regions: [
+                        ...document.querySelectorAll('[role="region"]'),
+                      ].map(
+                        (node) =>
+                          node.getAttribute("aria-label") ||
+                          node.getAttribute("aria-labelledby"),
+                      ),
+                      alerts: [
+                        ...document.querySelectorAll('[role="alert"]'),
+                      ].map((node) => node.textContent),
+                    }),
+                  delay,
+                );
+            }
+          },
+          true,
+        );
+      });
       await page
         .getByLabel(
           profile.language === "zh" ? "导入会话 JSON" : "Import session JSON",
@@ -782,10 +990,12 @@ try {
       await observeSdk(frame);
       await idle(page, frame);
       expect(calls.length).toBe(callsBeforeImport);
+      stableFrameGeometry(beforeImportGeometry, await frameGeometry(page));
       await page.keyboard.press("Escape");
       // Common host tools sit outside plugin content. Rebuilding only the frame
       // must restore checkpoints/fields without restarting the Wasm session.
       const beforeReload = calls.length;
+      const beforeReloadGeometry = await frameGeometry(page);
       const oldFrame = await page.locator("iframe").elementHandle();
       await page
         .getByRole("button", {
@@ -804,6 +1014,7 @@ try {
       await observeSdk(frame);
       await idle(page, frame);
       expect(calls.length).toBe(beforeReload);
+      stableFrameGeometry(beforeReloadGeometry, await frameGeometry(page));
       if (name === "scientific-calculator") {
         await expect(frame.locator("#expression")).toHaveValue("42+1");
         await expect(frame.locator("#functions")).toHaveValue("x^2-4");
@@ -910,6 +1121,12 @@ try {
           })),
       }));
       defaults.hostDefaultControl = hostDefaultControl;
+      if (name !== "snake")
+        defaults.normalControls = await checkNormalControls(
+          frame,
+          name,
+          profile.font,
+        );
       expect(defaults.scrollbar).toBe("8px");
       if (name === "lab") {
         expect(
@@ -1033,6 +1250,12 @@ try {
         nativeIpc: false,
         defaults,
         shortCheckpointStable: true,
+        chrome,
+        toolsHelp,
+        initialPaint: {
+          visibleFrames: initialPaint.visible.length,
+          skeletonObserved: initialPaint.skeletonObserved,
+        },
         serviceBoundaryMock: services.calls.slice(beforeServices),
         sessionViewValidationBoundaryMock: await page.evaluate(
           () =>
@@ -1052,6 +1275,7 @@ try {
   }
   if (
     !process.argv.includes("--security-only") &&
+    !process.argv.includes("--regressions-only") &&
     (!selectedNames.length || selectedNames.includes("scientific-calculator"))
   ) {
     const context = await browser.newContext({
@@ -1256,9 +1480,11 @@ try {
   await writeFile(
     join(
       output,
-      process.argv.includes("--security-only")
-        ? "security-run.json"
-        : "report.json",
+      process.argv.includes("--regressions-only")
+        ? "regressions-run.json"
+        : process.argv.includes("--security-only")
+          ? "security-run.json"
+          : "report.json",
     ),
     JSON.stringify(
       {
@@ -1275,6 +1501,8 @@ try {
           "LAN and wallpaper services are explicit browser boundaryMock substitutes",
         sessionValidationNativeBoundary:
           "Imports reuse unchanged real-Wasm exports; Rust view parsing is boundaryMock here",
+        readinessTimingBoundaryMock:
+          "Initial snapshot waits up to 250ms; targeted busy/poll cases deliberately delay real-Wasm/service receipts",
       },
       null,
       2,
@@ -1286,23 +1514,34 @@ try {
     for (const page of context.pages()) {
       const state = { url: page.url() };
       try {
-        state.child = await page
-          .frameLocator("iframe")
-          .locator("html")
-          .evaluate(() => ({
-            notice: document.querySelector("#notice")?.textContent,
-            error: document.querySelector("#error")?.textContent,
-            draft: document.querySelector("#draft")?.value,
-            snapshotBusy: window.__sdkSnapshot?.busy,
-            defaultControl: [
-              ...document.querySelectorAll("#start,#field-todo,#network-mode"),
-            ].map((node) => ({
-              id: node.id,
-              boxSizing: getComputedStyle(node).boxSizing,
-              height: node.getBoundingClientRect().height,
-              fontSize: getComputedStyle(node).fontSize,
-            })),
-          }));
+        state.protocolRequests = await page.evaluate(
+          () => window.__iframeProtocolRequests,
+        );
+        state.lifecycle = await page.evaluate(
+          () => window.__extensionUiTest?.lifecycle,
+        );
+        state.helpTiming = await page.evaluate(() => window.__helpTiming);
+        state.importProbe = await page.evaluate(() => window.__importUiProbe);
+        if (await page.locator("iframe").count())
+          state.child = await page
+            .frameLocator("iframe")
+            .locator("html")
+            .evaluate(() => ({
+              notice: document.querySelector("#notice")?.textContent,
+              error: document.querySelector("#error")?.textContent,
+              draft: document.querySelector("#draft")?.value,
+              snapshotBusy: window.__sdkSnapshot?.busy,
+              defaultControl: [
+                ...document.querySelectorAll(
+                  "#start,#field-todo,#network-mode",
+                ),
+              ].map((node) => ({
+                id: node.id,
+                boxSizing: getComputedStyle(node).boxSizing,
+                height: node.getBoundingClientRect().height,
+                fontSize: getComputedStyle(node).fontSize,
+              })),
+            }));
         await page.screenshot({
           path: join(output, `failure-${pages.length}.png`),
         });
