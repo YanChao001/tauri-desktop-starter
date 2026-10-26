@@ -47,8 +47,8 @@
   defaults.dataset.starterDefaults = "";
   defaults.textContent = `
 @layer starter-defaults {
-  :where(html) { box-sizing:border-box; font-family:var(--host-font-family,system-ui,sans-serif); font-size:var(--host-font-size,16px); line-height:1.5; color:var(--foreground,CanvasText); background:var(--background,Canvas); scrollbar-gutter:stable; }
   :where(*,*::before,*::after) { box-sizing:inherit; border-color:var(--border,currentColor); }
+  :where(html) { box-sizing:border-box; font-family:var(--host-font-family,system-ui,sans-serif); font-size:var(--host-font-size,16px); line-height:1.5; color:var(--foreground,CanvasText); background:var(--background,Canvas); scrollbar-gutter:stable; }
   :where(body) { margin:0; min-width:0; padding:1rem; font:inherit; color:inherit; background:var(--background,Canvas); }
   :where(button,input,select,textarea) { font:inherit; font-size:.875rem; line-height:1.25rem; color:inherit; }
   :where(button) { display:inline-flex; align-items:center; justify-content:center; gap:.375rem; min-height:2rem; padding:.25rem .625rem; border:1px solid transparent; border-radius:var(--radius,.625rem); background:var(--primary,ButtonFace); color:var(--primary-foreground,ButtonText); font-weight:500; cursor:pointer; transition:background-color 140ms,color 140ms,border-color 140ms; }
