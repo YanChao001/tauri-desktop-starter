@@ -55,8 +55,9 @@ flowchart LR
 | `extensions.rs` / `extension_commands.rs`                               | 扩展包、可选授权、来源与回退、2 个执行位 / 16 项有界队列及管理 IPC          |
 | `extension_recovery.rs`                                                 | 识别旧开发版注册表、核对确认摘要并原子归档；不迁移或清除未知数据            |
 | `extension_execution.rs` / `extension_host.rs`                          | 命令执行、类型化效果往返与 60 秒合作取消预算、存储与凭据服务编排            |
-| `extension_network.rs` / `extension_storage.rs`                         | 精确公网 / 本机网络 broker、系统凭据引用、按插件隔离的 KV CAS               |
-| `extension_services.rs` / `extension_lan.rs` / `extension_wallpaper.rs` | 固定桌面服务授权与读写门闩、按窗口管理 LAN 连接、复用图库和设置的壁纸服务   |
+| `extension_network.rs` / `extension_storage.rs`                         | 精确 HTTP 来源 / 方法、显式系统代理授权、公网图片传输、按插件隔离的 KV CAS  |
+| `extension_services.rs` / `extension_lan.rs` / `extension_wallpaper.rs` | 固定服务授权与读写门闩、安全 HTTPS 外链、LAN 连接及图库 / 设置操作          |
+| `extension_resources.rs`                                                | 与插件身份和窗口绑定的短期图片资源、配额、预览及用户确认另存                |
 | `extension_runtime.rs` / `extension_worker.rs`                          | 固定无界面子进程、整体执行时限、新实例与编译 LRU                            |
 | `extension_view.rs` / `extension_windows.rs`                            | 有界声明式视图、结果产物与可信本地宿主窗口                                  |
 | `extension_ui.rs` / `sdk/`                                              | 按安装身份读取本地 HTML、隔离消息桥、默认样式和环境同步；作者可覆盖默认布局 |
@@ -99,7 +100,11 @@ Wasm 扩展采用包格式 3 / API 2。清单按命令贡献输入、结果、�
 
 ExtensionsProvider 汇集快照、每窗口会话和动态入口；原生端按窗口串行、最多 2 项执行与 16 项排队。固定当前应用的无界面 worker 在 Tauri 初始化前分派，每次创建新 Wasm 实例，复用有界编译 LRU；15 秒 worker 时限覆盖编译，完整效果编排另有 60 秒合作取消预算，排队不计入，同步操作系统 I/O 不能硬性限时；取消后持有租约到实际工作结束。安装记录的 generation 在安装 / 替换 / 回退时更换，启用 / 授权调整保留，身份相关 IPC 同时核对模块哈希和 generation，防止旧管理请求影响新身份。
 
-需要长期监听或图库操作的插件另用固定 `lan` / `wallpaper` 服务，分别要求 `messaging:lan` / `wallpapers:manage`，不扩展成通用服务注册或任意原生 IPC。每次请求复核安装身份、授权与原生窗口，读写门闩协调在途调用和替换 / 撤权；ServicePermit 活动租约纳入关闭、退出、重启与更新等待，最终提交复核生命周期，窗口 epoch 防止旧清理影响同 label 新窗口。LAN 资源按插件与使用窗口持有，界面导航或 iframe 重建不等于停止后台接收；最后一个使用窗口销毁、撤权、换身份、卸载或退出才清理连接，历史保留。壁纸服务直接复用宿主图库与设置 CAS，Commons 原图另存与图库压缩导入分开，固定来源的系统代理 / 直连策略由原生服务校验。独立注册表、私有 KV、LAN 历史、凭据别名和市场信任各有数据边界，不并入笔记 schema；服务范围、最低宿主要求、开发态不兼容和验收边界统一见 [扩展指南](./extensions.md)，设计依据见 [ADR 0013](./adr/0013-extension-desktop-services.md)。
+插件可调用固定 `lan`、`wallpaper`、`resources` 和 `links` 服务，分别按实际操作核验独立能力，不扩展成通用服务注册或任意原生 IPC。每次请求复核安装身份、授权与原生窗口，读写门闩协调在途调用和替换 / 撤权；ServicePermit 活动租约纳入关闭、退出、重启与更新等待，最终提交复核生命周期，窗口 epoch 防止旧清理影响同 label 新窗口。LAN 资源按插件与使用窗口持有，界面导航或 iframe 重建不等于停止后台接收；最后一个使用窗口销毁、撤权、换身份、卸载或退出才清理连接，历史保留。它不代表已经提供通用后台任务。
+
+图片搜索 URL、供应商网页 / JSON 解析和来源说明位于市场插件；宿主不内置 Bing / Commons 适配，也不证明候选图片来自某供应商。插件用精确 origin / 方法的 HTTP 效果取得搜索文本，宿主的 `resources` 在独立 `network:images` 授权下下载和验证公网 HTTPS 图片，签发绑定当前身份、窗口和有效期的 `resourceId`。原图保存在有界内存缓存中，预览、用户另存及 `wallpaper` 的资源导入复用该资源；图库导入重绘压缩，原图另存保留已验证字节。图库服务只管理已有图库和应用背景设置 CAS，不解释供应商业务。安全打开来源页另需 `links:open`。
+
+通用 HTTP 和图片网络默认直连；显式 `system` 模式另需 `network:system-proxy`，保留来源、方法、TLS 和内容额度。系统 / 环境代理及 `NO_PROXY` 的解析边界见 [扩展网络](./extensions.md#来源与授权)；远端由代理解析时不声称已核验最终 IP。独立注册表、私有 KV、LAN 历史、凭据别名和市场信任各有数据边界，不并入笔记 schema；短期图片资源不持久化，不能经会话恢复授权。服务范围、能力矩阵、最低宿主要求、开发态不兼容和验收边界统一见 [扩展指南](./extensions.md)，长期取舍见 [ADR 0013](./adr/0013-extension-desktop-services.md) 与 [ADR 0015](./adr/0015-plugin-media-capabilities.md)。宿主 toast 是界面反馈；操作系统通知、系统剪贴板和通用后台入口尚未对插件开放。
 
 原生能力页使用 NativePage 说明浏览器限制并展示当前页面的操作流程，不生成原生结果；通信页保留表单与代码，实际提交仍由门面检查。两者都不伪造 IPC 成功。
 

@@ -168,6 +168,8 @@ import { localHelper } from "./local-helper";
 
 ## 文案与排版
 
+界面说明、反馈位置与长文布局遵循 [说明与布局稳定](./ui-guidelines.md#说明与布局稳定)。
+
 - 界面文案通过 `src/i18n/zh-CN.ts` 与 `en.ts` 维护，两份入口分别组合基础和功能词典；新键同时补齐中英，新语言在 `registry.ts` 注册。技术名词保留原词（WebView、IPC、Rust）。
 - 中英文之间加空格：`打开 WebView 设置`，不是 `打开WebView设置`。
 - 中文标点用全角，代码与命令用半角。
