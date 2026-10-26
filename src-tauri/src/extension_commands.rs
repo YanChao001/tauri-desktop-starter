@@ -42,6 +42,8 @@ pub async fn archive_legacy_extensions(
     app: tauri::AppHandle,
     expected_sha256: String,
 ) -> NativeResult<ExtensionArchiveResult> {
+    let services = app.state::<crate::extension_services::ExtensionServices>();
+    let _service_gate = services.gate.write().await;
     let store = app.state::<ExtensionStore>().inner().clone();
     let result = blocking::run(move || store.archive_legacy(&expected_sha256)).await;
     if result.is_ok() {
@@ -69,6 +71,8 @@ pub async fn install_extension(
     expected_sha256: String,
     consent: ExtensionConsent,
 ) -> NativeResult<ExtensionSnapshot> {
+    let services = app.state::<crate::extension_services::ExtensionServices>();
+    let _service_gate = services.gate.write().await;
     let store = app.state::<ExtensionStore>().inner().clone();
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
@@ -85,7 +89,8 @@ pub async fn install_extension(
         )
     })
     .await;
-    if result.is_ok() {
+    if let Ok(snapshot) = &result {
+        crate::extension_services::reconcile(&app, snapshot).await?;
         emit(&app);
     }
     result
@@ -105,6 +110,8 @@ pub async fn install_market_extension(
         .state::<ExtensionMarket>()
         .verify_install_source(&content, &expected_sha256, &source)
         .await?;
+    let services = app.state::<crate::extension_services::ExtensionServices>();
+    let _service_gate = services.gate.write().await;
     let store = app.state::<ExtensionStore>().inner().clone();
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
@@ -126,7 +133,8 @@ pub async fn install_market_extension(
         )
     })
     .await;
-    if result.is_ok() {
+    if let Ok(snapshot) = &result {
+        crate::extension_services::reconcile(&app, snapshot).await?;
         emit(&app);
     }
     result
@@ -141,6 +149,8 @@ pub async fn set_extension_enabled(
     expected_revision: i32,
     trusted: bool,
 ) -> NativeResult<ExtensionSnapshot> {
+    let services = app.state::<crate::extension_services::ExtensionServices>();
+    let _service_gate = services.gate.write().await;
     let store = app.state::<ExtensionStore>().inner().clone();
     let result = blocking::run(move || {
         store.set_enabled(
@@ -152,7 +162,8 @@ pub async fn set_extension_enabled(
         )
     })
     .await;
-    if result.is_ok() {
+    if let Ok(snapshot) = &result {
+        crate::extension_services::reconcile(&app, snapshot).await?;
         emit(&app);
     }
     result
@@ -164,6 +175,8 @@ pub async fn rollback_extension(
     id: String,
     expected_revision: i32,
 ) -> NativeResult<ExtensionSnapshot> {
+    let services = app.state::<crate::extension_services::ExtensionServices>();
+    let _service_gate = services.gate.write().await;
     let store = app.state::<ExtensionStore>().inner().clone();
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
@@ -172,7 +185,8 @@ pub async fn rollback_extension(
         })
     })
     .await;
-    if result.is_ok() {
+    if let Ok(snapshot) = &result {
+        crate::extension_services::reconcile(&app, snapshot).await?;
         emit(&app);
     }
     result
@@ -184,6 +198,8 @@ pub async fn uninstall_extension(
     id: String,
     expected_revision: i32,
 ) -> NativeResult<ExtensionSnapshot> {
+    let services = app.state::<crate::extension_services::ExtensionServices>();
+    let _service_gate = services.gate.write().await;
     let store = app.state::<ExtensionStore>().inner().clone();
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
@@ -192,7 +208,8 @@ pub async fn uninstall_extension(
         })
     })
     .await;
-    if result.is_ok() {
+    if let Ok(snapshot) = &result {
+        crate::extension_services::reconcile(&app, snapshot).await?;
         emit(&app);
     }
     result

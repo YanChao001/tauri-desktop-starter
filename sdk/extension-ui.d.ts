@@ -11,7 +11,12 @@ export interface ExtensionUiSnapshot {
   dirty: boolean;
   locale: "zh-CN" | "en";
   grantedPermissions: ExtensionPermission[];
-  theme: { mode: "light" | "dark"; tokens: Record<string, string> };
+  theme: {
+    mode: "light" | "dark";
+    motion: "full" | "reduced";
+    tokens: Record<string, string>;
+    font?: { family: string; dataUrl: string };
+  };
 }
 export interface ExtensionUiApi {
   readonly ready: Promise<ExtensionUiSnapshot>;
@@ -20,6 +25,12 @@ export interface ExtensionUiApi {
   setFields(fields: Record<string, string>): Promise<void>;
   checkpoint(value: unknown, dirty: boolean): Promise<void>;
   saveArtifact(index: number): Promise<boolean>;
+  readonly services: {
+    request(
+      service: "lan" | "wallpaper",
+      request: Record<string, unknown>,
+    ): Promise<unknown>;
+  };
 }
 declare global {
   interface Window {

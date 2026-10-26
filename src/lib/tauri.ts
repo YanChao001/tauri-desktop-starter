@@ -112,6 +112,24 @@ export function viewExtension(
 ): Promise<ExtensionView> {
   return callNative((commands) => commands.viewExtension(input));
 }
+export async function requestExtensionService(
+  id: string,
+  expectedSha256: string,
+  expectedGeneration: number,
+  service: "lan" | "wallpaper",
+  request: Record<string, unknown>,
+): Promise<unknown> {
+  const result = await callNative((commands) =>
+    commands.requestExtensionService(
+      id,
+      expectedSha256,
+      expectedGeneration,
+      service,
+      JSON.stringify(request),
+    ),
+  );
+  return JSON.parse(result) as unknown;
+}
 export async function openExtensionCenter(): Promise<void> {
   await callNative((commands) => commands.openExtensionCenter());
 }

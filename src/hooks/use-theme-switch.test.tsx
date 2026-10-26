@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useThemeSwitch } from "./use-theme-switch";
+import { THEME_REVEAL_EVENT, useThemeSwitch } from "./use-theme-switch";
 
 const { setTheme, update, motion } = vi.hoisted(() => ({
   setTheme: vi.fn(),
@@ -77,6 +77,33 @@ describe("useThemeSwitch", () => {
     await act(async () => result.current.toggle({ clientX: 10, clientY: 20 }));
     expect(setTheme).toHaveBeenCalledWith("dark");
     expect(animate).not.toHaveBeenCalled();
+  });
+  it("prepares opaque children before changing the theme using the same circular reveal", async () => {
+    const { animate } = mockTransition();
+    const order: string[] = [];
+    const listener = vi.fn((event: Event) => {
+      order.push("prepare");
+      expect((event as CustomEvent).detail).toMatchObject({
+        clientX: 10,
+        clientY: 20,
+        duration: 520,
+        easing: "ease-in-out",
+      });
+    });
+    window.addEventListener(THEME_REVEAL_EVENT, listener);
+    setTheme.mockImplementationOnce(() => {
+      order.push("apply");
+    });
+    try {
+      const { result } = renderHook(() => useThemeSwitch());
+      await act(async () =>
+        result.current.toggle({ clientX: 10, clientY: 20 }),
+      );
+      expect(order).toEqual(["prepare", "apply"]);
+      expect(animate).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(THEME_REVEAL_EVENT, listener);
+    }
   });
 
   it("没有 View Transitions 时仍能切换主题", () => {

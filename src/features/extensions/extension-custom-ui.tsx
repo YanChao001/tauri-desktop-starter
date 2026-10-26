@@ -1,7 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
+import { useSettings, type Motion } from "@/providers/settings";
+import { THEME_REVEAL_EVENT, type ThemeReveal } from "@/hooks/use-theme-switch";
+import hostFont from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?inline";
 import { nativeErrorText } from "@/lib/native-error";
 import {
   openExtensionUi,
@@ -19,14 +22,45 @@ const TOKENS = [
   "--foreground",
   "--card",
   "--card-foreground",
+  "--popover",
+  "--popover-foreground",
   "--primary",
   "--primary-foreground",
+  "--secondary",
+  "--secondary-foreground",
+  "--accent",
+  "--accent-foreground",
   "--muted",
   "--muted-foreground",
   "--border",
+  "--input",
   "--destructive",
+  "--destructive-foreground",
   "--ring",
+  "--radius",
+  "--chart-1",
+  "--chart-2",
+  "--chart-3",
+  "--chart-4",
+  "--chart-5",
 ];
+function readTheme(motion: Motion) {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    mode: document.documentElement.classList.contains("dark")
+      ? "dark"
+      : "light",
+    motion,
+    font: { family: "Geist Variable", dataUrl: hostFont },
+    tokens: {
+      ...Object.fromEntries(
+        TOKENS.map((name) => [name, styles.getPropertyValue(name).trim()]),
+      ),
+      "--host-font-size": styles.fontSize,
+      "--host-font-family": styles.fontFamily,
+    },
+  };
+}
 
 export function ExtensionCustomUi({
   item,
@@ -49,6 +83,7 @@ export function ExtensionCustomUi({
 }) {
   const { t, language } = useI18n();
   const { resolvedTheme } = useTheme();
+  const { settings } = useSettings();
   const grantsIdentity = [...item.grantedPermissions].sort().join(",");
   const frame = useRef<HTMLIFrameElement>(null);
   const [lease, setLease] = useState<{ url: string; token: string } | null>(
@@ -63,58 +98,71 @@ export function ExtensionCustomUi({
   const snapshot = useRef<unknown>(null);
   const [palette, setPalette] = useState(0);
   useEffect(() => {
-    const observer = new MutationObserver(() =>
-      setPalette((value) => value + 1),
-    );
+    let scheduled = 0;
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(scheduled);
+      scheduled = requestAnimationFrame(() => setPalette((value) => value + 1));
+    });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class", "style"],
+      attributeFilter: [
+        "class",
+        "style",
+        "data-accent",
+        "data-font",
+        "data-font-size",
+        "data-radius",
+        "data-motion",
+      ],
     });
-    return () => observer.disconnect();
-  }, []);
-  const environment = () => {
-    const styles = getComputedStyle(document.documentElement);
-    return {
-      type: "state",
-      value: {
-        view,
-        fields,
-        checkpoint:
-          checkpoint === null ? null : (JSON.parse(checkpoint) as unknown),
-        busy,
-        dirty,
-        locale: language === "zh" ? "zh-CN" : "en",
-        grantedPermissions: item.grantedPermissions,
-        theme: {
-          mode: resolvedTheme === "dark" ? "dark" : "light",
-          tokens: {
-            ...Object.fromEntries(
-              TOKENS.map((name) => [
-                name,
-                styles.getPropertyValue(name).trim(),
-              ]),
-            ),
-            "--host-font-size": styles.fontSize,
-            "--host-font-family": styles.fontFamily,
-          },
-        },
-      },
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(scheduled);
     };
+  }, []);
+  const [theme, setTheme] = useState(() => readTheme(settings.motion));
+  // Synchronize external root attributes once per palette change, rather than on each field edit.
+  useLayoutEffect(
+    () => setTheme(readTheme(settings.motion)),
+    [palette, resolvedTheme, settings.motion],
+  );
+  const uiCheckpoint = useMemo(
+    () => (checkpoint === null ? null : (JSON.parse(checkpoint) as unknown)),
+    [checkpoint],
+  );
+  snapshot.current = {
+    type: "state",
+    value: {
+      view,
+      fields,
+      checkpoint: uiCheckpoint,
+      busy,
+      dirty,
+      locale: language === "zh" ? "zh-CN" : "en",
+      grantedPermissions: item.grantedPermissions,
+      theme,
+    },
   };
-  snapshot.current = environment();
   useEffect(() => {
     bridge.current?.send(snapshot.current);
-  }, [
-    view,
-    fields,
-    checkpoint,
-    busy,
-    dirty,
-    language,
-    resolvedTheme,
-    palette,
-    item.grantedPermissions,
-  ]);
+  }, [view, fields, checkpoint, busy, dirty, language, theme, grantsIdentity]);
+  useEffect(() => {
+    const prepare = (event: Event) => {
+      const detail = (event as CustomEvent<ThemeReveal>).detail;
+      if (!detail || !frame.current || settings.motion === "reduced") return;
+      const rectangle = frame.current.getBoundingClientRect();
+      bridge.current?.send({
+        type: "theme-transition",
+        value: {
+          ...detail,
+          x: detail.clientX - rectangle.left,
+          y: detail.clientY - rectangle.top,
+        },
+      });
+    };
+    window.addEventListener(THEME_REVEAL_EVENT, prepare);
+    return () => window.removeEventListener(THEME_REVEAL_EVENT, prepare);
+  }, [settings.motion]);
   useEffect(() => {
     let disposed = false,
       token: string | undefined;
@@ -151,7 +199,6 @@ export function ExtensionCustomUi({
     item.package.manifest.id,
     item.package.sha256,
     item.generation,
-    grantsIdentity,
     commandId,
     attempt,
   ]);
@@ -173,7 +220,7 @@ export function ExtensionCustomUi({
       const data = event.data as Record<string, unknown>;
       if (
         Object.keys(data).sort().join(",") !== "type,version" ||
-        !["starter:ready", "starter:failed"].includes(String(data.type)) ||
+        (data.type !== "starter:ready" && data.type !== "starter:failed") ||
         data.version !== 1
       )
         return;
@@ -246,7 +293,7 @@ export function ExtensionCustomUi({
     };
   }, [lease, connected, error, palette]);
   return (
-    <div className="min-w-0">
+    <div className="relative min-h-64 min-w-0">
       {error ? (
         <div role="alert" className="space-y-3 rounded-lg border p-4">
           <p>{t("ext.uiUnavailable")}</p>
@@ -263,7 +310,10 @@ export function ExtensionCustomUi({
         </div>
       ) : null}
       {!error && !connected ? (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p
+          role="status"
+          className="pointer-events-none absolute inset-x-0 top-3 z-10 text-center text-sm text-muted-foreground"
+        >
           {t("common.loading")}
         </p>
       ) : null}

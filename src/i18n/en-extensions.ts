@@ -2,12 +2,12 @@ export const enExtensions = {
   "ext.uiUnavailable":
     "The extension interface is unavailable. Your session has been retained.",
   "ext.recovery.title": "Extension archive recovery",
-  "ext.checkBundledUpdate": "Check bundled lab for updates",
-  "ext.bundledCurrent": "The bundled lab is already up to date.",
+  "ext.checkBundledUpdate": "Check bundled workbench for updates",
+  "ext.bundledCurrent": "The bundled workbench is already up to date.",
   "ext.bundledNewerInstalled":
-    "The installed lab is newer than the bundled version. The installed package was retained.",
+    "The installed workbench is newer than the bundled version. The installed package was retained.",
   "ext.bundledDifferent":
-    "The installed lab has the same version but different contents. The installed package was retained; a replacement needs a higher package version.",
+    "The installed workbench has the same version but different contents. The installed package was retained; a replacement needs a higher package version.",
   "ext.recovery.checking": "Checking the extension archive…",
   "ext.recovery.checkHint":
     "Check whether these are recognized development archives before rebuilding extensions. The check does not change data.",
@@ -35,7 +35,7 @@ export const enExtensions = {
   "ext.market.discover": "Discover plugins",
   "ext.market.title": "Official plugin market",
   "ext.market.hint":
-    "Browse plugins reviewed by the market maintainer. Review details and permissions after downloading. Installation keeps plugins disabled until you explicitly authorize them.",
+    "Browse plugins reviewed by the market maintainer. Review details and permissions after downloading, then authorize, install and enable in one step.",
   "ext.market.repository": "Market repository and source",
   "ext.market.refresh": "Refresh market",
   "ext.market.loading": "Loading the signed market catalog…",
@@ -117,7 +117,7 @@ export const enExtensions = {
   "ext.docs": "Extension development and packaging",
   "ext.host": "Runtime",
   "ext.empty":
-    "No extensions installed. Restore the bundled lab or import a package built with an Extism PDK.",
+    "No extensions installed. Restore the bundled workbench or import a package built with an Extism PDK.",
   "ext.review": "Review extension package",
   "ext.author": "Declared author (not signature verified)",
   "ext.version": "Version",
@@ -189,15 +189,15 @@ export const enExtensions = {
   "experience.extensions": "Install and run extensions",
   "experience.extensionsHint":
     "Review → authorize → execute a Wasm command → stop and uninstall.",
-  "experience.extensions.1": "Inspect the bundled lab",
+  "experience.extensions.1": "Inspect the bundled workbench",
   "experience.extensions.1Hint":
-    "Inspect the installed lab’s commands, permissions and hash, or import a third-party Wasm package. Installation does not execute the plugin.",
+    "Inspect the installed workbench’s commands, permissions and hash, or import a third-party Wasm package. Installation does not execute the plugin.",
   "experience.extensions.2": "Confirm trust and enable",
   "experience.extensions.2Hint":
-    "Installation starts disabled. Confirm data sharing and declared access to enable; commands then appear in the command palette.",
+    "Review and choose Install and enable to authorize. Enable the initially bundled workbench separately; commands then appear in the command palette.",
   "experience.extensions.3": "Run and inspect the result",
   "experience.extensions.3Hint":
-    "Open the lab from the sidebar to explore text analysis, real data and Lights out. Open a native window, export the session or request stop.",
+    "Open the workbench from the sidebar for text, CSV / JSON and tasks. Explicitly send files or request network data, open a native window or export the session.",
   "experience.extensions.4": "Disable or uninstall",
   "experience.extensions.4Hint":
     "Disabling revokes host data access and stops execution. Uninstalling removes only managed records and Wasm modules.",
@@ -213,17 +213,17 @@ export const enExtensions = {
   "ext.permission.text:read":
     "Text: receive the text explicitly submitted for this run",
   "ext.bundledHint":
-    "Extension Lab comes installed. Enable it to open from the sidebar or in a native window. Uninstalling it is permanent until you install it again.",
+    "Local Workbench comes installed. Enable it to open from the sidebar or in a native window. Uninstalling it is permanent until you install it again.",
   "ext.hostData": "Host data · explicit transfer",
   "ext.hostDataHint":
     "Send selected data transfers these contents. Plugins may use separately authorized networking or private storage during ordinary actions.",
   "ext.sendData": "Send selected data",
   "ext.openWindow": "Open in separate window",
   "ext.windowHint":
-    "Use the system title bar to minimize, maximize or close. The main window stays usable. This window has its own session.",
+    "Use the title bar for language, theme, minimize, maximize and close. The main window stays usable. This window has its own session.",
   "ext.entryUnavailable":
     "This extension is disabled, uninstalled, or this app command no longer exists. Check its status in the extension center.",
-  "ext.restoreLab": "Restore bundled lab",
+  "ext.restoreLab": "Restore bundled workbench",
   "ext.minHostVersion": "Minimum host version",
   "ext.requiredPermissions": "Required capabilities",
   "ext.optionalPermissions": "Optional capabilities",

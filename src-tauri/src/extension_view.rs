@@ -21,6 +21,8 @@ pub enum ExtensionIcon {
     Gamepad,
     Notebook,
     Terminal,
+    Image,
+    MessageCircle,
 }
 #[derive(Debug, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -12,6 +12,22 @@ export const commands = {
     typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("extension_snapshot"),
     ),
+  requestExtensionService: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+    service: ExtensionService,
+    request: string,
+  ) =>
+    typedError<string, NativeError>(
+      __TAURI_INVOKE("request_extension_service", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+        service,
+        request,
+      }),
+    ),
   previewExtensionArchive: () =>
     typedError<ExtensionArchivePreview, NativeError>(
       __TAURI_INVOKE("preview_extension_archive"),
@@ -719,7 +735,13 @@ export type ExtensionHttpRequest = {
 };
 
 export type ExtensionIcon =
-  "puzzle" | "calculator" | "gamepad" | "notebook" | "terminal";
+  | "puzzle"
+  | "calculator"
+  | "gamepad"
+  | "notebook"
+  | "terminal"
+  | "image"
+  | "message-circle";
 
 export type ExtensionInfo = ExtensionInfo_Serialize | ExtensionInfo_Deserialize;
 
@@ -791,7 +813,13 @@ export type ExtensionOrigin =
   | { kind: "market"; source: MarketSource };
 
 export type ExtensionPermission =
-  "text:read" | "files:read" | "network:https" | "network:local" | "storage";
+  | "text:read"
+  | "files:read"
+  | "network:https"
+  | "network:local"
+  | "storage"
+  | "messaging:lan"
+  | "wallpapers:manage";
 
 export type ExtensionPreview =
   ExtensionPreview_Serialize | ExtensionPreview_Deserialize;
@@ -829,6 +857,8 @@ export type ExtensionRunStatus = {
   owner: string;
   phase: ExtensionRunPhase;
 };
+
+export type ExtensionService = "lan" | "wallpaper";
 
 export type ExtensionSnapshot =
   ExtensionSnapshot_Serialize | ExtensionSnapshot_Deserialize;

@@ -23,11 +23,22 @@ vi.mock("@/lib/tauri", async (original) => ({
   validateExtensionView: vi.fn(),
   saveExtensionArtifact: vi.fn(),
   getCurrentWindowLabel: vi.fn(),
+  openExtensionUi: vi.fn(),
+  closeExtensionUi: vi.fn(),
 }));
+vi.mock("next-themes", () => ({
+  useTheme: () => ({ resolvedTheme: "light" }),
+}));
+vi.mock("@/providers/settings", () => ({
+  useSettings: () => ({ settings: { motion: "full" } }),
+}));
+const locale = vi.hoisted(() => ({ language: "en" }));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
-  return { useI18n: () => ({ t: createTranslator(en), language: "en" }) };
+  return {
+    useI18n: () => ({ t: createTranslator(en), language: locale.language }),
+  };
 });
 const lifecycle = vi.hoisted(() => ({ work: null as UnsavedWork | null }));
 vi.mock("@/providers/unsaved-work", () => ({
@@ -117,13 +128,18 @@ function sessionButton(name: string) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  locale.language = "en";
   lifecycle.work = null;
   vi.mocked(native.viewExtension).mockResolvedValue(first);
   vi.mocked(native.cancelExtension).mockResolvedValue(undefined);
   vi.mocked(native.saveTextExport).mockResolvedValue("saved.json");
   vi.mocked(native.getCurrentWindowLabel).mockResolvedValue("browser");
+  vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 it("renders third-party controls as text and sends one initialized request in StrictMode", async () => {
   render(<StrictMode>{app()}</StrictMode>);
@@ -292,6 +308,9 @@ it("keeps feedback and footer controls mounted across running, stopping and sett
   expect(stop).toBeDisabled();
   expect(status).toBeEmptyDOMElement();
   fireEvent.click(submit);
+  expect(stop).not.toBeVisible();
+  expect(status).toBeEmptyDOMElement();
+  await waitFor(() => expect(stop).toBeVisible());
   expect(stop).toBeEnabled();
   expect(status).toHaveTextContent("Working…");
   fireEvent.click(stop);
@@ -307,6 +326,93 @@ it("keeps feedback and footer controls mounted across running, stopping and sett
   expect(status).toBeEmptyDOMElement();
   expect(submit).toHaveAttribute("aria-disabled", "false");
   expect(stop).toBeDisabled();
+});
+it("does not flash running feedback or a stop control for a short action", async () => {
+  const pending = deferred<native.ExtensionView>();
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockReturnValueOnce(pending.promise);
+  render(app());
+  const submit = await screen.findByRole("button", { name: "Submit" });
+  const stop = screen.getByText("Request stop", { selector: "button" });
+  const status = screen.getByRole("status", { name: "Execution status" });
+  vi.useFakeTimers();
+  fireEvent.click(submit);
+  expect(submit).toHaveAttribute("aria-disabled", "true");
+  expect(stop).not.toBeVisible();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(150);
+    pending.resolve(first);
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(stop).not.toBeVisible();
+  expect(status).toBeEmptyDOMElement();
+  expect(submit).toHaveAttribute("aria-disabled", "false");
+});
+
+it("refreshes the current view locale while retaining field drafts and unsaved state", async () => {
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({
+      ...first,
+      display: "本地化视图",
+      fields: [{ id: "query", label: "查询", value: "Canonical value" }],
+    });
+  const mounted = render(app());
+  fireEvent.change(await screen.findByLabelText("Query"), {
+    target: { value: "Unsubmitted draft" },
+  });
+  locale.language = "zh";
+  mounted.rerender(app());
+  expect(await screen.findByLabelText("查询")).toHaveValue("Unsubmitted draft");
+  expect(native.viewExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      data: undefined,
+      request: expect.objectContaining({
+        action: null,
+        state: first.state,
+        fields: { query: "Unsubmitted draft" },
+        locale: "zh-CN",
+      }),
+    }),
+  );
+  expect(lifecycle.work?.dirty).toBe(true);
+  await act(async () => lifecycle.work!.save());
+  const saved = JSON.parse(
+    vi.mocked(native.saveTextExport).mock.calls.at(-1)![1],
+  );
+  expect(saved.fields.query).toBe("Unsubmitted draft");
+  expect(saved.view.fields[0].value).toBe("Unsubmitted draft");
+});
+
+it("waits for an action before rendering the latest locale and does not retry a failed refresh automatically", async () => {
+  const pending = deferred<native.ExtensionView>();
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockReturnValueOnce(pending.promise)
+    .mockRejectedValueOnce({ code: "EXTENSION_RUN_FAILED" });
+  const mounted = render(app());
+  fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
+  locale.language = "zh";
+  mounted.rerender(app());
+  expect(native.viewExtension).toHaveBeenCalledTimes(2);
+  expect(native.cancelExtension).not.toHaveBeenCalled();
+  await act(async () =>
+    pending.resolve({ ...first, state: "Committed action" }),
+  );
+  await screen.findByRole("alert");
+  mounted.rerender(app());
+  expect(native.viewExtension).toHaveBeenCalledTimes(3);
+  expect(native.viewExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      request: expect.objectContaining({
+        action: null,
+        state: "Committed action",
+        locale: "zh-CN",
+      }),
+    }),
+  );
+  expect(screen.getByLabelText("Query")).toHaveValue("Original");
 });
 it("shows queued status for this window and lets the user cancel its waiting operation", async () => {
   const pending = deferred<native.ExtensionView>();
@@ -716,7 +822,10 @@ it("observes a retained run directly after remount and preserves its failure fee
   );
   expect(
     screen.getByText("Request stop", { selector: "button" }),
-  ).toBeEnabled();
+  ).not.toBeVisible();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Request stop" })).toBeEnabled(),
+  );
   expect(lifecycle.work?.dirty).toBe(true);
   await act(async () => pending.reject({ code: "EXTENSION_RUN_FAILED" }));
   await screen.findByRole("alert");
@@ -822,6 +931,100 @@ it("requires confirmation before importing a version-bound session and never res
   ) as { files: string[]; fields: Record<string, string> };
   expect(exported.files).toEqual([]);
   expect(exported.fields).toEqual({ query: "Restored input" });
+});
+
+it("recreates the isolated document only after confirming a session import, retaining its checkpoint without executing Wasm", async () => {
+  const uiHash = "b".repeat(64);
+  const documentItem: native.ExtensionInfo = {
+    ...item,
+    package: {
+      ...item.package,
+      uiDocuments: [{ id: "main", sha256: uiHash, bytes: 100 }],
+      manifest: {
+        ...item.package.manifest,
+        commands: item.package.manifest.commands.map((command) => ({
+          ...command,
+          ui: { sidebar: true, window: true, document: "main" },
+        })),
+      },
+    },
+  };
+  vi.mocked(native.openExtensionUi)
+    .mockResolvedValueOnce({ url: "extension-ui://surface/old", token: "old" })
+    .mockResolvedValueOnce({ url: "extension-ui://surface/new", token: "new" });
+  vi.mocked(native.validateExtensionView).mockResolvedValue({
+    ...first,
+    state: "Imported Wasm state",
+    fields: [{ id: "query", label: "Query", value: "Imported field" }],
+  });
+  const mounted = render(
+    <ExtensionApp
+      item={documentItem}
+      commandId="open"
+      runs={[]}
+      onClose={onClose}
+      onSettled={onSettled}
+    />,
+  );
+  await waitFor(() => expect(native.viewExtension).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(mounted.container.querySelector("iframe")).toHaveAttribute(
+      "src",
+      "extension-ui://surface/old",
+    ),
+  );
+  const originalFrame = mounted.container.querySelector("iframe");
+  const checkpoint = JSON.stringify({
+    schema: 1,
+    fields: { query: "Imported UI draft" },
+  });
+  const content = JSON.stringify({
+    formatVersion: 1,
+    kind: "view",
+    extensionId: item.package.manifest.id,
+    commandId: "open",
+    extensionVersion: item.package.manifest.version,
+    sha256: item.package.sha256,
+    ui: { sha256: uiHash, state: checkpoint },
+    view: first,
+    fields: { query: "Imported field" },
+    inputText: "",
+    url: "",
+    files: [],
+    result: null,
+  });
+  const file = new File([content], "document-session.json", {
+    type: "application/json",
+  });
+  file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
+  openSessionTools();
+  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+    target: { files: [file] },
+  });
+  const dialog = await screen.findByRole("dialog");
+  expect(mounted.container.querySelector("iframe")).toBe(originalFrame);
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
+  expect(native.closeExtensionUi).not.toHaveBeenCalled();
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Replace current session" }),
+  );
+  await waitFor(() => expect(native.openExtensionUi).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(mounted.container.querySelector("iframe")).toHaveAttribute(
+      "src",
+      "extension-ui://surface/new",
+    ),
+  );
+  expect(mounted.container.querySelector("iframe")).not.toBe(originalFrame);
+  expect(originalFrame).not.toBeInTheDocument();
+  expect(native.closeExtensionUi).toHaveBeenCalledWith("old");
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  await act(async () => lifecycle.work!.save());
+  const exported = JSON.parse(
+    String(vi.mocked(native.saveTextExport).mock.calls.at(-1)?.[1]),
+  ) as { ui: { state: string }; fields: Record<string, string> };
+  expect(exported.ui.state).toBe(checkpoint);
+  expect(exported.fields).toEqual({ query: "Imported field" });
 });
 
 it("saves a typed generated artifact only after the user activates its button", async () => {

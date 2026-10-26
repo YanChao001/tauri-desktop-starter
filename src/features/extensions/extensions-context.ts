@@ -3,6 +3,8 @@ import type { ExtensionSnapshot, ExtensionView } from "@/lib/tauri";
 
 export type ExtensionSession = {
   identity: string;
+  /** Last environment locale handled by this session; importing a snapshot does not execute it. */
+  locale?: string;
   uiState?: string | null;
   view: ExtensionView | null;
   fields: Record<string, string>;

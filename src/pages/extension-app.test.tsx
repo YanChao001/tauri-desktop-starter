@@ -171,15 +171,32 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   );
 });
 
-it("uses the same tools entry in standalone mode and opens the center in the main window", async () => {
-  vi.mocked(native.openExtensionCenter).mockResolvedValue(undefined);
+it("keeps session tools available in standalone mode without a redundant return or separate-window action", async () => {
   workspace(true);
-  await screen.findByLabelText("Draft");
+  fireEvent.change(await screen.findByLabelText("Draft"), {
+    target: { value: "Standalone draft" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
-  fireEvent.click(screen.getByRole("button", { name: "Extensions" }));
+  expect(screen.getByRole("button", { name: "Export session" })).toBeEnabled();
+  expect(screen.getByLabelText("Import session JSON")).toBeEnabled();
+  expect(screen.getByRole("button", { name: "End session" })).toBeEnabled();
+  expect(
+    screen.queryByRole("button", { name: "Extensions" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Extensions" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Open in separate window" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Export session" }));
   await waitFor(() =>
-    expect(native.openExtensionCenter).toHaveBeenCalledOnce(),
+    expect(native.saveTextExport).toHaveBeenCalledWith(
+      "example.lab-session.json",
+      expect.stringContaining("Standalone draft"),
+    ),
   );
+  expect(native.openExtensionCenter).not.toHaveBeenCalled();
   expect(native.closeWindow).not.toHaveBeenCalled();
 });
 

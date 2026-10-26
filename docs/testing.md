@@ -113,6 +113,7 @@ pnpm verify
 pnpm build
 cargo build --locked --manifest-path src-tauri/Cargo.toml --bin extension-tool
 pnpm extension:demos:check
+node --test scripts/extension-ui-sdk.test.mjs examples/extensions/apps/ui.test.mjs
 $env:MARKET_REVISION = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
 Push-Location marketplace
 node scripts/check.mjs
@@ -120,11 +121,13 @@ Pop-Location
 pnpm test:extensions:ui
 ```
 
-需先初始化 marketplace 子模块和安装 Wasm 目标。已有匹配源码的构建可直接运行最后一条；变更插件 Rust 后必须重新编译对应模块。`STARTER_EXTENSION_TOOL` 可指定实际 CLI 绝对路径。报告与截图位于 `artifacts/extensions/custom-ui/`，报告记录 Wasm / UI 哈希和每轮真实动作。
+需先初始化 marketplace 子模块和安装 Wasm 目标；内置工作台源码变化后先执行 `pnpm extension:demos:build`，当前分发资源的完整重建比对使用 `pnpm extension:demos:check --rebuild`。市场 `check` 编译当前收录的科学计算器、贪吃蛇、局域网聊天和壁纸库，运行真实 Wasm fixture；与内置本地工作台共五个应用。单插件编译入口见各插件 README。已有匹配源码的构建可直接运行最后一条；变更插件 Rust 后必须重新编译对应模块。`STARTER_EXTENSION_TOOL` 可指定实际 CLI 绝对路径。报告与截图位于 `artifacts/extensions/custom-ui/`，报告记录 Wasm / UI 哈希和每轮真实动作。
 
-检查使用生产 React 外壳、完整包内 HTML 和 SDK，每个动作由真实 extension-tool / worker 执行 Wasm。浏览器 fixture 仅替换协议传输、窗口与系统对话框边界，不访问用户数据；取消保存返回取消。覆盖中英、明暗、360px 大字号独立窗口、键盘、草稿保留、界面重载、无障碍、溢出、直接网络 / 存储 / WebRTC / 子框绕过与导航负例。源代码不暴露测试入口到生产应用。
+检查使用生产 React 外壳、完整包内 HTML 和 SDK，Wasm 动作由真实 extension-tool / worker 执行；局部 Canvas / 游戏交互在界面内运行。浏览器 fixture 替换协议传输、窗口、桌面服务与系统对话框边界，不访问用户数据，不启动真实 LAN 或修改图库；取消保存返回取消。验收需覆盖中英、明暗、窄屏大字号独立窗口、精简工具菜单、语言 / 主题切换、圆形过渡及减少动效、键盘、草稿保留、界面重载、无障碍、溢出，以及直接网络 / 存储 / WebRTC / 子框绕过与导航负例。源代码不暴露测试入口到生产应用。
 
-它仍不验证真实 Tauri IPC、WebView2 / WKWebView / WebKitGTK 注入和原生文件对话框。原生传输的脚本回归另检查顶层通信、子框拒绝、序列化、二进制和失败回退；跨平台真实 WebView 与正式安装仍需独立验收。
+五个应用按实际功能检查：工作台四页签独立草稿、显式载入数据和失败保留输入；计算器运算、实际采样、平移缩放与求根 / 积分错误；贪吃蛇开始、转向、触控、暂停 / 失焦、音效首次手势与清理、进度恢复；LAN 界面授权、连接状态、收发 / 未读和错误反馈；壁纸界面来源 / 许可、原图下载与图库导入区别、CAS 冲突和取消。SDK 回归另检查作者 CSS 可以覆盖默认 layer，语言变化使用既有 state / fields 的 `action: null` 环境刷新，不初始化或重做业务动作。测试实现、报告和本次实际执行结果分别说明，不把待覆盖目标写成通过。
+
+它仍不验证真实 Tauri IPC、WebView2 / WKWebView / WebKitGTK 注入、原生文件对话框、平台音频策略、多机 LAN / 防火墙或 Commons 在线服务。原生传输的脚本回归另检查顶层通信、子框拒绝、序列化、二进制和失败回退；跨平台真实 WebView 与正式安装仍需独立验收。
 
 ## Rust 测试
 
@@ -132,7 +135,28 @@ CSV / 差异 / 搜索的前端回归就近维护于对应领域及文件 / 笔�
 
 扩展包 / 注册表与调度检查格式 3 / API 2、最低宿主版本、必需 / 可选能力、命令门槛、可信 patch 保留授权、回退撤权、2 项执行 / 16 项排队、按窗口串行、排队取消及旧窗口请求失效。Host / network / storage 检查精确公网与本机来源、DNS 地址固定、凭据 origin 隔离、KV CAS / 配额 / 损坏拒写、类型化效果轮次、失败与取消。凭据服务单元测试使用内存替身，不能替代目标系统 keyring 验收。
 
-前端应用回归使用第三方 ID 视图夹具检查通用字段、图表、图片、错误关联、排队状态、输入保留、关闭等待、导航恢复、可选授权、显式数据发送、单独保存结果和会话导入。导入必须匹配插件身份 / 版本 / 哈希，不执行 Wasm 或恢复文件资源 ID；错误、取消和超限不能替换当前草稿。真实实验室 Wasm 检查文本、待办 / 偏好、效果请求、双语页签与三关解谜，不能用前端 fixture 替代。
+前端应用回归使用第三方 ID 视图夹具检查通用字段、图表、图片、错误关联、排队状态、输入保留、关闭等待、导航恢复、可选授权、显式数据发送、单独保存结果和会话导入。导入必须匹配插件身份 / 版本 / 哈希，不执行 Wasm 或恢复文件资源 ID；错误、取消和超限不能替换当前草稿。真实本地工作台 Wasm 检查文本、CSV / JSON、待办、文件 / 网络四页签、显式数据载入、效果请求与中英输出；新市场模块另运行手写 fixture，不能用前端 fixture 替代。
+
+桌面服务分层验证：`extension_services` 检查当前身份、启用和两项独立能力，读写门闩保证在途请求与撤权 / 替换不交错，活动租约、窗口 epoch 与最终提交检查覆盖关闭 / 退出 / 重启 / 更新等待；`extension_lan` 使用临时历史与真实双端环回连接检查收发回执、坏帧 / 超限、重连、最后窗口关闭和撤权清理，保留损坏 / 未来存档；`extension_wallpaper` 检查来源与许可筛选、系统代理 / 直连边界、解码 / 像素额度、重绘、图库和设置 CAS，不修改用户图库。数学内核另检查语法优先级、定义域、角度制、夹根残差、奇点与积分采样误差；游戏规则检查重放、碰撞、模式纪录和 CAS 回执。在线 Commons 用例与多机 LAN、真实窗口关闭 / 后台接收、系统防火墙均须单列实测结果。
+
+从宿主根目录可聚焦运行服务与界面回归：
+
+```powershell
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_services
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_lan
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_wallpaper
+cargo test --locked --manifest-path examples/extensions/apps/Cargo.toml
+pnpm test src/features/extensions/extension-app-service.test.tsx src/features/extensions/extension-ui-bridge.test.ts
+```
+
+这些命令仍需准备下述 `dist/`；没有匹配测试的过滤器不构成验收通过。原生服务变化需重新编译匹配的 0.1.5 工具与应用进程，兼容说明见 [扩展指南](./extensions.md#架构与兼容范围)。在线测试默认忽略，只在明确允许联网的验证中单独运行并记录结果：
+
+```powershell
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_wallpaper::tests::live_commons_search_download_and_redraw_use_only_approved_sources -- --ignored --exact
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_wallpaper::tests::live_direct_mode_refuses_the_current_synthetic_provider_dns -- --ignored --exact
+```
+
+第一项只读验证系统网络模式下的官方搜索、page ID 许可重查、预览图下载、真实解码与 JPEG 重绘，不写用户图库或设置、不打开对话框。第二项按当前 DNS 检查明确直连模式；存在 Fake-IP / 非公网结果时验证拒绝，正常公网解析环境只验证地址集合，报告需区分实际分支。两者均不能替代多机 LAN、真实 WebView、系统代理交互或安装版验收；代理解析远端目标时不声称检查了其最终 IP。
 
 `pnpm extension:demos:check` 快速核对源码、清单、锁文件、工具链与模块哈希回执；CI 使用 `pnpm extension:demos:check --rebuild` 实际编译并比较提交 Wasm。开发 CLI `extension:validate` 不实例化，`extension:test` 在真实 worker 中执行离线 fixture；可用 1–32 项顺序 fixture 验证取消后下一项仍成功。`pnpm extension:test:worker` 检查真实子进程协议、超限、环境清理、实例隔离与停止回收。普通 `cargo test` 的进程内运行时测试不能代替 worker 边界，离线 fixture 不代替网络 / KV 效果端到端检查。CI 中的 Rust / 上游与 JS / TS 编译任务不代表本机或其他平台已经实测。
 

@@ -20,12 +20,15 @@ mod error;
 mod extension_commands;
 mod extension_execution;
 pub mod extension_host;
+mod extension_lan;
 mod extension_market;
 mod extension_market_commands;
 mod extension_network;
 pub mod extension_runtime;
+mod extension_services;
 mod extension_storage;
 pub mod extension_view;
+mod extension_wallpaper;
 mod extension_windows;
 mod extension_worker;
 pub mod extensions;
@@ -177,6 +180,11 @@ pub fn run() {
             initialized.recovery.is_isolated(),
             app.config().identifier.clone(),
         ));
+        app.manage(extension_services::ExtensionServices::default());
+        app.manage(extension_lan::ExtensionLan::new(
+            paths.data.join("extension-data/lan"),
+            initialized.recovery.is_isolated(),
+        ));
         app.manage(wallpapers::WallpaperStore::new(
             initialized.recovery.wallpaper_path(),
         ));
@@ -279,6 +287,12 @@ pub fn run() {
                 {
                     log::warn!("Cannot stop destroyed window extensions: {error}");
                 }
+                let service_owners =
+                    extension_services::take_window_owners(window.app_handle(), window.label());
+                tauri::async_runtime::spawn(extension_services::close_window(
+                    window.app_handle().clone(),
+                    service_owners,
+                ));
                 window
                     .app_handle()
                     .state::<lifecycle::LifecycleState>()
@@ -303,6 +317,7 @@ pub fn run() {
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 // App::run 在结束时直接退出进程，须在最终退出事件回收拥有的 worker。
+                extension_lan::shutdown(app);
                 extension_runtime::shutdown_workers();
                 return;
             }

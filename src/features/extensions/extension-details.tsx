@@ -13,6 +13,8 @@ export const PERMISSION_LABELS: Record<ExtensionPermission, DictKey> = {
   "network:https": "ext.permission.network:https",
   "network:local": "ext.permission.network:local",
   storage: "ext.permission.storage",
+  "messaging:lan": "ext.permission.messaging:lan",
+  "wallpapers:manage": "ext.permission.wallpapers:manage",
 };
 
 export function ExtensionDetails({

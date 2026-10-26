@@ -1,0 +1,275 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import vm from "node:vm";
+
+const source = await readFile(
+  new URL("../sdk/extension-ui.js", import.meta.url),
+  "utf8",
+);
+function fixture({
+  reduced = false,
+  schedule = setTimeout,
+  unschedule = clearTimeout,
+} = {}) {
+  const messages = [],
+    errors = [],
+    events = new Map(),
+    tokens = new Map(),
+    classes = new Set();
+  const parent = { postMessage() {} };
+  const root = {
+    dataset: {},
+    style: { setProperty: (key, value) => tokens.set(key, value) },
+    classList: {
+      toggle: (name, enabled) =>
+        enabled ? classes.add(name) : classes.delete(name),
+    },
+    prepend() {},
+  };
+  const document = {
+    documentElement: root,
+    head: { prepend() {} },
+    createElement: () => ({ dataset: {}, textContent: "" }),
+  };
+  const window = {
+    top: {},
+    matchMedia: () => ({ matches: reduced }),
+    addEventListener: (name, listener) => events.set(name, listener),
+    removeEventListener: (name) => events.delete(name),
+  };
+  const port = {
+    postMessage: (value) => messages.push(JSON.parse(JSON.stringify(value))),
+    start() {},
+    close() {},
+    onmessage: null,
+  };
+  vm.runInNewContext(source, {
+    window,
+    parent,
+    document,
+    location: { protocol: "extension-ui:", hostname: "extension-ui.localhost" },
+    structuredClone,
+    performance,
+    setTimeout: schedule,
+    clearTimeout: unschedule,
+    TextEncoder,
+    console: { error: (message) => errors.push(message) },
+  });
+  events.get("message")({
+    source: parent,
+    data: { type: "starter:connect", version: 1 },
+    ports: [port],
+  });
+  const send = (value) => port.onmessage({ data: value });
+  const close = () => send({ type: "closed" });
+  return {
+    sdk: window.starter,
+    document,
+    root,
+    tokens,
+    classes,
+    send,
+    close,
+    messages,
+    errors,
+  };
+}
+function snapshot(overrides = {}) {
+  return {
+    view: null,
+    fields: {},
+    checkpoint: null,
+    busy: false,
+    dirty: false,
+    locale: "en",
+    grantedPermissions: [],
+    theme: {
+      mode: "light",
+      motion: "full",
+      tokens: { "--host-font-size": "17px", "--primary": "blue" },
+    },
+    ...overrides,
+  };
+}
+
+test("SDK follows locale, host font tokens and theme without overwriting author font properties", async () => {
+  const { sdk, root, tokens, classes, send, close } = fixture();
+  const observed = [];
+  sdk.onChange((state) => observed.push(state.locale));
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  root.style.fontFamily = "Author custom font";
+  send({
+    type: "state",
+    value: snapshot({
+      locale: "zh-CN",
+      theme: {
+        mode: "dark",
+        motion: "reduced",
+        tokens: { "--host-font-size": "14px", "--input": "gray" },
+      },
+    }),
+  });
+  assert.deepEqual(observed, ["en", "zh-CN"]);
+  assert.equal(root.lang, "zh-CN");
+  assert.equal(root.dataset.motion, "reduced");
+  assert.equal(root.style.fontFamily, "Author custom font");
+  assert.equal(root.style.fontSize, undefined);
+  assert.equal(tokens.get("--host-font-size"), "14px");
+  assert.ok(classes.has("dark"));
+  close();
+});
+
+test("a broken author subscriber does not prevent readiness, other subscribers or service replies", async () => {
+  const { sdk, send, close, messages, errors } = fixture();
+  let received = 0;
+  sdk.onChange(() => {
+    throw Error("Author render failed");
+  });
+  sdk.onChange(() => received++);
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  assert.equal(received, 1);
+  assert.equal(errors.length, 1);
+  const request = sdk.services.request("lan", { operation: "status" });
+  await Promise.resolve();
+  assert.deepEqual(messages, [
+    {
+      version: 1,
+      id: 1,
+      method: "service",
+      params: { service: "lan", request: { operation: "status" } },
+    },
+  ]);
+  send({ id: 1, result: { connected: false } });
+  assert.deepEqual(await request, { connected: false });
+  const denied = sdk.services.request("wallpaper", { operation: "apply" });
+  await Promise.resolve();
+  send({
+    id: 2,
+    error: {
+      code: "PERMISSION_DENIED",
+      message: "Extension operation failed",
+      retryable: false,
+    },
+  });
+  await assert.rejects(
+    denied,
+    (error) => error.code === "PERMISSION_DENIED" && error.retryable === false,
+  );
+  close();
+});
+
+test("opaque child reveals use host coordinates and keep later state updates while animation is active", async () => {
+  const { sdk, document, root, send, close } = fixture();
+  const animations = [],
+    observed = [];
+  root.animate = (frames, options) => {
+    const animation = { currentTime: 0 };
+    animations.push({ frames, options, animation });
+    return animation;
+  };
+  let finish;
+  document.startViewTransition = (update) => ({
+    ready: Promise.resolve(update()),
+    finished: new Promise((resolve) => {
+      finish = resolve;
+    }),
+    skipTransition() {
+      finish();
+    },
+  });
+  sdk.onChange((state) => observed.push(state.fields.value));
+  send({ type: "state", value: snapshot({ fields: { value: "draft" } }) });
+  await sdk.ready;
+  send({
+    type: "theme-transition",
+    value: {
+      x: -150,
+      y: -30,
+      radius: 1400,
+      duration: 520,
+      easing: "ease-in-out",
+      startedAt: performance.timeOrigin + performance.now() - 20,
+    },
+  });
+  send({
+    type: "state",
+    value: snapshot({
+      fields: { value: "draft" },
+      theme: { mode: "dark", motion: "full", tokens: {} },
+    }),
+  });
+  await new Promise(setImmediate);
+  assert.equal(animations.length, 1);
+  assert.deepEqual(Array.from(animations[0].frames.clipPath), [
+    "circle(0px at -150px -30px)",
+    "circle(1400px at -150px -30px)",
+  ]);
+  assert.equal(animations[0].options.duration, 520);
+  assert.ok(animations[0].animation.currentTime >= 20);
+  send({
+    type: "state",
+    value: snapshot({
+      fields: { value: "new draft" },
+      theme: { mode: "dark", motion: "full", tokens: {} },
+    }),
+  });
+  assert.equal(observed.at(-1), "new draft");
+  close();
+});
+
+test("reduced motion applies a theme change without starting a child view transition", async () => {
+  const { sdk, document, root, send, close } = fixture({ reduced: true });
+  let started = false;
+  root.animate = () => {};
+  document.startViewTransition = () => {
+    started = true;
+  };
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  send({ type: "theme-transition", value: {} });
+  send({
+    type: "state",
+    value: snapshot({ theme: { mode: "dark", motion: "full", tokens: {} } }),
+  });
+  assert.equal(started, false);
+  assert.equal(root.style.colorScheme, "dark");
+  close();
+});
+
+test("a native dialog stays pending until the actual reply and closing the surface rejects unfinished requests", async () => {
+  const timers = new Map();
+  let nextTimer = 0;
+  const { sdk, send, close } = fixture({
+    schedule: (callback, delay) => {
+      timers.set(++nextTimer, { callback, delay });
+      return nextTimer;
+    },
+    unschedule: (id) => timers.delete(id),
+  });
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  const imported = sdk.services.request("wallpaper", { action: "import" });
+  let settled = false;
+  void imported.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  await Promise.resolve();
+  for (const { callback, delay } of [...timers.values()])
+    if (delay <= 120000) callback();
+  await Promise.resolve();
+  assert.equal(settled, false);
+  send({ id: 1, result: { cancelled: false } });
+  assert.deepEqual(await imported, { cancelled: false });
+  const waiting = sdk.saveArtifact(0);
+  await Promise.resolve();
+  close();
+  await assert.rejects(waiting, /Extension surface closed/);
+});

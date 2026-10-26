@@ -4,7 +4,12 @@ export type ExtensionUiRequest =
   | { method: "run"; action: string; fields: Record<string, string> }
   | { method: "fields"; fields: Record<string, string> }
   | { method: "checkpoint"; value: string; dirty: boolean }
-  | { method: "artifact"; index: number };
+  | { method: "artifact"; index: number }
+  | {
+      method: "service";
+      service: "lan" | "wallpaper";
+      request: Record<string, unknown>;
+    };
 export const UI_CHECKPOINT_BYTES = 256 * 1024;
 const MESSAGE_BYTES = 2 * 1024 * 1024;
 const STATE_BYTES = 12 * 1024 * 1024;
@@ -109,6 +114,19 @@ export function parseUiRequest(message: unknown): {
         invalid();
       request = { method: "artifact", index: params.index };
       break;
+    case "service":
+      if (
+        !keys(params, "request,service") ||
+        (params.service !== "lan" && params.service !== "wallpaper") ||
+        !record(params.request)
+      )
+        invalid();
+      request = {
+        method: "service",
+        service: params.service,
+        request: params.request,
+      };
+      break;
     default:
       invalid();
   }
@@ -122,6 +140,8 @@ export class ExtensionUiBridge {
   private inFlight = 0;
   private tick = 0;
   private count = 0;
+  private pendingState: unknown = undefined;
+  private stateScheduled = false;
   constructor(
     private port: MessagePort,
     private execute: (request: ExtensionUiRequest) => Promise<unknown>,
@@ -166,6 +186,8 @@ export class ExtensionUiBridge {
         error: {
           code: error instanceof NativeBridgeError ? error.code : "INTERNAL",
           message: "Extension operation failed",
+          retryable:
+            error instanceof NativeBridgeError ? error.retryable : false,
         },
       });
     } finally {
@@ -173,6 +195,26 @@ export class ExtensionUiBridge {
     }
   }
   send(value: unknown) {
+    if (this.closed) return;
+    if (record(value) && value.type === "state") {
+      this.pendingState = value;
+      if (!this.stateScheduled) {
+        this.stateScheduled = true;
+        queueMicrotask(() => this.flushState());
+      }
+      return;
+    }
+    // Control messages and operation receipts are ordering barriers.
+    this.flushState();
+    this.post(value);
+  }
+  private flushState() {
+    this.stateScheduled = false;
+    const state = this.pendingState;
+    this.pendingState = undefined;
+    if (state !== undefined) this.post(state);
+  }
+  private post(value: unknown) {
     if (this.closed) return;
     try {
       const text = JSON.stringify(value);
@@ -187,6 +229,7 @@ export class ExtensionUiBridge {
     if (this.closed) return;
     this.port.postMessage({ type: "closed" });
     this.closed = true;
+    this.pendingState = undefined;
     this.port.onmessage = null;
     this.port.onmessageerror = null;
     this.port.close();

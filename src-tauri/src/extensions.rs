@@ -62,6 +62,10 @@ pub enum ExtensionPermission {
     NetworkLocal,
     #[serde(rename = "storage")]
     Storage,
+    #[serde(rename = "messaging:lan")]
+    MessagingLan,
+    #[serde(rename = "wallpapers:manage")]
+    WallpapersManage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -303,6 +307,7 @@ struct WindowSession {
     generation: u64,
     closing: bool,
 }
+#[derive(Clone)]
 pub struct WindowRunToken {
     owner: String,
     generation: u64,
@@ -315,6 +320,7 @@ struct StoreInner {
     writing: Mutex<()>,
     runs: Mutex<VecDeque<ActiveRun>>,
     run_changed: Condvar,
+    services: Mutex<HashMap<String, usize>>,
     windows: Mutex<HashMap<String, WindowSession>>,
 }
 #[derive(Clone)]
@@ -328,6 +334,53 @@ impl ExtensionPause {
 impl Drop for ExtensionPause {
     fn drop(&mut self) {
         self.0.0.pauses.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+pub(crate) struct ServiceActivity {
+    store: ExtensionStore,
+    token: WindowRunToken,
+}
+impl ServiceActivity {
+    pub(crate) fn check(&self) -> NativeResult<()> {
+        self.store.check_run_available(&self.token)
+    }
+    pub(crate) fn owner(&self) -> String {
+        format!("{}@{}", self.token.owner, self.token.generation)
+    }
+    pub(crate) fn commit<T>(&self, operation: impl FnOnce() -> NativeResult<T>) -> NativeResult<T> {
+        let windows = self
+            .store
+            .0
+            .windows
+            .lock()
+            .map_err(|_| io("Service window unavailable", "lock poisoned"))?;
+        if self.store.0.shutting_down.load(Ordering::SeqCst)
+            || self.store.0.pauses.load(Ordering::SeqCst) > 0
+            || !windows
+                .get(&self.token.owner)
+                .is_some_and(|window| !window.closing && window.generation == self.token.generation)
+        {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionUnavailable,
+                "Service window is closing or paused",
+            ));
+        }
+        operation()
+    }
+}
+impl Drop for ServiceActivity {
+    fn drop(&mut self) {
+        if let Ok(_runs) = self.store.0.runs.lock() {
+            if let Ok(mut services) = self.store.0.services.lock()
+                && let Some(count) = services.get_mut(&self.token.owner)
+            {
+                *count -= 1;
+                if *count == 0 {
+                    services.remove(&self.token.owner);
+                }
+            }
+            self.store.0.run_changed.notify_all();
+        }
     }
 }
 pub struct PreparedRun {
@@ -744,6 +797,7 @@ impl ExtensionStore {
             writing: Mutex::new(()),
             runs: Mutex::new(VecDeque::new()),
             run_changed: Condvar::new(),
+            services: Mutex::new(HashMap::new()),
             windows: Mutex::new(HashMap::new()),
         }))
     }
@@ -769,11 +823,14 @@ impl ExtensionStore {
         ExtensionPause(self.clone())
     }
     pub fn is_running(&self) -> bool {
-        self.0.runs.lock().map_or(true, |runs| !runs.is_empty())
+        self.0
+            .runs
+            .lock()
+            .map_or(true, |runs| !runs.is_empty() || self.services_running(None))
     }
     pub fn wait_stopped(&self) {
         if let Ok(mut runs) = self.0.runs.lock() {
-            while !runs.is_empty() {
+            while !runs.is_empty() || self.services_running(None) {
                 let Ok(next) = self.0.run_changed.wait(runs) else {
                     return;
                 };
@@ -1536,7 +1593,7 @@ impl ExtensionStore {
         window.closing = false;
         Ok(())
     }
-    fn check_run_available(&self, token: &WindowRunToken) -> NativeResult<()> {
+    pub(crate) fn check_run_available(&self, token: &WindowRunToken) -> NativeResult<()> {
         if self.0.shutting_down.load(Ordering::SeqCst) || self.0.pauses.load(Ordering::SeqCst) > 0 {
             return Err(NativeError::new(
                 ErrorCode::ExtensionUnavailable,
@@ -1559,9 +1616,44 @@ impl ExtensionStore {
         }
         Ok(())
     }
+    fn services_running(&self, owner: Option<&str>) -> bool {
+        self.0.services.lock().map_or(true, |services| {
+            owner.map_or(!services.is_empty(), |label| {
+                services.get(label).is_some_and(|count| *count > 0)
+            })
+        })
+    }
+    pub(crate) fn begin_service(
+        &self,
+        token: WindowRunToken,
+    ) -> NativeResult<Arc<ServiceActivity>> {
+        let _runs = self
+            .0
+            .runs
+            .lock()
+            .map_err(|_| io("Service admission unavailable", "lock poisoned"))?;
+        self.check_run_available(&token)?;
+        let mut services = self
+            .0
+            .services
+            .lock()
+            .map_err(|_| io("Service leases unavailable", "lock poisoned"))?;
+        let count = services.entry(token.owner.clone()).or_default();
+        if *count >= 4 {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionBusy,
+                "Window service limit reached",
+            ));
+        }
+        *count += 1;
+        Ok(Arc::new(ServiceActivity {
+            store: self.clone(),
+            token,
+        }))
+    }
     pub fn wait_window_stopped(&self, label: &str) {
         if let Ok(mut runs) = self.0.runs.lock() {
-            while runs.iter().any(|run| run.owner == label) {
+            while runs.iter().any(|run| run.owner == label) || self.services_running(Some(label)) {
                 let Ok(next) = self.0.run_changed.wait(runs) else {
                     return;
                 };
@@ -2666,6 +2758,86 @@ mod tests {
         let mut package = original;
         package["manifest"]["commands"][1] = package["manifest"]["commands"][0].clone();
         assert!(preview_package(&package.to_string()).is_err());
+    }
+    #[test]
+    fn service_leases_reject_late_commit_and_distinguish_reopened_window_epochs() {
+        let (_dir, store) = store();
+        let token = store.window_run_token("main".into()).unwrap();
+        let lease = store.begin_service(token).unwrap();
+        assert!(store.is_running());
+        let clone = lease.clone();
+        let old_owner = lease.owner();
+        store.begin_window_close("main").unwrap();
+        let mut committed = false;
+        assert!(
+            lease
+                .commit(|| {
+                    committed = true;
+                    Ok(())
+                })
+                .is_err()
+        );
+        assert!(!committed);
+        store.reopen_window("main").unwrap();
+        let next = store
+            .begin_service(store.window_run_token("main".into()).unwrap())
+            .unwrap();
+        assert_ne!(old_owner, next.owner());
+        assert!(clone.check().is_err());
+        next.commit(|| Ok(())).unwrap();
+        drop(lease);
+        drop(next);
+        assert!(store.is_running());
+        drop(clone);
+        assert!(!store.is_running());
+    }
+    #[test]
+    fn window_wait_holds_until_last_native_service_lease_is_released() {
+        let (_dir, store) = store();
+        let token = store.window_run_token("main".into()).unwrap();
+        let lease = store.begin_service(token).unwrap();
+        let clone = lease.clone();
+        store.wait_window_stopped("unrelated-window");
+        let waiter = store.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            waiter.wait_window_stopped("main");
+            done_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        drop(lease);
+        assert!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_millis(20))
+                .is_err()
+        );
+        drop(clone);
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        thread.join().unwrap();
+    }
+    #[test]
+    fn service_admission_and_commits_obey_pause_shutdown_and_per_window_limits() {
+        let (_dir, store) = store();
+        let token = store.window_run_token("main".into()).unwrap();
+        let mut leases = Vec::new();
+        for _ in 0..4 {
+            leases.push(store.begin_service(token.clone()).unwrap());
+        }
+        assert!(store.begin_service(token.clone()).is_err());
+        let pause = store.pause();
+        assert!(store.begin_service(token.clone()).is_err());
+        assert!(leases[0].commit(|| Ok(())).is_err());
+        drop(pause);
+        leases[0].commit(|| Ok(())).unwrap();
+        store.begin_shutdown();
+        assert!(store.begin_service(token).is_err());
+        assert!(leases[0].commit(|| Ok(())).is_err());
+        leases.clear();
+        store.wait_stopped();
     }
     #[test]
     #[ignore = "requires a generated package via STARTER_TEST_EXTENSION_PACKAGE"]

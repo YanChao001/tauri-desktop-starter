@@ -1,11 +1,11 @@
 export const zhExtensions = {
   "ext.uiUnavailable": "扩展界面暂时无法打开，会话内容已保留。",
   "ext.recovery.title": "扩展存档恢复",
-  "ext.checkBundledUpdate": "检查内置实验室更新",
-  "ext.bundledCurrent": "内置实验室已是当前版本。",
-  "ext.bundledNewerInstalled": "本机实验室比内置版本更新，已保留本机安装包。",
+  "ext.checkBundledUpdate": "检查内置工作台更新",
+  "ext.bundledCurrent": "内置工作台已是当前版本。",
+  "ext.bundledNewerInstalled": "本机工作台比内置版本更新，已保留本机安装包。",
   "ext.bundledDifferent":
-    "本机实验室与内置包版本相同但内容不同，已保留本机安装包。替换需要使用更高的包版本。",
+    "本机工作台与内置包版本相同但内容不同，已保留本机安装包。替换需要使用更高的包版本。",
   "ext.recovery.checking": "正在检查扩展存档…",
   "ext.recovery.checkHint":
     "重建扩展前，先确认是否为可识别的开发期旧存档。检查不会修改数据。",
@@ -33,7 +33,7 @@ export const zhExtensions = {
   "ext.market.discover": "发现插件",
   "ext.market.title": "官方插件市场",
   "ext.market.hint":
-    "浏览维护者审核上架的插件。下载后先核对详情与权限，安装保持禁用，由你确认授权后启用。",
+    "浏览维护者审核上架的插件。下载后审阅详情与权限，确认后一次完成授权、安装和启用。",
   "ext.market.repository": "市场仓库与源码",
   "ext.market.refresh": "刷新市场",
   "ext.market.loading": "正在读取签名市场目录…",
@@ -110,7 +110,7 @@ export const zhExtensions = {
   "ext.docs": "扩展开发与打包文档",
   "ext.host": "运行框架",
   "ext.empty":
-    "尚未安装扩展。可恢复内置实验室，或导入使用 Extism PDK 开发的扩展包。",
+    "尚未安装扩展。可恢复内置工作台，或导入使用 Extism PDK 开发的扩展包。",
   "ext.review": "审阅扩展包",
   "ext.author": "声明作者（未经签名认证）",
   "ext.version": "版本",
@@ -172,15 +172,15 @@ export const zhExtensions = {
   "experience.extensions": "安装与运行扩展",
   "experience.extensionsHint":
     "审阅包 → 授权启用 → 执行 Wasm 命令 → 停止与卸载。",
-  "experience.extensions.1": "检查内置实验室",
+  "experience.extensions.1": "检查内置工作台",
   "experience.extensions.1Hint":
-    "在已安装扩展中查看实验室的命令、权限和哈希；也可导入第三方 Wasm 包，安装不会执行插件。",
+    "在已安装扩展中查看工作台的命令、权限和哈希；也可导入第三方 Wasm 包，安装不会执行插件。",
   "experience.extensions.2": "确认信任并启用",
   "experience.extensions.2Hint":
-    "安装后默认禁用。确认数据交付与声明用途后启用；命令将出现在命令面板中。",
+    "审阅后点击“安装并启用”完成授权。内置工作台首次预置时需单独启用；命令随后出现在命令面板中。",
   "experience.extensions.3": "运行并检查结果",
   "experience.extensions.3Hint":
-    "从侧栏打开实验室，体验文本分析、真实数据和点灯解谜；可另开系统窗口，导出会话或请求停止。",
+    "从侧栏打开工作台，处理文本、CSV / JSON 和待办；主动发送文件或请求网络数据，也可另开窗口或导出会话。",
   "experience.extensions.4": "禁用或卸载",
   "experience.extensions.4Hint":
     "禁用会撤回宿主数据访问并停止当前运行；卸载只清理应用管理的安装记录和 Wasm 模块。",
@@ -192,17 +192,17 @@ export const zhExtensions = {
   "ext.commands": "扩展命令",
   "ext.permission.text:read": "文本读取：接收本次主动输入的文本",
   "ext.bundledHint":
-    "应用自带的扩展实验室已安装，启用后可从侧栏打开，也可使用独立窗口。卸载后不会自动重装。",
+    "应用自带的本地工作台已安装，启用后可从侧栏打开，也可使用独立窗口。卸载后不会自动重装。",
   "ext.hostData": "宿主数据 · 显式发送",
   "ext.hostDataHint":
     "点击“发送所选数据”交付这些内容。插件可在普通操作中使用另行授权的网络或私有存储能力。",
   "ext.sendData": "发送所选数据",
   "ext.openWindow": "在独立窗口打开",
   "ext.windowHint":
-    "使用系统标题栏最小化、最大化或关闭；主窗口可以继续使用。此窗口拥有独立会话。",
+    "标题栏可切换语言、主题，或最小化、最大化和关闭。主窗口可以继续使用，此窗口拥有独立会话。",
   "ext.entryUnavailable":
     "扩展未启用、已卸载，或这个应用命令已失效。请在扩展中心检查状态。",
-  "ext.restoreLab": "恢复内置实验室",
+  "ext.restoreLab": "恢复内置工作台",
   "ext.minHostVersion": "最低宿主版本",
   "ext.requiredPermissions": "必需权限",
   "ext.optionalPermissions": "可选权限",

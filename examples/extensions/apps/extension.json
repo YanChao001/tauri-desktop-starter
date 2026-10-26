@@ -23,7 +23,7 @@
     }
   ],
   "permissions": [],
-  "minHostVersion": "0.1.4",
+  "minHostVersion": "0.1.5",
   "optionalPermissions": [
     "text:read",
     "files:read",
@@ -33,7 +33,9 @@
   "network": [
     {
       "origin": "https://jsonplaceholder.typicode.com",
-      "methods": ["GET"]
+      "methods": [
+        "GET"
+      ]
     }
   ]
 }

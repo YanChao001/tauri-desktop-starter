@@ -49,6 +49,68 @@ it("routes a typed action over its own port and sends the bounded result", async
     fields: { seed: "42" },
   });
 });
+it("forwards registered service requests without accepting a native identity", async () => {
+  const { channel, execute, received } = connect();
+  channel.port2.postMessage({
+    version: 1,
+    id: 1,
+    method: "service",
+    params: { service: "lan", request: { operation: "status" } },
+  });
+  await vi.waitFor(() =>
+    expect(received).toContainEqual({ id: 1, result: { state: "next" } }),
+  );
+  expect(execute).toHaveBeenCalledExactlyOnceWith({
+    method: "service",
+    service: "lan",
+    request: { operation: "status" },
+  });
+  expect(() =>
+    parseUiRequest({
+      version: 1,
+      id: 2,
+      method: "service",
+      params: { service: "shell", request: {} },
+    }),
+  ).toThrow();
+  expect(() =>
+    parseUiRequest({
+      version: 1,
+      id: 2,
+      method: "service",
+      params: { service: "lan", request: {}, generation: 1 },
+    }),
+  ).toThrow();
+  expect(() =>
+    parseUiRequest({
+      version: 1,
+      id: 2,
+      method: "service",
+      params: { service: "wallpaper", request: [] },
+    }),
+  ).toThrow();
+  expect(() =>
+    parseUiRequest({
+      version: 1,
+      id: 2,
+      method: "service",
+      params: { service: ["lan"], request: {} },
+    }),
+  ).toThrow();
+});
+it("coalesces synchronous state changes to the latest snapshot and preserves control-message order", async () => {
+  const { bridge, received } = connect();
+  for (let revision = 0; revision < 100; revision++)
+    bridge.send({ type: "state", value: { revision } });
+  bridge.send({ type: "theme-transition", value: { id: 1 } });
+  bridge.send({ type: "state", value: { revision: 100 } });
+  await vi.waitFor(() => expect(received).toHaveLength(3));
+  expect(received).toEqual([
+    { type: "state", value: { revision: 99 } },
+    { type: "theme-transition", value: { id: 1 } },
+    { type: "state", value: { revision: 100 } },
+  ]);
+});
 it("can return a complete native view larger than the incoming request budget", async () => {
   const result = { state: "x".repeat(3 * 1024 * 1024) };
   const { channel, received, failed } = connect(

@@ -8,6 +8,7 @@ import {
   viewExtension,
   saveTextExport,
   saveExtensionArtifact,
+  requestExtensionService,
   type ExtensionSnapshot,
   NativeBridgeError,
   type ExtensionInfo,
@@ -29,9 +30,10 @@ import {
 import { ExtensionData } from "./extension-data";
 import { useExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS } from "./control-styles";
-import { ExtensionFrame } from "./extension-frame";
+import { ExtensionFrame, ExtensionToolGroup } from "./extension-frame";
 import { ExtensionCustomUi } from "./extension-custom-ui";
 import type { ExtensionUiRequest } from "./extension-ui-bridge";
+import { useDelayedBusy } from "./use-delayed-busy";
 
 /** The renderer has no calculator/game rules. Every action runs the declared Wasm export. */
 export function ExtensionApp({
@@ -73,12 +75,14 @@ export function ExtensionApp({
   const [saving, setSaving] = useState(session.exporting !== null);
   const [picking, setPicking] = useState(session.selecting !== null);
   const [stopping, setStopping] = useState(false);
+  const showProgress = useDelayedBusy(busy || stopping);
   const [closed, setClosed] = useState(false);
   const [error, setError] = useState<unknown>(session.error);
   const [surfaceRevision, setSurfaceRevision] = useState(0);
   const alive = useRef(false);
   const closing = useRef(false);
   const init = useRef(() => {});
+  const localeRefresh = useRef<string | null>(null);
   const invalidFields = new Set(
     Object.entries(fields)
       .filter(([id, value]) => {
@@ -105,16 +109,19 @@ export function ExtensionApp({
     picking ||
     session.exporting !== null ||
     session.pending !== null;
-  const status = stopping
-    ? t("ext.stopping")
-    : busy
-      ? t(phase === "queued" ? "ext.queued" : "ext.appWorking")
-      : "";
+  const status = !showProgress
+    ? ""
+    : stopping
+      ? t("ext.stopping")
+      : busy
+        ? t(phase === "queued" ? "ext.queued" : "ext.appWorking")
+        : "";
 
   function run(
     action: string | null,
     data?: ExtensionViewDataInput,
     validatedUiFields = false,
+    refreshLocale = false,
   ) {
     if (
       session.pending ||
@@ -128,6 +135,8 @@ export function ExtensionApp({
     setBusy(true);
     setError(null);
     session.error = null;
+    const locale = language === "zh" ? "zh-CN" : "en";
+    const draftFields = refreshLocale ? { ...session.fields } : null;
     const pending = viewExtension({
       id: manifest.id,
       commandId,
@@ -141,15 +150,24 @@ export function ExtensionApp({
         action,
         state: session.view?.state ?? "",
         fields: session.fields,
-        locale: language === "zh" ? "zh-CN" : "en",
+        locale,
       },
     })
       .then((next) => {
+        if (draftFields)
+          next = {
+            ...next,
+            fields: next.fields.map((field) => ({
+              ...field,
+              value: draftFields[field.id] ?? field.value,
+            })),
+          };
         latest.current = next;
         latestFields.current = Object.fromEntries(
           next.fields.map((field) => [field.id, field.value]),
         );
         session.view = next;
+        session.locale = locale;
         session.fields = latestFields.current;
         if (action !== null) session.dirty = true;
         if (alive.current) {
@@ -250,6 +268,29 @@ export function ExtensionApp({
     const timer = window.setInterval(() => void onSettled(), 750);
     return () => window.clearInterval(timer);
   }, [busy, onSettled]);
+  useEffect(() => {
+    const locale = language === "zh" ? "zh-CN" : "en";
+    if (session.locale === locale) localeRefresh.current = null;
+    if (
+      !session.view ||
+      session.locale === locale ||
+      localeRefresh.current === locale ||
+      invalidFields.size > 0 ||
+      session.pending ||
+      session.exporting ||
+      session.selecting ||
+      busy ||
+      saving ||
+      picking ||
+      stopping ||
+      closed
+    )
+      return;
+    localeRefresh.current = locale;
+    // null + existing state only renders the same session in the requested locale.
+    // In-flight actions settle first; a later language change is picked up afterward.
+    void run(null, undefined, false, true);
+  });
   async function settle(signal?: AbortSignal, waitForExport = false) {
     signal?.throwIfAborted();
     await session.selecting;
@@ -456,6 +497,14 @@ export function ExtensionApp({
         message: "Session is closed",
         retryable: false,
       });
+    if (request.method === "service")
+      return requestExtensionService(
+        manifest.id,
+        item.package.sha256,
+        item.generation,
+        request.service,
+        request.request,
+      );
     if (request.method === "artifact") return saveArtifact(request.index);
     if (request.method === "checkpoint") {
       if (
@@ -490,22 +539,24 @@ export function ExtensionApp({
     return session.view;
   }
   const feedback = (
-    <div className="flex min-h-8 items-center justify-between gap-3">
+    <div className="grid h-7 w-[min(15rem,42vw)] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
       <p
         role="status"
         aria-label={t("ext.appStatus")}
         aria-live="polite"
         aria-atomic="true"
         title={status || undefined}
-        className="min-w-0 truncate text-sm text-muted-foreground"
+        className="min-w-0 truncate text-xs text-muted-foreground"
       >
         {status}
       </p>
       <Button
         variant="outline"
         size="sm"
-        hidden={!busy && !stopping}
-        disabled={!busy || stopping}
+        aria-hidden={!showProgress}
+        tabIndex={showProgress ? 0 : -1}
+        disabled={!showProgress || !busy || stopping}
+        style={{ visibility: showProgress ? undefined : "hidden" }}
         title={t("ext.appStopHint")}
         onClick={() => {
           setStopping(true);
@@ -528,16 +579,77 @@ export function ExtensionApp({
         feedback={feedback}
         tools={
           <>
-            {tools}{" "}
-            {documentId ? (
-              <Button
-                variant="outline"
-                disabled={blocked}
-                onClick={() => setSurfaceRevision((value) => value + 1)}
-              >
-                {t("ext.reloadUi")}
-              </Button>
+            {tools || documentId ? (
+              <ExtensionToolGroup label={t("ext.tools.interface")}>
+                <div className="flex flex-wrap gap-2">
+                  {tools}
+                  {documentId ? (
+                    <Button
+                      variant="outline"
+                      disabled={blocked}
+                      onClick={() => setSurfaceRevision((value) => value + 1)}
+                    >
+                      {t("ext.reloadUi")}
+                    </Button>
+                  ) : null}
+                </div>
+              </ExtensionToolGroup>
             ) : null}
+            <ExtensionToolGroup label={t("ext.tools.session")}>
+              <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  disabled={saving || stopping || picking || !view}
+                  data-operation-locked={
+                    (saving || stopping || picking) && view !== null
+                  }
+                  className={LOCKED_CONTROL_CLASS}
+                  title={t("ext.appExportHint")}
+                  onClick={() =>
+                    void save().catch((reason: unknown) => {
+                      if (alive.current) setError(reason);
+                    })
+                  }
+                >
+                  {t("ext.appExport")}
+                </Button>
+                <ExtensionSessionImport
+                  item={item}
+                  commandId={commandId}
+                  kind="view"
+                  blocked={blocked}
+                  onError={(reason) => {
+                    if (alive.current) setError(reason);
+                  }}
+                  onPending={(pending, completed) => {
+                    if (pending !== null || session.selecting === completed) {
+                      session.selecting = pending;
+                      if (alive.current) setPicking(pending !== null);
+                    }
+                  }}
+                  onRestore={(imported: ExtensionSessionExport) => {
+                    latest.current = imported.view;
+                    latestFields.current = imported.fields;
+                    session.view = imported.view;
+                    session.locale = language === "zh" ? "zh-CN" : "en";
+                    session.uiState = imported.ui?.state ?? null;
+                    session.fields = imported.fields;
+                    session.draft = {
+                      inputText: imported.inputText,
+                      url: imported.url,
+                      files: [],
+                    };
+                    session.dirty = true;
+                    setView(imported.view);
+                    setUiState(session.uiState);
+                    setFields(imported.fields);
+                    setDirty(true);
+                    setError(null);
+                    setSurfaceRevision((value) => value + 1);
+                  }}
+                />
+              </div>
+            </ExtensionToolGroup>
             <ExtensionData
               item={item}
               blocked={blocked || invalidFields.size > 0}
@@ -548,56 +660,7 @@ export function ExtensionApp({
               }}
               onSend={(data) => run("host-data", data)}
             />
-            <ExtensionSessionImport
-              item={item}
-              commandId={commandId}
-              kind="view"
-              blocked={blocked}
-              onError={(reason) => {
-                if (alive.current) setError(reason);
-              }}
-              onPending={(pending, completed) => {
-                if (pending !== null || session.selecting === completed) {
-                  session.selecting = pending;
-                  if (alive.current) setPicking(pending !== null);
-                }
-              }}
-              onRestore={(imported: ExtensionSessionExport) => {
-                latest.current = imported.view;
-                latestFields.current = imported.fields;
-                session.view = imported.view;
-                session.uiState = imported.ui?.state ?? null;
-                session.fields = imported.fields;
-                session.draft = {
-                  inputText: imported.inputText,
-                  url: imported.url,
-                  files: [],
-                };
-                session.dirty = true;
-                setView(imported.view);
-                setUiState(session.uiState);
-                setFields(imported.fields);
-                setDirty(true);
-                setError(null);
-              }}
-            />
-            <div className="flex flex-wrap gap-2 border-t pt-4">
-              <Button
-                variant="outline"
-                disabled={saving || stopping || picking || !view}
-                data-operation-locked={
-                  (saving || stopping || picking) && view !== null
-                }
-                className={LOCKED_CONTROL_CLASS}
-                title={t("ext.appExportHint")}
-                onClick={() =>
-                  void save().catch((reason: unknown) => {
-                    if (alive.current) setError(reason);
-                  })
-                }
-              >
-                {t("ext.appExport")}
-              </Button>
+            <ExtensionToolGroup label={t("ext.tools.lifecycle")}>
               <ExtensionSessionClose
                 dirty={dirty || session.dirty}
                 busy={busy}
@@ -605,7 +668,7 @@ export function ExtensionApp({
                 onSave={save}
                 onClose={close}
               />
-            </div>
+            </ExtensionToolGroup>
           </>
         }
       >
