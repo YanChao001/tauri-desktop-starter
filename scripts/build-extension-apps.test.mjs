@@ -10,9 +10,13 @@ import {
   rename,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import test from "node:test";
-import { buildExtensionApps } from "./build-extension-apps.mjs";
+import {
+  buildExtensionApps,
+  extensionAppsEnvironment,
+  extensionAppsRemapRules,
+} from "./build-extension-apps.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -32,6 +36,11 @@ async function fixture(t, modules = { "src/lib.rs": "fn main() {}\n" }) {
       "extension.json",
       "examples/extensions/apps/extension.json",
       '{"formatVersion":3}\n',
+    ],
+    [
+      "build-extension-apps.mjs",
+      "scripts/build-extension-apps.mjs",
+      "// Fixed build rules fixture\n",
     ],
     [
       "rust-toolchain.toml",
@@ -67,6 +76,7 @@ test("快速检查接受等效换行和收据顺序，但拒绝源码、工具�
     "examples/extensions/apps/src/lib.rs",
     "examples/extensions/apps/extension.json",
     "rust-toolchain.toml",
+    "scripts/build-extension-apps.mjs",
     "resources/extensions/demo-apps.wasm",
   ]) {
     const absolute = join(root, path);
@@ -180,4 +190,91 @@ test("源码子目录和祖先目录中的链接均被拒绝，不读取树外 R
 test("重建验证必须显式选择检查模式", async (t) => {
   const root = await fixture(t);
   await assert.rejects(buildExtensionApps(root, { rebuild: true }), /--check/);
+});
+
+test("编译环境只使用生成的路径规则，清除大小写变体的自定义 flags 与 wrapper", () => {
+  assert.deepEqual(
+    extensionAppsEnvironment(
+      {
+        PATH: "/tools",
+        CARGO_HOME: "/cache",
+        RUSTFLAGS: "-C opt-level=0",
+        cargo_encoded_rustflags: "untrusted",
+        Cargo_Build_Rustflags: "untrusted",
+        CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS: "untrusted",
+        RUSTC: "/different/compiler",
+        Rustc_Wrapper: "/wrapper",
+        RUSTC_WORKSPACE_WRAPPER: "/wrapper",
+        CARGO_PROFILE_RELEASE_LTO: "false",
+        OTHER: "kept",
+      },
+      "/checkout with spaces/flags.txt",
+    ),
+    {
+      PATH: "/tools",
+      CARGO_HOME: "/cache",
+      OTHER: "kept",
+      CARGO_ENCODED_RUSTFLAGS: "@/checkout with spaces/flags.txt",
+    },
+  );
+});
+
+test("目录映射去除本机依赖来源并包含分隔符，使目标路径稳定且不超过命令行额度", async (t) => {
+  const root = await fixture(t),
+    app = join(root, "examples/extensions/apps");
+  const dependency = join(root, "registry-hash", "fixture-dependency-1.2.3");
+  await mkdir(join(dependency, "src", "nested"), { recursive: true });
+  await writeFile(
+    join(dependency, "src", "nested", "module.rs"),
+    "pub fn value() {}\n",
+  );
+  const commit = "a".repeat(40),
+    sysroot = join(root, "machine toolchain");
+  const rules = await extensionAppsRemapRules(
+    [
+      {
+        name: "starter-extism-apps",
+        version: "2.2.1",
+        manifest_path: join(app, "Cargo.toml"),
+      },
+      {
+        name: "fixture-dependency",
+        version: "1.2.3",
+        manifest_path: join(dependency, "Cargo.toml"),
+      },
+    ],
+    sysroot,
+    commit,
+  );
+  assert.ok(rules.includes(`--remap-path-prefix=src${sep}=/app/src/`));
+  assert.ok(
+    rules.includes(
+      `--remap-path-prefix=${join(dependency, "src", "nested")}${sep}=/cargo/fixture-dependency-1.2.3/src/nested/`,
+    ),
+  );
+  assert.ok(rules.some((rule) => rule.endsWith(`=/rustc/${commit}/library/`)));
+  for (const rule of rules) {
+    const destination = rule.slice(rule.lastIndexOf("=") + 1);
+    assert.ok(destination.startsWith("/"));
+    assert.ok(destination.endsWith("/"));
+    assert.equal(destination.includes("\\"), false);
+    assert.equal(destination.includes("registry-hash"), false);
+  }
+  await assert.rejects(
+    extensionAppsRemapRules([], sysroot, "unknown"),
+    /编译器提交/,
+  );
+});
+
+test("构建规则的 root 内祖先目录链接同样被拒绝", async (t) => {
+  const root = await fixture(t),
+    scripts = join(root, "scripts"),
+    real = `${scripts}-real`;
+  await rename(scripts, real);
+  await symlink(
+    real,
+    scripts,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(buildExtensionApps(root, { check: true }), /链接/);
 });

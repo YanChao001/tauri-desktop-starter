@@ -290,7 +290,9 @@ pnpm extension:demos:build
 pnpm extension:demos:check --rebuild
 ```
 
-不带 `--rebuild` 只核对源码、清单、锁文件、工具链及模块哈希回执，已纳入 `pnpm verify`；完整模式在锁定工具链下实际编译，比较提交的 Wasm，不覆盖分发资源。CI 使用完整模式，快速回执不代替源码编译比对。
+不带 `--rebuild` 只核对源码、清单、锁文件、工具链、构建脚本及模块哈希回执，已纳入 `pnpm verify`；完整模式在锁定工具链下实际编译，比较提交的 Wasm，不覆盖分发资源。CI 在三个平台使用完整模式，快速回执不代替源码编译比对。
+
+构建入口通过 Cargo 锁定的依赖元数据，将项目、每个依赖源码目录及 Rust 标准库的源码位置映射到稳定路径，统一路径分隔符并移除 checkout、Cargo 缓存和工具链的本机前缀。规则通过 rustc 响应文件传递，避免 Windows 命令行长度限制；不需要额外安装 `rust-src`。构建环境清除自定义 Rust flags、编译器 wrapper 和 release profile 覆盖，修改构建规则同样需要重新生成资源与回执。仅在原 checkout 复编不能证明异机可重复；目录、缓存位置或平台差异应由独立构建及 CI 的逐字节比较验证，不能忽略不一致。
 
 ## 执行、存储与生命周期
 

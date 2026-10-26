@@ -2,6 +2,7 @@
   "sources": {
     "Cargo.lock": "53db3bc26dd4c95689d62aa37c254298c44d0cc6a22f9647b282be7e77bd0258",
     "Cargo.toml": "b6afb1899f542b8421a228bc791b7580ce9083440b732143d5b931d3b8f0330b",
+    "build-extension-apps.mjs": "e4d41cf260c4a005d8c2bf4430636404d7a0cda02335f0e8f811b985b1190c48",
     "extension.json": "39e9075c8172231f7cf81e410e321ce32feef8c9fb0cf19381d8cb88cbf05139",
     "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
     "src/app.rs": "bc8750f4cf7fa336c68460c207ad4ba4f0ae7ee0b409ed965f4d31aad6afa5ef",
@@ -11,5 +12,5 @@
     "src/text.rs": "3c7be98e41b8e87b149359e8329e1ccae2539d7c39e3917fcc6fabad8095d3ea",
     "src/view.rs": "8d09d0adff23b24a5f53c38b72a1dfa115db5877ca719f6d74978121dab2ae2e"
   },
-  "sha256": "4b2e58885bda2a24e2fc86d7bf1c1785340932d87bca5185ad50fe75f0427073"
+  "sha256": "f980150095d0775fbd066ce3624ffe70461e9de2fe7feee8fc27c6420779afa5"
 }
