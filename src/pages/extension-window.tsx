@@ -29,7 +29,10 @@ export default function ExtensionWindow() {
         <div ref={chrome} className="app-chrome">
           <TitleBar standalone extension={item?.package.manifest} />
         </div>
-        <main className="app-main app-scroll-region" tabIndex={-1}>
+        <main
+          className="app-main app-scroll-region outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          tabIndex={0}
+        >
           <div className="mx-auto max-w-6xl p-4 sm:p-6">
             <RouteErrorBoundary
               onBack={() => void execute("close-window")}

@@ -44,6 +44,7 @@ it("preserves native window controls after a view failure and offers close and r
     </MemoryRouter>,
   );
   const titleBar = screen.getByRole("banner");
+  expect(screen.getByRole("main")).toHaveAttribute("tabindex", "0");
   expect(titleBar).toHaveTextContent("Window controls");
   expect(screen.getByRole("alert")).toHaveTextContent("Broken extension view");
   expect(

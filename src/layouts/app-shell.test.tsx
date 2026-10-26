@@ -121,6 +121,7 @@ describe("应用内容导航", () => {
   it("切换页面时只重置内容区滚动并保留导航焦点", () => {
     renderShell();
     const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("tabindex", "0");
     main.scrollTop = 500;
     main.scrollLeft = 40;
     vi.mocked(window.scrollTo).mockClear();

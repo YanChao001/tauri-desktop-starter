@@ -96,8 +96,8 @@ export function AppShell() {
         <AppSidebar routes={routes} />
         <main
           ref={content}
-          className="app-main app-scroll-region"
-          tabIndex={-1}
+          className="app-main app-scroll-region outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          tabIndex={0}
         >
           <div className="app-page-content">
             {!extensionSurface ? (
