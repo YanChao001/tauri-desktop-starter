@@ -229,6 +229,8 @@ jobs:
           pnpm --dir examples/extensions install --frozen-lockfile
           pnpm --dir examples/extensions typecheck
           pnpm --dir examples/extensions build
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin extension-tool
+          export STARTER_EXTENSION_TOOL="$PWD/src-tauri/target/release/extension-tool"
           pnpm extension:test --manifest examples/extensions/javascript/extension.json --wasm examples/extensions/dist/javascript.wasm --fixture examples/extensions/javascript/smoke.json
           pnpm extension:test --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --fixture examples/extensions/typescript/smoke.json
           pnpm extension:test --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --fixture examples/extensions/typescript/notebook-smoke.json
