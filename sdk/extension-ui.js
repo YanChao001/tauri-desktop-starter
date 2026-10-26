@@ -51,12 +51,18 @@
   :where(html) { box-sizing:border-box; font-family:var(--host-font-family,system-ui,sans-serif); font-size:var(--host-font-size,16px); line-height:1.5; color:var(--foreground,CanvasText); background:var(--background,Canvas); scrollbar-gutter:stable; }
   :where(body) { margin:0; min-width:0; padding:1rem; font:inherit; color:inherit; background:var(--background,Canvas); }
   :where(button,input,select,textarea) { font:inherit; font-size:.875rem; line-height:1.25rem; color:inherit; }
-  :where(button) { display:inline-flex; align-items:center; justify-content:center; gap:.375rem; min-height:2rem; padding:.25rem .625rem; border:1px solid transparent; border-radius:var(--radius,.625rem); background:var(--primary,ButtonFace); color:var(--primary-foreground,ButtonText); font-weight:500; cursor:pointer; transition:background-color 140ms,color 140ms,border-color 140ms; }
+  :where(button) { display:inline-flex; align-items:center; justify-content:center; gap:.375rem; min-height:2rem; flex-shrink:0; white-space:nowrap; padding:.25rem .625rem; border:1px solid transparent; border-radius:var(--radius,.625rem); background:var(--primary,ButtonFace); color:var(--primary-foreground,ButtonText); font-weight:500; cursor:pointer; transition:background-color 140ms,color 140ms,border-color 140ms; }
   :where(button):hover { background:color-mix(in oklab,var(--primary,ButtonFace) 90%,var(--foreground,CanvasText)); }
   :where(button[data-variant="outline"],button[data-variant="secondary"]) { border-color:var(--border); background:var(--background,Canvas); color:var(--foreground,CanvasText); }
   :where(button[data-variant="outline"],button[data-variant="secondary"]):hover { background:var(--muted,ButtonFace); }
   :where(input:not([type="checkbox"],[type="radio"],[type="range"],[type="button"],[type="submit"],[type="reset"]),select,textarea) { width:100%; max-width:100%; min-width:0; min-height:2rem; padding:.25rem .625rem; border:1px solid var(--input,var(--border)); border-radius:var(--radius,.625rem); background:var(--background,Canvas); }
   :where(textarea) { min-height:5rem; resize:vertical; }
+  :where([data-starter-listbox]) { position:fixed; inset:auto; margin:0; z-index:2147483647; overflow:auto; padding:.25rem; border:1px solid var(--border); border-radius:var(--radius,.625rem); background:var(--popover,var(--background,Canvas)); color:var(--popover-foreground,var(--foreground,CanvasText)); font:inherit; font-size:.875rem; line-height:1.25rem; box-shadow:0 4px 12px #0002; overscroll-behavior:contain; }
+  :where([data-starter-option]) { display:flex; align-items:center; min-height:2rem; padding:.375rem .5rem; border-radius:calc(var(--radius,.625rem) * .6); cursor:default; white-space:nowrap; }
+  :where([data-starter-option][data-active]) { background:var(--accent,Highlight); color:var(--accent-foreground,HighlightText); }
+  :where([data-starter-option][aria-disabled="true"]) { opacity:.5; }
+  :where([data-starter-option][aria-selected="true"])::after { content:"✓"; margin-inline-start:auto; padding-inline-start:1rem; }
+  :where([data-starter-option-group]) { padding:.375rem .5rem; font-size:.75rem; color:var(--muted-foreground,GrayText); font-weight:500; }
   @media (max-width:767px) { :where(input:not([type="checkbox"],[type="radio"],[type="range"],[type="button"],[type="submit"],[type="reset"]),textarea) { font-size:1rem; } }
   :where(input[type="checkbox"],input[type="radio"],input[type="range"]) { accent-color:var(--primary,Highlight); }
   :where(input,textarea)::placeholder { color:var(--muted-foreground,GrayText); }
@@ -104,6 +110,27 @@
   let port, current;
   let sequence = 0;
   let reveal, fontSource;
+  let paintScheduled = false,
+    painted = false;
+  function schedulePainted() {
+    if (painted || paintScheduled || !current?.view) return;
+    paintScheduled = true;
+    const render = () => {
+      // Keep the frame measurable while hidden. Two rendering opportunities let
+      // author subscribers (including React) paint the first real view and theme.
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => {
+          paintScheduled = false;
+          if (painted || !current?.view || !port) return;
+          painted = true;
+          parent.postMessage({ type: "starter:painted", version: 1 }, "*");
+        }),
+      );
+    };
+    if (document.readyState === "loading")
+      document.addEventListener("DOMContentLoaded", render, { once: true });
+    else render();
+  }
   const pending = new Map(),
     listeners = new Set();
   function notify(listener) {
@@ -145,7 +172,9 @@
         }
       }
     }
+    selectPicker.refresh();
     for (const listener of listeners) notify(listener);
+    schedulePainted();
   }
   function prepareReveal(value) {
     reveal?.cancel();
@@ -231,6 +260,398 @@
       })
       .catch(() => {});
   }
+  function installSelectPicker() {
+    // Keep the native control itself: labels, form submission/reset, framework
+    // change handlers and programmatic value/selectedIndex remain native DOM APIs.
+    // Only the single-select picker is enhanced; authors can opt out per control.
+    let open,
+      nextId = 0,
+      typeahead = "",
+      typedAt = 0;
+    const attributes = [
+      "aria-expanded",
+      "aria-controls",
+      "aria-activedescendant",
+      "aria-haspopup",
+    ];
+    const eligible = (node) =>
+      node?.tagName === "SELECT" &&
+      !node.multiple &&
+      node.size <= 1 &&
+      node.dataset.starterSelect !== "native";
+    const enabled = (node) => eligible(node) && !node.matches(":disabled");
+    const selectable = (option) =>
+      !!option &&
+      !option.disabled &&
+      !(
+        option.parentElement?.tagName === "OPTGROUP" &&
+        option.parentElement.disabled
+      ) &&
+      !option.hidden &&
+      !option.parentElement?.hidden;
+    function syncSelection(refresh = true) {
+      if (open && open.selected !== open.select.selectedIndex) {
+        open.selected = open.select.selectedIndex;
+        open.active = open.selected;
+        if (refresh) renderOptions();
+      }
+    }
+    function close(commit = false) {
+      if (!open) return;
+      if (commit) syncSelection(false);
+      const previous = open;
+      open = undefined;
+      previous.observer.disconnect();
+      previous.popup.remove();
+      for (const [name, value] of previous.attributes)
+        if (value === null) previous.select.removeAttribute(name);
+        else previous.select.setAttribute(name, value);
+      typeahead = "";
+      if (commit && previous.select.isConnected && enabled(previous.select)) {
+        const option = previous.select.options[previous.active];
+        if (
+          option &&
+          selectable(option) &&
+          previous.select.selectedIndex !== previous.active
+        ) {
+          previous.select.selectedIndex = previous.active;
+          previous.select.dispatchEvent(new Event("input", { bubbles: true }));
+          previous.select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
+    }
+    function position() {
+      if (!open) return;
+      const { select, popup } = open;
+      if (!select.isConnected || !enabled(select)) return close();
+      popup.style.font = getComputedStyle(select).font;
+      const rectangle = select.getBoundingClientRect();
+      const gap = 4,
+        edge = 4;
+      const availableBelow = window.innerHeight - rectangle.bottom - gap - edge;
+      const availableAbove = rectangle.top - gap - edge;
+      const above =
+        availableBelow < Math.min(popup.scrollHeight, 160) &&
+        availableAbove > availableBelow;
+      const available = Math.max(32, above ? availableAbove : availableBelow);
+      popup.style.minWidth = `${Math.min(rectangle.width, window.innerWidth - edge * 2)}px`;
+      popup.style.maxWidth = `${Math.max(32, window.innerWidth - edge * 2)}px`;
+      popup.style.maxHeight = `${Math.min(320, available)}px`;
+      popup.style.left = `${Math.max(edge, Math.min(rectangle.left, window.innerWidth - popup.offsetWidth - edge))}px`;
+      popup.style.top = `${above ? Math.max(edge, rectangle.top - popup.offsetHeight - gap) : rectangle.bottom + gap}px`;
+    }
+    function activate(index, scroll = true) {
+      if (!open || !selectable(open.select.options[index])) return;
+      open.active = index;
+      for (const option of open.popup.querySelectorAll("[data-starter-option]"))
+        option.toggleAttribute(
+          "data-active",
+          Number(option.dataset.starterOption) === index,
+        );
+      const active = open.popup.querySelector(
+        `[data-starter-option="${index}"]`,
+      );
+      if (active) {
+        open.select.setAttribute("aria-activedescendant", active.id);
+        if (scroll) active.scrollIntoView({ block: "nearest" });
+      }
+    }
+    function renderOptions() {
+      if (!open) return;
+      const { select, popup } = open;
+      popup.replaceChildren();
+      let group;
+      for (const [index, option] of Array.from(select.options).entries()) {
+        if (option.hidden || option.parentElement?.hidden) continue;
+        if (
+          option.parentElement?.tagName === "OPTGROUP" &&
+          group !== option.parentElement
+        ) {
+          group = option.parentElement;
+          const label = document.createElement("div");
+          label.dataset.starterOptionGroup = "";
+          label.setAttribute("role", "presentation");
+          label.textContent = group.label;
+          popup.append(label);
+        }
+        const node = document.createElement("div");
+        node.dataset.starterOption = String(index);
+        node.id = `${popup.id}-${index}`;
+        node.setAttribute("role", "option");
+        node.setAttribute(
+          "aria-selected",
+          String(index === select.selectedIndex),
+        );
+        node.setAttribute("aria-disabled", String(!selectable(option)));
+        node.textContent = option.label;
+        popup.append(node);
+      }
+      if (
+        !select.options[open.active] ||
+        !selectable(select.options[open.active])
+      )
+        open.active = Array.from(select.options).findIndex(selectable);
+      position();
+      if (open) activate(open.active);
+    }
+    function show(select) {
+      if (!enabled(select)) return;
+      if (open?.select === select) return;
+      close(true);
+      const popup = document.createElement("div");
+      popup.id = `starter-listbox-${++nextId}`;
+      popup.dataset.starterListbox = "";
+      popup.setAttribute("role", "listbox");
+      popup.addEventListener("pointermove", (event) => {
+        const option = event.target.closest?.("[data-starter-option]");
+        if (option && popup.contains(option))
+          activate(Number(option.dataset.starterOption), false);
+      });
+      // Popover's top layer escapes author overflow/transform containers. The
+      // fixed fallback also works on WebViews without the Popover API.
+      if (typeof popup.showPopover === "function")
+        popup.setAttribute("popover", "manual");
+      const label = select.getAttribute("aria-labelledby");
+      if (label) popup.setAttribute("aria-labelledby", label);
+      else {
+        const name =
+          select.getAttribute("aria-label") ||
+          Array.from(select.labels || [])
+            .map((item) => {
+              const copy = item.cloneNode(true);
+              copy
+                .querySelectorAll("select")
+                .forEach((control) => control.remove());
+              return copy.textContent.trim();
+            })
+            .join(" ");
+        if (name) popup.setAttribute("aria-label", name);
+      }
+      const observer = new MutationObserver((mutations) => {
+        if (!open || !select.isConnected || !enabled(select)) return close();
+        if (
+          mutations.some(
+            ({ target }) => target === select || select.contains(target),
+          )
+        )
+          renderOptions();
+      });
+      open = {
+        select,
+        popup,
+        observer,
+        active: select.selectedIndex,
+        selected: select.selectedIndex,
+        attributes: attributes.map((name) => [name, select.getAttribute(name)]),
+      };
+      select.setAttribute("aria-expanded", "true");
+      select.setAttribute("aria-controls", popup.id);
+      select.setAttribute("aria-haspopup", "listbox");
+      document.body.append(popup);
+      try {
+        popup.showPopover?.();
+      } catch {
+        popup.removeAttribute("popover");
+      }
+      renderOptions();
+      observer.observe(document.body, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: [
+          "disabled",
+          "multiple",
+          "size",
+          "label",
+          "selected",
+          "value",
+          "hidden",
+          "data-starter-select",
+        ],
+      });
+    }
+    function move(direction, limit) {
+      if (!open) return;
+      const options = open.select.options;
+      let index = limit ?? open.active + direction;
+      while (index >= 0 && index < options.length) {
+        if (selectable(options[index])) {
+          activate(index);
+          return;
+        }
+        index += direction;
+      }
+    }
+    function pointer(event) {
+      const option = event.target.closest?.("[data-starter-option]");
+      if (open && option && open.popup.contains(option)) {
+        event.preventDefault();
+        syncSelection();
+        if (
+          selectable(open.select.options[Number(option.dataset.starterOption)])
+        ) {
+          activate(Number(option.dataset.starterOption), false);
+          close(true);
+        }
+        return;
+      }
+      const select = event.target;
+      if (!enabled(select)) {
+        if (open && !open.popup.contains(event.target)) close(true);
+        return;
+      }
+      if (event.button !== 0) return;
+      event.preventDefault();
+      select.focus({ preventScroll: true });
+      if (open?.select === select) close();
+      else show(select);
+    }
+    function suppressMouse(event) {
+      if (enabled(event.target)) event.preventDefault();
+    }
+    function keydown(event) {
+      const select = event.target;
+      if (!enabled(select) || event.ctrlKey || event.metaKey) return;
+      syncSelection();
+      const { key } = event;
+      if (key === "Escape") {
+        if (open?.select === select) {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        }
+        return;
+      }
+      if (key === "Tab") {
+        if (open?.select === select) close(true);
+        return;
+      }
+      if (event.altKey && key === "ArrowUp") {
+        if (open?.select === select) {
+          event.preventDefault();
+          close(true);
+        }
+        return;
+      }
+      if (
+        (key === "Enter" ||
+          (key === " " && (!typeahead || performance.now() - typedAt > 700))) &&
+        open?.select === select
+      ) {
+        event.preventDefault();
+        close(true);
+        return;
+      }
+      if (key === "F4" && !event.altKey) {
+        event.preventDefault();
+        if (open?.select === select) close(true);
+        else show(select);
+        return;
+      }
+      if (
+        [
+          "ArrowDown",
+          "ArrowUp",
+          "Home",
+          "End",
+          "PageDown",
+          "PageUp",
+          "Enter",
+          " ",
+        ].includes(key) &&
+        !(
+          key === " " &&
+          open?.select === select &&
+          performance.now() - typedAt <= 700 &&
+          typeahead
+        )
+      ) {
+        event.preventDefault();
+        const wasOpen = open?.select === select;
+        show(select);
+        if (key === "ArrowDown") move(1);
+        else if (key === "ArrowUp") move(-1);
+        else if (key === "Home") move(1, 0);
+        else if (key === "End") move(-1, select.options.length - 1);
+        else if (wasOpen && (key === "PageDown" || key === "PageUp")) {
+          for (let index = 0; index < 10; index++)
+            move(key === "PageDown" ? 1 : -1);
+        }
+        return;
+      }
+      if (key.length === 1 && !event.altKey) {
+        event.preventDefault();
+        show(select);
+        const now = performance.now();
+        const character = key.toLocaleLowerCase();
+        typeahead = now - typedAt > 700 ? character : typeahead + character;
+        typedAt = now;
+        const query = Array.from(typeahead).every(
+          (character) => character === typeahead[0],
+        )
+          ? typeahead[0]
+          : typeahead;
+        const options = Array.from(select.options);
+        for (let offset = 1; offset <= options.length; offset++) {
+          const index = (open.active + offset) % options.length;
+          if (
+            selectable(options[index]) &&
+            options[index].label
+              .trim()
+              .toLocaleLowerCase()
+              .startsWith(query.toLocaleLowerCase())
+          ) {
+            activate(index);
+            break;
+          }
+        }
+      }
+    }
+    function focus(event) {
+      if (
+        open &&
+        event.target !== open.select &&
+        !open.popup.contains(event.target)
+      )
+        close(true);
+    }
+    function reset(event) {
+      if (open?.select.form === event.target) close();
+    }
+    function change(event) {
+      if (open?.select === event.target) {
+        open.selected = open.select.selectedIndex;
+        open.active = open.select.selectedIndex;
+        renderOptions();
+      }
+    }
+    document.addEventListener("pointerdown", pointer, true);
+    document.addEventListener("mousedown", suppressMouse, true);
+    document.addEventListener("keydown", keydown, true);
+    document.addEventListener("focusin", focus, true);
+    document.addEventListener("reset", reset, true);
+    document.addEventListener("input", change, true);
+    document.addEventListener("change", change, true);
+    window.addEventListener("resize", position);
+    document.addEventListener("scroll", position, true);
+    return {
+      refresh: position,
+      dispose() {
+        close();
+        document.removeEventListener("pointerdown", pointer, true);
+        document.removeEventListener("mousedown", suppressMouse, true);
+        document.removeEventListener("keydown", keydown, true);
+        document.removeEventListener("focusin", focus, true);
+        document.removeEventListener("reset", reset, true);
+        document.removeEventListener("input", change, true);
+        document.removeEventListener("change", change, true);
+        window.removeEventListener("resize", position);
+        document.removeEventListener("scroll", position, true);
+      },
+    };
+  }
+  const selectPicker = installSelectPicker();
   const ready = new Promise((resolve) => {
     const connect = (event) => {
       if (
@@ -254,6 +675,7 @@
           prepareReveal(message.value);
         } else if (message?.type === "closed") {
           reveal?.cancel();
+          selectPicker.dispose();
           for (const request of pending.values()) {
             request.reject(new Error("Extension surface closed"));
           }

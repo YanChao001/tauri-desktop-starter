@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/providers/i18n";
 import { useSettings, type Motion } from "@/providers/settings";
 import { THEME_REVEAL_EVENT, type ThemeReveal } from "@/hooks/use-theme-switch";
@@ -46,19 +47,18 @@ const TOKENS = [
 ];
 function readTheme(motion: Motion) {
   const styles = getComputedStyle(document.documentElement);
+  const tokens: Record<string, string> = Object.fromEntries(
+    TOKENS.map((name) => [name, styles.getPropertyValue(name).trim()]),
+  );
+  tokens["--host-font-size"] = styles.fontSize;
+  tokens["--host-font-family"] = styles.fontFamily;
   return {
     mode: document.documentElement.classList.contains("dark")
       ? "dark"
       : "light",
     motion,
     font: { family: "Geist Variable", dataUrl: hostFont },
-    tokens: {
-      ...Object.fromEntries(
-        TOKENS.map((name) => [name, styles.getPropertyValue(name).trim()]),
-      ),
-      "--host-font-size": styles.fontSize,
-      "--host-font-family": styles.fontFamily,
-    },
+    tokens,
   };
 }
 
@@ -92,10 +92,13 @@ export function ExtensionCustomUi({
   const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
   const [connected, setConnected] = useState(false);
+  const [handshakeReady, setHandshakeReady] = useState(false);
   const bridge = useRef<ExtensionUiBridge | null>(null);
   const run = useRef(execute);
   run.current = execute;
   const snapshot = useRef<unknown>(null);
+  const hasView = useRef(view !== null);
+  hasView.current = view !== null;
   const [palette, setPalette] = useState(0);
   useEffect(() => {
     let scheduled = 0;
@@ -169,6 +172,7 @@ export function ExtensionCustomUi({
     setLease(null);
     setError(null);
     setConnected(false);
+    setHandshakeReady(false);
     queueMicrotask(() => {
       if (disposed) return;
       void openExtensionUi(
@@ -220,7 +224,9 @@ export function ExtensionCustomUi({
       const data = event.data as Record<string, unknown>;
       if (
         Object.keys(data).sort().join(",") !== "type,version" ||
-        (data.type !== "starter:ready" && data.type !== "starter:failed") ||
+        (data.type !== "starter:ready" &&
+          data.type !== "starter:failed" &&
+          data.type !== "starter:painted") ||
         data.version !== 1
       )
         return;
@@ -230,8 +236,13 @@ export function ExtensionCustomUi({
         setError(new Error("Extension UI could not initialize"));
         return;
       }
+      if (data.type === "starter:painted") {
+        if (accepted && hasView.current) setConnected(true);
+        return;
+      }
       if (accepted) return;
       accepted = true;
+      setHandshakeReady(true);
       window.clearTimeout(timer);
       const channel = new MessageChannel();
       bridge.current = new ExtensionUiBridge(
@@ -247,7 +258,6 @@ export function ExtensionCustomUi({
         [channel.port2],
       );
       bridge.current.send(snapshot.current);
-      setConnected(true);
     };
     window.addEventListener("message", listener);
     return () => {
@@ -258,6 +268,51 @@ export function ExtensionCustomUi({
       bridge.current = null;
     };
   }, [lease]);
+  const initialViewReady = view !== null;
+  useEffect(() => {
+    if (!lease || !handshakeReady || !initialViewReady || connected || error)
+      return;
+    let timer: number | undefined;
+    const visible = () => {
+      const rectangle = frame.current?.getBoundingClientRect();
+      return (
+        document.visibilityState === "visible" &&
+        rectangle &&
+        rectangle.bottom > 0 &&
+        rectangle.right > 0 &&
+        rectangle.top < window.innerHeight &&
+        rectangle.left < window.innerWidth
+      );
+    };
+    const check = () => {
+      if (!visible()) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      } else if (timer === undefined) {
+        // This budget starts after Wasm supplied a view. Background/offscreen
+        // frames may suspend rAF; give them a fresh budget when visible again.
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          if (visible()) {
+            bridge.current?.close();
+            setError(new Error("Extension UI did not finish initializing"));
+          }
+        }, 15000);
+      }
+    };
+    const observer =
+      typeof IntersectionObserver === "function"
+        ? new IntersectionObserver(check)
+        : undefined;
+    if (frame.current) observer?.observe(frame.current);
+    document.addEventListener("visibilitychange", check);
+    check();
+    return () => {
+      window.clearTimeout(timer);
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [lease, handshakeReady, initialViewReady, connected, error]);
   useLayoutEffect(() => {
     const node = frame.current;
     if (!node) return;
@@ -293,7 +348,7 @@ export function ExtensionCustomUi({
     };
   }, [lease, connected, error, palette]);
   return (
-    <div className="relative min-h-64 min-w-0">
+    <div className="relative min-h-64 min-w-0 bg-background">
       {error ? (
         <div role="alert" className="space-y-3 rounded-lg border p-4">
           <p>{t("ext.uiUnavailable")}</p>
@@ -310,12 +365,19 @@ export function ExtensionCustomUi({
         </div>
       ) : null}
       {!error && !connected ? (
-        <p
-          role="status"
-          className="pointer-events-none absolute inset-x-0 top-3 z-10 text-center text-sm text-muted-foreground"
-        >
-          {t("common.loading")}
-        </p>
+        <div className="pointer-events-none absolute inset-0 z-10 space-y-5 bg-background p-4">
+          <p role="status" className="sr-only">
+            {t("common.loading")}
+          </p>
+          <div aria-hidden="true" className="space-y-5">
+            <Skeleton className="h-6 w-40" />
+            <div className="flex gap-2">
+              <Skeleton className="h-8 w-24" />
+              <Skeleton className="h-8 w-24" />
+            </div>
+            <Skeleton className="h-44 w-full" />
+          </div>
+        </div>
       ) : null}
       {lease && !error ? (
         <iframe
@@ -327,6 +389,13 @@ export function ExtensionCustomUi({
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
           referrerPolicy="no-referrer"
           className="block w-full border-0 bg-background"
+          aria-hidden={!connected}
+          tabIndex={connected ? undefined : -1}
+          style={{
+            opacity: connected ? 1 : 0,
+            pointerEvents: connected ? undefined : "none",
+            backgroundColor: theme.tokens["--background"],
+          }}
         />
       ) : null}
     </div>

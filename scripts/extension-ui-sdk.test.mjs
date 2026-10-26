@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
+import { JSDOM } from "jsdom";
 
 const source = await readFile(
   new URL("../sdk/extension-ui.js", import.meta.url),
@@ -13,11 +14,17 @@ function fixture({
   unschedule = clearTimeout,
 } = {}) {
   const messages = [],
+    parentMessages = [],
+    frames = [],
+    documentEvents = new Map(),
     errors = [],
     events = new Map(),
     tokens = new Map(),
     classes = new Set();
-  const parent = { postMessage() {} };
+  const parent = {
+    postMessage: (value) =>
+      parentMessages.push(JSON.parse(JSON.stringify(value))),
+  };
   const root = {
     dataset: {},
     style: { setProperty: (key, value) => tokens.set(key, value) },
@@ -28,15 +35,19 @@ function fixture({
     prepend() {},
   };
   const document = {
+    readyState: "complete",
     documentElement: root,
     head: { prepend() {} },
     createElement: () => ({ dataset: {}, textContent: "" }),
+    addEventListener: (name, listener) => documentEvents.set(name, listener),
+    removeEventListener: (name) => documentEvents.delete(name),
   };
   const window = {
     top: {},
     matchMedia: () => ({ matches: reduced }),
     addEventListener: (name, listener) => events.set(name, listener),
     removeEventListener: (name) => events.delete(name),
+    requestAnimationFrame: (callback) => frames.push(callback),
   };
   const port = {
     postMessage: (value) => messages.push(JSON.parse(JSON.stringify(value))),
@@ -72,9 +83,57 @@ function fixture({
     send,
     close,
     messages,
+    parentMessages,
+    frame: () => frames.splice(0).forEach((callback) => callback()),
+    documentEvents,
     errors,
   };
 }
+
+test("the first visible-frame acknowledgement waits for a real view, document readiness and author rendering", () => {
+  const { document, documentEvents, send, parentMessages, frame, root, close } =
+    fixture();
+  document.readyState = "loading";
+  send({
+    type: "state",
+    value: snapshot({ theme: { mode: "dark", tokens: {} } }),
+  });
+  frame();
+  frame();
+  assert.equal(root.style.colorScheme, "dark");
+  assert.deepEqual(
+    parentMessages.map((message) => message.type),
+    ["starter:ready"],
+  );
+  send({
+    type: "state",
+    value: snapshot({
+      view: { state: "rendered" },
+      theme: { mode: "dark", tokens: {} },
+    }),
+  });
+  frame();
+  frame();
+  assert.equal(parentMessages.length, 1);
+  document.readyState = "interactive";
+  documentEvents.get("DOMContentLoaded")();
+  frame();
+  assert.equal(parentMessages.length, 1);
+  frame();
+  assert.deepEqual(parentMessages.at(-1), {
+    type: "starter:painted",
+    version: 1,
+  });
+  send({ type: "state", value: snapshot({ view: { state: "updated" } }) });
+  frame();
+  frame();
+  assert.equal(
+    parentMessages.filter((message) => message.type === "starter:painted")
+      .length,
+    1,
+  );
+  close();
+});
 function snapshot(overrides = {}) {
   return {
     view: null,
@@ -272,4 +331,152 @@ test("a native dialog stays pending until the actual reply and closing the surfa
   await Promise.resolve();
   close();
   await assert.rejects(waiting, /Extension surface closed/);
+});
+
+function selectFixture() {
+  const dom = new JSDOM(
+    `<!doctype html><html><body><form id="form">
+    <label>Pick <select name="choice" id="choice"><option value="apple">Apple</option>
+      <optgroup label="Unavailable" disabled><option value="banana">Banana</option></optgroup>
+      <option value="cherry">Cherry</option><option value="date">Date</option></select></label>
+    <select id="native" data-starter-select="native"><option>Native</option></select>
+    <select id="multiple" multiple><option>Multiple</option></select>
+    <select id="sized" size="2"><option>Sized</option></select>
+    <fieldset disabled><select id="disabled"><option>Disabled</option></select></fieldset>
+    <button type="button" id="outside">Outside</button>
+  </form></body></html>`,
+    {
+      url: "https://extension-ui.localhost/main",
+      runScripts: "outside-only",
+      pretendToBeVisual: true,
+    },
+  );
+  dom.reconfigure({ windowTop: {} });
+  const { window } = dom;
+  window.Element.prototype.scrollIntoView = () => {};
+  window.postMessage = () => {};
+  window.eval(source);
+  const port = { start() {}, close() {}, onmessage: null };
+  window.dispatchEvent(
+    new window.MessageEvent("message", {
+      source: window.parent,
+      data: { type: "starter:connect", version: 1 },
+      ports: [port],
+    }),
+  );
+  const control = window.document.querySelector("#choice");
+  const pointer = (target) =>
+    target.dispatchEvent(
+      new window.MouseEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }),
+    );
+  const key = (value, target = control) =>
+    target.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: value,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  const popup = () => window.document.querySelector("[data-starter-listbox]");
+  const disconnect = () => {
+    if (port.onmessage) port.onmessage({ data: { type: "closed" } });
+    port.onmessage = null;
+  };
+  const close = () => {
+    disconnect();
+    window.close();
+  };
+  return { window, control, pointer, key, popup, disconnect, close };
+}
+
+test("enhanced select retains its native node, form value and label while keyboard/click selection emits one real change", () => {
+  const { window, control, pointer, key, popup, close } = selectFixture();
+  let changes = 0,
+    inputs = 0;
+  control.addEventListener("change", () => changes++);
+  control.addEventListener("input", () => inputs++);
+  control.setAttribute("aria-controls", "author-control");
+  pointer(control);
+  assert.equal(window.document.querySelector("#choice"), control);
+  assert.equal(popup().getAttribute("role"), "listbox");
+  assert.equal(popup().getAttribute("aria-label"), "Pick");
+  assert.equal(window.document.activeElement, control);
+  key("ArrowDown"); // Skip the disabled optgroup.
+  assert.equal(control.value, "apple");
+  assert.equal(
+    control.getAttribute("aria-activedescendant"),
+    popup().querySelector("[data-active]").id,
+  );
+  key("Enter");
+  assert.equal(control.value, "cherry");
+  assert.equal(new window.FormData(control.form).get("choice"), "cherry");
+  assert.equal(changes, 1);
+  assert.equal(inputs, 1);
+  assert.equal(popup(), null);
+  assert.equal(control.getAttribute("aria-controls"), "author-control");
+  pointer(control);
+  key("End");
+  key("Escape");
+  assert.equal(control.value, "cherry");
+  assert.equal(changes, 1);
+  pointer(control);
+  key("a");
+  key("Enter");
+  assert.equal(control.value, "apple");
+  pointer(control);
+  pointer(popup().querySelector('[data-starter-option="3"]'));
+  assert.equal(control.value, "date");
+  assert.equal(changes, 3);
+  close();
+});
+
+test("select opt-outs, disabled fieldsets, reset and removed controls keep native semantics and clean popup resources", async () => {
+  const { window, control, pointer, key, popup, disconnect, close } =
+    selectFixture();
+  for (const id of ["native", "multiple", "sized", "disabled"]) {
+    pointer(window.document.getElementById(id));
+    assert.equal(popup(), null);
+  }
+  pointer(control);
+  key("End");
+  key("Tab");
+  assert.equal(control.value, "date");
+  pointer(control);
+  key("Home");
+  control.value = "cherry"; // Property assignment need not emit an input event.
+  key("Tab");
+  assert.equal(control.value, "cherry");
+  pointer(control);
+  control.value = "date";
+  key("ArrowUp");
+  key("Enter");
+  assert.equal(control.value, "cherry");
+  pointer(control);
+  control.form.reset();
+  assert.equal(control.value, "apple");
+  assert.equal(popup(), null);
+  pointer(control);
+  control.value = "cherry";
+  control.dispatchEvent(new window.Event("change", { bubbles: true }));
+  assert.equal(
+    popup().querySelector("[data-active]").dataset.starterOption,
+    "2",
+  );
+  control.remove();
+  await Promise.resolve();
+  assert.equal(popup(), null);
+  assert.equal(control.hasAttribute("aria-expanded"), false);
+  const other = window.document.getElementById("native");
+  other.removeAttribute("data-starter-select");
+  pointer(other);
+  assert.notEqual(popup(), null);
+  disconnect();
+  assert.equal(popup(), null);
+  pointer(other);
+  assert.equal(popup(), null);
+  close();
 });
