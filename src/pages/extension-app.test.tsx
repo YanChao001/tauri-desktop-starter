@@ -175,15 +175,15 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   expect(document.querySelector(".app-route-context")).toBeNull();
   expect(document.querySelector("[data-extension-surface] header")).toBeNull();
   expect(
-    screen.queryByRole("button", { name: "Open in separate window" }),
+    screen.queryByRole("menuitem", { name: "Open in separate window" }),
   ).not.toBeInTheDocument();
   const trigger = screen.getByRole("button", { name: "Extension tools" });
   expect(trigger.closest("a")).toBeNull();
   expect(trigger.closest("[data-sidebar-extension]")).toBe(link.parentElement);
-  fireEvent.click(trigger);
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
   expect(link).toHaveAttribute("aria-current", "page");
   fireEvent.click(
-    screen.getByRole("button", { name: "Open in separate window" }),
+    screen.getByRole("menuitem", { name: "Open in separate window" }),
   );
   await waitFor(() =>
     expect(native.openExtensionWindow).toHaveBeenCalledWith(
@@ -200,10 +200,14 @@ it("keeps session tools available in standalone mode without a redundant return 
   fireEvent.change(await screen.findByLabelText("Draft"), {
     target: { value: "Standalone draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
-  expect(screen.getByRole("button", { name: "Export session" })).toBeEnabled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Extension tools" }), {
+    key: "ArrowDown",
+  });
+  expect(
+    screen.getByRole("menuitem", { name: "Export session" }),
+  ).toBeEnabled();
   expect(screen.getByLabelText("Import session JSON")).toBeEnabled();
-  expect(screen.getByRole("button", { name: "End session" })).toBeEnabled();
+  expect(screen.getByRole("menuitem", { name: "End session" })).toBeEnabled();
   expect(
     screen.queryByRole("button", { name: "Extensions" }),
   ).not.toBeInTheDocument();
@@ -211,9 +215,9 @@ it("keeps session tools available in standalone mode without a redundant return 
     screen.queryByRole("link", { name: "Extensions" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Open in separate window" }),
+    screen.queryByRole("menuitem", { name: "Open in separate window" }),
   ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Export session" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Export session" }));
   await waitFor(() =>
     expect(native.saveTextExport).toHaveBeenCalledWith(
       "example.lab-session.json",
@@ -269,7 +273,7 @@ it("revocation removes the sidebar contribution and stops exposing the applicati
   expect(screen.queryByLabelText("Draft")).not.toBeInTheDocument();
   expect(screen.getByText(/This extension is disabled/)).toBeVisible();
   expect(
-    screen.queryByRole("button", { name: "Open in separate window" }),
+    screen.queryByRole("menuitem", { name: "Open in separate window" }),
   ).not.toBeInTheDocument();
 });
 
@@ -293,8 +297,10 @@ it("keeps an edited session mounted and exportable when a snapshot refresh fails
   expect(draft).toHaveValue("Keep through snapshot failure");
   expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Lab app"]);
   expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
-  fireEvent.click(screen.getByRole("button", { name: "Export session" }));
+  fireEvent.keyDown(screen.getByRole("button", { name: "Extension tools" }), {
+    key: "ArrowDown",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Export session" }));
   await waitFor(() =>
     expect(native.saveTextExport).toHaveBeenCalledWith(
       "example.lab-session.json",

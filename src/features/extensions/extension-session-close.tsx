@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+  type RefObject,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,18 +19,28 @@ import {
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
 
+export type ExtensionSessionCloseHandle = {
+  requestClose: () => void;
+};
+
 export function ExtensionSessionClose({
   dirty,
   busy,
   disabled,
   onSave,
   onClose,
+  ref,
+  showTrigger = true,
+  returnFocusRef,
 }: {
   dirty: boolean;
   busy: boolean;
   disabled: boolean;
   onSave: (signal: AbortSignal) => Promise<void>;
   onClose: (signal: AbortSignal) => Promise<void>;
+  ref?: Ref<ExtensionSessionCloseHandle>;
+  showTrigger?: boolean;
+  returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -32,6 +50,14 @@ export function ExtensionSessionClose({
   const trigger = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
   const alive = useRef(false);
+  const focusTrigger = useCallback(() => {
+    const target = [returnFocusRef?.current, trigger.current].find(
+      (button) => button && !button.disabled,
+    );
+    target?.focus();
+    return Boolean(target);
+  }, [returnFocusRef]);
+  useImperativeHandle(ref, () => ({ requestClose }));
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -41,17 +67,22 @@ export function ExtensionSessionClose({
   }, []);
   useEffect(() => {
     if (open || disabled || working || !restoreFocus.current) return;
-    if (document.activeElement === document.body) trigger.current?.focus();
+    if (document.activeElement === document.body) focusTrigger();
     restoreFocus.current = false;
-  }, [open, disabled, working]);
+  }, [open, disabled, working, focusTrigger]);
 
+  function requestClose() {
+    if (disabled || working || operation.current) return;
+    if (dirty || busy) setOpen(true);
+    else void finish(false);
+  }
   function dismiss() {
     operation.current?.abort();
     setOpen(false);
     setError(null);
   }
   async function finish(exportFirst: boolean) {
-    if (operation.current) return;
+    if (disabled || operation.current) return;
     const controller = new AbortController();
     operation.current = controller;
     setWorking(true);
@@ -73,18 +104,17 @@ export function ExtensionSessionClose({
   }
   return (
     <>
-      <Button
-        ref={trigger}
-        variant="outline"
-        disabled={disabled || working}
-        title={t("ext.appCloseHint")}
-        onClick={() => {
-          if (dirty || busy) setOpen(true);
-          else void finish(false);
-        }}
-      >
-        {t("ext.appClose")}
-      </Button>
+      {showTrigger ? (
+        <Button
+          ref={trigger}
+          variant="outline"
+          disabled={disabled || working}
+          title={t("ext.appCloseHint")}
+          onClick={requestClose}
+        >
+          {t("ext.appClose")}
+        </Button>
+      ) : null}
       <Dialog
         open={open}
         onOpenChange={(next) => {
@@ -95,11 +125,7 @@ export function ExtensionSessionClose({
           closeLabel={t("common.close")}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            restoreFocus.current = true;
-            if (trigger.current && !trigger.current.disabled) {
-              trigger.current.focus();
-              restoreFocus.current = false;
-            }
+            restoreFocus.current = !focusTrigger();
           }}
         >
           <DialogHeader>

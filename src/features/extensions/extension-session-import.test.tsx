@@ -1,3 +1,4 @@
+import { useRef, useState, type ComponentProps } from "react";
 import {
   act,
   cleanup,
@@ -81,6 +82,37 @@ function file() {
   selected.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
   return selected;
 }
+function ImportMenu(props: ComponentProps<typeof ExtensionSessionImport>) {
+  const [open, setOpen] = useState(true);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const returnFocusRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={returnFocusRef} onClick={() => setOpen(!open)}>
+        Extension tools
+      </button>
+      {open ? (
+        <div role="menu">
+          <button
+            role="menuitem"
+            onClick={() => {
+              inputRef.current?.click();
+              setOpen(false);
+            }}
+          >
+            Import session
+          </button>
+        </div>
+      ) : null}
+      <ExtensionSessionImport
+        {...props}
+        presentation="hidden"
+        inputRef={inputRef}
+        returnFocusRef={returnFocusRef}
+      />
+    </>
+  );
+}
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -144,4 +176,111 @@ it("identifies late completion by its original promise so an owner can retain a 
   expect(onPending).toHaveBeenLastCalledWith(null, newPending);
   expect(screen.getByRole("dialog")).toBeVisible();
   expect(onRestore).not.toHaveBeenCalled();
+});
+
+it.each(["Cancel", "Replace current session"])(
+  "keeps a hidden import mounted after its menu item closes and returns %s to the menu trigger",
+  async (action) => {
+    let finish!: (value: native.ExtensionView) => void;
+    vi.mocked(native.validateExtensionView).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const onRestore = vi.fn();
+    const onError = vi.fn();
+    const onPending = vi.fn();
+    render(
+      <ImportMenu
+        item={item}
+        commandId="open"
+        kind="view"
+        blocked={false}
+        onRestore={onRestore}
+        onError={onError}
+        onPending={onPending}
+      />,
+    );
+    const input = screen.getByLabelText<HTMLInputElement>(
+      "Import session JSON",
+    );
+    expect(input).toHaveAttribute("type", "file");
+    expect(input).toHaveAttribute("accept", ".json,application/json");
+    expect(input).not.toBeVisible();
+    const chooseFile = vi.spyOn(input, "click");
+    const menuTrigger = screen.getByRole("button", { name: "Extension tools" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import session" }));
+    expect(chooseFile).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Import session JSON")).toBe(input);
+    fireEvent.change(input, { target: { files: [file()] } });
+    await waitFor(() =>
+      expect(native.validateExtensionView).toHaveBeenCalledOnce(),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => {
+      finish(view);
+      await onPending.mock.calls[0]?.[0];
+    });
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(menuTrigger).toHaveFocus());
+    if (action === "Cancel") expect(onRestore).not.toHaveBeenCalled();
+    else
+      expect(onRestore).toHaveBeenCalledWith(expect.objectContaining({ view }));
+    expect(onError).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps the default import field visible and restores its focus after review", async () => {
+  vi.mocked(native.validateExtensionView).mockResolvedValueOnce(view);
+  const returnFocusRef = { current: document.createElement("button") };
+  const onPending = vi.fn();
+  render(
+    <ExtensionSessionImport
+      item={item}
+      commandId="open"
+      kind="view"
+      blocked={false}
+      onRestore={vi.fn()}
+      onError={vi.fn()}
+      onPending={onPending}
+      returnFocusRef={returnFocusRef}
+    />,
+  );
+  const input = screen.getByLabelText("Import session JSON");
+  expect(input).toBeVisible();
+  fireEvent.change(input, { target: { files: [file()] } });
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(input).toHaveFocus());
+});
+
+it("keeps hidden file imports disabled while the session is blocked", () => {
+  const inputRef = { current: null as HTMLInputElement | null };
+  const onPending = vi.fn();
+  render(
+    <ExtensionSessionImport
+      item={item}
+      commandId="open"
+      kind="view"
+      blocked
+      presentation="hidden"
+      inputRef={inputRef}
+      onRestore={vi.fn()}
+      onError={vi.fn()}
+      onPending={onPending}
+    />,
+  );
+  expect(inputRef.current).toBe(screen.getByLabelText("Import session JSON"));
+  expect(inputRef.current).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+    target: { files: [file()] },
+  });
+  expect(onPending).not.toHaveBeenCalled();
+  expect(native.validateExtensionView).not.toHaveBeenCalled();
 });

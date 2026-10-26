@@ -139,12 +139,14 @@ function app(runningId: string | null = null) {
   );
 }
 function openSessionTools() {
-  if (!screen.queryByRole("region", { name: "Extension tools" }))
-    fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
+  if (!screen.queryByRole("menu", { name: "Extension tools" }))
+    fireEvent.keyDown(screen.getByRole("button", { name: "Extension tools" }), {
+      key: "ArrowDown",
+    });
 }
 function sessionButton(name: string) {
   openSessionTools();
-  return screen.getByRole("button", { name });
+  return screen.getByRole("menuitem", { name });
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -260,18 +262,22 @@ it("keeps session tools out of the main workflow and preserves a draft when endi
   const dialog = await screen.findByRole("dialog", {
     name: "End this session?",
   });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(dialog.contains(document.activeElement)).toBe(true),
+  );
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() =>
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
   );
   expect(input).toHaveValue("Keep my progress");
-  expect(end).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Extension tools" })).toHaveFocus();
   expect(lifecycle.work?.dirty).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   expect(native.cancelExtension).not.toHaveBeenCalled();
 });
 
-it("labels the collected tools after a hover delay and dismisses the hint throughout the popover interaction", async () => {
+it("labels the compact menu after a hover delay without adding headings, forms or autofocus hints", async () => {
   render(app());
   await screen.findByLabelText("Query");
   const trigger = screen.getByRole("button", {
@@ -286,26 +292,64 @@ it("labels the collected tools after a hover delay and dismisses the hint throug
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   await act(async () => vi.advanceTimersByTimeAsync(50));
   expect(screen.getByRole("tooltip")).toHaveTextContent("Extension tools");
-  fireEvent.click(trigger);
-  expect(screen.getByRole("region", { name: "Extension tools" })).toBeVisible();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  expect(screen.getByRole("menu", { name: "Extension tools" })).toBeVisible();
+  expect(
+    screen
+      .getByRole("menu")
+      .querySelector("h2,h3,form,input,textarea,details,[data-extension-help]"),
+  ).toBeNull();
+  for (const action of screen.getAllByRole("menuitem"))
+    expect(action.querySelector("svg")).not.toBeNull();
   expect(
     screen.getAllByRole("status", { name: "Execution status" }),
   ).toHaveLength(1);
-  expect(
-    screen.getByRole("status", { name: "Execution status" }),
-  ).not.toHaveClass("sr-only");
+  expect(screen.getByRole("status", { name: "Execution status" })).toHaveClass(
+    "sr-only",
+  );
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   expect(
     screen.getAllByRole("status", { name: "Execution status" }),
   ).toHaveLength(1);
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  fireEvent.keyDown(document.body, { key: "Escape" });
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
   await act(async () => vi.advanceTimersByTimeAsync(0));
   expect(
-    screen.queryByRole("region", { name: "Extension tools" }),
+    screen.queryByRole("menu", { name: "Extension tools" }),
   ).not.toBeInTheDocument();
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+});
+
+it("opens data in a separate focused dialog and keeps its draft after Escape returns to the tools trigger", async () => {
+  render(
+    <ExtensionApp
+      item={{ ...item, grantedPermissions: ["text:read"] }}
+      commandId="open"
+      runs={[]}
+      onClose={onClose}
+      onSettled={onSettled}
+    />,
+  );
+  await screen.findByLabelText("Query");
+  fireEvent.click(sessionButton("Send data…"));
+  const dialog = await screen.findByRole("dialog", { name: "Send data" });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  const text = within(dialog).getByRole("textbox", { name: "Input text" });
+  await waitFor(() => expect(text).toHaveFocus());
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.change(text, { target: { value: "Retain this unsent draft" } });
+  fireEvent.keyDown(text, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("button", { name: "Extension tools" })).toHaveFocus();
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  fireEvent.click(sessionButton("Send data…"));
+  expect(await screen.findByLabelText("Input text")).toHaveValue(
+    "Retain this unsent draft",
+  );
+  expect(lifecycle.work?.dirty).toBe(true);
 });
 
 it("retains progress when session export is cancelled and only ends after a successful export", async () => {
@@ -357,8 +401,7 @@ it("cancels a pending export-and-end decision without clearing the session after
   expect(lifecycle.work?.dirty).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   const end = sessionButton("End session");
-  expect(end).toBeEnabled();
-  expect(end).toHaveFocus();
+  expect(end).not.toHaveAttribute("aria-disabled", "true");
   fireEvent.click(end);
   expect(
     await screen.findByRole("dialog", { name: "End this session?" }),
@@ -407,39 +450,34 @@ it("serializes actions and preserves both input and the previous view after fail
   expect(lifecycle.work?.dirty).toBe(true);
 });
 
-it("keeps feedback and footer controls mounted across running, stopping and settled states", async () => {
+it("announces a long action and offers its stop operation from the compact menu", async () => {
   const pending = deferred<native.ExtensionView>();
   vi.mocked(native.viewExtension)
     .mockResolvedValueOnce(first)
     .mockReturnValueOnce(pending.promise);
-  const mounted = render(app());
+  render(app());
   const submit = await screen.findByRole("button", { name: "Submit" });
-  const end = sessionButton("End session");
-  const stop = screen.getByText("Request stop", { selector: "button" });
   const status = screen.getByRole("status", { name: "Execution status" });
-  expect(stop).toBeDisabled();
-  expect(status).toBeEmptyDOMElement();
+  openSessionTools();
+  expect(
+    screen.queryByRole("menuitem", { name: "Request stop" }),
+  ).not.toBeInTheDocument();
   fireEvent.click(submit);
-  expect(stop).not.toBeVisible();
   expect(status).toBeEmptyDOMElement();
-  await waitFor(() => expect(stop).toBeVisible());
-  expect(stop).toBeEnabled();
+  const stop = await screen.findByRole("menuitem", { name: "Request stop" });
   expect(status).toHaveTextContent("Working…");
   fireEvent.click(stop);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(status).toHaveTextContent("Waiting for the extension to stop…");
-  expect(stop).toBeDisabled();
   await act(async () => pending.resolve(first));
-  expect(screen.getByText("Request stop", { selector: "button" })).toBe(stop);
-  expect(sessionButton("End session")).toBe(end);
   expect(screen.getByRole("status", { name: "Execution status" })).toBe(status);
   expect(status).toBeEmptyDOMElement();
-  expect(stop).toBeDisabled();
-  mounted.rerender(app("test.other"));
-  expect(status).toBeEmptyDOMElement();
-  expect(submit).toHaveAttribute("aria-disabled", "false");
-  expect(stop).toBeDisabled();
+  openSessionTools();
+  expect(
+    screen.queryByRole("menuitem", { name: "Request stop" }),
+  ).not.toBeInTheDocument();
 });
-it("does not flash running feedback or a stop control for a short action", async () => {
+it("does not flash a running announcement or stop menu item for a short action", async () => {
   const pending = deferred<native.ExtensionView>();
   vi.mocked(native.viewExtension)
     .mockResolvedValueOnce(first)
@@ -447,18 +485,21 @@ it("does not flash running feedback or a stop control for a short action", async
   render(app());
   const submit = await screen.findByRole("button", { name: "Submit" });
   openSessionTools();
-  const stop = screen.getByText("Request stop", { selector: "button" });
   const status = screen.getByRole("status", { name: "Execution status" });
   vi.useFakeTimers();
   fireEvent.click(submit);
   expect(submit).toHaveAttribute("aria-disabled", "true");
-  expect(stop).not.toBeVisible();
+  expect(
+    screen.queryByRole("menuitem", { name: "Request stop" }),
+  ).not.toBeInTheDocument();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(150);
     pending.resolve(first);
   });
   await act(async () => vi.advanceTimersByTimeAsync(500));
-  expect(stop).not.toBeVisible();
+  expect(
+    screen.queryByRole("menuitem", { name: "Request stop" }),
+  ).not.toBeInTheDocument();
   expect(status).toBeEmptyDOMElement();
   expect(submit).toHaveAttribute("aria-disabled", "false");
 });
@@ -551,7 +592,7 @@ it("shows queued status for this window and lets the user cancel its waiting ope
     ).toHaveTextContent("Queued, waiting for a runtime slot…"),
   );
   openSessionTools();
-  fireEvent.click(screen.getByText("Request stop", { selector: "button" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Request stop" }));
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith(
       item.package.manifest.id,
@@ -676,8 +717,11 @@ it("keeps a session locked when returning while its export is still pending", as
     "aria-disabled",
     "true",
   );
-  expect(sessionButton("Export session")).toBeDisabled();
-  expect(sessionButton("End session")).toBeDisabled();
+  expect(sessionButton("Export session")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(sessionButton("End session")).toHaveAttribute("aria-disabled", "true");
   await act(async () => exporting.resolve("saved.json"));
   await waitFor(() => expect(screen.getByLabelText("Query")).toBeEnabled());
   expect(lifecycle.work?.dirty).toBe(false);
@@ -767,7 +811,7 @@ it("transfers host data only on explicit send and omits it from ordinary actions
   );
   await screen.findByRole("button", { name: "Submit" });
   openSessionTools();
-  fireEvent.click(screen.getByText("Host data · explicit transfer"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Send data…" }));
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "Explicit input" },
   });
@@ -809,7 +853,7 @@ it("omits retained host-data drafts when their optional permissions are revoked"
   const mounted = render(view(["text:read", "network:https"]));
   await screen.findByRole("button", { name: "Submit" });
   openSessionTools();
-  fireEvent.click(screen.getByText("Host data · explicit transfer"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Send data…" }));
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "keep text" },
   });
@@ -936,10 +980,12 @@ it("observes a retained run directly after remount and preserves its failure fee
     "true",
   );
   expect(
-    screen.getByText("Request stop", { selector: "button" }),
-  ).not.toBeVisible();
+    screen.queryByRole("menuitem", { name: "Request stop" }),
+  ).not.toBeInTheDocument();
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Request stop" })).toBeEnabled(),
+    expect(
+      screen.getByRole("menuitem", { name: "Request stop" }),
+    ).not.toHaveAttribute("aria-disabled", "true"),
   );
   expect(lifecycle.work?.dirty).toBe(true);
   await act(async () => pending.reject({ code: "EXTENSION_RUN_FAILED" }));
@@ -971,7 +1017,7 @@ it("preserves file choices on picker cancellation and waits for selection before
   );
   await screen.findByRole("button", { name: "Submit" });
   openSessionTools();
-  fireEvent.click(screen.getByText("Host data · explicit transfer"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Send data…" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Choose files for this run" }),
   );
@@ -979,18 +1025,28 @@ it("preserves file choices on picker cancellation and waits for selection before
   fireEvent.click(
     screen.getByRole("button", { name: "Choose files for this run" }),
   );
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Send data" }), {
+    key: "Escape",
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
   expect(screen.getByRole("button", { name: "Submit" })).toHaveAttribute(
     "aria-disabled",
     "true",
   );
-  expect(sessionButton("Export session")).toBeDisabled();
-  expect(sessionButton("End session")).toBeDisabled();
+  expect(sessionButton("Export session")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(sessionButton("End session")).toHaveAttribute("aria-disabled", "true");
   const saving = lifecycle.work!.save();
   expect(native.saveTextExport).not.toHaveBeenCalled();
   await act(async () => {
     selecting.resolve([]);
     await saving;
   });
+  fireEvent.click(sessionButton("Send data…"));
   expect(screen.getByText("sample.txt")).toBeVisible();
   expect(native.saveTextExport).toHaveBeenCalledWith(
     "third-party.form-session.json",
@@ -1031,14 +1087,19 @@ it("requires confirmation before importing a version-bound session and never res
     type: "application/json",
   });
   file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
-  openSessionTools();
-  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+  const input = screen.getByLabelText("Import session JSON");
+  const click = vi.spyOn(input, "click").mockImplementation(() => {});
+  fireEvent.click(sessionButton("Import session JSON"));
+  expect(click).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(input).toBeInTheDocument();
+  fireEvent.change(input, {
     target: { files: [file] },
   });
   await waitFor(() =>
     expect(native.validateExtensionView).toHaveBeenCalledOnce(),
   );
-  expect(screen.getByRole("region", { name: "Extension tools" })).toBeVisible();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await act(async () => validation.resolve(importedView));
   const dialog = await screen.findByRole("dialog");

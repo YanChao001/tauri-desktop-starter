@@ -11,6 +11,7 @@ import { useSettings } from "@/providers/settings";
 import { canRunExtensionCommand } from "@/features/extensions/extension-model";
 import { closeWindow, openExtensionWindow } from "@/lib/tauri";
 import { ExtensionLoading } from "@/features/extensions/extension-loading";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export function ExtensionPage({
   standalone = false,
@@ -60,10 +61,9 @@ export function ExtensionPage({
             commandId={command.id}
             tools={
               !standalone && command.ui?.window ? (
-                <Button
-                  variant="outline"
+                <DropdownMenuItem
                   disabled={opening}
-                  onClick={() => {
+                  onSelect={() => {
                     setOpening(true);
                     setWindowError(null);
                     void openExtensionWindow(
@@ -78,7 +78,7 @@ export function ExtensionPage({
                 >
                   <ExternalLinkIcon />
                   {t("ext.openWindow")}
-                </Button>
+                </DropdownMenuItem>
               ) : null
             }
             runs={data?.runs ?? []}

@@ -219,6 +219,8 @@ export const enExtensions = {
   "ext.hostDataHint":
     "Send selected data transfers these contents. Plugins may use separately authorized networking or private storage during ordinary actions.",
   "ext.sendData": "Send selected data",
+  "ext.sendDataTitle": "Send data",
+  "ext.sendDataMenu": "Send data…",
   "ext.openWindow": "Open in separate window",
   "ext.windowHint":
     "Use the title bar for language, theme, minimize, maximize and close. The main window stays usable. This window has its own session.",

@@ -1,4 +1,11 @@
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +21,13 @@ import { extensionNetworkOrigins } from "./extension-model";
 import type { ExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 import { ExtensionHelp } from "./extension-help";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function ExtensionData({
   item,
@@ -22,6 +36,10 @@ export function ExtensionData({
   onDirty,
   onPickingChange,
   onSend,
+  presentation = "details",
+  open = false,
+  onOpenChange,
+  returnFocusRef,
 }: {
   item: ExtensionInfo;
   blocked: boolean;
@@ -29,6 +47,10 @@ export function ExtensionData({
   onDirty: () => void;
   onPickingChange: (picking: boolean) => void;
   onSend: (input: ExtensionViewDataInput) => void;
+  presentation?: "details" | "dialog";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -72,155 +94,185 @@ export function ExtensionData({
     session.dirty = true;
     onDirty();
   }
-  return (
+  const content = (
+    <div className="min-w-0 space-y-3">
+      {hasText ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1">
+            <Label htmlFor={`${id}-text`}>{t("ext.input")}</Label>
+            <ExtensionHelp
+              label={t("ext.input")}
+            >{`${t("ext.hostDataHint")} ${t("ext.inputHint")}`}</ExtensionHelp>
+          </div>
+          <Textarea
+            id={`${id}-text`}
+            value={inputText}
+            disabled={blocked}
+            data-operation-locked={blocked}
+            className={LOCKED_INPUT_CLASS}
+            onChange={(e) => {
+              draft({ inputText: e.target.value });
+            }}
+            aria-invalid={tooLong}
+            aria-description={t("ext.inputHint")}
+          />
+        </div>
+      ) : null}
+      {hasFiles ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={blocked || picking}
+              data-operation-locked={blocked || picking}
+              className={LOCKED_CONTROL_CLASS}
+              aria-description={t("ext.filesHint")}
+              onClick={() => {
+                if (blocked || session.selecting) return;
+                const request = ++generation.current;
+                setPicking(true);
+                onPickingChange(true);
+                setError(null);
+                const selecting = pickExtensionFiles()
+                  .then((result) => {
+                    if (request !== generation.current) return;
+                    if (!result.length) return;
+                    if (
+                      result.length > 16 ||
+                      result.reduce(
+                        (sum, file) => sum + (file.bytes ?? Infinity),
+                        0,
+                      ) >
+                        2 * 1024 * 1024
+                    )
+                      throw new Error(t("ext.filesHint"));
+                    const files = result.map(({ id, name }) => ({
+                      id,
+                      name,
+                    }));
+                    draft({ files });
+                  })
+                  .catch((reason: unknown) => {
+                    if (request === generation.current) setError(reason);
+                  })
+                  .finally(() => {
+                    if (session.selecting === selecting)
+                      session.selecting = null;
+                    if (request === generation.current) {
+                      setPicking(false);
+                      onPickingChange(false);
+                    }
+                  });
+                session.selecting = selecting;
+              }}
+            >
+              {t("ext.files")}
+            </Button>
+            <ExtensionHelp
+              label={t("ext.files")}
+            >{`${t("ext.hostDataHint")} ${t("ext.filesHint")}`}</ExtensionHelp>
+            <Button
+              variant="ghost"
+              disabled={blocked || !files.length}
+              data-operation-locked={blocked && files.length > 0}
+              className={LOCKED_CONTROL_CLASS}
+              onClick={() => {
+                draft({ files: [] });
+              }}
+            >
+              {t("ext.clearFiles")}
+            </Button>
+          </div>
+          {files.length ? (
+            <ul className="space-y-1 text-sm">
+              {files.map((file) => (
+                <li className="break-all" key={file.id}>
+                  {file.name}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {hasNetwork ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1">
+            <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
+            <ExtensionHelp
+              label={t("ext.url")}
+            >{`${t("ext.allowedHosts")}: ${extensionNetworkOrigins(item).join(", ")}. ${t("ext.urlHint")}`}</ExtensionHelp>
+          </div>
+          <Input
+            id={`${id}-url`}
+            type="url"
+            value={url}
+            disabled={blocked}
+            data-operation-locked={blocked}
+            className={LOCKED_INPUT_CLASS}
+            maxLength={4096}
+            aria-description={`${t("ext.allowedHosts")}: ${extensionNetworkOrigins(item).join(", ")}. ${t("ext.urlHint")}`}
+            onChange={(e) => {
+              draft({ url: e.target.value });
+            }}
+            placeholder={`${extensionNetworkOrigins(item)[0] ?? "https://example.com"}/`}
+          />
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {nativeErrorText(error, t)}
+        </p>
+      ) : null}
+      <Button
+        className={LOCKED_CONTROL_CLASS}
+        data-operation-locked={(blocked || picking) && !tooLong && hasData}
+        disabled={blocked || picking || tooLong || !hasData}
+        onClick={() =>
+          onSend({
+            inputText: hasText ? inputText : "",
+            fileIds: hasFiles ? files.map((file) => file.id) : [],
+            url: hasNetwork ? url.trim() || null : null,
+          })
+        }
+      >
+        {t("ext.sendData")}
+      </Button>
+    </div>
+  );
+  return presentation === "dialog" ? (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        closeLabel={t("common.close")}
+        onOpenAutoFocus={(event) => {
+          if (!(event.target instanceof HTMLElement)) return;
+          const field = event.target.querySelector<HTMLElement>(
+            "textarea:not(:disabled),input:not(:disabled),button:not([data-extension-help]):not(:disabled)",
+          );
+          if (field) {
+            event.preventDefault();
+            field.focus();
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocusRef?.current) {
+            event.preventDefault();
+            returnFocusRef.current.focus();
+          }
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{t("ext.sendDataTitle")}</DialogTitle>
+          <DialogDescription>{t("ext.hostDataHint")}</DialogDescription>
+        </DialogHeader>
+        {content}
+      </DialogContent>
+    </Dialog>
+  ) : (
     <details className="min-w-0 rounded-lg border bg-card p-3">
       <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t("ext.hostData")}
       </summary>
-      <div className="mt-3 space-y-3">
-        {hasText ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1">
-              <Label htmlFor={`${id}-text`}>{t("ext.input")}</Label>
-              <ExtensionHelp
-                label={t("ext.input")}
-              >{`${t("ext.hostDataHint")} ${t("ext.inputHint")}`}</ExtensionHelp>
-            </div>
-            <Textarea
-              id={`${id}-text`}
-              value={inputText}
-              disabled={blocked}
-              data-operation-locked={blocked}
-              className={LOCKED_INPUT_CLASS}
-              onChange={(e) => {
-                draft({ inputText: e.target.value });
-              }}
-
-              aria-invalid={tooLong}
-              aria-description={t("ext.inputHint")}
-            />
-          </div>
-        ) : null}
-        {hasFiles ? (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                disabled={blocked || picking}
-                data-operation-locked={blocked || picking}
-                className={LOCKED_CONTROL_CLASS}
-                aria-description={t("ext.filesHint")}
-                onClick={() => {
-                  if (blocked || session.selecting) return;
-                  const request = ++generation.current;
-                  setPicking(true);
-                  onPickingChange(true);
-                  setError(null);
-                  const selecting = pickExtensionFiles()
-                    .then((result) => {
-                      if (request !== generation.current) return;
-                      if (!result.length) return;
-                      if (
-                        result.length > 16 ||
-                        result.reduce(
-                          (sum, file) => sum + (file.bytes ?? Infinity),
-                          0,
-                        ) >
-                          2 * 1024 * 1024
-                      )
-                        throw new Error(t("ext.filesHint"));
-                      const files = result.map(({ id, name }) => ({
-                        id,
-                        name,
-                      }));
-                      draft({ files });
-                    })
-                    .catch((reason: unknown) => {
-                      if (request === generation.current) setError(reason);
-                    })
-                    .finally(() => {
-                      if (session.selecting === selecting)
-                        session.selecting = null;
-                      if (request === generation.current) {
-                        setPicking(false);
-                        onPickingChange(false);
-                      }
-                    });
-                  session.selecting = selecting;
-                }}
-              >
-                {t("ext.files")}
-              </Button>
-              <ExtensionHelp
-                label={t("ext.files")}
-              >{`${t("ext.hostDataHint")} ${t("ext.filesHint")}`}</ExtensionHelp>
-              <Button
-                variant="ghost"
-                disabled={blocked || !files.length}
-                data-operation-locked={blocked && files.length > 0}
-                className={LOCKED_CONTROL_CLASS}
-                onClick={() => {
-                  draft({ files: [] });
-                }}
-              >
-                {t("ext.clearFiles")}
-              </Button>
-            </div>
-            {files.length ? (
-              <ul className="space-y-1 text-sm">
-                {files.map((file) => (
-                  <li className="break-all" key={file.id}>
-                    {file.name}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
-        {hasNetwork ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1">
-              <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
-              <ExtensionHelp
-                label={t("ext.url")}
-              >{`${t("ext.allowedHosts")}: ${extensionNetworkOrigins(item).join(", ")}. ${t("ext.urlHint")}`}</ExtensionHelp>
-            </div>
-            <Input
-              id={`${id}-url`}
-              type="url"
-              value={url}
-              disabled={blocked}
-              data-operation-locked={blocked}
-              className={LOCKED_INPUT_CLASS}
-              maxLength={4096}
-              aria-description={`${t("ext.allowedHosts")}: ${extensionNetworkOrigins(item).join(", ")}. ${t("ext.urlHint")}`}
-              onChange={(e) => {
-                draft({ url: e.target.value });
-              }}
-              placeholder={`${extensionNetworkOrigins(item)[0] ?? "https://example.com"}/`}
-            />
-          </div>
-        ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {nativeErrorText(error, t)}
-          </p>
-        ) : null}
-        <Button
-          className={LOCKED_CONTROL_CLASS}
-          data-operation-locked={(blocked || picking) && !tooLong && hasData}
-          disabled={blocked || picking || tooLong || !hasData}
-          onClick={() =>
-            onSend({
-              inputText: hasText ? inputText : "",
-              fileIds: hasFiles ? files.map((file) => file.id) : [],
-              url: hasNetwork ? url.trim() || null : null,
-            })
-          }
-        >
-          {t("ext.sendData")}
-        </Button>
-      </div>
+      <div className="mt-3">{content}</div>
     </details>
   );
 }

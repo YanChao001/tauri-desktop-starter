@@ -198,6 +198,8 @@ export const zhExtensions = {
   "ext.hostDataHint":
     "点击“发送所选数据”交付这些内容。插件可在普通操作中使用另行授权的网络或私有存储能力。",
   "ext.sendData": "发送所选数据",
+  "ext.sendDataTitle": "发送数据",
+  "ext.sendDataMenu": "发送数据…",
   "ext.openWindow": "在独立窗口打开",
   "ext.windowHint":
     "标题栏可切换语言、主题，或最小化、最大化和关闭。主窗口可以继续使用，此窗口拥有独立会话。",

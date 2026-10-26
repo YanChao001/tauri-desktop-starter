@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DownloadIcon,
+  UploadIcon,
+  RefreshCwIcon,
+  SendIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/providers/i18n";
 import { useUnsavedWork } from "@/providers/unsaved-work";
 import { nativeErrorText } from "@/lib/native-error";
@@ -22,7 +34,10 @@ import {
 import { extensionInstallationIdentity } from "./extension-model";
 import { useExtensionPhase } from "./use-extension-phase";
 import { ExtensionSessionImport } from "./extension-session-import";
-import { ExtensionSessionClose } from "./extension-session-close";
+import {
+  ExtensionSessionClose,
+  type ExtensionSessionCloseHandle,
+} from "./extension-session-close";
 import {
   extensionSessionIdentity,
   type ExtensionSessionExport,
@@ -30,7 +45,7 @@ import {
 import { ExtensionData } from "./extension-data";
 import { useExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS } from "./control-styles";
-import { ExtensionFrame, ExtensionToolGroup } from "./extension-frame";
+import { ExtensionFrame } from "./extension-frame";
 import { ExtensionCustomUi } from "./extension-custom-ui";
 import type { ExtensionUiRequest } from "./extension-ui-bridge";
 import { useDelayedBusy } from "./use-delayed-busy";
@@ -80,6 +95,15 @@ export function ExtensionApp({
   const [closed, setClosed] = useState(false);
   const [error, setError] = useState<unknown>(session.error);
   const [surfaceRevision, setSurfaceRevision] = useState(0);
+  const [dataOpen, setDataOpen] = useState(false);
+  const toolsTrigger = useRef<HTMLButtonElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
+  const closeControl = useRef<ExtensionSessionCloseHandle>(null);
+  const hasHostData = item.grantedPermissions.some((permission) =>
+    ["text:read", "files:read", "network:https", "network:local"].includes(
+      permission,
+    ),
+  );
   const alive = useRef(false);
   const closing = useRef(false);
   const init = useRef(() => {});
@@ -539,137 +563,78 @@ export function ExtensionApp({
     if (session.error) throw session.error;
     return session.view;
   }
-  const feedback = (
-    <div className="grid h-8 w-[min(15rem,42vw)] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-      <p
-        role="status"
-        aria-label={t("ext.appStatus")}
-        aria-live="polite"
-        aria-atomic="true"
-        title={status || undefined}
-        className="min-w-0 truncate text-xs text-muted-foreground"
-      >
-        {status}
-      </p>
-      <Button
-        variant="outline"
-        aria-hidden={!showProgress}
-        tabIndex={showProgress ? 0 : -1}
-        disabled={!showProgress || !busy || stopping}
-        style={{ visibility: showProgress ? undefined : "hidden" }}
-        title={t("ext.appStopHint")}
-        onClick={() => {
-          setStopping(true);
-          void settle().catch((reason: unknown) => {
-            if (alive.current) {
-              setError(reason);
-              setStopping(false);
-            }
-          });
-        }}
-      >
-        {t("ext.stop")}
-      </Button>
-    </div>
-  );
   return (
     <section className="min-w-0 space-y-5" hidden={closed}>
       <ExtensionFrame
         item={item}
-        feedback={feedback}
         announcement={status}
+        triggerRef={toolsTrigger}
         tools={
           <>
-            {tools || documentId ? (
-              <ExtensionToolGroup label={t("ext.tools.interface")}>
-                <div className="flex flex-wrap gap-2">
-                  {tools}
-                  {documentId ? (
-                    <Button
-                      variant="outline"
-                      disabled={blocked}
-                      onClick={() => setSurfaceRevision((value) => value + 1)}
-                    >
-                      {t("ext.reloadUi")}
-                    </Button>
-                  ) : null}
-                </div>
-              </ExtensionToolGroup>
+            {tools}
+            {documentId ? (
+              <DropdownMenuItem
+                disabled={blocked}
+                onSelect={() => setSurfaceRevision((value) => value + 1)}
+              >
+                <RefreshCwIcon />
+                {t("ext.reloadUi")}
+              </DropdownMenuItem>
             ) : null}
-            <ExtensionToolGroup label={t("ext.tools.session")}>
-              <div className="space-y-3">
-                <Button
-                  variant="outline"
-                  disabled={saving || stopping || picking || !view}
-                  data-operation-locked={
-                    (saving || stopping || picking) && view !== null
-                  }
-                  className={LOCKED_CONTROL_CLASS}
-                  title={t("ext.appExportHint")}
-                  onClick={() =>
-                    void save().catch((reason: unknown) => {
-                      if (alive.current) setError(reason);
-                    })
-                  }
-                >
-                  {t("ext.appExport")}
-                </Button>
-                <ExtensionSessionImport
-                  item={item}
-                  commandId={commandId}
-                  kind="view"
-                  blocked={blocked}
-                  onError={(reason) => {
-                    if (alive.current) setError(reason);
-                  }}
-                  onPending={(pending, completed) => {
-                    if (pending !== null || session.selecting === completed) {
-                      session.selecting = pending;
-                      if (alive.current) setPicking(pending !== null);
-                    }
-                  }}
-                  onRestore={(imported: ExtensionSessionExport) => {
-                    latest.current = imported.view;
-                    latestFields.current = imported.fields;
-                    session.view = imported.view;
-                    session.locale = language === "zh" ? "zh-CN" : "en";
-                    session.uiState = imported.ui?.state ?? null;
-                    session.fields = imported.fields;
-                    session.draft = {
-                      inputText: imported.inputText,
-                      url: imported.url,
-                      files: [],
-                    };
-                    session.dirty = true;
-                    setView(imported.view);
-                    setUiState(session.uiState);
-                    setFields(imported.fields);
-                    setDirty(true);
-                    setError(null);
-                    setSurfaceRevision((value) => value + 1);
-                  }}
-                />
-              </div>
-            </ExtensionToolGroup>
-            <ExtensionData
-              item={item}
-              blocked={blocked || invalidFields.size > 0}
-              session={session}
-              onDirty={() => setDirty(true)}
-              onPickingChange={(value) => {
-                if (alive.current) setPicking(value);
+            {tools || documentId ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem
+              disabled={saving || stopping || picking || !view}
+              onSelect={() => {
+                void save().catch((reason: unknown) => {
+                  if (alive.current) setError(reason);
+                });
               }}
-              onSend={(data) => run("host-data", data)}
-            />
-            <ExtensionToolGroup label={t("ext.tools.lifecycle")}>
-              <ExtensionSessionClose
-                dirty={dirty || session.dirty}
-                busy={busy}
-                disabled={saving || stopping || picking}
-                onSave={save}
-                onClose={close}
-              />
-            </ExtensionToolGroup>
+            >
+              <DownloadIcon />
+              {t("ext.appExport")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={blocked}
+              onSelect={() => importInput.current?.click()}
+            >
+              <UploadIcon />
+              {t("ext.importSession")}
+            </DropdownMenuItem>
+            {hasHostData ? (
+              <DropdownMenuItem
+                disabled={blocked || invalidFields.size > 0}
+                onSelect={() => setDataOpen(true)}
+              >
+                <SendIcon />
+                {t("ext.sendDataMenu")}
+              </DropdownMenuItem>
+            ) : null}
+            {showProgress ? (
+              <DropdownMenuItem
+                disabled={!busy || stopping}
+                onSelect={() => {
+                  setStopping(true);
+                  void settle().catch((reason: unknown) => {
+                    if (alive.current) {
+                      setError(reason);
+                      setStopping(false);
+                    }
+                  });
+                }}
+              >
+                <SquareIcon />
+                {t("ext.stop")}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={saving || stopping || picking}
+              onSelect={() => closeControl.current?.requestClose()}
+            >
+              <XIcon />
+              {t("ext.appClose")}
+            </DropdownMenuItem>
           </>
         }
       >
@@ -772,6 +737,71 @@ export function ExtensionApp({
           </div>
         ) : null}
       </ExtensionFrame>
+      <ExtensionSessionImport
+        presentation="hidden"
+        inputRef={importInput}
+        returnFocusRef={toolsTrigger}
+        item={item}
+        commandId={commandId}
+        kind="view"
+        blocked={blocked}
+        onError={(reason) => {
+          if (alive.current) setError(reason);
+        }}
+        onPending={(pending, completed) => {
+          if (pending !== null || session.selecting === completed) {
+            session.selecting = pending;
+            if (alive.current) setPicking(pending !== null);
+          }
+        }}
+        onRestore={(imported: ExtensionSessionExport) => {
+          latest.current = imported.view;
+          latestFields.current = imported.fields;
+          session.view = imported.view;
+          session.locale = language === "zh" ? "zh-CN" : "en";
+          session.uiState = imported.ui?.state ?? null;
+          session.fields = imported.fields;
+          session.draft = {
+            inputText: imported.inputText,
+            url: imported.url,
+            files: [],
+          };
+          session.dirty = true;
+          setView(imported.view);
+          setUiState(session.uiState);
+          setFields(imported.fields);
+          setDirty(true);
+          setError(null);
+          setSurfaceRevision((value) => value + 1);
+        }}
+      />
+      <ExtensionData
+        presentation="dialog"
+        open={dataOpen}
+        onOpenChange={setDataOpen}
+        returnFocusRef={toolsTrigger}
+        item={item}
+        blocked={blocked || invalidFields.size > 0}
+        session={session}
+        onDirty={() => setDirty(true)}
+        onPickingChange={(value) => {
+          if (alive.current) setPicking(value);
+        }}
+        onSend={(data) => {
+          run("host-data", data);
+          setDataOpen(false);
+        }}
+      />
+      <ExtensionSessionClose
+        ref={closeControl}
+        showTrigger={false}
+        returnFocusRef={toolsTrigger}
+        dirty={dirty || session.dirty}
+        busy={busy}
+        disabled={saving || stopping || picking}
+        onSave={save}
+        onClose={close}
+      />
     </section>
   );
 }
