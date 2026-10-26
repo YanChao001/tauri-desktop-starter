@@ -1,4 +1,11 @@
 import { useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Controller,
   useFieldArray,
@@ -8,13 +15,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,11 +58,6 @@ export function OrderForm() {
   });
   const kind = form.watch("kind");
   const [fail, setFail] = useState(false);
-  const [serverError, setServerError] = useState(false);
-  const [submitted, setSubmitted] = useState<{
-    count: number;
-    total: number;
-  } | null>(null);
   const errors = form.formState.errors;
   const summary: {
     name: FieldPath<OrderValues>;
@@ -102,62 +98,87 @@ export function OrderForm() {
   const message = (code: string | undefined) =>
     code ? t(errorKeys[code] ?? "labs.form.required") : null;
   function errorFor(name: string, code?: string) {
-    return code ? (
-      <p id={`${fieldId(name)}-error`} className="text-xs text-destructive">
+    return (
+      <p
+        id={`${fieldId(name)}-error`}
+        className="h-5 truncate text-xs text-destructive"
+        title={message(code) ?? undefined}
+      >
         {message(code)}
       </p>
-    ) : null;
+    );
   }
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.form.title")}</CardTitle>
-        <CardDescription>{t("labs.form.hint")}</CardDescription>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>{t("labs.form.title")}</CardTitle>
+          <HelpTooltip label={`${t("labs.form.title")} · ${t("title.help")}`}>
+            {t("labs.form.hint")}
+          </HelpTooltip>
+        </div>
       </CardHeader>
       <CardContent>
         <form
           className="space-y-5"
           noValidate
           onSubmit={form.handleSubmit(async (values) => {
-            setSubmitted(null);
-            setServerError(false);
             // 本地异步提交示例；没有远端 API 或数据持久化。
             await Promise.resolve();
             if (fail) {
-              setServerError(true);
+              toast.error(t("labs.form.failed"));
               return;
             }
-            setSubmitted({
-              count: values.lines.length,
-              total: orderTotal(values),
-            });
+            toast.success(
+              t("labs.form.success", {
+                count: values.lines.length,
+                total: new Intl.NumberFormat(
+                  language === "zh" ? "zh-CN" : "en",
+                  { maximumFractionDigits: 2 },
+                ).format(orderTotal(values)),
+              }),
+            );
           })}
           aria-busy={form.formState.isSubmitting}
         >
-          {summary.length ? (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive/40 p-3 text-sm"
-            >
-              <h3 className="font-medium">{t("labs.form.errors")}</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {summary.map((item) => (
-                  <li key={item.name}>
-                    <a
-                      href={`#${fieldId(item.name)}`}
-                      className="text-primary underline"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        form.setFocus(item.name);
-                      }}
+          <div className="h-10">
+            {summary.length ? (
+              <div role="alert">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-destructive"
                     >
-                      {item.label}: {message(item.message)}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+                      {t("labs.form.errors")} ({summary.length})
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="max-h-64 overflow-auto text-sm"
+                    align="start"
+                  >
+                    <ul className="list-disc space-y-1 pl-5">
+                      {summary.map((item) => (
+                        <li key={item.name}>
+                          <a
+                            href={`#${fieldId(item.name)}`}
+                            className="text-primary underline"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              form.setFocus(item.name);
+                            }}
+                          >
+                            {item.label}: {message(item.message)}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            ) : null}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="order-customer">{t("labs.form.customer")}</Label>
@@ -398,22 +419,6 @@ export function OrderForm() {
               {t("labs.form.simulateFailure")}
             </label>
           </div>
-          {serverError ? (
-            <p role="alert" className="rounded-md bg-muted p-3 text-sm">
-              {t("labs.form.failed")}
-            </p>
-          ) : null}
-          {submitted ? (
-            <p role="status" className="rounded-md bg-primary/10 p-3 text-sm">
-              {t("labs.form.success", {
-                count: submitted.count,
-                total: new Intl.NumberFormat(
-                  language === "zh" ? "zh-CN" : "en",
-                  { maximumFractionDigits: 2 },
-                ).format(submitted.total),
-              })}
-            </p>
-          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={form.formState.isSubmitting}>
               {t("labs.form.submit")}
@@ -424,8 +429,6 @@ export function OrderForm() {
               disabled={form.formState.isSubmitting}
               onClick={() => {
                 form.reset(defaultOrder);
-                setSubmitted(null);
-                setServerError(false);
               }}
             >
               {t("labs.reset")}

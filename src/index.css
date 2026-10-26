@@ -321,6 +321,11 @@ html[data-background="plain"] {
   --skin-card-opacity: 100%;
 }
 
+/* 通知说明沿用应用语义色，避免系统主题与应用主题不同时使用固定灰色。 */
+.toaster .cn-toast[data-styled="true"] [data-description] {
+  color: var(--muted-foreground);
+}
+
 .app-shell {
   position: relative;
   isolation: isolate;

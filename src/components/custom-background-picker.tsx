@@ -7,6 +7,8 @@ import {
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +27,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import {
   BackgroundImageError,
   importBackgroundImage,
@@ -66,6 +75,7 @@ function failureCode(reason: unknown): Failure["code"] {
 
 export function CustomBackgroundPicker() {
   const { t } = useI18n();
+  const translateLatest = useLatestTranslator();
   const { settings, update, persistence } = useSettings();
   const id = useId();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -77,6 +87,7 @@ export function CustomBackgroundPicker() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [failures, setFailures] = useState<Failure[]>([]);
+  const [showFailures, setShowFailures] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [retry, setRetry] = useState(0);
   const [renaming, setRenaming] = useState<Wallpaper | null>(null);
@@ -166,6 +177,7 @@ export function CustomBackgroundPicker() {
     setPending(true);
     setFailures([]);
     const errors: Failure[] = [];
+    let importedCount = 0;
     let last: Wallpaper | undefined;
     if (files.length > MAX_WALLPAPERS) errors.push({ name: "", code: "full" });
     try {
@@ -177,6 +189,7 @@ export function CustomBackgroundPicker() {
           if (attempt !== generation.current) return;
           remember(saved);
           last = saved;
+          importedCount++;
         } catch (reason) {
           errors.push({ name: file.name, code: failureCode(reason) });
         }
@@ -191,7 +204,35 @@ export function CustomBackgroundPicker() {
         current.customBackground?.fit === before.customBackground?.fit
       )
         apply(last);
-      setFailures(errors);
+      if (errors.length)
+        toast.error(
+          translateLatest("settings.wallpaperImportFailed", {
+            count: errors.length,
+          }),
+          {
+            ...(importedCount
+              ? {
+                  description: translateLatest("settings.wallpapersImported", {
+                    count: importedCount,
+                  }),
+                }
+              : {}),
+            action: {
+              label: translateLatest("common.details"),
+              onClick: () => {
+                if (attempt !== generation.current) return;
+                setFailures(errors);
+                setShowFailures(true);
+              },
+            },
+          },
+        );
+      else if (importedCount)
+        toast.success(
+          translateLatest("settings.wallpapersImported", {
+            count: importedCount,
+          }),
+        );
     } finally {
       busy.current = false;
       if (attempt === generation.current) setPending(false);
@@ -214,9 +255,10 @@ export function CustomBackgroundPicker() {
           customBackground: null,
           ...(current.background === "custom" ? { background: "plain" } : {}),
         });
+      toast.success(translateLatest("settings.wallpaperRemoved"));
     } catch (reason) {
       if (attempt === generation.current)
-        setFailures([{ name: entry.name, code: failureCode(reason) }]);
+        toast.error(translateLatest(ERROR_KEYS[failureCode(reason)]));
     } finally {
       busy.current = false;
       if (attempt === generation.current) setPending(false);
@@ -236,9 +278,10 @@ export function CustomBackgroundPicker() {
       if (current?.dataUrl === saved.dataUrl)
         update({ customBackground: { ...current, name: saved.name } });
       setRenaming(null);
+      toast.success(translateLatest("settings.wallpaperRenamed"));
     } catch (reason) {
       if (attempt === generation.current)
-        setFailures([{ name: renaming.name, code: failureCode(reason) }]);
+        toast.error(translateLatest(ERROR_KEYS[failureCode(reason)]));
     } finally {
       busy.current = false;
       if (attempt === generation.current) setPending(false);
@@ -252,28 +295,41 @@ export function CustomBackgroundPicker() {
       aria-busy={pending || loading}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
+        <div className="flex min-w-0 items-center gap-1.5">
           <h3 id={id + "-heading"} className="text-sm font-medium">
             {t("settings.bgCustom")}
           </h3>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {t("settings.customImageHint")}
-          </p>
+          <HelpTooltip
+            label={t("common.helpFor", { name: t("settings.bgCustom") })}
+          >
+            {t("settings.customImageHint")} {t("settings.imageFormats")}
+          </HelpTooltip>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={pending || loading || loadFailed}
-          onClick={() => fileInput.current?.click()}
-        >
-          {pending ? (
-            <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <UploadIcon className="size-3.5" aria-hidden="true" />
-          )}
-          {t("settings.importBackground")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <span className="w-20 text-right text-xs tabular-nums text-muted-foreground">
+            {t("settings.libraryCount", {
+              count: images.length,
+              max: MAX_WALLPAPERS,
+            })}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending || loading || loadFailed}
+            onClick={() => fileInput.current?.click()}
+          >
+            {pending ? (
+              <Loader2Icon
+                className="size-3.5 animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <UploadIcon className="size-3.5" aria-hidden="true" />
+            )}
+            {t("settings.importBackground")}
+          </Button>
+        </div>
       </div>
       <input
         ref={fileInput}
@@ -290,19 +346,13 @@ export function CustomBackgroundPicker() {
           if (files.length) void importImages(files);
         }}
       />
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <p id={id + "-formats"}>{t("settings.imageFormats")}</p>
-        <p>
-          {t("settings.libraryCount", {
-            count: images.length,
-            max: MAX_WALLPAPERS,
-          })}
-        </p>
-      </div>
+      <span id={id + "-formats"} className="sr-only">
+        {t("settings.imageFormats")}
+      </span>
       {loadFailed ? (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-2 text-sm text-destructive"
+          className="wallpaper-empty flex-wrap justify-between gap-2 px-3 text-sm text-destructive"
         >
           <span>{t("settings.libraryError")}</span>
           <Button
@@ -314,96 +364,115 @@ export function CustomBackgroundPicker() {
           </Button>
         </div>
       ) : images.length ? (
-        <div className="wallpaper-grid">
-          {images.map((entry) => {
-            const selected = active && image?.dataUrl === entry.dataUrl;
-            return (
-              <div
-                key={entry.id}
-                className="wallpaper-card"
-                data-wallpaper-id={entry.id}
-                data-selected={selected}
-              >
-                <label className="wallpaper-thumbnail">
-                  <input
-                    type="radio"
-                    name="background-skin"
-                    value={entry.id}
-                    className="sr-only"
-                    checked={selected}
-                    aria-label={t("settings.chooseWallpaper", {
-                      name: entry.name,
-                    })}
-                    onChange={() => apply(entry)}
-                  />
-                  <img
-                    src={entry.dataUrl}
-                    alt=""
-                    draggable={false}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                  {selected ? (
-                    <span className="custom-skin-check">
-                      <CheckIcon className="size-3" aria-hidden="true" />
-                      <span className="sr-only">
-                        {t("settings.activeSkin")}
-                      </span>
-                    </span>
-                  ) : null}
-                </label>
-                <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
-                  <span
-                    className="min-w-0 flex-1 truncate text-xs"
-                    title={entry.name}
-                  >
+        <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+          <div className="wallpaper-grid">
+            {images.map((entry) => {
+              const selected = active && image?.dataUrl === entry.dataUrl;
+              return (
+                <Tooltip key={entry.id}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="wallpaper-card"
+                      data-wallpaper-id={entry.id}
+                      data-selected={selected}
+                    >
+                      <label className="wallpaper-thumbnail">
+                        <input
+                          type="radio"
+                          name="background-skin"
+                          value={entry.id}
+                          className="sr-only"
+                          checked={selected}
+                          aria-label={t("settings.chooseWallpaper", {
+                            name: entry.name,
+                          })}
+                          onChange={() => apply(entry)}
+                        />
+                        <img
+                          src={entry.dataUrl}
+                          alt=""
+                          draggable={false}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        {selected ? (
+                          <span className="custom-skin-check">
+                            <CheckIcon className="size-3" aria-hidden="true" />
+                            <span className="sr-only">
+                              {t("settings.activeSkin")}
+                            </span>
+                          </span>
+                        ) : null}
+                      </label>
+                      <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
+                        <span className="min-w-0 flex-1 truncate text-xs">
+                          {entry.name}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={pending}
+                          aria-label={t("settings.renameWallpaper", {
+                            name: entry.name,
+                          })}
+                          onClick={() => {
+                            setRenaming(entry);
+                            setName(entry.name);
+                            setFailures([]);
+                          }}
+                        >
+                          <PencilIcon className="size-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={pending}
+                          aria-label={t("settings.deleteWallpaper", {
+                            name: entry.name,
+                          })}
+                          onClick={() => void remove(entry)}
+                        >
+                          <Trash2Icon className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-64 break-all">
                     {entry.name}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={pending}
-                    aria-label={t("settings.renameWallpaper", {
-                      name: entry.name,
-                    })}
-                    onClick={() => {
-                      setRenaming(entry);
-                      setName(entry.name);
-                      setFailures([]);
-                    }}
-                  >
-                    <PencilIcon className="size-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={pending}
-                    aria-label={t("settings.deleteWallpaper", {
-                      name: entry.name,
-                    })}
-                    onClick={() => void remove(entry)}
-                  >
-                    <Trash2Icon className="size-3" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </TooltipProvider>
       ) : !loading ? (
         <div className="wallpaper-empty">
           <ImagePlusIcon className="size-6" aria-hidden="true" />
           <p>{t("settings.libraryEmpty")}</p>
         </div>
-      ) : null}
+      ) : (
+        <div className="wallpaper-empty" role="status">
+          <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+          {t("common.loading")}
+        </div>
+      )}
       {image ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-          <p
-            className="min-w-0 truncate text-xs text-muted-foreground"
-            title={image.name}
-          >
-            {t("settings.currentWallpaper", { name: image.name })}
-          </p>
+          <TooltipProvider delayDuration={650}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p
+                  tabIndex={0}
+                  className="min-w-0 flex-1 truncate text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {t("settings.currentWallpaper", { name: image.name })}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64 break-all">
+                {image.name}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <div className="flex items-center gap-2">
             <Select
               value={image.fit}
@@ -445,20 +514,32 @@ export function CustomBackgroundPicker() {
         </div>
       ) : null}
       {pending || loading ? (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="sr-only">
           {t(loading ? "common.loading" : "settings.imageProcessing")}
         </p>
       ) : null}
-      {failures.length && !renaming ? (
-        <div role="alert" className="space-y-1 text-xs text-destructive">
-          {failures.map((failure, index) => (
-            <p key={index}>
-              {failure.name && failure.name + " · "}
-              {t(ERROR_KEYS[failure.code])}
-            </p>
-          ))}
-        </div>
-      ) : null}
+      <Dialog open={showFailures} onOpenChange={setShowFailures}>
+        <DialogContent closeLabel={t("common.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("settings.wallpaperImportDetails")}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t("settings.wallpaperImportFailed", { count: failures.length })}
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-[60vh] space-y-3 overflow-y-auto text-sm">
+            {failures.map((failure, index) => (
+              <li key={index} className="space-y-1">
+                {failure.name ? (
+                  <p className="break-all">{failure.name}</p>
+                ) : null}
+                <p className="text-muted-foreground">
+                  {t(ERROR_KEYS[failure.code])}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={!!renaming}
         onOpenChange={(open) => {
@@ -468,7 +549,7 @@ export function CustomBackgroundPicker() {
         <DialogContent closeLabel={t("common.close")}>
           <DialogHeader>
             <DialogTitle>{t("settings.renameWallpaperTitle")}</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="sr-only">
               {t("settings.renameWallpaperHint")}
             </DialogDescription>
           </DialogHeader>
@@ -491,11 +572,6 @@ export function CustomBackgroundPicker() {
                 autoFocus
               />
             </div>
-            {failures.length ? (
-              <p role="alert" className="text-xs text-destructive">
-                {t("settings.libraryError")}
-              </p>
-            ) : null}
             <DialogFooter>
               <Button type="submit" disabled={pending || !name.trim()}>
                 {t("common.save")}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpenIcon, PlayIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { NativePage } from "@/components/native-page";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -44,11 +45,19 @@ export default function Tasks() {
   const mounted = useRef(false);
   const running = useRef(false);
   const accept = useCallback((next: WorkbenchTaskSnapshot) => {
-    if (mounted.current)
+    if (mounted.current) {
       setSnapshot((current) =>
         !current || next.revision >= current.revision ? next : current,
       );
+      setError(null);
+    }
   }, []);
+  useEffect(() => {
+    if (error && snapshot)
+      toast.error(nativeErrorText(error, latest), {
+        id: "tasks-refresh-error",
+      });
+  }, [error, snapshot, latest]);
   const refresh = useCallback(
     async () => accept(await getWorkbenchTaskSnapshot()),
     [accept],
@@ -110,17 +119,17 @@ export default function Tasks() {
         await action();
         await refresh();
       } catch (reason) {
-        if (mounted.current) setError(reason);
+        if (mounted.current) toast.error(nativeErrorText(reason, latest));
       } finally {
         running.current = false;
         if (mounted.current) setPending(null);
       }
     },
-    [refresh],
+    [refresh, latest],
   );
   return (
     <NativePage title={t("tasks.title")} description={t("tasks.description")}>
-      {error ? (
+      {error && !snapshot ? (
         <p
           role="alert"
           className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive"
@@ -214,29 +223,39 @@ export default function Tasks() {
             <RefreshCwIcon />
           </Button>
         </div>
-        {directoryId ? (
-          <p className="break-all font-mono text-xs text-muted-foreground">
+        <div className="flex h-6 min-w-0 items-center gap-2">
+          <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
             {
               directories.find((directory) => directory.id === directoryId)
                 ?.path
             }
           </p>
-        ) : null}
-        <p role="status" className="text-sm">
-          {t("tasks.active", { count: snapshot?.active ?? 0 })}
-          {" · "}
-          {t("tasks.queued", { count: snapshot?.queued ?? 0 })}
-        </p>
-        {(snapshot?.active ?? 0) >= 2 ? (
-          <p className="text-xs text-muted-foreground">{t("tasks.capacity")}</p>
-        ) : null}
-        <p className="text-xs text-muted-foreground">{t("tasks.limits")}</p>
+          {directoryId ? (
+            <HelpTooltip label={`${t("tasks.directory")} · ${t("title.help")}`}>
+              {
+                directories.find((directory) => directory.id === directoryId)
+                  ?.path
+              }
+            </HelpTooltip>
+          ) : null}
+        </div>
+        <div className="flex h-6 items-center gap-2">
+          <p role="status" className="min-w-0 truncate text-sm tabular-nums">
+            {t("tasks.active", { count: snapshot?.active ?? 0 })}
+            {" · "}
+            {t("tasks.queued", { count: snapshot?.queued ?? 0 })}
+          </p>
+          <HelpTooltip label={`${t("tasks.kind")} · ${t("title.help")}`}>
+            <p>{t("tasks.limits")}</p>
+            <p>{t("tasks.capacity")}</p>
+          </HelpTooltip>
+        </div>
       </section>
-      <div>
+      <div className="flex items-center gap-2">
         <h3 className="text-base font-medium">{t("tasks.history")}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <HelpTooltip label={`${t("tasks.history")} · ${t("title.help")}`}>
           {t("tasks.historyHint")}
-        </p>
+        </HelpTooltip>
       </div>
       {!snapshot?.tasks.length ? (
         <p className="rounded-xl border bg-card p-8 text-sm text-muted-foreground">
@@ -257,7 +276,7 @@ export default function Tasks() {
                 className="min-w-0 space-y-3 rounded-xl border bg-card p-4"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="min-w-0 flex-1 break-words text-sm font-medium">
+                  <h4 className="min-w-0 flex-1 truncate text-sm font-medium">
                     {t(task.kind === "scan" ? "tasks.scan" : "tasks.sha256")} ·{" "}
                     {task.directoryName}
                   </h4>
@@ -274,9 +293,6 @@ export default function Tasks() {
                     )}
                   </span>
                 </div>
-                <p className="break-all font-mono text-xs text-muted-foreground">
-                  {task.id}
-                </p>
                 <Progress
                   value={
                     task.total > 0
@@ -290,7 +306,10 @@ export default function Tasks() {
                     total: task.total,
                   })}
                 />
-                <p role="status" className="text-xs text-muted-foreground">
+                <p
+                  role="status"
+                  className="h-5 truncate text-xs tabular-nums text-muted-foreground"
+                >
                   {task.status === "queued"
                     ? t("tasks.waiting")
                     : task.total === 0 && executing
@@ -301,19 +320,23 @@ export default function Tasks() {
                         })}{" "}
                   · {(task.bytes ?? 0).toLocaleString()} B
                 </p>
-                {task.message ? (
-                  <p className="break-words text-sm">{task.message}</p>
-                ) : null}
-                {task.truncated ? (
-                  <p className="text-sm text-destructive">
-                    {t("tasks.truncated")}
+                <div className="flex h-6 min-w-0 items-center gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm">
+                    {task.message ||
+                      (task.truncated ? t("tasks.truncated") : "")}
                   </p>
-                ) : null}
-                {task.attemptOf ? (
-                  <p className="break-all text-xs text-muted-foreground">
-                    {t("tasks.retryOf", { id: task.attemptOf })}
-                  </p>
-                ) : null}
+                  <HelpTooltip
+                    label={`${t("tasks.results")} · ${t("title.help")}`}
+                  >
+                    <p className="break-all">{task.id}</p>
+                    {task.message ? <p>{task.message}</p> : null}
+                    {task.truncated ? <p>{t("tasks.truncated")}</p> : null}
+                    {task.attemptOf ? (
+                      <p>{t("tasks.retryOf", { id: task.attemptOf })}</p>
+                    ) : null}
+                    <p>{t("tasks.previewLimit")}</p>
+                  </HelpTooltip>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {active ? (
                     <Button
@@ -373,9 +396,6 @@ export default function Tasks() {
                 </div>
                 {expanded === task.id ? (
                   <div className="min-w-0 space-y-2 border-t pt-3">
-                    <p className="text-xs text-muted-foreground">
-                      {t("tasks.previewLimit")}
-                    </p>
                     {task.results.length ? (
                       <div className="max-h-80 overflow-auto">
                         <table className="w-full text-left text-xs">

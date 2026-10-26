@@ -127,4 +127,24 @@ describe("diagnostics actions", () => {
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
   });
+
+  it("preserves the loaded report when a refresh fails and shows its error as a toast", async () => {
+    render(<Diagnostics />);
+    const preview = await screen.findByTestId("diagnostics-report");
+    await waitFor(() =>
+      expect(preview).toHaveTextContent('"settingsRevision": 4'),
+    );
+    vi.mocked(getDiagnosticsReport).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh diagnostics" }),
+    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(preview).toHaveTextContent('"settingsRevision": 4');
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Copy diagnostics" }),
+    ).toBeEnabled();
+  });
 });

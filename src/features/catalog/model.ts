@@ -7,6 +7,11 @@ type CapabilityDetail = {
   doc: string;
 };
 const details: Record<string, CapabilityDetail> = {
+  "/extensions": {
+    kinds: ["native"],
+    description: "catalog.extensions",
+    doc: "docs/extensions.md",
+  },
   "/": {
     kinds: ["local"],
     description: "catalog.overview",
@@ -95,6 +100,7 @@ const details: Record<string, CapabilityDetail> = {
 };
 
 export function capabilityFor(path: string): CapabilityDetail {
+  if (path.startsWith("/extensions/app/")) path = "/extensions";
   return (
     details[path] ?? {
       kinds: ["inspect"],
@@ -109,6 +115,7 @@ export function repositoryFileUrl(repository: string, file: string) {
 }
 
 export function pageSource(path: string) {
+  if (path.startsWith("/extensions/app/")) return "src/pages/extension-app.tsx";
   return `src/pages/${path === "/" ? "overview" : path.slice(1)}.tsx`;
 }
 

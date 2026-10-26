@@ -9,15 +9,21 @@ import {
   DatabaseIcon,
   ActivityIcon,
   DownloadIcon,
+  PuzzleIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { MessageKey as DictKey } from "@/i18n/zh-CN";
+import type { ExtensionInfo } from "@/lib/tauri";
+import { canRunExtensionCommand } from "@/features/extensions/extension-model";
+import { resolveExtensionIcon } from "@/features/extensions/extension-icon";
+import { matchPath } from "react-router-dom";
 
 type PageComponent = ComponentType | LazyExoticComponent<ComponentType>;
 
 export const NAVIGATION_GROUPS = [
   { id: "experience", labelKey: "navGroup.experience" },
   { id: "capabilities", labelKey: "navGroup.capabilities" },
+  { id: "extensions", labelKey: "ext.installed" },
   { id: "system", labelKey: "navGroup.system" },
 ] as const satisfies readonly { id: string; labelKey: DictKey }[];
 
@@ -46,7 +52,54 @@ export type AppRoute = {
   /** 导航高亮是否精确匹配。父级路径（如 "/settings"）通常不需要 */
   exact?: boolean;
   demoOnly?: boolean;
+  hidden?: boolean;
 };
+export type AppNavigationItem = Pick<
+  AppRoute,
+  "path" | "labelKey" | "group" | "icon" | "exact" | "preload"
+> & { label?: string };
+
+export function extensionPath(id: string, command: string, window = false) {
+  return `${window ? "/extension-window" : "/extensions/app"}/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
+}
+export function extensionNavigation(
+  items: readonly ExtensionInfo[],
+  currentPath?: string,
+): AppNavigationItem[] {
+  return items.flatMap((item) => {
+    const manifest = item.package.manifest;
+    return manifest.commands
+      .filter(
+        (command) =>
+          canRunExtensionCommand(item, command) &&
+          (command.ui?.sidebar ||
+            (currentPath &&
+              matchPath(
+                { path: extensionPath(manifest.id, command.id), end: true },
+                currentPath,
+              ))) &&
+          command.resultFormat === "view",
+      )
+      .map((command) => ({
+        path: extensionPath(manifest.id, command.id),
+        labelKey: "ext.title" as const,
+        label:
+          command.ui?.sidebar &&
+          manifest.commands.filter((entry) => entry.ui?.sidebar).length === 1
+            ? manifest.name
+            : `${manifest.name}: ${command.title}`,
+        icon: resolveExtensionIcon(manifest.icon),
+        group: "extensions" as const,
+        exact: true,
+      }));
+  });
+}
+export const WINDOW_ROUTES = [
+  {
+    path: "/extension-window/:extensionId/:commandId",
+    ...lazyPage(() => import("@/pages/extension-window")),
+  },
+];
 
 function lazyPage(load: () => Promise<{ default: ComponentType }>) {
   return {
@@ -102,6 +155,22 @@ export const APP_ROUTES: AppRoute[] = [
     group: "capabilities",
     icon: MonitorIcon,
     ...lazyPage(() => import("@/pages/system")),
+  },
+  {
+    path: "/extensions",
+    labelKey: "nav.extensions",
+    group: "capabilities",
+    icon: PuzzleIcon,
+    ...lazyPage(() => import("@/pages/extensions")),
+    exact: true,
+  },
+  {
+    path: "/extensions/app/:extensionId/:commandId",
+    labelKey: "ext.title",
+    group: "extensions",
+    icon: PuzzleIcon,
+    ...lazyPage(() => import("@/pages/extension-app")),
+    hidden: true,
   },
   {
     path: "/network",
@@ -190,9 +259,11 @@ export const APP_ROUTES: AppRoute[] = [
 /** 按当前路径找对应路由，用于面包屑与导航高亮。 */
 export function matchRoute(pathname: string): AppRoute {
   const matched = APP_ROUTES.find((route) =>
-    route.exact
-      ? pathname === route.path
-      : pathname === route.path || pathname.startsWith(`${route.path}/`),
+    route.path.includes(":")
+      ? matchPath({ path: route.path, end: true }, pathname) !== null
+      : route.exact
+        ? pathname === route.path
+        : pathname === route.path || pathname.startsWith(`${route.path}/`),
   );
   if (matched) return matched;
 

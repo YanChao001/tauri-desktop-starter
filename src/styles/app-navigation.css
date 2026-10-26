@@ -80,6 +80,41 @@
   content: "";
 }
 
+.app-sidebar-extension {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
+}
+
+.app-sidebar-extension .app-sidebar-link {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+}
+
+.app-sidebar-extension-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding-inline-end: 0.25rem;
+}
+
+.app-sidebar[data-collapsed="true"] .app-sidebar-extension {
+  flex-direction: column;
+}
+
+.app-sidebar[data-collapsed="true"] .app-sidebar-extension .app-sidebar-link {
+  width: 100%;
+  flex: none;
+}
+
+.app-sidebar[data-collapsed="true"] .app-sidebar-extension-tools {
+  padding: 0 0 0.25rem;
+}
+
 .app-sidebar-tools {
   padding: 0.65rem 0.5rem 0.8rem;
   border-top: 1px solid var(--sidebar-border);
@@ -148,6 +183,18 @@
   max-width: 1180px;
   margin-inline: auto;
   padding: 1.25rem 1.75rem 2.5rem;
+}
+
+/* 隔离文档负责阅读宽度与内边距，滚动条属于完整的应用内容区。 */
+.app-main:has([data-extension-custom-ui]) {
+  scrollbar-gutter: auto;
+}
+
+.app-main:has([data-extension-custom-ui])
+  > :is(.app-page-content, .app-extension-window-content) {
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 .app-route-context {
@@ -225,6 +272,41 @@
 }
 .app-title-language[data-size="sm"] {
   height: 32px;
+}
+
+@media (max-width: 480px) {
+  .app-title-bar[data-standalone="true"] [data-extension-window-identity] {
+    gap: 6px;
+    padding-right: 4px;
+  }
+
+  .app-title-bar[data-standalone="true"]
+    [data-extension-window-identity]:not([data-native-traffic-lights]) {
+    padding-left: 8px;
+  }
+
+  .app-title-bar[data-standalone="true"] [data-extension-window-icon],
+  .app-title-bar[data-standalone="true"] [data-extension-window-icon] svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .app-title-bar[data-standalone="true"] .app-title-language {
+    width: 72px;
+    min-width: 0;
+    padding-inline: 6px;
+  }
+
+  .app-title-bar[data-standalone="true"]
+    :is([data-theme-control], [data-extension-chrome] [data-slot="button"]) {
+    width: 36px;
+    height: 40px;
+  }
+
+  .app-title-bar[data-standalone="true"] [data-window-control] {
+    width: 40px;
+    flex-shrink: 0;
+  }
 }
 .settings-studio {
   container: settings / inline-size;

@@ -1,5 +1,5 @@
-﻿import {
-  createContext,
+import { SettingsContext } from "./settings-context";
+import {
   useCallback,
   useContext,
   useEffect,
@@ -21,15 +21,6 @@ import { SettingsSync, type PersistenceStatus } from "@/lib/settings-sync";
 import * as desktop from "@/lib/tauri";
 
 export * from "@/lib/settings-model";
-type SettingsContextValue = {
-  settings: AppSettings;
-  update: (patch: Partial<AppSettings>) => void;
-  reset: () => Promise<void>;
-  persistence: PersistenceStatus;
-  persistenceError: string | null;
-  retrySave: () => void;
-};
-const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [initial] = useState(readInitialSettings);
   const [settings, setSettings] = useState(initial.settings);

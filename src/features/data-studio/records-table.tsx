@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { CsvImport } from "./csv-import";
+import { recordsCsv } from "./csv";
+import { saveTextExport, NativeBridgeError } from "@/lib/tauri";
+import { nativeErrorText } from "@/lib/native-error";
+import { useUnsavedWork } from "@/providers/unsaved-work";
 import {
   columnFilteringFeature,
   createColumnHelper,
@@ -18,13 +25,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -38,6 +39,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { ResizeHandle } from "@/components/resize-handle";
 import { SlidersHorizontalIcon, ArrowUpRightIcon } from "lucide-react";
@@ -84,15 +86,17 @@ const INITIAL_WIDTHS: Record<string, number> = {
 export function RecordsTable() {
   const { t, language } = useI18n();
   const [records, setRecords] = useState(createDemoRecords);
+  const [dirty, setDirty] = useState(false);
+  const [imported, setImported] = useState(false);
+  const workId = useId();
+  const [exporting, setExporting] = useState(false);
+  const exportLock = useRef(false);
+  const [replacement, setReplacement] = useState<DemoRecord[] | null>(null);
   const [virtual, setVirtual] = useState(false);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [widths, setWidths] = useState(INITIAL_WIDTHS);
   const [detail, setDetail] = useState<DemoRecord | null>(null);
   const detailOrigin = useRef<HTMLButtonElement | null>(null);
-  const [batch, setBatch] = useState<{
-    success: number;
-    failed: number;
-  } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   // 表格按 data 缓存 accessor 值；翻译变化必须同时更新行模型和搜索值。
   const data = useMemo(
@@ -215,24 +219,129 @@ export function RecordsTable() {
   const selected = table.getSelectedRowIds();
   const first = items[0];
   const last = items.at(-1);
+  async function exportRecords(
+    format: "csv" | "json",
+    filtered = false,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
+    if (exportLock.current)
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "Export is in progress",
+        retryable: false,
+      });
+    exportLock.current = true;
+    setExporting(true);
+    try {
+      const data = filtered
+        ? table.getSortedRowModel().rows.map((row) => row.original)
+        : records;
+      const path = await saveTextExport(
+        `records.${format}`,
+        format === "csv" ? recordsCsv(data) : JSON.stringify(data, null, 2),
+      );
+      signal?.throwIfAborted();
+      if (path === null)
+        throw new NativeBridgeError({
+          code: "USER_CANCELLED",
+          message: "Export was cancelled",
+          retryable: false,
+        });
+      if (!filtered) setDirty(false);
+      toast.success(t("csv.saved"));
+    } finally {
+      exportLock.current = false;
+      setExporting(false);
+    }
+  }
+  useUnsavedWork({
+    id: `data-studio-records:${workId}`,
+    label: t("csv.work"),
+    dirty: dirty || exporting,
+    save: (signal) => exportRecords("csv", false, signal),
+    discard: (signal) => {
+      signal?.throwIfAborted();
+      setDirty(false);
+    },
+  });
+  function replaceRecords(next: DemoRecord[]) {
+    setRecords(next);
+    setDirty(true);
+    setImported(true);
+    setDetail(null);
+    table.setRowSelection({});
+    table.setGlobalFilter("");
+    table.setPageIndex(0);
+    scroll.current?.scrollTo?.({ top: 0 });
+    toast.success(t("csv.imported", { count: next.length }));
+  }
   function archive() {
     const result = archiveDemoRecords(records, selected.map(Number));
     setRecords(result.records);
+    if (imported && result.successful.length) setDirty(true);
     table.setRowSelection(
       Object.fromEntries(result.failed.map((id) => [String(id), true])),
     );
-    setBatch({
+    const message = t("labs.data.batchResult", {
       success: result.successful.length,
       failed: result.failed.length,
     });
+    if (result.failed.length) toast.error(message);
+    else toast.success(message);
   }
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.data.records")}</CardTitle>
-        <CardDescription>{t("labs.data.batchHint")}</CardDescription>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>{t("labs.data.records")}</CardTitle>
+          <HelpTooltip label={`${t("labs.data.records")} · ${t("title.help")}`}>
+            {t("labs.data.batchHint")}
+          </HelpTooltip>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        <CsvImport
+          disabled={exporting}
+          onImport={(next) =>
+            dirty ? setReplacement(next) : replaceRecords(next)
+          }
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={exporting}
+            onClick={() =>
+              void exportRecords("csv").catch((error: unknown) =>
+                toast.error(nativeErrorText(error, t)),
+              )
+            }
+          >
+            {t("csv.exportCsv")}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={exporting}
+            onClick={() =>
+              void exportRecords("json").catch((error: unknown) =>
+                toast.error(nativeErrorText(error, t)),
+              )
+            }
+          >
+            {t("csv.exportJson")}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={exporting}
+            onClick={() =>
+              void exportRecords("csv", true).catch((error: unknown) =>
+                toast.error(nativeErrorText(error, t)),
+              )
+            }
+          >
+            {t("csv.exportFiltered")}
+          </Button>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <Input
             type="search"
@@ -285,21 +394,48 @@ export function RecordsTable() {
           </Popover>
           <Button
             variant="outline"
-            disabled={!selected.length}
+            disabled={!selected.length || exporting}
             onClick={archive}
           >
             {t("labs.data.archive")}
           </Button>
         </div>
-        <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-          <span>{t("labs.data.selected", { count: selected.length })}</span>
-          <span>{t("labs.data.virtualHint")}</span>
+        <div className="flex h-6 min-w-0 items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate tabular-nums">
+            {t("labs.data.selected", { count: selected.length })}
+          </span>
+          <HelpTooltip
+            label={`${t("labs.data.records")} · ${t("labs.data.virtual")}`}
+          >
+            {t("labs.data.virtualHint")}
+          </HelpTooltip>
         </div>
-        {batch ? (
-          <p role="status" className="rounded-md bg-muted p-3 text-sm">
-            {t("labs.data.batchResult", batch)}
-          </p>
-        ) : null}
+        <Dialog
+          open={replacement !== null}
+          onOpenChange={(open) => {
+            if (!open) setReplacement(null);
+          }}
+        >
+          <DialogContent closeLabel={t("common.close")}>
+            <DialogHeader>
+              <DialogTitle>{t("csv.replaceTitle")}</DialogTitle>
+              <DialogDescription>{t("csv.replaceHint")}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setReplacement(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                onClick={() => {
+                  if (replacement) replaceRecords(replacement);
+                  setReplacement(null);
+                }}
+              >
+                {t("csv.replace")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <div
           ref={scroll}
           tabIndex={0}

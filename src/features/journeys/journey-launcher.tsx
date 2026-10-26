@@ -6,12 +6,19 @@ import {
   ListTodoIcon,
   ShieldCheckIcon,
   MonitorIcon,
+  PuzzleIcon,
 } from "lucide-react";
 import { JOURNEYS, journeyLink } from "./model";
 import { useI18n } from "@/providers/i18n";
 import "@/styles/experience.css";
 
-const ICONS = [BlocksIcon, FilesIcon, ListTodoIcon, ShieldCheckIcon];
+const ICONS = [
+  BlocksIcon,
+  FilesIcon,
+  ListTodoIcon,
+  ShieldCheckIcon,
+  PuzzleIcon,
+];
 
 export function JourneyLauncher({ minimal = false }: { minimal?: boolean }) {
   const { t } = useI18n();

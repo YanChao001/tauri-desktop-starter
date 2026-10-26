@@ -540,6 +540,7 @@ fn window_error(error: tauri::Error) -> NativeError {
 }
 
 fn configured(app: &tauri::AppHandle, label: &str) -> (LogicalSize, Limits) {
+    let extension = label.starts_with("extension-");
     let config = app
         .config()
         .app
@@ -554,8 +555,16 @@ fn configured(app: &tauri::AppHandle, label: &str) -> (LogicalSize, Limits) {
         },
         Limits {
             min: LogicalSize {
-                width: config.and_then(|config| config.min_width).unwrap_or(1.0),
-                height: config.and_then(|config| config.min_height).unwrap_or(1.0),
+                width: if extension {
+                    360.0
+                } else {
+                    config.and_then(|config| config.min_width).unwrap_or(1.0)
+                },
+                height: if extension {
+                    480.0
+                } else {
+                    config.and_then(|config| config.min_height).unwrap_or(1.0)
+                },
             },
             max_width: config.and_then(|config| config.max_width),
             max_height: config.and_then(|config| config.max_height),

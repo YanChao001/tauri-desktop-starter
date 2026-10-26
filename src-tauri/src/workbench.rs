@@ -455,6 +455,11 @@ impl WorkbenchState {
             bytes: size,
         })
     }
+    /// 扩展只读取用户已授权资源的有界字节，不获得磁盘路径或目录能力。
+    pub fn read_extension_resource(&self, id: &str) -> NativeResult<(String, Vec<u8>)> {
+        let path = self.resource(id, false)?;
+        Ok((name(&path), read_bounded(&path, 2 * 1024 * 1024)?))
+    }
     pub fn save(
         &self,
         id: &str,
@@ -1015,12 +1020,73 @@ pub fn save_text_content(
     content: &str,
     max_bytes: usize,
 ) -> NativeResult<Option<String>> {
-    bounded_text(content, max_bytes.min(DIALOG_LIMIT), "Export")?;
-    let Some(path) = pick_save_path(app, default_name)? else {
+    save_text_content_with_picker(content, max_bytes, || pick_save_path(app, default_name))
+}
+
+pub(crate) fn save_text_content_with_picker(
+    content: &str,
+    max_bytes: usize,
+    pick_path: impl FnOnce() -> NativeResult<Option<PathBuf>>,
+) -> NativeResult<Option<String>> {
+    // 保存额度由调用领域明确提供，不复用文件选择读取的 16 MiB 上限。
+    bounded_text(content, max_bytes, "Export")?;
+    let Some(path) = pick_path()? else {
         return Ok(None);
     };
     atomic_save(&path, content.as_bytes(), None)?;
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+pub fn save_binary_content(
+    app: &tauri::AppHandle,
+    default_name: &str,
+    content: &[u8],
+) -> NativeResult<Option<String>> {
+    if content.len() > 2 * 1024 * 1024 {
+        return Err(invalid("Extension artifact exceeds 2 MiB"));
+    }
+    let Some(path) = pick_save_path(app, default_name)? else {
+        return Ok(None);
+    };
+    atomic_save(&path, content, None)?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+pub fn pick_extension_resources(
+    app: &tauri::AppHandle,
+) -> NativeResult<Vec<crate::extensions::ExtensionFileChoice>> {
+    use tauri::Manager;
+    let Some(paths) = app.dialog().file().blocking_pick_files() else {
+        return Ok(Vec::new());
+    };
+    if paths.len() > 16 {
+        return Err(invalid("Select at most 16 extension input files"));
+    }
+    let mut selected = Vec::new();
+    let mut total = 0_u64;
+    for path in paths {
+        let path = checked_resource(&path.into_path().map_err(io_error)?, false)?;
+        let bytes = fs::metadata(&path).map_err(io_error)?.len();
+        total = total
+            .checked_add(bytes)
+            .ok_or_else(|| invalid("Selected files exceed 2 MiB"))?;
+        if total > 2 * 1024 * 1024 {
+            return Err(invalid("Selected files exceed 2 MiB in total"));
+        }
+        selected.push((path, bytes));
+    }
+    let state = app.state::<WorkbenchState>();
+    selected
+        .into_iter()
+        .map(|(path, bytes)| {
+            let entry = state.grant(&path, false)?;
+            Ok(crate::extensions::ExtensionFileChoice {
+                id: entry.id,
+                name: entry.name,
+                bytes: bytes as f64,
+                media_type: "application/octet-stream".into(),
+            })
+        })
+        .collect()
 }
 fn pick_save_path(app: &tauri::AppHandle, default_name: &str) -> NativeResult<Option<PathBuf>> {
     bounded_text(default_name, 200, "File name")?;
@@ -1189,6 +1255,19 @@ fn run_directory_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn larger_export_limits_do_not_expand_text_imports_and_cancel_without_writes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("large-session.json");
+        let content = "x".repeat(DIALOG_LIMIT + 1);
+        fs::write(&path, &content).unwrap();
+        assert!(read_bounded(&path, DIALOG_LIMIT).is_err());
+        let saved = save_text_content_with_picker(&content, 32 * 1024 * 1024, || Ok(None)).unwrap();
+        assert_eq!(saved, None);
+        assert_eq!(fs::read_to_string(&path).unwrap(), content);
+    }
+
     fn task(id: &str, status: WorkbenchTaskStatus) -> WorkbenchTask {
         WorkbenchTask {
             id: id.into(),

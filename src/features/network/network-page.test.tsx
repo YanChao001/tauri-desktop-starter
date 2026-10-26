@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import Network from "@/pages/network";
 
 const native = vi.hoisted(() => ({
@@ -16,6 +17,9 @@ const native = vi.hoisted(() => ({
   deleteDemoCredential: vi.fn(),
 }));
 vi.mock("@/lib/tauri", () => native);
+vi.mock("sonner", () => ({
+  toast: { info: vi.fn(), error: vi.fn() },
+}));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
@@ -39,11 +43,9 @@ it("reads cached fixture data offline and never calls the native transport", asy
   fireEvent.click(screen.getByLabelText("Simulate offline"));
   expect(screen.getByRole("button", { name: "Run GET" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Read cache / fetch" }));
-  expect(
-    await screen.findByText(
-      "Read the last cached response offline. It may be stale; no request was made.",
-    ),
-  ).toBeVisible();
+  expect(toast.info).toHaveBeenCalledWith(
+    "Read the last cached response offline. It may be stale; no request was made.",
+  );
   expect(native.nativeHttpRequest).not.toHaveBeenCalled();
   expect(
     screen.getByRole("button", { name: "Save to system credential store" }),
@@ -59,15 +61,16 @@ it("cancels a pending fixture without replacing its response with a success", as
     ).toBeEnabled(),
   );
   fireEvent.click(screen.getByRole("button", { name: "Cancel request" }));
-  expect(
-    await screen.findByText("Request cancelled. Existing cache was retained."),
-  ).toBeVisible();
+  expect(toast.info).toHaveBeenCalledWith(
+    "Request cancelled. Existing cache was retained.",
+  );
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Run GET" })).toBeEnabled(),
   );
   expect(
     screen.getByRole("region", { name: "Validated response" }),
   ).toHaveTextContent("null");
+  expect(toast.error).not.toHaveBeenCalled();
 });
 
 it("成功的 POST 不继续显示先前 GET 的错误与重试次数", async () => {
@@ -87,7 +90,8 @@ it("成功的 POST 不继续显示先前 GET 的错误与重试次数", async ()
   fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
   fireEvent.click(screen.getByRole("option", { name: "Real HTTPS" }));
   fireEvent.click(screen.getByRole("button", { name: "Run GET" }));
-  expect(await screen.findByRole("alert")).toBeVisible();
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Run POST" }));
   await waitFor(() =>
     expect(
@@ -96,4 +100,33 @@ it("成功的 POST 不继续显示先前 GET 的错误与重试次数", async ()
   );
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText(/Current failure count:/)).not.toBeInTheDocument();
+  expect(toast.error).toHaveBeenCalledOnce();
+});
+
+it("POST 失败只弹消息并保留输入和已有响应", async () => {
+  native.isTauri.mockReturnValue(true);
+  native.nativeHttpRequest
+    .mockResolvedValueOnce({
+      status: 200,
+      headers: {},
+      body: JSON.stringify({
+        method: "GET",
+        url: "https://httpbin.org/anything",
+      }),
+    })
+    .mockResolvedValueOnce({ status: 403, headers: {}, body: "" });
+  render(<Network />);
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "Real HTTPS" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run GET" }));
+  const response = screen.getByRole("region", { name: "Validated response" });
+  await waitFor(() => expect(response).toHaveTextContent('"method": "GET"'));
+  fireEvent.change(screen.getByLabelText("POST content"), {
+    target: { value: "keep this input" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Run POST" }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  expect(screen.getByLabelText("POST content")).toHaveValue("keep this input");
+  expect(response).toHaveTextContent('"method": "GET"');
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

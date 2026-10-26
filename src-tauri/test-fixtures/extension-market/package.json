@@ -1,0 +1,41 @@
+{
+  "manifest": {
+    "formatVersion": 3,
+    "apiVersion": 2,
+    "minHostVersion": "0.1.4",
+    "id": "market.text-tools",
+    "version": "1.0.0",
+    "name": "文本工具箱",
+    "author": "Tauri Desktop Starter",
+    "description": "仅用于离线验签和市场安装校验的测试扩展。",
+    "icon": "puzzle",
+    "commands": [
+      {
+        "id": "uppercase",
+        "title": "转为大写",
+        "function": "uppercase",
+        "inputFormat": "text",
+        "resultFormat": "text",
+        "permissions": [
+          "text:read"
+        ]
+      },
+      {
+        "id": "lowercase",
+        "title": "转为小写",
+        "function": "lowercase",
+        "inputFormat": "text",
+        "resultFormat": "text",
+        "permissions": [
+          "text:read"
+        ]
+      }
+    ],
+    "permissions": [
+      "text:read"
+    ],
+    "optionalPermissions": [],
+    "network": []
+  },
+  "wasm": "AGFzbQEAAAABBQFgAAF/AwMCAAAHGQIJdXBwZXJjYXNlAAAJbG93ZXJjYXNlAAEKCwIEAEEACwQAQQAL"
+}

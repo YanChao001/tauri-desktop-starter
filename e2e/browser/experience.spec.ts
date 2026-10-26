@@ -210,8 +210,18 @@ test("media sections load charts on demand and keep the local Markdown edit", as
   await page
     .getByRole("tab", { name: "Live connections", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Live connections · Help", exact: true })
+    .focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Tabs keep this page’s state.",
+  );
+  await page.keyboard.press("Escape");
   await expect(
-    page.getByText("Tabs keep this page’s state.", { exact: false }),
+    page.getByRole("button", { name: "Connect", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Run controlled worker", exact: true }),
   ).toBeVisible();
   expect(
     (
@@ -301,7 +311,7 @@ for (const viewport of [
         .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
     ).toBe(true);
     await page.goto("./#/catalog");
-    await expect(page.locator(".experience-route")).toHaveCount(4);
+    await expect(page.locator(".experience-route")).toHaveCount(5);
     expect(
       await page
         .locator("main")

@@ -2,15 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2Icon, TerminalIcon } from "lucide-react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/code-block";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/providers/i18n";
@@ -96,7 +91,6 @@ export default function Bridge() {
     } catch (error) {
       if (!mounted.current || currentLanguage.current !== language) return;
       const message = t("bridge.failed", { error: nativeErrorText(error, t) });
-      setResult({ message, language });
       toast.error(message);
     } finally {
       inFlight.current = false;
@@ -111,21 +105,23 @@ export default function Bridge() {
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-4 text-muted-foreground" />
           <h2>{t("bridge.title")}</h2>
+          <HelpTooltip label={`${t("bridge.title")} · ${t("title.help")}`}>
+            {t("bridge.subtitle")}
+          </HelpTooltip>
           <Badge variant="outline" className="font-normal">
             invoke
           </Badge>
         </div>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {t("bridge.subtitle")}
-        </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">{t("bridge.demo")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("bridge.demoHint")}
-          </CardDescription>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            {t("bridge.demo")}
+            <HelpTooltip label={`${t("bridge.demo")} · ${t("title.help")}`}>
+              {t("bridge.demoHint")}
+            </HelpTooltip>
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <form
@@ -155,7 +151,10 @@ export default function Bridge() {
               />
             </div>
             <Button type="submit" disabled={pending}>
-              {pending ? <Loader2Icon className="animate-spin" /> : null}
+              <Loader2Icon
+                className={pending ? "animate-spin" : "invisible"}
+                aria-hidden="true"
+              />
               {t("bridge.call")}
             </Button>
           </form>
@@ -168,7 +167,7 @@ export default function Bridge() {
             <p className="text-xs text-muted-foreground">
               {t("bridge.result")}
             </p>
-            <p className="mt-1 font-mono text-sm">
+            <p className="mt-1 h-16 overflow-auto whitespace-pre-wrap break-words text-sm">
               {result?.language === language
                 ? result.message
                 : t("bridge.notCalled")}
@@ -195,8 +194,13 @@ export default function Bridge() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-xs font-medium">
+            <CardTitle className="flex items-center gap-2 text-xs font-medium">
               {t("bridge.frontend")}
+              <HelpTooltip
+                label={`${t("bridge.frontend")} · ${t("title.help")}`}
+              >
+                {t("bridge.note")}
+              </HelpTooltip>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -208,8 +212,6 @@ export default function Bridge() {
           </CardContent>
         </Card>
       </div>
-
-      <p className="text-xs text-muted-foreground">{t("bridge.note")}</p>
     </div>
   );
 }

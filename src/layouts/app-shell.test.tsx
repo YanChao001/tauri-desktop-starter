@@ -19,6 +19,9 @@ import type { AppRoute } from "@/routes";
 import { AppShell } from "./app-shell";
 
 const state = vi.hoisted(() => ({ appMode: "demo" }));
+vi.mock("@/features/extensions/extensions-provider", () => ({
+  useExtensions: () => ({ data: null }),
+}));
 vi.mock("@/providers/commands", () => ({
   useCommands: () => ({ fullscreen: false, execute: vi.fn() }),
 }));
@@ -81,6 +84,10 @@ function renderShell(initial = "/") {
         <Route element={<AppShell />}>
           <Route index element={<Page />} />
           <Route path="settings" element={<Page />} />
+          <Route
+            path="extensions/app/:extensionId/:commandId"
+            element={<Page />}
+          />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -114,6 +121,7 @@ describe("应用内容导航", () => {
   it("切换页面时只重置内容区滚动并保留导航焦点", () => {
     renderShell();
     const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("tabindex", "0");
     main.scrollTop = 500;
     main.scrollLeft = 40;
     vi.mocked(window.scrollTo).mockClear();
@@ -141,7 +149,17 @@ describe("应用内容导航", () => {
     expect(screen.getByRole("textbox", { name: "Page input" })).toHaveFocus();
   });
 
-  it("目标页模块未就绪时保留当前内容，加载后再切换", async () => {
+  it("扩展正文不显示导航标识行，普通页面保留位置上下文", () => {
+    renderShell("/extensions/app/example.lab/open");
+    expect(screen.getByRole("heading", { name: "Page content" })).toBeVisible();
+    expect(document.querySelector(".app-route-context")).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "/settings" }));
+    expect(
+      screen.getByRole("navigation", { name: "navContext.location" }),
+    ).toHaveTextContent("nav.settings");
+  });
+
+  it("目标页模块未就绪时显示预布局骨架，加载后立即切换", async () => {
     let finish!: (value: { default: typeof Page }) => void;
     const load = vi.fn(
       () =>
@@ -164,11 +182,18 @@ describe("应用内容导航", () => {
       fireEvent.click(screen.getByRole("link", { name: "/settings" }));
     });
     expect(load).toHaveBeenCalledOnce();
-    expect(screen.getByRole("heading", { name: "Page content" })).toBeVisible();
-    expect(screen.queryByRole("status", { name: "common.loading" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Page content" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "common.loading" }),
+    ).toBeVisible();
     await act(async () => {
       finish({ default: Page });
     });
+    expect(
+      screen.queryByRole("status", { name: "common.loading" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("navigation", { name: "navContext.location" }),
     ).toHaveTextContent("nav.settings");

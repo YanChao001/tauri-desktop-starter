@@ -1,12 +1,4 @@
-export function safeMarkdownUrl(url: string) {
-  if (url.startsWith("#")) return url;
-  try {
-    const parsed = new URL(url);
-    return ["https:", "mailto:"].includes(parsed.protocol) ? url : "";
-  } catch {
-    return "";
-  }
-}
+export { safeMarkdownUrl } from "@/lib/markdown";
 
 export function mediaKind(file: Pick<File, "type" | "size">) {
   if (file.size <= 0 || file.size > 20 * 1024 * 1024) return null;

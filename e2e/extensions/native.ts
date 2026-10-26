@@ -1,0 +1,263 @@
+// Browser fixture only: real Wasm runs in the CLI; system dialogs and IPC are not simulated as production success.
+export * from "../../src/lib/tauri";
+import {
+  NativeBridgeError,
+  type ExtensionSnapshot,
+  type ExtensionViewInput,
+  type ExtensionView,
+  type ExtensionArtifact,
+  type ExtensionService,
+} from "../../src/lib/tauri";
+import type { NativeError } from "../../src/lib/generated/bindings";
+import type { UnsavedWork } from "../../src/providers/unsaved-work";
+
+declare global {
+  interface Window {
+    __extensionUiTest: {
+      commands: string[];
+      exports: { name: string; content: string }[];
+      exportPath: string | null;
+      artifacts: ExtensionArtifact[];
+      work: UnsavedWork | null;
+      serviceCalls: {
+        service: string;
+        request: Record<string, unknown>;
+        boundaryMock: true;
+        completed: boolean;
+        response?: unknown;
+      }[];
+      serviceTiming: { lanStatusMs: number; lanNicknameMs: number };
+      lifecycle: { event: string; at: number; detail?: unknown }[];
+      viewDelayMs: number;
+      transportTiming: {
+        busyMs: number;
+        errorMs: number;
+        errorAfterIdle?: boolean;
+      };
+      sessionViewValidationBoundaryMockCalls: number;
+      permissionGrantBoundaryMock: boolean;
+    };
+  }
+}
+window.__extensionUiTest = {
+  commands: [],
+  exports: [],
+  exportPath: null,
+  artifacts: [],
+  work: null,
+  serviceCalls: [],
+  serviceTiming: { lanStatusMs: 0, lanNicknameMs: 0 },
+  lifecycle: [],
+  viewDelayMs: 0,
+  transportTiming: { busyMs: 0, errorMs: 0 },
+  sessionViewValidationBoundaryMockCalls: 0,
+  permissionGrantBoundaryMock: false,
+};
+const configuration = (await fetch(
+  `/fixture/config?${new URLSearchParams({
+    wallpaperPermissions:
+      new URLSearchParams(location.search).get("wallpaperPermissions") ?? "all",
+  })}`,
+).then((response) => response.json())) as { snapshot: ExtensionSnapshot };
+// A separate host-data dialog case grants only this declared optional permission.
+// The regular profiles retain their ungranted offline Lab experience.
+if (
+  new URLSearchParams(location.search).get("hostDataBoundaryMock") === "true"
+) {
+  const lab = configuration.snapshot.items.find(
+    (item) => item.package.manifest.id === "starter.extension-lab",
+  );
+  if (!lab?.package.manifest.optionalPermissions.includes("text:read"))
+    throw new Error("The host-data fixture requires declared text:read");
+  lab.grantedPermissions = [...lab.grantedPermissions, "text:read"];
+  window.__extensionUiTest.permissionGrantBoundaryMock = true;
+}
+const fixtureSession = crypto.randomUUID();
+const snapshotDelayUntil =
+  performance.now() +
+  Math.max(
+    0,
+    Math.min(
+      1000,
+      Number(new URLSearchParams(location.search).get("snapshotDelayMs") || 0),
+    ),
+  );
+export const isTauri = () => true;
+export const extensionSnapshot = async () => {
+  const latency = snapshotDelayUntil - performance.now();
+  if (latency > 0)
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(latency, 1000)),
+    );
+  return structuredClone(configuration.snapshot);
+};
+export const onExtensionsChanged = async () => () => {};
+export const getCurrentWindowLabel = async () => "fixture";
+export const isWindowMaximized = async () => false;
+export const onWindowResized = async () => () => {};
+export const cancelExtension = async () => {};
+export const closeWindow = async () => {
+  window.__extensionUiTest.commands.push("close-window");
+};
+export const openExtensionWindow = async () => {
+  window.__extensionUiTest.commands.push("open-extension-window");
+};
+export const openExtensionCenter = async () => {
+  window.__extensionUiTest.commands.push("open-extension-center");
+};
+export const extensionMarketSnapshot = async () => ({
+  hostVersion: "0.1.6",
+  incompatibleEntries: [],
+  catalog: {
+    schemaVersion: 2,
+    revision: 1,
+    issuedAt: 1,
+    expiresAt: 9999999999,
+    repository: "fixture/offline",
+    entries: [],
+  },
+  stale: false,
+  fetchedAt: Date.now(),
+});
+async function request<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`/fixture/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...(body as object),
+      fixtureSession,
+      boundaryGallerySeed:
+        new URLSearchParams(location.search).get("wallpaperPermissions") ===
+        "denied",
+      boundaryGrantedPermissions: configuration.snapshot.items.find(
+        (item) => item.package.manifest.id === (body as { id?: string }).id,
+      )?.grantedPermissions,
+    }),
+  });
+  const result = (await response.json()) as {
+    code?: NativeError["code"];
+    message?: string;
+    boundaryMock?: boolean;
+    boundaryError?: {
+      code: NativeError["code"];
+      message: string;
+    };
+  } | null;
+  if (result?.boundaryMock && result.boundaryError)
+    throw new NativeBridgeError({ ...result.boundaryError, retryable: false });
+  if (!response.ok)
+    throw new NativeBridgeError({
+      code: result?.code ?? "EXTENSION_RUN_FAILED",
+      message: result?.message ?? "Fixture operation failed",
+      retryable: false,
+    });
+  return result as T;
+}
+export const viewExtension = (input: ExtensionViewInput) => {
+  window.__extensionUiTest.lifecycle.push({
+    event: "view-start",
+    at: performance.timeOrigin + performance.now(),
+    detail: {
+      input: input.request.action,
+      expression: input.request.fields.expression,
+      delay: window.__extensionUiTest.viewDelayMs,
+    },
+  });
+  return request<ExtensionView>("view", {
+    ...input,
+    boundaryViewDelayMs: window.__extensionUiTest.viewDelayMs,
+  }).then((result) => {
+    window.__extensionUiTest.lifecycle.push({
+      event: "view-end",
+      at: performance.timeOrigin + performance.now(),
+    });
+    return result;
+  });
+};
+// This UI-only import test reuses an unchanged export from real Wasm. It does not test Rust parsing.
+export const validateExtensionView = async (
+  content: string,
+): Promise<ExtensionView> => {
+  window.__extensionUiTest.sessionViewValidationBoundaryMockCalls++;
+  window.__extensionUiTest.lifecycle.push({
+    event: "validate-view",
+    at: performance.now(),
+  });
+  return JSON.parse(content) as ExtensionView;
+};
+export const openExtensionUi = (
+  id: string,
+  commandId: string,
+  expectedSha256: string,
+  expectedGeneration: number,
+) => {
+  window.__extensionUiTest.lifecycle.push({
+    event: "open-lease",
+    at: performance.now(),
+  });
+  return request<{ url: string; token: string }>("open", {
+    id,
+    commandId,
+    expectedSha256,
+    expectedGeneration,
+  });
+};
+export const closeExtensionUi = (token: string) => {
+  window.__extensionUiTest.lifecycle.push({
+    event: "close-lease",
+    at: performance.now(),
+  });
+  return request<void>("close", { token });
+};
+/** Explicit browser boundary substitute; native services have separate tests. */
+export const requestExtensionService = (
+  id: string,
+  expectedSha256: string,
+  expectedGeneration: number,
+  service: ExtensionService,
+  serviceRequest: Record<string, unknown>,
+) => {
+  const call = {
+    service,
+    request: serviceRequest,
+    boundaryMock: true as const,
+    completed: false,
+    response: undefined as unknown,
+  };
+  window.__extensionUiTest.serviceCalls.push(call);
+  return request<unknown>("service", {
+    id,
+    expectedSha256,
+    expectedGeneration,
+    service,
+    request: serviceRequest,
+    boundaryMock: true,
+    boundaryTiming: window.__extensionUiTest.serviceTiming,
+  }).then(
+    (result) => {
+      call.completed = true;
+      call.response = result;
+      return result;
+    },
+    (error) => {
+      call.completed = true;
+      throw error;
+    },
+  );
+};
+export async function saveTextExport(name: string, content: string) {
+  window.__extensionUiTest.exports.push({ name, content });
+  return window.__extensionUiTest.exportPath;
+}
+
+// 无头界面测试复用对话框边界替身；原生会话保存额度由 Rust 回归验证。
+export const saveExtensionSession = saveTextExport;
+export async function saveExtensionArtifact(
+  _id: string,
+  _hash: string,
+  _generation: number,
+  artifact: ExtensionArtifact,
+) {
+  window.__extensionUiTest.artifacts.push(artifact);
+  return window.__extensionUiTest.exportPath;
+}

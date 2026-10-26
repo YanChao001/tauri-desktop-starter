@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
-#[derive(Debug, Clone, Copy, Serialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
     InvalidArgument,
@@ -26,10 +26,21 @@ pub enum ErrorCode {
     UpdateDownloadFailed,
     UpdateInstallFailed,
     WindowError,
+    ExtensionIncompatible,
+    ExtensionRunFailed,
+    ExtensionTimeout,
+    ExtensionBusy,
+    ExtensionUnavailable,
+    MarketNotConfigured,
+    MarketUnavailable,
+    MarketIncompatible,
+    MarketExpired,
+    MarketInvalid,
+    MarketChanged,
     Internal,
 }
 
-#[derive(Debug, Clone, Serialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeError {
     pub code: ErrorCode,

@@ -31,4 +31,16 @@ describe("native error presentation", () => {
       en["errors.INTERNAL"],
     );
   });
+  it.each([
+    ["MARKET_INCOMPATIBLE", "ext.market.incompatible"],
+    ["MARKET_EXPIRED", "ext.market.expired"],
+    ["MARKET_INVALID", "ext.market.invalid"],
+  ] as const)(
+    "presents %s without exposing catalog or package contents",
+    (code, key) => {
+      const error = { code, message: "unverified payload details" };
+      expect(nativeErrorText(error, createTranslator(en))).toBe(en[key]);
+      expect(nativeErrorText(error, createTranslator(zhCN))).toBe(zhCN[key]);
+    },
+  );
 });

@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/providers/i18n";
@@ -43,8 +39,14 @@ export function SessionPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.session.title")}</CardTitle>
-        <CardDescription>{t("labs.session.hint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.session.title")}
+          <HelpTooltip
+            label={`${t("labs.session.title")} · ${t("title.help")}`}
+          >
+            {t("labs.session.hint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -69,7 +71,10 @@ export function SessionPanel() {
           </div>
           <Button disabled={!name.trim()}>{t("labs.session.signIn")}</Button>
         </form>
-        <p role="status" className="rounded-md bg-muted p-3 text-sm">
+        <p
+          role="status"
+          className="h-12 truncate rounded-md bg-muted p-3 text-sm"
+        >
           {session
             ? t("labs.session.active", {
                 name: session.name,
@@ -109,10 +114,6 @@ export function CredentialPanel() {
   const native = isTauri();
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
-  const [notice, setNotice] = useState<
-    "saved" | "present" | "empty" | "deleted" | null
-  >(null);
-  const [error, setError] = useState<unknown>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
   useEffect(() => {
@@ -125,8 +126,6 @@ export function CredentialPanel() {
     if (!native || busy.current) return;
     busy.current = true;
     setPending(true);
-    setNotice(null);
-    setError(null);
     try {
       let result: "saved" | "present" | "empty" | "deleted";
       if (action === "save") {
@@ -140,10 +139,10 @@ export function CredentialPanel() {
       }
       if (mounted.current) {
         setValue("");
-        setNotice(result);
+        toast.success(t(`labs.credential.${result}`));
       }
     } catch (reason) {
-      if (mounted.current) setError(reason);
+      if (mounted.current) toast.error(nativeErrorText(reason, t));
     } finally {
       busy.current = false;
       if (mounted.current) setPending(false);
@@ -152,8 +151,14 @@ export function CredentialPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.credential.title")}</CardTitle>
-        <CardDescription>{t("labs.credential.hint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.credential.title")}
+          <HelpTooltip
+            label={`${t("labs.credential.title")} · ${t("title.help")}`}
+          >
+            {t("labs.credential.hint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3" aria-busy={pending}>
         {!native ? (
@@ -193,16 +198,6 @@ export function CredentialPanel() {
             {t("labs.credential.delete")}
           </Button>
         </div>
-        {notice ? (
-          <p role="status" className="text-sm">
-            {t(`labs.credential.${notice}`)}
-          </p>
-        ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {nativeErrorText(error, t)}
-          </p>
-        ) : null}
       </CardContent>
     </Card>
   );

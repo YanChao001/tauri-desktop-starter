@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HelpTooltip } from "@/components/help-tooltip";
 import {
   CartesianGrid,
   Line,
@@ -8,13 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -32,8 +27,12 @@ export function MetricsChart() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.media.chart")}</CardTitle>
-        <CardDescription>{t("labs.media.chartHint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.media.chart")}
+          <HelpTooltip label={`${t("labs.media.chart")} · ${t("title.help")}`}>
+            {t("labs.media.chartHint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2">

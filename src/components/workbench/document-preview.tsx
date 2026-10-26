@@ -77,7 +77,16 @@ export function DocumentPreview({
       />
     );
   if (document.kind === "markdown")
-    return <MarkdownPreview content={content} />;
+    return (
+      <div
+        className="max-h-[36rem] overflow-auto"
+        role="region"
+        aria-label={document.name}
+        tabIndex={0}
+      >
+        <MarkdownPreview content={content} />
+      </div>
+    );
   return (
     <CodeBlock
       code={content}

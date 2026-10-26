@@ -38,6 +38,7 @@ export const zhLabs = {
   "labs.network.cacheHint":
     "GET 缓存有效期 30 秒；POST 不自动重试，避免重复提交。缓存只属于本页面会话。",
   "labs.network.offline": "模拟离线",
+  "labs.network.offlineState": "离线 · 新请求已暂停",
   "labs.network.offlineHint":
     "离线时暂停新请求，仍可查看已有缓存。关闭模拟或恢复网络后可重新执行。",
   "labs.network.message": "POST 内容",

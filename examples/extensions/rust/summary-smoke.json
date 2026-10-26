@@ -1,0 +1,41 @@
+{
+  "command": "summarize",
+  "input": {
+    "apiVersion": 2,
+    "inputText": "Hello 世界",
+    "files": [
+      {
+        "name": "note.txt",
+        "content": "hi 🌍",
+        "encoding": "utf8",
+        "mediaType": "text/plain"
+      },
+      {
+        "name": "pixel.bin",
+        "content": "AQID",
+        "encoding": "base64",
+        "mediaType": "application/octet-stream"
+      }
+    ],
+    "network": []
+  },
+  "expectJson": {
+    "characters": 8,
+    "words": 2,
+    "files": [
+      {
+        "name": "note.txt",
+        "encoding": "utf8",
+        "mediaType": "text/plain",
+        "characters": 4
+      },
+      {
+        "name": "pixel.bin",
+        "encoding": "base64",
+        "mediaType": "application/octet-stream",
+        "characters": null
+      }
+    ],
+    "responses": []
+  }
+}

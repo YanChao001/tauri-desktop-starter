@@ -13,6 +13,7 @@ import {
   setWindowSize,
   isWindowFullscreen,
   setWindowFullscreen,
+  saveExtensionSession,
 } from "./tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -37,6 +38,38 @@ vi.mock("@tauri-apps/api/window", () => ({
     setFullscreen: events.setFullscreen,
   }),
 }));
+
+describe("扩展会话保存门面", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    vi.clearAllMocks();
+  });
+
+  it("使用会话专用原生命令并保留取消及失败语义", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    vi.mocked(invoke).mockResolvedValueOnce(null);
+    expect(
+      await saveExtensionSession("extension-session.json", "{}"),
+    ).toBeNull();
+    expect(invoke).toHaveBeenCalledWith("save_extension_session", {
+      name: "extension-session.json",
+      content: "{}",
+    });
+    vi.mocked(invoke).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+      message: "Cannot save session",
+      retryable: true,
+    });
+    await expect(
+      saveExtensionSession("extension-session.json", "{}"),
+    ).rejects.toMatchObject({
+      code: "STORAGE_IO",
+    });
+  });
+});
 
 describe("全屏门面", () => {
   afterEach(() => {

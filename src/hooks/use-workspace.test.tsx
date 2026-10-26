@@ -23,6 +23,7 @@ vi.mock("@/routes", () => ({
     "/tasks",
     "/settings",
     "/workbench",
+    "/extensions",
     "/recovery",
   ].map((path) => ({ path })),
 }));
@@ -124,6 +125,38 @@ const associated = (
 });
 
 describe("workspace lifecycle", () => {
+  it("keeps extension sessions out of workspace persistence and resumes saving static pages", async () => {
+    const view = renderHook(useWorkspace);
+    await waitFor(() =>
+      expect(native.saveWorkspaceRoute).toHaveBeenCalledWith("/"),
+    );
+    vi.mocked(native.saveWorkspaceRoute).mockClear();
+    router.pathname = "/extensions/app/starter.extension-lab/open";
+    view.rerender();
+    await act(async () => {});
+    expect(native.saveWorkspaceRoute).not.toHaveBeenCalled();
+    router.pathname = "/extensions";
+    view.rerender();
+    await waitFor(() =>
+      expect(native.saveWorkspaceRoute).toHaveBeenCalledExactlyOnceWith(
+        "/extensions",
+      ),
+    );
+  });
+
+  it("does not persist a workspace route from an extension-owned window", async () => {
+    vi.mocked(native.getCurrentWindowLabel).mockResolvedValue(
+      "extension-owned",
+    );
+    const view = renderHook(useWorkspace);
+    await waitFor(() => expect(native.getWorkspace).toHaveBeenCalled());
+    await act(async () => {});
+    router.pathname = "/settings";
+    view.rerender();
+    await act(async () => {});
+    expect(native.saveWorkspaceRoute).not.toHaveBeenCalled();
+  });
+
   it("ignores callbacks delivered after unmount and releases all listeners", async () => {
     const view = renderHook(useWorkspace);
     await waitFor(() => expect(native.saveWorkspaceRoute).toHaveBeenCalled());

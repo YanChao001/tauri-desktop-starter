@@ -45,11 +45,20 @@ fn cancel_pending(pending: &Mutex<Option<Pending>>, id: u32) {
 }
 
 #[derive(Default)]
+struct Activity {
+    action: Option<LifecycleAction>,
+    window_creations: usize,
+    exit_reservations: usize,
+    exiting: bool,
+}
+
+#[derive(Default)]
 pub struct LifecycleState {
     dirty: Mutex<HashMap<String, Vec<String>>>,
     pending: Arc<Mutex<Option<Pending>>>,
-    active: Arc<Mutex<Option<LifecycleAction>>>,
+    active: Arc<Mutex<Activity>>,
     sequence: AtomicU32,
+    waiting_for_window_creation: AtomicBool,
     pub approved_exit: AtomicBool,
 }
 
@@ -59,17 +68,22 @@ impl LifecycleState {
             .active
             .lock()
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
-        if active.is_some() {
+        if active.action.is_some()
+            || active.window_creations > 0
+            || active.exit_reservations > 0
+            || active.exiting
+            || self.approved_exit.load(Ordering::Acquire)
+        {
             return Err(NativeError::new(
                 ErrorCode::Conflict,
-                "Another lifecycle operation is already running",
+                "Another lifecycle operation or window creation is already running",
             ));
         }
         let id = self
             .sequence
             .fetch_add(1, Ordering::Relaxed)
             .wrapping_add(1);
-        *active = Some(action);
+        active.action = Some(action);
         Ok(Operation {
             id,
             active: self.active.clone(),
@@ -80,9 +94,49 @@ impl LifecycleState {
     pub fn active_action(&self) -> Option<LifecycleAction> {
         self.active
             .lock()
-            .map(|active| *active)
+            .map(|active| active.action)
             // 状态不可用时阻止破坏性动作，不把故障当作没有协商。
             .unwrap_or(Some(LifecycleAction::InstallUpdate))
+    }
+
+    /// 与退出协商原子互斥，构建窗口期间不持锁，避免原生事件重入死锁。
+    pub fn begin_window_creation(&self) -> NativeResult<WindowCreation> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
+        if active.action.is_some()
+            || active.exit_reservations > 0
+            || active.exiting
+            || self.approved_exit.load(Ordering::Acquire)
+        {
+            return Err(NativeError::new(
+                ErrorCode::Conflict,
+                "A lifecycle operation is already running",
+            ));
+        }
+        active.window_creations += 1;
+        Ok(WindowCreation(self.active.clone()))
+    }
+
+    #[cfg(test)]
+    fn creating_windows(&self) -> bool {
+        self.active
+            .lock()
+            .map_or(true, |active| active.window_creations > 0)
+    }
+
+    /// 在判断是否真正退出前预留边界，期间不能插入新窗口或另一轮协商。
+    pub fn reserve_exit(&self) -> NativeResult<Option<ExitReservation>> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?;
+        if active.window_creations > 0 {
+            return Ok(None);
+        }
+        active.exit_reservations += 1;
+        Ok(Some(ExitReservation(self.active.clone())))
     }
 
     pub fn is_dirty(&self, label: Option<&str>) -> bool {
@@ -145,7 +199,7 @@ impl LifecycleState {
 
 struct Operation {
     id: u32,
-    active: Arc<Mutex<Option<LifecycleAction>>>,
+    active: Arc<Mutex<Activity>>,
     pending: Arc<Mutex<Option<Pending>>>,
 }
 
@@ -153,8 +207,82 @@ impl Drop for Operation {
     fn drop(&mut self) {
         cancel_pending(&self.pending, self.id);
         if let Ok(mut active) = self.active.lock() {
-            *active = None;
+            active.action = None;
         }
+    }
+}
+
+pub struct WindowCreation(Arc<Mutex<Activity>>);
+
+impl Drop for WindowCreation {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.0.lock() {
+            active.window_creations -= 1;
+        }
+    }
+}
+
+pub struct ExitReservation(Arc<Mutex<Activity>>);
+
+impl ExitReservation {
+    pub fn commit(self) -> NativeResult<()> {
+        self.0
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Lifecycle state unavailable"))?
+            .exiting = true;
+        Ok(())
+    }
+}
+
+impl Drop for ExitReservation {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.0.lock() {
+            active.exit_reservations -= 1;
+        }
+    }
+}
+
+/// 关闭最后窗口时，仍在创建的新窗口决定是否需要继续运行。
+pub fn defer_exit_for_window_creation(app: &tauri::AppHandle, code: Option<i32>) {
+    let state = app.state::<LifecycleState>();
+    if !state
+        .waiting_for_window_creation
+        .swap(true, Ordering::AcqRel)
+    {
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = handle.state::<LifecycleState>();
+            let reservation = loop {
+                match state.reserve_exit() {
+                    Ok(Some(reservation)) => break reservation,
+                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                    Err(error) => {
+                        log::warn!("Cannot resume deferred exit: {error}");
+                        state
+                            .waiting_for_window_creation
+                            .store(false, Ordering::Release);
+                        return;
+                    }
+                }
+            };
+            state
+                .waiting_for_window_creation
+                .store(false, Ordering::Release);
+            let allowed = state.approved_exit.load(Ordering::Acquire)
+                || (!state.is_dirty(None)
+                    && state
+                        .active_action()
+                        .is_none_or(|action| action == LifecycleAction::Close));
+            // 先预留再查看窗口，避免空窗口检查后又完成一次新建。
+            if handle.webview_windows().is_empty() && allowed {
+                if let Err(error) = reservation.commit() {
+                    log::warn!("Cannot confirm deferred exit: {error}");
+                    return;
+                }
+                state.approved_exit.store(true, Ordering::Release);
+                handle.exit(code.unwrap_or(0));
+            }
+        });
     }
 }
 
@@ -200,7 +328,9 @@ pub async fn authorize(
         windows = app
             .webview_windows()
             .into_keys()
-            .filter(|label| matches!(label.as_str(), "main" | "secondary"))
+            .filter(|label| {
+                matches!(label.as_str(), "main" | "secondary") || label.starts_with("extension-")
+            })
             .collect();
     }
     if windows.is_empty() {
@@ -269,7 +399,30 @@ pub fn request_action(app: &tauri::AppHandle, action: LifecycleAction, label: Op
         match action {
             LifecycleAction::Close => {
                 if let Some(window) = label.and_then(|label| app.get_webview_window(&label)) {
-                    let _ = window.destroy();
+                    let store = app
+                        .state::<crate::extensions::ExtensionStore>()
+                        .inner()
+                        .clone();
+                    let owner = window.label().to_owned();
+                    let closing_store = store.clone();
+                    let closing_owner = owner.clone();
+                    if let Err(error) = crate::blocking::run(move || {
+                        closing_store.begin_window_close(&closing_owner)?;
+                        closing_store.wait_window_stopped(&closing_owner);
+                        Ok(())
+                    })
+                    .await
+                    {
+                        log::warn!("Cannot stop closing window extensions: {error}");
+                        return;
+                    }
+                    if let Err(error) = window.destroy() {
+                        // 销毁失败时窗口仍可继续工作，恢复其运行入口。
+                        if let Err(reopen_error) = store.reopen_window(&owner) {
+                            log::warn!("Cannot restore window extension entry: {reopen_error}");
+                        }
+                        log::warn!("Cannot close window: {error}");
+                    }
                 }
             }
             LifecycleAction::Quit => {
@@ -279,6 +432,20 @@ pub fn request_action(app: &tauri::AppHandle, action: LifecycleAction, label: Op
                 app.exit(0);
             }
             LifecycleAction::Restart => {
+                let extensions = app
+                    .state::<crate::extensions::ExtensionStore>()
+                    .inner()
+                    .clone();
+                extensions.begin_shutdown();
+                if crate::blocking::run(move || {
+                    extensions.wait_stopped();
+                    Ok(())
+                })
+                .await
+                .is_err()
+                {
+                    return;
+                }
                 app.state::<LifecycleState>()
                     .approved_exit
                     .store(true, Ordering::Release);
@@ -415,5 +582,57 @@ mod tests {
         assert_eq!(state.pending.lock().unwrap().as_ref().unwrap().id, 2);
         state.cancel(2);
         assert_eq!(rx.try_recv(), Ok(false));
+    }
+
+    #[test]
+    fn window_creation_and_lifecycle_authorization_cannot_overtake_each_other() {
+        let state = LifecycleState::default();
+        let main = state.begin_window_creation().unwrap();
+        let extension = state.begin_window_creation().unwrap();
+        assert!(state.creating_windows());
+        // 查询会重新加锁；创建租约不能将锁一直持有至原生 build 返回。
+        assert!(state.active_action().is_none());
+        for action in [LifecycleAction::Quit, LifecycleAction::InstallUpdate] {
+            assert_eq!(state.begin(action).err().unwrap().code, ErrorCode::Conflict);
+        }
+        drop(main);
+        assert!(state.begin(LifecycleAction::Restart).is_err());
+        drop(extension);
+        assert!(!state.creating_windows());
+        let update = state.begin(LifecycleAction::InstallUpdate).unwrap();
+        assert_eq!(
+            state.begin_window_creation().err().unwrap().code,
+            ErrorCode::Conflict
+        );
+        drop(update);
+        assert!(state.begin_window_creation().is_ok());
+        state.approved_exit.store(true, Ordering::Release);
+        assert!(state.begin_window_creation().is_err());
+        assert!(state.begin(LifecycleAction::InstallUpdate).is_err());
+    }
+
+    #[test]
+    fn exit_decisions_and_window_creation_share_an_atomic_boundary() {
+        let state = LifecycleState::default();
+        let creation = state.begin_window_creation().unwrap();
+        assert!(state.reserve_exit().unwrap().is_none());
+        drop(creation);
+        let exit = state.reserve_exit().unwrap().unwrap();
+        assert!(state.begin_window_creation().is_err());
+        assert!(state.begin(LifecycleAction::Quit).is_err());
+        // 主退出回调与延迟退出检查可以同时预留，取消一方不能释放另一方的边界。
+        let deferred = state.reserve_exit().unwrap().unwrap();
+        drop(exit);
+        assert!(state.begin_window_creation().is_err());
+        drop(deferred);
+        assert!(state.begin_window_creation().is_ok());
+
+        state.reserve_exit().unwrap().unwrap().commit().unwrap();
+        assert!(state.begin_window_creation().is_err());
+        assert!(state.begin(LifecycleAction::Restart).is_err());
+        // 等实际 Wasm 停止后重新收到 ExitRequested 时，仍可完成同一次退出。
+        let retry = state.reserve_exit().unwrap().unwrap();
+        drop(retry);
+        assert!(state.begin_window_creation().is_err());
     }
 }

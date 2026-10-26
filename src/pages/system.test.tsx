@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
 import { reportClientError } from "@/lib/report-error";
+import { toast } from "sonner";
 import System from "./system";
 
 vi.mock("@/lib/tauri", () => ({
@@ -40,7 +41,7 @@ vi.mock("@/providers/i18n", async () => {
   const { en } = await import("@/i18n/en");
   return { useI18n: () => ({ language: "en", t: createTranslator(en) }) };
 });
-vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -68,9 +69,14 @@ describe("system integration lifecycle", () => {
     expect(
       screen.getByText("migrated://open?route=/database"),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Installed builds support .* and \.migrate files/),
-    ).toBeInTheDocument();
+    fireEvent.focus(
+      screen.getByRole("button", {
+        name: "Deep links and file associations · Help",
+      }),
+    );
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      /Installed builds support .* and \.migrate files/,
+    );
     await waitFor(() =>
       expect(native.getActivationSnapshot).toHaveBeenCalledOnce(),
     );
@@ -201,5 +207,19 @@ describe("system integration lifecycle", () => {
     await screen.findByRole("button", { name: "Unregister shortcut" });
     view.unmount();
     await waitFor(() => expect(reportClientError).toHaveBeenCalledWith(error));
+  });
+
+  it("keeps clipboard input intact and reports action failure without inserting an error row", async () => {
+    vi.mocked(native.writeSystemClipboard).mockRejectedValueOnce({
+      code: "IO",
+    });
+    render(<System />);
+    const input = screen.getByLabelText("System clipboard");
+    fireEvent.change(input, { target: { value: "Keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Copy text" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(input).toHaveValue("Keep this draft");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy text" })).toBeEnabled();
   });
 });

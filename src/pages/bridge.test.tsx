@@ -146,17 +146,21 @@ describe("Bridge 命令调用", () => {
     expect(button).toBeEnabled();
   });
 
-  it("调用失败后展示错误结果、解除等待状态并允许重试", async () => {
+  it("调用失败只显示通知、保留上次结果并允许重试", async () => {
     vi.mocked(isTauri).mockReturnValue(true);
-    vi.mocked(invokeGreet).mockRejectedValue(new Error("invalid name"));
+    vi.mocked(invokeGreet)
+      .mockResolvedValueOnce("Hello, Ada")
+      .mockRejectedValue(new Error("invalid name"));
     render(<Bridge />);
     const button = screen.getByRole("button", { name: "bridge.call" });
     await act(async () => fireEvent.click(button));
-    expect(screen.getByRole("status")).toHaveTextContent("bridge.failed");
+    await act(async () => fireEvent.click(button));
+    expect(screen.getByRole("status")).toHaveTextContent("Hello, Ada");
+    expect(screen.queryByText("bridge.failed")).not.toBeInTheDocument();
     expect(toast.error).toHaveBeenCalledWith("bridge.failed");
     expect(button).toBeEnabled();
     await act(async () => fireEvent.click(button));
-    expect(invokeGreet).toHaveBeenCalledTimes(2);
+    expect(invokeGreet).toHaveBeenCalledTimes(3);
   });
 
   it("输入法确认候选词的回车不会触发表单提交", () => {

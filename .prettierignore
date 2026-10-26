@@ -4,6 +4,7 @@ dist-web
 artifacts
 coverage
 src-tauri/target
+examples/extensions/**/target
 src-tauri/gen
 pnpm-lock.yaml
 src-tauri/Cargo.lock
@@ -16,3 +17,4 @@ src/components/ui
 
 # 内置的 shadcn 基础样式，逐字复制自上游，同样不参与格式化
 src/styles/shadcn.css
+marketplace/

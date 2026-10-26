@@ -1,6 +1,6 @@
 [package]
 name = "tauri-desktop-starter"
-version = "0.1.4"
+version = "0.1.6"
 description = "A complete desktop application starter"
 authors = ["Tauri Desktop Starter contributors"]
 license = "MIT"
@@ -17,6 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+wat = "=1.258.3"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
@@ -27,14 +28,13 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-http = "2"
-tauri-plugin-shell = "2"
 tauri-plugin-window-state = "2"
 # 正式构建默认不显示控制台，文件日志用于定位运行问题
 tauri-plugin-log = "2"
 log = "0.4"
 # 原生命令、持久化快照和生成的 IPC 契约共享 serde 数据模型。
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
@@ -42,12 +42,16 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 tempfile = "3"
 url = "2"
 regex = "1"
+extism = { version = "=1.41.0", default-features = false }
+wasmtime = { version = "=49.0.4", default-features = false }
 base64 = "0.22"
 minisign-verify = "0.3"
 walkdir = "2"
 sha2 = "0.10"
 keyring = "4.2"
 tokio = { version = "1", features = ["sync", "time"] }
+getrandom = "0.3"
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # 单实例只在桌面端有意义，移动端不编译这个 crate
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
@@ -76,6 +80,10 @@ required-features = ["bindings"]
 name = "verify-updater"
 path = "src/bin/verify-updater.rs"
 required-features = ["bindings"]
+
+[[bin]]
+name = "extension-tool"
+path = "src/bin/extension-tool.rs"
 
 # 体积优化配置说明：https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

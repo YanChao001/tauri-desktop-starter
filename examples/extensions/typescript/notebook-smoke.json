@@ -1,0 +1,50 @@
+{
+  "command": "notebook",
+  "input": {
+    "version": 2,
+    "action": null,
+    "state": "",
+    "fields": {},
+    "locale": "en",
+    "host": { "permissions": [] }
+  },
+  "expectJson": {
+    "version": 2,
+    "state": "null",
+    "display": "Notebook",
+    "description": "Private storage and export example",
+    "fields": [
+      {
+        "id": "draft",
+        "label": "Note",
+        "value": "",
+        "kind": "textarea",
+        "maxBytes": 65536
+      }
+    ],
+    "groups": [
+      {
+        "columns": 2,
+        "actions": [
+          { "id": "save", "label": "Save", "disabled": true, "primary": true },
+          {
+            "id": "export",
+            "label": "Export note",
+            "disabled": false,
+            "primary": false
+          }
+        ]
+      }
+    ],
+    "tabs": [],
+    "blocks": [
+      {
+        "kind": "markdown",
+        "text": "Your note stays in this extension's private storage. Grant optional storage permission to save it."
+      }
+    ],
+    "errors": {},
+    "effects": [],
+    "artifacts": []
+  }
+}

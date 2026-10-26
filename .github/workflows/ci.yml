@@ -97,19 +97,19 @@ jobs:
       matrix:
         # 在三端编译验证 cfg 分支、系统库和链接器差异
         # 避免平台问题延迟到发布阶段才暴露
-        platform: [windows-latest, ubuntu-22.04, macos-latest]
+        platform: [windows-latest, ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@v7
 
       - name: 安装 Linux 系统依赖
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         timeout-minutes: 8
         run: |
           # runner 默认先尝试 Azure 镜像；直接使用已验证可用的 Ubuntu 官方 HTTPS 源。
           printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           "${apt[@]}" update
-          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       # tauri::generate_context! 会在编译期读取前端产物，必须先构建 dist
       - uses: pnpm/action-setup@v6
@@ -131,6 +131,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
 
       - name: 验证 Rust 生成的 IPC 类型
         if: matrix.platform == 'windows-latest'
@@ -149,6 +150,90 @@ jobs:
       - name: 单元测试
         working-directory: src-tauri
         run: cargo test --locked
+
+      - name: 扩展 worker 隔离、取消与协议回归（无 GUI）
+        run: pnpm extension:test:worker
+
+      - name: Extism 清单、Rust 示例与未修改的上游模块往返
+        id: extension-roundtrip
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup target add wasm32-unknown-unknown
+          cargo fmt --manifest-path examples/extensions/apps/Cargo.toml -- --check
+          if ($IsWindows) {
+            pnpm extension:demos:check --rebuild
+          } else {
+            pnpm extension:demos:check --compile
+          }
+          foreach ($extensionDemoModule in @('resources/extensions/demo-apps.wasm', 'src-tauri/target/extension-apps/wasm32-unknown-unknown/release/starter_extism_apps.wasm')) {
+            pnpm extension:validate --manifest examples/extensions/apps/extension.json --wasm $extensionDemoModule --ui-dir examples/extensions/apps/ui
+            pnpm extension:test --manifest examples/extensions/apps/extension.json --wasm $extensionDemoModule --ui-dir examples/extensions/apps/ui --fixture examples/extensions/apps/smoke.json
+          }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked extension_view
+          cargo fmt --manifest-path examples/extensions/rust/Cargo.toml -- --check
+          cargo build --manifest-path examples/extensions/rust/Cargo.toml --release --locked --target wasm32-unknown-unknown --target-dir src-tauri/target/extension-example
+          pnpm extension:test --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --fixture examples/extensions/rust/smoke.json
+          pnpm extension:test --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --fixture examples/extensions/rust/summary-smoke.json
+          pnpm extension:pack --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --out artifacts/extensions/ci-rust.starter-extension.json
+          $env:STARTER_TEST_EXTENSION_PACKAGE = (Resolve-Path artifacts/extensions/ci-rust.starter-extension.json).Path
+          cargo test --manifest-path src-tauri/Cargo.toml --locked external_extism_package_roundtrip -- --ignored
+          $fixture = Get-Content examples/extensions/upstream/fixture.json -Raw | ConvertFrom-Json
+          Invoke-WebRequest -Uri $fixture.url -OutFile artifacts/extensions/count_vowels.wasm
+          if ((Get-FileHash artifacts/extensions/count_vowels.wasm -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fixture.sha256) { throw 'Upstream Extism module checksum mismatch' }
+          pnpm extension:pack --manifest examples/extensions/upstream/extension.json --wasm artifacts/extensions/count_vowels.wasm --out artifacts/extensions/ci-upstream.starter-extension.json
+          pnpm extension:test --manifest examples/extensions/upstream/extension.json --wasm artifacts/extensions/count_vowels.wasm --fixture examples/extensions/upstream/smoke.json
+          $env:STARTER_TEST_EXTENSION_PACKAGE = (Resolve-Path artifacts/extensions/ci-upstream.starter-extension.json).Path
+          $env:STARTER_TEST_EXTENSION_EXPECT = '"count":2'
+          cargo test --manifest-path src-tauri/Cargo.toml --locked external_extism_package_roundtrip -- --ignored
+
+      - name: 记录内置 Wasm 重建失败的编译器信息
+        if: failure() && steps.extension-roundtrip.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $extensionBuildTarget = 'src-tauri/target/extension-apps'
+          if (Test-Path -LiteralPath "$extensionBuildTarget/wasm32-unknown-unknown/release/starter_extism_apps.wasm") {
+            rustc -vV | Out-File -LiteralPath "$extensionBuildTarget/rustc-version.txt" -Encoding utf8
+            rustc --print sysroot | Out-File -LiteralPath "$extensionBuildTarget/rustc-version.txt" -Encoding utf8 -Append
+          }
+
+      - name: 保留内置 Wasm 重建差异证据
+        if: failure() && steps.extension-roundtrip.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: bundled-extension-rebuild-${{ matrix.platform }}
+          path: |
+            resources/extensions/demo-apps.wasm
+            resources/extensions/demo-apps.json
+            src-tauri/target/extension-apps/wasm32-unknown-unknown/release/starter_extism_apps.wasm
+            src-tauri/target/extension-apps/rustc-flags-*.txt
+            src-tauri/target/extension-apps/rustc-version.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: JavaScript / TypeScript SDK 与真实 Wasm 离线冒烟
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/extension-tools
+          curl --fail --location --retry 2 https://github.com/extism/js-pdk/releases/download/v1.7.0/extism-js-x86_64-linux-v1.7.0.gz -o artifacts/extension-tools/extism-js.gz
+          printf '63b72da2f5e88655522dc21477de549f238a2f40546a69ce4e0fce7e78654035  artifacts/extension-tools/extism-js.gz\n' | sha256sum --check
+          gzip --decompress --stdout artifacts/extension-tools/extism-js.gz > artifacts/extension-tools/extism-js
+          chmod +x artifacts/extension-tools/extism-js
+          curl --fail --location --retry 2 https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz -o artifacts/extension-tools/binaryen.tar.gz
+          printf '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  artifacts/extension-tools/binaryen.tar.gz\n' | sha256sum --check
+          tar -xzf artifacts/extension-tools/binaryen.tar.gz -C artifacts/extension-tools
+          export EXTISM_JS="$PWD/artifacts/extension-tools/extism-js"
+          export PATH="$PWD/artifacts/extension-tools/binaryen-version_133/bin:$PATH"
+          pnpm --dir examples/extensions install --frozen-lockfile
+          pnpm --dir examples/extensions typecheck
+          pnpm --dir examples/extensions build
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin extension-tool
+          export STARTER_EXTENSION_TOOL="$PWD/src-tauri/target/release/extension-tool"
+          pnpm extension:test --manifest examples/extensions/javascript/extension.json --wasm examples/extensions/dist/javascript.wasm --fixture examples/extensions/javascript/smoke.json
+          pnpm extension:test --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --fixture examples/extensions/typescript/smoke.json
+          pnpm extension:test --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --fixture examples/extensions/typescript/notebook-smoke.json
 
   desktop-e2e:
     name: 真实桌面 E2E（${{ matrix.platform }}）

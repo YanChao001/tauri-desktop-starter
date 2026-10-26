@@ -2,7 +2,7 @@
   "name": "tauri-desktop-starter",
   "private": true,
   "license": "MIT",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "type": "module",
   "packageManager": "pnpm@12.14.0",
   "engines": {
@@ -20,6 +20,9 @@
     "config:check": "node scripts/init-project.mjs --check",
     "bindings:generate": "node scripts/generate-bindings.mjs",
     "bindings:check": "node scripts/generate-bindings.mjs --check",
+    "extension:pack": "node scripts/extension-package.mjs pack",
+    "extension:demos:build": "node scripts/build-extension-apps.mjs",
+    "extension:demos:check": "node scripts/build-extension-apps.mjs --check",
     "branding:generate": "node scripts/branding.mjs",
     "branding:check": "node scripts/branding.mjs --check",
     "docs:previews": "node scripts/readme-previews.mjs",
@@ -29,6 +32,7 @@
     "test:e2e": "node e2e/run.mjs",
     "test:browser": "playwright test",
     "test:ui": "pnpm build:web && pnpm test:browser",
+    "test:extensions:ui": "tsc --noEmit -p e2e/extensions/tsconfig.json && node e2e/extension-ui.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -38,7 +42,7 @@
     "test:installer": "node scripts/installer-layout.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "verify": "pnpm format:check && pnpm config:check && pnpm branding:check && pnpm docs:previews:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:scripts && pnpm version:check && vite build",
+    "verify": "pnpm format:check && pnpm config:check && pnpm branding:check && pnpm docs:previews:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:scripts && pnpm version:check && pnpm extension:demos:check && vite build",
     "clean": "node scripts/clean.mjs",
     "clean:artifacts": "node scripts/clean.mjs --artifacts",
     "clean:temporary": "node scripts/clean.mjs --temporary",
@@ -49,7 +53,10 @@
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "node scripts/app-build.mjs",
-    "app:portable": "node scripts/portable.mjs"
+    "app:portable": "node scripts/portable.mjs",
+    "extension:validate": "node scripts/extension-package.mjs validate",
+    "extension:test": "node scripts/extension-package.mjs test",
+    "extension:test:worker": "node scripts/test-extension-worker.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

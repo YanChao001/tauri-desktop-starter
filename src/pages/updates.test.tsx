@@ -87,7 +87,7 @@ describe("updater controls", () => {
     });
   });
   afterEach(cleanup);
-  it("persists the startup preference and shows the effective source and last successful check", () => {
+  it("persists the startup preference and shows the effective source and last successful check on demand", async () => {
     ui.phase = "ready";
     ui.status = available;
     render(<Updates />);
@@ -101,7 +101,12 @@ describe("updater controls", () => {
     expect(
       screen.getByText("https://updates.example.com/latest.json"),
     ).toBeVisible();
-    expect(screen.getByText(/Last successful check:/)).toBeVisible();
+    fireEvent.focus(
+      screen.getByRole("button", { name: "Check for updates · Help" }),
+    );
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      /Last successful check:/,
+    );
     expect(
       screen.getByRole("link", { name: "View GitHub releases" }),
     ).toHaveAttribute(
@@ -113,9 +118,13 @@ describe("updater controls", () => {
     ui.phase = "error";
     ui.error = { code: "UPDATE_FEED_UNAVAILABLE" };
     render(<Updates />);
-    expect(
-      screen.getByText(/has not provided an available update manifest/),
-    ).toBeVisible();
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringMatching(/has not provided an available update manifest/),
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Retry" }),
+      }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(
       screen.queryByText("You are using the latest version"),
     ).not.toBeInTheDocument();

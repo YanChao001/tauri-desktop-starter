@@ -122,6 +122,34 @@ export const JOURNEYS = [
       },
     ],
   },
+  {
+    id: "extensions",
+    title: "experience.extensions",
+    description: "experience.extensionsHint",
+    native: true,
+    steps: [
+      {
+        path: "/extensions",
+        title: "experience.extensions.1",
+        description: "experience.extensions.1Hint",
+      },
+      {
+        path: "/extensions",
+        title: "experience.extensions.2",
+        description: "experience.extensions.2Hint",
+      },
+      {
+        path: "/extensions",
+        title: "experience.extensions.3",
+        description: "experience.extensions.3Hint",
+      },
+      {
+        path: "/extensions",
+        title: "experience.extensions.4",
+        description: "experience.extensions.4Hint",
+      },
+    ],
+  },
 ] as const satisfies readonly Journey[];
 
 export function journeyLink(journey: Journey, index = 0) {

@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import * as native from "@/lib/tauri";
 import type { WorkbenchTask, WorkbenchTaskSnapshot } from "@/lib/tauri";
 import Tasks from "./tasks";
+import { toast } from "sonner";
 
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key, language: "en" }),
@@ -21,7 +22,7 @@ vi.mock("@/hooks/use-latest-translator", () => ({
 vi.mock("@/components/native-page", () => ({
   NativePage: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   cancelWorkbenchTask: vi.fn(),
@@ -78,6 +79,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("background task center", () => {
+  it("keeps startup failures recoverable and clears their alert after a valid event arrives", async () => {
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    render(<Tasks />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("errors.IO");
+    act(() => listener?.({ revision: 2, active: 0, queued: 0, tasks: [] }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  it("reports an operation failure in a toast without inserting a page alert", async () => {
+    vi.mocked(native.pickWorkbenchDirectory).mockRejectedValueOnce(
+      new Error("Cannot choose directory"),
+    );
+    render(<Tasks />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "tasks.pickDirectory" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("common.operationFailed"),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("starts a real directory task, requests cancellation and does not cancel on page unmount", async () => {
     const view = render(<Tasks />);
     fireEvent.click(

@@ -1,8 +1,10 @@
+import { SafeMarkdown } from "@/components/safe-markdown";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { createTranslator } from "@/i18n/translate";
 import { en } from "@/i18n/en";
-import { MediaPreview, SafeMarkdown } from "./content-panels";
+import { MediaPreview } from "./content-panels";
 
 const bridge = vi.hoisted(() => ({
   native: false,
@@ -12,6 +14,7 @@ vi.mock("@/lib/tauri", () => ({
   isTauri: () => bridge.native,
   openExternal: bridge.open,
 }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ language: "en", t: createTranslator(en) }),
@@ -21,6 +24,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   bridge.native = false;
   bridge.open.mockClear();
+  vi.mocked(toast.error).mockClear();
 });
 
 it("桌面 Markdown 网页链接自身打开系统浏览器", () => {
@@ -130,12 +134,19 @@ it("keeps the current preview after an invalid file and revokes local URLs on re
       files: [new File(["not-media"], "private.txt", { type: "text/plain" })],
     },
   });
-  expect(screen.getByRole("alert")).toBeVisible();
+  expect(toast.error).toHaveBeenCalledWith(
+    createTranslator(en)("labs.media.invalidFile"),
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByRole("img", { name: "one.png" })).toHaveAttribute(
     "src",
     "blob:one",
   );
   expect(create).toHaveBeenCalledOnce();
+  fireEvent.error(screen.getByRole("img", { name: "one.png" }));
+  expect(toast.error).toHaveBeenLastCalledWith(
+    createTranslator(en)("labs.media.decodeError"),
+  );
   fireEvent.change(input, {
     target: { files: [new File(["second"], "two.png", { type: "image/png" })] },
   });

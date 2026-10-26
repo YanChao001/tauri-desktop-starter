@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import type { DemoWorkerOutput } from "@/lib/generated/bindings";
 import { SidecarPanel, WebSocketPanel } from "./realtime-panels";
 
@@ -16,6 +17,7 @@ const native = vi.hoisted(() => ({
   runDemoSidecar: vi.fn(),
 }));
 vi.mock("@/lib/tauri", () => native);
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
@@ -112,9 +114,58 @@ it("reports an external connection failure and allows another attempt", async ()
   fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
   fireEvent.click(screen.getByRole("option", { name: "External WSS" }));
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Remote service unavailable",
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      "Operation failed: Remote service unavailable",
+    ),
   );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("Disconnected");
   expect(screen.getByRole("button", { name: "Connect" })).toBeEnabled();
+});
+
+it("worker 失败只弹消息并保留上次输出和当前输入", async () => {
+  native.isTauri.mockReturnValue(true);
+  native.runDemoSidecar
+    .mockResolvedValueOnce({
+      stdout: "previous result",
+      stderr: "",
+      exitCode: 0,
+    })
+    .mockRejectedValueOnce(new Error("Worker could not start"));
+  render(<SidecarPanel />);
+  const run = screen.getByRole("button", { name: "Run controlled worker" });
+  fireEvent.click(run);
+  await screen.findByText(/previous result/);
+  const input = screen.getByLabelText("Worker input (up to 1000 UTF-8 bytes)");
+  fireEvent.change(input, { target: { value: "retry input" } });
+  fireEvent.click(run);
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      "Operation failed: Worker could not start",
+    ),
+  );
+  expect(input).toHaveValue("retry input");
+  expect(screen.getByText(/previous result/)).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("离开页面后晚到的 worker 失败不弹出旧页面消息", async () => {
+  let rejectRun: (reason: Error) => void = () => {};
+  native.isTauri.mockReturnValue(true);
+  native.runDemoSidecar.mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        rejectRun = reject;
+      }),
+  );
+  const { unmount } = render(<SidecarPanel />);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Run controlled worker" }),
+  );
+  unmount();
+  await act(async () => {
+    rejectRun(new Error("Late worker failure"));
+  });
+  expect(toast.error).not.toHaveBeenCalled();
 });

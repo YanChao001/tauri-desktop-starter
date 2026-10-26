@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ export function ControlStates() {
   function validate(event: FormEvent) {
     event.preventDefault();
     setChecked(true);
+    if (title.trim()) toast.success(t("playground.validated"));
   }
   return (
     <div className="control-states">
@@ -39,15 +41,17 @@ export function ControlStates() {
             aria-invalid={invalid}
             aria-describedby={invalid ? "reference-title-error" : undefined}
           />
-          {invalid ? (
-            <p
-              id="reference-title-error"
-              role="alert"
-              className="text-xs text-destructive"
-            >
-              {t("playground.titleRequired")}
-            </p>
-          ) : null}
+          <div className="min-h-4">
+            {invalid ? (
+              <p
+                id="reference-title-error"
+                role="alert"
+                className="text-xs text-destructive"
+              >
+                {t("playground.titleRequired")}
+              </p>
+            ) : null}
+          </div>
         </div>
         <div className="space-y-2">
           <Label htmlFor="reference-notes">{t("playground.notes")}</Label>
@@ -69,11 +73,6 @@ export function ControlStates() {
         <Button type="submit" variant="outline">
           {t("playground.validate")}
         </Button>
-        {checked && !invalid ? (
-          <p role="status" className="text-sm">
-            {t("playground.validated")}
-          </p>
-        ) : null}
       </form>
       <div className="space-y-4">
         <div className="space-y-2">

@@ -261,6 +261,8 @@ Get-ChildItem Cert:\CurrentUser\My | Select-Object Subject, Thumbprint
 
 ### macOS
 
+Extism 使用 Wasmtime JIT。签名并启用 Hardened Runtime 的应用还需验证可执行内存权限与实际运行时的兼容性，参见 [Apple JIT 说明](https://developer.apple.com/documentation/apple-silicon/porting-just-in-time-compilers-to-apple-silicon) 和 [Wasmtime 的 macOS 跟踪](https://github.com/bytecodealliance/wasmtime/issues/11989)。当前未在 macOS 签名安装版验收扩展运行，不自动添加未经验证的 entitlement，也不能用未签名 CLI / CI 测试代替这一检查。
+
 面向站外分发时应做 Developer ID 签名和公证（notarization），并在干净机器上验证 Gatekeeper 行为。
 
 ```bash

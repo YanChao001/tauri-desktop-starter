@@ -47,8 +47,30 @@ describe("settings search", () => {
     expect(input).toHaveFocus();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByText("Theme target")).toHaveFocus();
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.change(input, { target: { value: "unknown-no-match" } });
     expect(screen.getByRole("status")).toHaveTextContent("没有匹配的设置");
+  });
+  it("renders results in an anchored popup and keeps typing focus until selection or Escape", () => {
+    const { container } = search();
+    const input = screen.getByRole("searchbox", { name: "搜索设置" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "dark" } });
+    const popup = screen.getByRole("dialog", { name: "搜索设置" });
+    expect(container).not.toContainElement(popup);
+    expect(input).toHaveFocus();
+    expect(input).toHaveAccessibleDescription(/找到 \d+ 项设置/);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("button", { name: /主题/ })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: /主题/ }));
+    expect(screen.getByText("Theme target")).toHaveFocus();
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "dark" } });
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   it("focuses deep links on entry and repeated navigation to the same setting", () => {
     search("/settings?focus=theme");

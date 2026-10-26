@@ -8,11 +8,14 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
+import { toast } from "sonner";
 import {
   UnsavedWorkProvider,
   useUnsavedWork,
   type UnsavedWork,
 } from "./unsaved-work";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
@@ -46,6 +49,7 @@ describe("unsaved work lifecycle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(native.respondLifecycle).mockResolvedValue(undefined);
+    vi.mocked(native.setWindowWorkState).mockResolvedValue(undefined);
     vi.mocked(native.onLifecycleRequest).mockImplementation(async (handler) => {
       request = handler;
       return () => {};
@@ -58,6 +62,42 @@ describe("unsaved work lifecycle", () => {
     );
   });
   afterEach(cleanup);
+  it("reports a background subscription error once with a toast retry action and removes it on unmount", async () => {
+    vi.mocked(native.onLifecycleRequest).mockRejectedValueOnce(
+      new Error("Cannot listen"),
+    );
+    const view = render(
+      <UnsavedWorkProvider>
+        <span>Workspace</span>
+      </UnsavedWorkProvider>,
+    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const [message, options] = vi.mocked(toast.error).mock.calls[0]!;
+    expect(message).toBe("Error: Cannot listen");
+    expect(options).toMatchObject({
+      duration: Infinity,
+      action: { label: "Retry" },
+    });
+    view.rerender(
+      <UnsavedWorkProvider>
+        <span>Updated workspace</span>
+      </UnsavedWorkProvider>,
+    );
+    expect(toast.error).toHaveBeenCalledOnce();
+    const action = options?.action;
+    if (typeof action !== "object" || action === null || !("onClick" in action))
+      throw new Error("Missing toast retry action");
+    act(() => action.onClick({} as React.MouseEvent<HTMLButtonElement>));
+    await waitFor(() =>
+      expect(native.onLifecycleRequest).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(native.setWindowWorkState).toHaveBeenCalledWith([]),
+    );
+    view.unmount();
+    expect(toast.dismiss).toHaveBeenCalledWith(options?.id);
+  });
   it("stops automatic approval after an IPC failure and allows an explicit retry", async () => {
     vi.mocked(native.respondLifecycle).mockRejectedValueOnce(
       new Error("Lifecycle response failed"),
@@ -153,11 +193,19 @@ describe("unsaved work lifecycle", () => {
     );
     expect(signal?.aborted).toBe(false);
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+    const status = screen
+      .getByRole("dialog")
+      .querySelector("[data-lifecycle-status]");
+    expect(status).toHaveTextContent("Saving…");
     expect(native.respondLifecycle).not.toHaveBeenCalled();
     await act(async () => saving.resolve());
     await waitFor(() =>
       expect(native.respondLifecycle).toHaveBeenCalledWith(7, true),
     );
+    expect(
+      screen.getByRole("dialog").querySelector("[data-lifecycle-status]"),
+    ).toBe(status);
+    expect(status).toHaveTextContent("Waiting");
   });
   it("keeps failed work and the dialog open, then allows cancellation", async () => {
     const save = vi.fn(async () => {

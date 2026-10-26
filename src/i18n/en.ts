@@ -1,4 +1,5 @@
 import { enExperience } from "./en-experience";
+import { enWorkflows } from "./en-workflows";
 import type { Messages } from "./zh-CN";
 import { enFeatures } from "./en-features";
 import { enShowroom } from "./en-showroom";
@@ -14,6 +15,7 @@ import { enRecovery } from "./en-recovery";
 
 /** 与默认语言保持相同词条；缺词或拼错键会在类型检查中报错。 */
 export const en = {
+  ...enWorkflows,
   ...enFeatures,
   ...enShowroom,
   ...enComponents,
@@ -69,6 +71,8 @@ export const en = {
   "common.resetDone": "Preferences reset",
   "common.cancel": "Cancel",
   "common.close": "Close",
+  "common.helpFor": "Help for {name}",
+  "common.details": "View details",
   "common.renderError": "The interface encountered an error",
   "common.reload": "Reload",
   "common.language": "Language",
@@ -215,6 +219,11 @@ export const en = {
   "settings.languageDescription":
     "Switch the interface language instantly and remember your choice",
   "settings.libraryCount": "{count} / {max} images",
+  "settings.wallpapersImported": "Added {count} wallpapers",
+  "settings.wallpaperImportFailed": "Could not import {count} images",
+  "settings.wallpaperImportDetails": "Images not imported",
+  "settings.wallpaperRemoved": "Wallpaper removed",
+  "settings.wallpaperRenamed": "Wallpaper name updated",
   "settings.libraryEmpty":
     "Add your favorite images to start a wallpaper collection",
   "settings.libraryFull":
