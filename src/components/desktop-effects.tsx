@@ -22,11 +22,10 @@ export function DesktopEffects() {
   useWorkspace();
   useTaskNotifications();
   useStartupUpdates();
-  const { settings } = useSettings();
+  const { settings, persistence, persistenceError } = useSettings();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { persistence } = useSettings();
   const t = useLatestTranslator();
   useEffect(() => {
     if (theme !== settings.theme) setTheme(settings.theme);
@@ -89,9 +88,19 @@ export function DesktopEffects() {
     [navigate, t],
   );
   useRegisterCommands(actions);
-  return persistence === "error" && pathname !== "/settings" ? (
-    <div className="fixed bottom-4 left-1/2 z-40 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 shadow-lg">
-      <SettingsPersistence compact />
+  const showFutureWarning =
+    persistence === "error" &&
+    persistenceError === "FUTURE_SETTINGS_VERSION" &&
+    pathname !== "/settings" &&
+    pathname !== "/desktop";
+  const persistenceFeedback = (
+    <SettingsPersistence compact showFutureWarning={showFutureWarning} />
+  );
+  return showFutureWarning ? (
+    <div className="fixed right-4 bottom-4 z-40 w-[min(32rem,calc(100%-2rem))] shadow-lg">
+      {persistenceFeedback}
     </div>
-  ) : null;
+  ) : (
+    persistenceFeedback
+  );
 }

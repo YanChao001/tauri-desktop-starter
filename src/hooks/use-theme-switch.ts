@@ -8,6 +8,17 @@ type ViewTransitionHandle = { ready: Promise<void> };
 type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => ViewTransitionHandle;
 };
+export const THEME_REVEAL_EVENT = "starter:theme-reveal";
+export type ThemeReveal = {
+  id: number;
+  clientX: number;
+  clientY: number;
+  radius: number;
+  duration: number;
+  easing: string;
+  startedAt: number;
+};
+let revealSequence = 0;
 
 /**
  * 从鼠标位置扩散切换主题。
@@ -37,6 +48,17 @@ function switchThemeWithReveal(
     Math.max(x, window.innerWidth - x),
     Math.max(y, window.innerHeight - y),
   );
+  const reveal: ThemeReveal = {
+    id: ++revealSequence,
+    clientX: x,
+    clientY: y,
+    radius,
+    duration: 520,
+    easing: "ease-in-out",
+    startedAt: performance.timeOrigin + performance.now(),
+  };
+  // Opaque frames capture their own old document before the host changes its palette.
+  window.dispatchEvent(new CustomEvent(THEME_REVEAL_EVENT, { detail: reveal }));
 
   const transition = doc.startViewTransition(() => {
     // 主题属于 React 状态，必须同步提交，View Transition 才能捕获新帧
@@ -45,7 +67,7 @@ function switchThemeWithReveal(
 
   void transition.ready
     .then(() => {
-      document.documentElement.animate(
+      const animation = document.documentElement.animate(
         {
           clipPath: [
             `circle(0px at ${x}px ${y}px)`,
@@ -53,11 +75,16 @@ function switchThemeWithReveal(
           ],
         },
         {
-          duration: 520,
-          easing: "ease-in-out",
+          duration: reveal.duration,
+          easing: reveal.easing,
           pseudoElement: "::view-transition-new(root)",
         },
       );
+      if (animation)
+        animation.currentTime = Math.max(
+          0,
+          performance.timeOrigin + performance.now() - reveal.startedAt,
+        );
     })
     .catch(() => {
       // 连续切换或窗口隐藏会跳过过渡并拒绝 ready，主题本身已经提交

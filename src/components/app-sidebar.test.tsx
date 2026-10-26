@@ -6,7 +6,9 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomeIcon } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,7 +16,11 @@ import { I18nProvider } from "@/providers/i18n";
 import { CommandsProvider, useCommands } from "@/providers/commands";
 import { zhCN } from "@/i18n/zh-CN";
 import { SettingsProvider, STORAGE_KEY } from "@/providers/settings";
-import type { AppRoute } from "@/routes";
+import type { AppNavigationItem, AppRoute } from "@/routes";
+import {
+  ExtensionChromeProvider,
+  useExtensionChromeTarget,
+} from "@/features/extensions/extension-chrome-slot";
 import { AppSidebar } from "./app-sidebar";
 
 vi.mock("@/routes", async (importOriginal) => ({
@@ -52,15 +58,38 @@ function PaletteState() {
   return <output data-testid="palette-state">{String(paletteOpen)}</output>;
 }
 
-function renderSidebar(entries: readonly AppRoute[] = routes) {
+function SidebarChrome({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  return (
+    <ExtensionChromeProvider scope={pathname}>
+      {children}
+    </ExtensionChromeProvider>
+  );
+}
+
+function SessionTools() {
+  const target = useExtensionChromeTarget();
+  return target
+    ? createPortal(<button>Extension tools</button>, target.node)
+    : null;
+}
+
+function renderSidebar(
+  entries: readonly AppNavigationItem[] = routes,
+  initial = "/",
+  children: ReactNode = null,
+) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initial]}>
       <SettingsProvider>
         <I18nProvider>
           <CommandsProvider>
             <TooltipProvider>
-              <AppSidebar routes={entries} />
-              <PaletteState />
+              <SidebarChrome>
+                <AppSidebar routes={entries} />
+                <PaletteState />
+                {children}
+              </SidebarChrome>
             </TooltipProvider>
           </CommandsProvider>
         </I18nProvider>
@@ -84,6 +113,68 @@ describe("persisted application sidebar", () => {
     expect(link).toHaveAttribute("aria-current", "page");
     expect(link.className).not.toContain("=>");
   });
+
+  it("places tools beside the active extension link, preserves the destination when collapsed and removes it on navigation", async () => {
+    const extension: AppNavigationItem = {
+      path: "/extensions/app/example.lab/open",
+      group: "extensions",
+      labelKey: "ext.title",
+      label: "Lab app",
+      icon: HomeIcon,
+      exact: true,
+    };
+    renderSidebar(
+      [
+        routes[0]!,
+        extension,
+        {
+          ...extension,
+          path: "/extensions/app/other/open",
+          label: "Other app",
+        },
+      ],
+      extension.path,
+      <SessionTools />,
+    );
+    const link = screen.getByRole("link", { name: "Lab app" });
+    const tools = screen.getByRole("button", { name: "Extension tools" });
+    const slot = tools.parentElement;
+    expect(tools.closest("a")).toBeNull();
+    expect(slot?.parentElement).toBe(link.parentElement);
+    expect(document.querySelectorAll("[data-extension-chrome]")).toHaveLength(
+      1,
+    );
+    fireEvent.click(tools);
+    expect(link).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧栏" }));
+    expect(screen.getByRole("button", { name: "Extension tools" })).toBe(tools);
+    expect(tools.parentElement).toBe(slot);
+    tools.focus();
+    expect(tools).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "展开侧栏" }));
+    expect(tools.parentElement).toBe(slot);
+    await act(async () =>
+      fireEvent.click(screen.getByRole("link", { name: "Other app" })),
+    );
+    expect(screen.getByRole("button", { name: "Extension tools" })).not.toBe(
+      tools,
+    );
+    expect(document.querySelectorAll("[data-extension-chrome]")).toHaveLength(
+      1,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Extension tools" })
+        .closest("[data-sidebar-extension]"),
+    ).toBe(screen.getByRole("link", { name: "Other app" }).parentElement);
+    await act(async () =>
+      fireEvent.click(screen.getByRole("link", { name: zhCN["nav.overview"] })),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Extension tools" }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector("[data-extension-chrome]")).toBeNull();
+  });
   it("adjusts width by keyboard within bounds and persists it", () => {
     renderSidebar();
     const separator = screen.getByRole("separator", { name: "调整侧栏宽度" });
@@ -100,6 +191,23 @@ describe("persisted application sidebar", () => {
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).sidebarWidth).toBe(
       224,
     );
+  });
+  it("preloads the intended page on pointer entry and keyboard focus without navigating", () => {
+    const preload = vi.fn();
+    renderSidebar([
+      routes[0]!,
+      { ...routes[0]!, path: "/desktop", labelKey: "nav.desktop", preload },
+    ]);
+    const link = screen.getByRole("link", { name: zhCN["nav.desktop"] });
+    expect(preload).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(link);
+    expect(preload).toHaveBeenCalledTimes(1);
+    fireEvent.focus(link);
+    expect(preload).toHaveBeenCalledTimes(2);
+    expect(link).not.toHaveAttribute("aria-current");
+    expect(
+      screen.getByRole("link", { name: zhCN["nav.overview"] }),
+    ).toHaveAttribute("aria-current", "page");
   });
   it("keeps collapsed navigation named and restores the saved width", () => {
     const view = renderSidebar();

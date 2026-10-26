@@ -19,7 +19,6 @@ use std::{
     },
 };
 use tauri::{Emitter, Manager};
-use tauri_plugin_shell::ShellExt;
 
 const MAX_WORKSPACE_BYTES: usize = 16 * 1024;
 const MAX_ACTIVATIONS: usize = 20;
@@ -77,6 +76,7 @@ pub fn allowed_route(route: &str) -> bool {
             | "/workbench"
             | "/tasks"
             | "/system"
+            | "/extensions"
             | "/network"
             | "/data-studio"
             | "/media"
@@ -497,25 +497,32 @@ pub struct DemoWorkerOutput {
 }
 #[tauri::command]
 #[specta::specta]
-pub async fn run_demo_sidecar(
-    app: tauri::AppHandle,
-    input: String,
-) -> NativeResult<DemoWorkerOutput> {
+pub async fn run_demo_sidecar(input: String) -> NativeResult<DemoWorkerOutput> {
     bounded_text(&input, 1000, "Worker input")?;
     let exe = std::env::current_exe()
         .map_err(|e| NativeError::operation(ErrorCode::Internal, "Cannot locate demo worker", e))?;
-    let output = app
-        .shell()
-        .command(exe)
-        .args(["--demo-worker", &input])
-        .output()
-        .await
-        .map_err(|e| NativeError::operation(ErrorCode::Internal, "Cannot run demo worker", e))?;
-    Ok(DemoWorkerOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        exit_code: output.status.code().unwrap_or(-1),
+    // 固定的本机 worker 无需网页 Shell 插件；阻塞等待留在阻塞线程。
+    blocking::run(move || {
+        let mut command = std::process::Command::new(exe);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let output = command
+            .args(["--demo-worker", &input])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|e| {
+                NativeError::operation(ErrorCode::Internal, "Cannot run demo worker", e)
+            })?;
+        Ok(DemoWorkerOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
     })
+    .await
 }
 
 #[cfg(test)]

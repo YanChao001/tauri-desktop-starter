@@ -47,6 +47,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { ResizeHandle } from "@/components/resize-handle";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { useI18n } from "@/providers/i18n";
 import {
   reorderAssets,
@@ -247,6 +248,7 @@ export function WorkspaceStudio() {
           <PopoverContent align="start" className="space-y-3">
             <Input
               aria-label={t("experience.workspace.searchType")}
+              placeholder={t("experience.workspace.searchType")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -282,7 +284,7 @@ export function WorkspaceStudio() {
             </Button>
           </PopoverContent>
         </Popover>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
@@ -306,6 +308,9 @@ export function WorkspaceStudio() {
           >
             <RotateCcwIcon />
           </Button>
+          <HelpTooltip label={t("experience.workspace.reorderHint")}>
+            {t("experience.workspace.reorderHint")}
+          </HelpTooltip>
         </div>
       </div>
       <div
@@ -511,7 +516,6 @@ export function WorkspaceStudio() {
           )}
         </div>
       </div>
-      <p className="workspace-help">{t("experience.workspace.reorderHint")}</p>
       <Dialog
         open={!!renaming}
         onOpenChange={(open) => {

@@ -29,6 +29,13 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { CodeBlock } from "@/components/code-block";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
@@ -191,9 +198,11 @@ export function ProjectStudio({ active }: { active: boolean }) {
           />
         </div>
         <div className="studio-switch-row">
-          <div>
+          <div className="flex items-center gap-1">
             <Label htmlFor="studio-glow">{t("playground.glow")}</Label>
-            <p>{t("playground.glowDescription")}</p>
+            <HelpTooltip label={t("playground.glowDescription")}>
+              {t("playground.glowDescription")}
+            </HelpTooltip>
           </div>
           <Switch
             id="studio-glow"
@@ -213,15 +222,23 @@ export function ProjectStudio({ active }: { active: boolean }) {
             <ShuffleIcon />
             {t("playground.remix")}
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setProject(INITIAL)}
-            aria-label={t("playground.reset")}
-            title={t("playground.reset")}
-          >
-            <RotateCcwIcon />
-          </Button>
+          <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setProject(INITIAL)}
+                  aria-label={t("playground.reset")}
+                >
+                  <RotateCcwIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t("playground.reset")}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
       <div

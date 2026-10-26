@@ -8,6 +8,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,7 +117,16 @@ export function FeedbackStudio() {
               <UsersIcon aria-hidden="true" />
             </span>
             <div>
-              <h4>{t("playground.collaborators")}</h4>
+              <h4 className="flex items-center gap-2">
+                {t("playground.collaborators")}
+                <HelpTooltip
+                  label={t("common.helpFor", {
+                    name: t("playground.collaborators"),
+                  })}
+                >
+                  {t("playground.localOnly")}
+                </HelpTooltip>
+              </h4>
               <p aria-live="polite">
                 {t("playground.memberCount", { count: members.length })}
               </p>
@@ -239,19 +249,20 @@ export function FeedbackStudio() {
                       setError(null);
                     }}
                   />
-                  {error ? (
-                    <p
-                      id="playground-email-error"
-                      role="alert"
-                      className="text-xs text-destructive"
-                    >
-                      {t(
-                        error === "invalid"
-                          ? "playground.invalidEmail"
-                          : "playground.duplicateEmail",
-                      )}
-                    </p>
-                  ) : null}
+                  <p
+                    id="playground-email-error"
+                    role={error ? "alert" : undefined}
+                    tabIndex={error ? 0 : undefined}
+                    className="h-10 overflow-auto break-words text-xs text-destructive outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {error
+                      ? t(
+                          error === "invalid"
+                            ? "playground.invalidEmail"
+                            : "playground.duplicateEmail",
+                        )
+                      : ""}
+                  </p>
                 </div>
                 <div className="studio-field">
                   <Label htmlFor="playground-role">
@@ -286,7 +297,6 @@ export function FeedbackStudio() {
               </form>
             </DialogContent>
           </Dialog>
-          <p className="feedback-local-note">{t("playground.localOnly")}</p>
         </div>
         <div className="playground-surface feedback-notifications">
           <div className="feedback-message-art" aria-hidden="true">
@@ -298,9 +308,6 @@ export function FeedbackStudio() {
             </span>
           </div>
           <h4>{t("playground.notificationTitle")}</h4>
-          <p className="playground-muted">
-            {t("playground.notificationDescription")}
-          </p>
           <div className="studio-field">
             <Label htmlFor="playground-message">
               {t("playground.message")}

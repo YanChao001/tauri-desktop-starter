@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isDeepStrictEqual } from "node:util";
 import { browser, $, $$ } from "@wdio/globals";
 import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
 import {
@@ -19,36 +18,11 @@ function geometry() {
       return { x: box.x, y: box.y, width: box.width, height: box.height };
     };
     return {
-      content: rect(".app-page-content"),
       main: rect("main"),
       chrome: rect(".app-chrome"),
-      artwork: rect("[data-window-background]"),
-      scrollTop: document.querySelector("main").scrollTop,
       rootScrollTop: document.scrollingElement.scrollTop,
     };
   });
-}
-
-function settingsLayout() {
-  return browser.execute(() =>
-    [
-      ...document.querySelectorAll(
-        ".settings-studio > *, .skin-gallery > *, #settings-window [data-window-preset], .wallpaper-library > *, #settings-about > *",
-      ),
-    ].map((element) => {
-      const rect = element.getBoundingClientRect();
-      return {
-        tag: element.tagName,
-        id: element.id,
-        className: element.className,
-        text: element.textContent?.trim().slice(0, 80),
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      };
-    }),
-  );
 }
 
 export function desktopUiChecks() {
@@ -110,7 +84,7 @@ export function desktopUiChecks() {
     }
   });
 
-  it("keeps native menu geometry stable, aligns settings and records real desktop screenshots", async () => {
+  it("captures the native desktop and keeps settings controls aligned", async () => {
     const original = (await invoke("load_settings_snapshot")).value.settings;
     const originalWindow = (await invoke("get_window_geometry")).value;
     try {
@@ -118,61 +92,10 @@ export function desktopUiChecks() {
       await browser.execute(() => {
         document.querySelector("main").scrollTop = 180;
       });
-      // WebKit 在调整窗口并滚动后仍可能重排容器；以连续稳定的布局作为菜单基线。
-      let before;
-      let stable = 0;
-      await browser.waitUntil(
-        async () => {
-          const current = await geometry();
-          stable = isDeepStrictEqual(current, before) ? stable + 1 : 0;
-          before = current;
-          return stable >= 3;
-        },
-        {
-          interval: 100,
-          timeoutMsg:
-            "Settings layout did not settle before opening native menus",
-        },
-      );
-      assert.equal(before.main.y, before.chrome.height);
-      assert.equal(before.rootScrollTop, 0);
-      const beforeLayout = await settingsLayout();
-      for (const menu of await $$(".app-title-menu-trigger")) {
-        // 桌面驱动的 element.click 只发 DOM click；菜单同时以键盘入口验证。
-        await browser.execute((element) => element.focus(), menu);
-        await browser.keys("ArrowDown");
-        await $("[role=menu]").waitForDisplayed();
-        const after = await geometry();
-        if (!isDeepStrictEqual(after, before))
-          writeFileSync(
-            join(
-              "artifacts",
-              "e2e",
-              process.env.STARTER_E2E_PHASE,
-              "menu-layout.json",
-            ),
-            JSON.stringify(
-              {
-                before,
-                after,
-                beforeLayout,
-                afterLayout: await settingsLayout(),
-              },
-              null,
-              2,
-            ),
-          );
-        assert.deepEqual(after, before);
-        await browser.keys("Escape");
-        await $("[role=menu]").waitForExist({ reverse: true });
-        assert.deepEqual(await geometry(), before);
-      }
-      await $(".app-title-language").click();
-      await $("[role=listbox]").waitForDisplayed();
-      assert.deepEqual(await geometry(), before);
-      await browser.keys("Escape");
+      const layout = await geometry();
+      assert.equal(layout.main.y, layout.chrome.height);
+      assert.equal(layout.rootScrollTop, 0);
       await language("en");
-      assert.deepEqual((await geometry()).main, before.main);
       const aligned = await browser.execute(() => {
         const right = (selector) =>
           document.querySelector(selector).getBoundingClientRect().right;

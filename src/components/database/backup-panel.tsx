@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +22,7 @@ import {
   type BackupPreview,
 } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 
 type Props = {
   dirty: boolean;
@@ -37,11 +40,10 @@ export function BackupPanel({
   lockEditor,
 }: Props) {
   const { t, language } = useI18n();
+  const latest = useLatestTranslator();
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  const [notice, setNotice] = useState("");
   const running = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -54,12 +56,10 @@ export function BackupPanel({
     if (running.current) return;
     running.current = true;
     setBusy(true);
-    setError(null);
-    setNotice("");
     try {
       await action();
     } catch (reason) {
-      if (mounted.current) setError(reason);
+      if (mounted.current) toast.error(nativeErrorText(reason, latest));
     } finally {
       running.current = false;
       if (mounted.current) setBusy(false);
@@ -75,7 +75,7 @@ export function BackupPanel({
       await afterRestore();
       if (mounted.current) {
         setBackups(await listDataBackups());
-        setNotice(t("data.restored", { count: result.restored }));
+        toast.success(latest("data.restored", { count: result.restored }));
       }
     } finally {
       lockEditor(false);
@@ -96,10 +96,7 @@ export function BackupPanel({
         <summary className="cursor-pointer font-medium">
           {t("data.backups")}
         </summary>
-        <p className="my-3 text-sm text-muted-foreground">
-          {t("data.backupHint")}
-        </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             disabled={busy || pending}
             onClick={() =>
@@ -109,8 +106,8 @@ export function BackupPanel({
                 const items = await listDataBackups();
                 if (mounted.current) {
                   setBackups(items);
-                  setNotice(
-                    t("data.backupCreated", {
+                  toast.success(
+                    latest("data.backupCreated", {
                       count: info.notes + info.trashed,
                     }),
                   );
@@ -135,17 +132,10 @@ export function BackupPanel({
           >
             {t("data.importBackup")}
           </Button>
+          <HelpTooltip label={`${t("data.backups")} · ${t("title.help")}`}>
+            {t("data.backupHint")}
+          </HelpTooltip>
         </div>
-        {error ? (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            {nativeErrorText(error, t)}
-          </p>
-        ) : null}
-        {notice ? (
-          <p role="status" className="mt-3 text-sm">
-            {notice}
-          </p>
-        ) : null}
         <ul className="mt-3 space-y-2">
           {backups.map((backup) => (
             <li
@@ -187,7 +177,7 @@ export function BackupPanel({
                   onClick={() =>
                     void run(async () => {
                       if ((await saveDataBackup(backup.id)) && mounted.current)
-                        setNotice(t("data.exported"));
+                        toast.success(latest("data.exported"));
                     })
                   }
                 >
@@ -230,11 +220,6 @@ export function BackupPanel({
           {dirty ? (
             <p className="text-sm text-amber-700 dark:text-amber-300">
               {t("data.saveBeforeRestore")}
-            </p>
-          ) : null}
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {nativeErrorText(error, t)}
             </p>
           ) : null}
           <DialogFooter>

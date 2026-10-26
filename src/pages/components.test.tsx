@@ -80,9 +80,8 @@ describe("交互组件舞台", () => {
       screen.getByRole("button", { name: "playground.validate" }),
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "playground.validated",
-    );
+    expect(notifications.success).toHaveBeenCalledWith("playground.validated");
+    expect(screen.queryByText("playground.validated")).not.toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: "playground.readOnly" }),
     ).toHaveAttribute("readonly");
@@ -111,16 +110,26 @@ describe("交互组件舞台", () => {
     fireEvent.click(
       screen.getByRole("checkbox", { name: "playground.favoritesOnly" }),
     );
+    const resource = screen.getByText("playground.prismTitle");
+    const content = resource.closest(".library-content");
     fireEvent.click(
       screen.getByRole("button", { name: "playground.tryError" }),
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
       "playground.errorTitle",
     );
+    expect(resource.closest(".library-content")).toBe(content);
+    expect(content).toHaveAttribute("inert");
+    expect(
+      screen.queryByRole("button", { name: /playground.prismTitle/ }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "playground.retry" }));
     expect(screen.getByRole("progressbar")).toBeVisible();
+    expect(resource.closest(".library-content")).toBe(content);
+    expect(content).toHaveAttribute("inert");
     act(() => vi.advanceTimersByTime(750));
     expect(screen.getByText("playground.prismTitle")).toBeVisible();
+    expect(content).not.toHaveAttribute("inert");
     expect(search).toHaveValue("prismTitle");
     expect(
       screen.getByRole("checkbox", { name: "playground.favoritesOnly" }),

@@ -1,0 +1,5 @@
+{
+  "command": "uppercase",
+  "input": "Hello Extism! 中文",
+  "expectOutput": "HELLO EXTISM! 中文"
+}

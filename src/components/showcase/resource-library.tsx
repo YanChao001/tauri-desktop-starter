@@ -12,6 +12,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -266,31 +267,148 @@ export function ResourceLibrary({ active }: { active: boolean }) {
         </div>
       </div>
       <div className="library-results" aria-busy={loading}>
+        <div
+          className="library-content"
+          data-obscured={loading || failed}
+          aria-hidden={loading || failed}
+          inert={loading || failed}
+        >
+          {resources.length === 0 ? (
+            <div className="library-empty">
+              <SearchIcon aria-hidden="true" />
+              <h4>{t("playground.emptyTitle")}</h4>
+              <p>{t("playground.emptyDescription")}</p>
+              <Button variant="outline" onClick={clearFilters}>
+                {t("playground.clearFilters")}
+              </Button>
+            </div>
+          ) : layout === "grid" ? (
+            <div className="library-resource-grid">
+              {resources.map((resource) => (
+                <article
+                  key={resource.id}
+                  className="resource-card"
+                  data-palette={resource.palette}
+                >
+                  <button
+                    className="resource-open"
+                    onClick={() => setSelected(resource)}
+                  >
+                    <div className="resource-art" aria-hidden="true">
+                      <span className="resource-art-ring" />
+                      <span className="resource-art-gem" />
+                      <span className="resource-art-initials">
+                        {resource.initials}
+                      </span>
+                      <ArrowUpRightIcon />
+                    </div>
+                    <h4>{t(resource.title)}</h4>
+                    <p>{t(resource.description)}</p>
+                  </button>
+                  <div className="resource-card-footer">
+                    <Badge variant="outline">
+                      {t(
+                        CATEGORIES.find(
+                          (item) => item.id === resource.category,
+                        )!.label,
+                      )}
+                    </Badge>
+                    {favoriteButton(resource)}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="library-table playground-surface">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("playground.resourceName")}</TableHead>
+                    <TableHead>{t("playground.resourceType")}</TableHead>
+                    <TableHead className="w-12">
+                      <span className="sr-only">
+                        {t("playground.addFavorite")}
+                      </span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {resources.map((resource) => (
+                    <TableRow key={resource.id}>
+                      <TableCell>
+                        <button
+                          className="resource-table-name"
+                          onClick={() => setSelected(resource)}
+                        >
+                          <Avatar className="size-8">
+                            <AvatarFallback className="text-[10px]">
+                              {resource.initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{t(resource.title)}</span>
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {t(
+                          CATEGORIES.find(
+                            (item) => item.id === resource.category,
+                          )!.label,
+                        )}
+                      </TableCell>
+                      <TableCell>{favoriteButton(resource)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
         {loading ? (
           <div className="library-loading">
             <Progress value={progress} aria-label={t("playground.loading")} />
             <p role="status">
               {t("playground.loading")} · {progress}%
             </p>
-            <div className="library-resource-grid">
-              {[0, 1, 2].map((item) => (
-                <div
-                  key={item}
-                  className="resource-skeleton"
-                  aria-hidden="true"
-                >
-                  <Skeleton className="h-28 w-full" />
-                  <Skeleton className="mt-4 h-4 w-3/4" />
-                  <Skeleton className="mt-2 h-3 w-1/2" />
-                </div>
-              ))}
+            <div
+              className={`library-skeleton-grid ${layout === "list" ? "library-skeleton-list" : "library-resource-grid"}`}
+            >
+              {Array.from(
+                { length: Math.max(1, resources.length) },
+                (_, item) => (
+                  <div
+                    key={item}
+                    className="resource-skeleton"
+                    aria-hidden="true"
+                  >
+                    {layout === "list" ? (
+                      <Skeleton className="h-full min-h-0 w-full" />
+                    ) : (
+                      <>
+                        <Skeleton className="h-28 min-h-0 w-full flex-1" />
+                        <Skeleton className="mt-4 h-4 w-3/4 shrink-0" />
+                        <Skeleton className="mt-2 h-3 w-1/2 shrink-0" />
+                      </>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           </div>
         ) : failed ? (
-          <div className="library-empty" role="alert">
+          <div
+            className="library-empty library-failed"
+            role="alert"
+            data-layout={layout}
+          >
             <TriangleAlertIcon aria-hidden="true" />
             <h4>{t("playground.errorTitle")}</h4>
-            <p>{t("playground.errorDescription")}</p>
+            {layout === "list" ? (
+              <HelpTooltip label={t("playground.errorDescription")}>
+                {t("playground.errorDescription")}
+              </HelpTooltip>
+            ) : (
+              <p>{t("playground.errorDescription")}</p>
+            )}
             <Button
               variant="outline"
               onClick={() => {
@@ -302,94 +420,7 @@ export function ResourceLibrary({ active }: { active: boolean }) {
               {t("playground.retry")}
             </Button>
           </div>
-        ) : resources.length === 0 ? (
-          <div className="library-empty">
-            <SearchIcon aria-hidden="true" />
-            <h4>{t("playground.emptyTitle")}</h4>
-            <p>{t("playground.emptyDescription")}</p>
-            <Button variant="outline" onClick={clearFilters}>
-              {t("playground.clearFilters")}
-            </Button>
-          </div>
-        ) : layout === "grid" ? (
-          <div className="library-resource-grid">
-            {resources.map((resource) => (
-              <article
-                key={resource.id}
-                className="resource-card"
-                data-palette={resource.palette}
-              >
-                <button
-                  className="resource-open"
-                  onClick={() => setSelected(resource)}
-                >
-                  <div className="resource-art" aria-hidden="true">
-                    <span className="resource-art-ring" />
-                    <span className="resource-art-gem" />
-                    <span className="resource-art-initials">
-                      {resource.initials}
-                    </span>
-                    <ArrowUpRightIcon />
-                  </div>
-                  <h4>{t(resource.title)}</h4>
-                  <p>{t(resource.description)}</p>
-                </button>
-                <div className="resource-card-footer">
-                  <Badge variant="outline">
-                    {t(
-                      CATEGORIES.find((item) => item.id === resource.category)!
-                        .label,
-                    )}
-                  </Badge>
-                  {favoriteButton(resource)}
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="library-table playground-surface">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("playground.resourceName")}</TableHead>
-                  <TableHead>{t("playground.resourceType")}</TableHead>
-                  <TableHead className="w-12">
-                    <span className="sr-only">
-                      {t("playground.addFavorite")}
-                    </span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {resources.map((resource) => (
-                  <TableRow key={resource.id}>
-                    <TableCell>
-                      <button
-                        className="resource-table-name"
-                        onClick={() => setSelected(resource)}
-                      >
-                        <Avatar className="size-8">
-                          <AvatarFallback className="text-[10px]">
-                            {resource.initials}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span>{t(resource.title)}</span>
-                      </button>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {t(
-                        CATEGORIES.find(
-                          (item) => item.id === resource.category,
-                        )!.label,
-                      )}
-                    </TableCell>
-                    <TableCell>{favoriteButton(resource)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        ) : null}
       </div>
       <Dialog
         open={selected !== null}

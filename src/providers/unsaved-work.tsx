@@ -1,13 +1,19 @@
 import {
-  createContext,
+  UnsavedWorkContext as Context,
+  type UnsavedWork,
+} from "./unsaved-work-context";
+export type { UnsavedWork } from "./unsaved-work-context";
+import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -27,19 +33,6 @@ import {
   setWindowWorkState,
   type LifecycleRequest,
 } from "@/lib/tauri";
-
-export type UnsavedWork = {
-  id: string;
-  label: string;
-  dirty: boolean;
-  save: (signal?: AbortSignal) => Promise<void>;
-  discard: (signal?: AbortSignal) => void | Promise<void>;
-};
-type Registry = {
-  register: (work: UnsavedWork) => void;
-  unregister: (id: string) => void;
-};
-const Context = createContext<Registry | null>(null);
 
 /** 脏工作在离页后仍保留最后一个保存动作，保存成功或明确放弃后移除。 */
 export function useUnsavedWork(work: UnsavedWork) {
@@ -64,6 +57,8 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
   const [listening, setListening] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const errorToastId = useId();
+  const notifiedError = useRef<string | null>(null);
   const register = useCallback((work: UnsavedWork) => {
     const previous = items.current.get(work.id);
     items.current.set(work.id, work);
@@ -215,28 +210,36 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
     )
       void answer("save");
   }, [request, revision, busy, waiting, error, answer]);
+  useEffect(() => {
+    if (!error || request) {
+      notifiedError.current = null;
+      toast.dismiss(errorToastId);
+      return;
+    }
+    if (notifiedError.current === error) return;
+    notifiedError.current = error;
+    toast.error(error, {
+      id: errorToastId,
+      duration: Infinity,
+      action: {
+        label: t("common.retry"),
+        onClick: () => {
+          setError(null);
+          setListening(false);
+          setAttempt((value) => value + 1);
+        },
+      },
+    });
+  }, [error, request, errorToastId, t]);
+  useEffect(
+    () => () => {
+      toast.dismiss(errorToastId);
+    },
+    [errorToastId],
+  );
   return (
     <Context.Provider value={registry}>
       {children}
-      {error && !request && (
-        <div
-          role="alert"
-          className="fixed bottom-4 left-1/2 z-50 max-w-lg -translate-x-1/2 rounded-lg border bg-background p-4 text-sm shadow-lg"
-        >
-          {error}
-          <Button
-            variant="outline"
-            className="ml-3"
-            onClick={() => {
-              setError(null);
-              setListening(false);
-              setAttempt((v) => v + 1);
-            }}
-          >
-            {t("common.retry")}
-          </Button>
-        </div>
-      )}
       <Dialog
         open={request !== null}
         onOpenChange={(open) => {
@@ -275,16 +278,27 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
                 <li key={v.id}>{v.label}</li>
               ))}
           </ul>
-          {waiting && (
-            <p role="status" className="text-sm">
-              {t(executing ? "lifecycle.executing" : "lifecycle.waiting")}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          <div
+            className="h-16 overflow-y-auto text-sm"
+            tabIndex={error ? 0 : undefined}
+            data-lifecycle-status
+          >
+            {error ? (
+              <p role="alert" className="text-destructive">
+                {error}
+              </p>
+            ) : busy || waiting || executing ? (
+              <p role="status">
+                {t(
+                  executing
+                    ? "lifecycle.executing"
+                    : waiting
+                      ? "lifecycle.waiting"
+                      : "lifecycle.saving",
+                )}
+              </p>
+            ) : null}
+          </div>
           <DialogFooter className="sm:flex-wrap [&>button]:whitespace-normal">
             <Button
               variant="outline"

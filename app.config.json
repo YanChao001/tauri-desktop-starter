@@ -18,5 +18,9 @@
   "updates": {
     "endpoint": "https://github.com/YanChao001/tauri-desktop-starter/releases/latest/download/latest.json",
     "publicKey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0NDcyOEIyNTE2RjFBMEEKUldRS0dtOVJzaWhIcENiWEpQZUR3clZqSkJ6NGVUWWJDUzlSQXBIVWJtbWp4ZVNjMzVWSnZwZ0sK"
+  },
+  "extensionMarket": {
+    "repository": "YanChao001/tauri-desktop-starter-extensions",
+    "publicKey": "RWTsHMADxHpGmtBgpAJV0eFrsDLlx2vnoKJNmkCAo8YwhmU2yYxHhM4d"
   }
 }

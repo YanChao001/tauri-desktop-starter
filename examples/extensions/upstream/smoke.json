@@ -1,0 +1,5 @@
+{
+  "command": "count-vowels",
+  "input": "Hello",
+  "expectJson": { "count": 2, "total": 2, "vowels": "aeiouAEIOU" }
+}

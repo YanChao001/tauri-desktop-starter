@@ -22,7 +22,8 @@ export function CompactNavigation() {
   const navigate = useNavigate();
   if (isTauri()) return null;
   const routes = APP_ROUTES.filter(
-    (route) => settings.appMode !== "minimal" || !route.demoOnly,
+    (route) =>
+      !route.hidden && (settings.appMode !== "minimal" || !route.demoOnly),
   );
   const current = matchRoute(pathname);
   const currentVisible = routes.some((route) => route.path === current.path);

@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import {
   BackgroundImageError,
   importBackgroundImage,
@@ -33,6 +34,7 @@ const library = vi.hoisted(() => ({
   onWallpaperLibraryChanged: vi.fn(),
 }));
 vi.mock("@/providers/settings", () => ({ useSettings: () => state }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({
     t: (key: string, values?: Record<string, string | number>) =>
@@ -132,10 +134,22 @@ describe("多图壁纸图库", () => {
     await loaded();
     choose([file(), file("broken.png"), file("sea.png")]);
     await waitFor(() => expect(screen.getAllByRole("radio")).toHaveLength(2));
-    expect(screen.getByRole("alert")).toHaveTextContent("broken.png");
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalledWith(
+      "settings.wallpaperImportFailed",
+      expect.objectContaining({
+        description: "settings.wallpapersImported",
+        action: expect.objectContaining({ label: "common.details" }),
+      }),
+    );
+    const details = vi.mocked(toast.error).mock.calls.at(-1)?.[1]?.action as
+      { onClick(): void } | undefined;
+    act(() => details?.onClick());
+    expect(screen.getByRole("dialog")).toHaveTextContent("broken.png");
+    expect(screen.getByRole("dialog")).toHaveTextContent(
       "settings.imageDecodeError",
     );
+    fireEvent.click(screen.getByRole("button", { name: "common.close" }));
     expect(state.update).toHaveBeenLastCalledWith({
       background: "custom",
       customBackground: {
@@ -194,7 +208,10 @@ describe("多图壁纸图库", () => {
         name: "settings.deleteWallpaper: sky.webp",
       }),
     );
-    expect(await screen.findByRole("alert")).toBeVisible();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("settings.libraryError"),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("radio")).toBeChecked();
     expect(state.update).not.toHaveBeenCalled();
     fireEvent.click(

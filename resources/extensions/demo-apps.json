@@ -1,0 +1,17 @@
+{
+  "referenceHost": "x86_64-pc-windows-msvc",
+  "sources": {
+    "Cargo.lock": "53db3bc26dd4c95689d62aa37c254298c44d0cc6a22f9647b282be7e77bd0258",
+    "Cargo.toml": "b6afb1899f542b8421a228bc791b7580ce9083440b732143d5b931d3b8f0330b",
+    "build-extension-apps.mjs": "959db4fd89e49dafeb0609a577087a4df2a13d7db90874b83f7afd5d7e4cc469",
+    "extension.json": "39e9075c8172231f7cf81e410e321ce32feef8c9fb0cf19381d8cb88cbf05139",
+    "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
+    "src/app.rs": "bc8750f4cf7fa336c68460c207ad4ba4f0ae7ee0b409ed965f4d31aad6afa5ef",
+    "src/data.rs": "b0a169d6b8241c44840ef09145168ea812f984728f6644a2af35f963596bf5da",
+    "src/lib.rs": "c8ed3f00cf2f1839702ca28e6d83342220dc9f5739ca5b6f3a2e2fe509baf721",
+    "src/tasks.rs": "a89149781805d1570afa290512f023f25807ebf5652fb216b575aa18456396d4",
+    "src/text.rs": "3c7be98e41b8e87b149359e8329e1ccae2539d7c39e3917fcc6fabad8095d3ea",
+    "src/view.rs": "8d09d0adff23b24a5f53c38b72a1dfa115db5877ca719f6d74978121dab2ae2e"
+  },
+  "sha256": "f980150095d0775fbd066ce3624ffe70461e9de2fe7feee8fc27c6420779afa5"
+}

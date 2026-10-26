@@ -180,6 +180,9 @@ pub fn show_main(app: &tauri::AppHandle) -> NativeResult<()> {
 }
 
 fn create_window(app: &tauri::AppHandle, label: &str) -> NativeResult<()> {
+    let _lifecycle = app
+        .state::<crate::lifecycle::LifecycleState>()
+        .begin_window_creation()?;
     let config = app
         .config()
         .app
@@ -210,6 +213,8 @@ fn create_window(app: &tauri::AppHandle, label: &str) -> NativeResult<()> {
             .store(false, Ordering::Release);
         log_startup(app, "window-create-start");
     }
+    app.state::<crate::extensions::ExtensionStore>()
+        .reopen_window(label)?;
     let window = WebviewWindowBuilder::from_config(app, &config)
         .map_err(|e| NativeError::operation(ErrorCode::WindowError, "Cannot configure window", e))?
         .build()

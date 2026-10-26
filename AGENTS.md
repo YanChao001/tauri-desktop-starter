@@ -15,6 +15,12 @@
 
 命令从仓库根目录运行，按 [常用命令](./docs/development.md#常用命令) 选择桌面开发、浏览器预览或构建；未安装依赖时可用 `node scripts/doctor.mjs` 诊断环境。源码入口见 [运行时结构](./docs/architecture.md#运行时结构)。修改源码，不手改 `dist/`、`dist-web/`、`src-tauri/target/` 或 `artifacts/` 的构建输出。
 
+## 命令被策略拦截时
+
+- 带 `-Force` 的检查命令（如 `Get-ChildItem -Force`）应与删除、修改、服务启停等操作分成独立工具调用，不要放在同一脚本中；仅换行或用分号分隔无效。
+- 遇到 `blocked by policy`，先检查完整脚本是否混用了上述命令和参数，不要直接归因于权限不足。
+- 每步执行后核验实际结果；仍被拦截时如实记录命令和错误。
+
 ## 实现约束
 
 - **路由与命令**：路由、导航与页面懒加载统一维护于 `src/routes.tsx`；菜单、命令面板与快捷键复用 `src/commands/` 和 `CommandsProvider` 的注册、执行入口。保留演示 / 精简模式与原生环境的可用性过滤。
@@ -26,6 +32,7 @@
 - **双环境**：保留 HashRouter 和浏览器演示能力；浏览器中的原生能力入口明确说明环境限制，实际调用仍由门面检查，不伪造 IPC 成功。浏览器 localStorage 与桌面原生存档分别维护，演示场景的临时数据不冒充持久化或后台服务。
 - **代码组织**：遵循 [代码风格](./docs/conventions/code-style.md)。组件文件使用 `kebab-case`、组件名使用 `PascalCase`、Rust 模块使用 `snake_case`；页面默认导出，项目组件命名导出。手写 TypeScript 不用 `any` 或 `enum`，未知数据用 `unknown` 收窄。复用真实规则，不为局部示例预建空壳模块或未使用的扩展点。
 - **界面与语言**：遵循 [界面规范](./docs/conventions/ui-guidelines.md)，复用语义 token 与 `src/components/ui/`，保留键盘操作、焦点和无障碍语义。界面文案通过 `src/i18n/` 同步中英词典；新增语言更新 `registry.ts`。持续动效消费 `useDemoMotion` 活动状态，处理减少动效、离屏、文档隐藏与卸载清理。
+- **说明与反馈**：遵循 [说明与布局稳定](./docs/conventions/ui-guidelines.md#说明与布局稳定)，精简常驻解释，操作反馈复用右下角 toast，避免动态文字和结果提示挤压布局；保留必要正文、关键错误与无障碍信息。
 - **上游组件**：`src/components/ui/` 可做保持调用兼容的定制，升级时保留本地行为修复；不对该目录批量格式化，不手改逐字保留的 `src/styles/shadcn.css`。
 
 ## 验证与交付

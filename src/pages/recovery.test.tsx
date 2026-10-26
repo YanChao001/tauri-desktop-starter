@@ -8,9 +8,15 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
+import { copyText } from "@/lib/clipboard";
 import * as native from "@/lib/tauri";
 import Recovery from "./recovery";
 
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+vi.mock("@/lib/clipboard", () => ({ copyText: vi.fn() }));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   recoveryStatus: vi.fn(),
@@ -50,6 +56,24 @@ const info = {
   trashed: 1,
   drafts: 1,
   bytes: 1024,
+};
+const report: Awaited<ReturnType<typeof native.getDiagnosticsReport>> = {
+  appVersion: "1.0.0",
+  tauriVersion: "2",
+  architecture: "x86_64",
+  platform: "windows",
+  windowLabel: "main",
+  databaseVersion: 1,
+  settingsRevision: 4,
+  desktop: {
+    trayAvailable: true,
+    secondaryOpen: false,
+    autostartSupported: true,
+    runInBackground: false,
+  },
+  autostartEnabled: false,
+  updaterConfigured: false,
+  recentLogs: "[local path]",
 };
 
 describe("isolated startup recovery", () => {
@@ -136,14 +160,158 @@ describe("isolated startup recovery", () => {
   it("keeps invalid imports out of the recovery database and preserves the failure message", async () => {
     vi.mocked(native.pickRecoveryBackup).mockRejectedValueOnce({
       code: "STORAGE_CORRUPT",
+      message: "Unsupported notes backup format or schema version",
     });
     render(<Recovery />);
     fireEvent.click(
       await screen.findByRole("button", { name: "Import backup file" }),
     );
     await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(2));
+    expect(
+      within(screen.getByLabelText("Isolated recovery mode")).getByText(
+        "Unsupported notes backup format or schema version",
+      ),
+    ).toBeVisible();
+    expect(toast.error).toHaveBeenCalledOnce();
     expect(native.restoreRecoveryBackup).not.toHaveBeenCalled();
     expect(native.stageRecovery).not.toHaveBeenCalled();
+  });
+
+  it("reports temporary action failures with a toast and keeps their inline announcement hidden", async () => {
+    vi.mocked(native.pickRecoveryBackup).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    render(<Recovery />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Import backup file" }),
+    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    const announcements = screen.getAllByRole("alert");
+    expect(announcements).toHaveLength(2);
+    expect(announcements[1]).toHaveClass("sr-only");
+    expect(
+      screen.getByRole("button", { name: "Import backup file" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps recovery evidence readable when an unrelated action fails", async () => {
+    status = { ...status, archiveId: "recovery-archive-originals" };
+    vi.mocked(native.pickRecoveryBackup).mockRejectedValueOnce({
+      code: "STORAGE_CORRUPT",
+      message:
+        "A newer database must not be downgraded; use the newer application",
+    });
+    vi.mocked(native.getDiagnosticsReport).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    render(<Recovery />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Import backup file" }),
+    );
+    const details = await screen.findByText(
+      "A newer database must not be downgraded; use the newer application",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Copy redacted diagnostics" }),
+    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+    expect(details).toBeVisible();
+    expect(screen.getByText("Cannot open original storage")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Original files from the last recovery: recovery-archive-originals",
+      ),
+    ).toBeVisible();
+  });
+
+  it("copies diagnostics with a success toast and no extra result paragraph", async () => {
+    vi.mocked(native.getDiagnosticsReport).mockResolvedValueOnce(report);
+    vi.mocked(copyText).mockResolvedValueOnce(undefined);
+    render(<Recovery />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy redacted diagnostics" }),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Diagnostics copied. Check for sensitive information before sharing.",
+      ),
+    );
+    expect(copyText).toHaveBeenCalledWith(JSON.stringify(report, null, 2));
+    expect(
+      screen.queryByText(
+        "Diagnostics copied. Check for sensitive information before sharing.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("announces scheduling failure inside the confirmation without moving its controls", async () => {
+    status = { ...status, restored: true, notes: 252 };
+    vi.mocked(native.stageRecovery).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    render(<Recovery />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "2. Schedule recovery for next launch",
+      }),
+    );
+    const dialog = screen.getByRole("dialog");
+    const confirmButton = within(dialog).getByRole("button", {
+      name: "Schedule without restarting",
+    });
+    fireEvent.click(confirmButton);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(within(dialog).getByRole("alert")).toHaveClass("sr-only");
+    expect(confirmButton).toBeEnabled();
+    expect(dialog).toHaveAccessibleDescription(
+      "Replace the original database with the verified isolated database. The original database and sidecar files are archived first.",
+    );
+    expect(
+      screen.getByText("252 records restored in the isolated workspace"),
+    ).toBeInTheDocument();
+  });
+
+  it("retains retry when the initial recovery status cannot be loaded", async () => {
+    vi.mocked(native.recoveryStatus).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    render(<Recovery />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(toast.error).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    expect(
+      await screen.findByText("Cannot open original storage"),
+    ).toBeVisible();
+  });
+
+  it("keeps existing recovery information when refreshing its status fails", async () => {
+    vi.mocked(native.pickRecoveryBackup).mockResolvedValueOnce({
+      info,
+      schemaVersion: 2,
+      sampleTitles: ["Recovered note"],
+    });
+    vi.mocked(native.restoreRecoveryBackup).mockResolvedValueOnce({
+      ...status,
+      restored: true,
+      notes: 252,
+    });
+    render(<Recovery />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Import backup file" }),
+    );
+    const restore = await screen.findByRole("button", {
+      name: "Test restore in isolation",
+    });
+    vi.mocked(native.recoveryStatus).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    fireEvent.click(restore);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(screen.getByText("Cannot open original storage")).toBeVisible();
+    expect(screen.getByText(info.id)).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does nothing when the file picker is cancelled", async () => {

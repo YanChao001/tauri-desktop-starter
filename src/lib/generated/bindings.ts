@@ -4,6 +4,255 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
+  saveTextExport: (name: string, content: string) =>
+    typedError<string | null, NativeError>(
+      __TAURI_INVOKE("save_text_export", { name, content }),
+    ),
+  saveExtensionSession: (name: string, content: string) =>
+    typedError<string | null, NativeError>(
+      __TAURI_INVOKE("save_extension_session", { name, content }),
+    ),
+  extensionSnapshot: () =>
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("extension_snapshot"),
+    ),
+  requestExtensionService: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+    service: ExtensionService,
+    request: string,
+  ) =>
+    typedError<string, NativeError>(
+      __TAURI_INVOKE("request_extension_service", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+        service,
+        request,
+      }),
+    ),
+  previewExtensionArchive: () =>
+    typedError<ExtensionArchivePreview, NativeError>(
+      __TAURI_INVOKE("preview_extension_archive"),
+    ),
+  archiveLegacyExtensions: (expectedSha256: string) =>
+    typedError<ExtensionArchiveResult, NativeError>(
+      __TAURI_INVOKE("archive_legacy_extensions", { expectedSha256 }),
+    ),
+  extensionMarketSnapshot: (refresh: boolean) =>
+    typedError<MarketSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("extension_market_snapshot", { refresh }),
+    ),
+  downloadMarketExtension: (id: string, expectedPackageSha256: string) =>
+    typedError<MarketDownload_Serialize, NativeError>(
+      __TAURI_INVOKE("download_market_extension", {
+        id,
+        expectedPackageSha256,
+      }),
+    ),
+  previewExtension: (content: string) =>
+    typedError<ExtensionPreview_Serialize, NativeError>(
+      __TAURI_INVOKE("preview_extension", { content }),
+    ),
+  extensionDemo: (id: string | null) =>
+    typedError<string, NativeError>(__TAURI_INVOKE("extension_demo", { id })),
+  installExtension: (
+    content: string,
+    expectedRevision: number,
+    replaceExisting: boolean,
+    expectedSha256: string,
+    consent: ExtensionConsent,
+  ) =>
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("install_extension", {
+        content,
+        expectedRevision,
+        replaceExisting,
+        expectedSha256,
+        consent,
+      }),
+    ),
+  installMarketExtension: (
+    content: string,
+    expectedRevision: number,
+    replaceExisting: boolean,
+    expectedSha256: string,
+    source: MarketSource,
+    consent: ExtensionConsent,
+  ) =>
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("install_market_extension", {
+        content,
+        expectedRevision,
+        replaceExisting,
+        expectedSha256,
+        source,
+        consent,
+      }),
+    ),
+  rollbackExtension: (id: string, expectedRevision: number) =>
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("rollback_extension", { id, expectedRevision }),
+    ),
+  setExtensionEnabled: (
+    id: string,
+    enabled: boolean,
+    grantedPermissions: ExtensionPermission[],
+    expectedRevision: number,
+    trusted: boolean,
+  ) =>
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("set_extension_enabled", {
+        id,
+        enabled,
+        grantedPermissions,
+        expectedRevision,
+        trusted,
+      }),
+    ),
+  uninstallExtension: (id: string, expectedRevision: number) =>
+    typedError<ExtensionSnapshot_Serialize, NativeError>(
+      __TAURI_INVOKE("uninstall_extension", { id, expectedRevision }),
+    ),
+  cancelExtension: (id: string, expectedGeneration: number) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("cancel_extension", { id, expectedGeneration }),
+    ),
+  runExtension: (input: ExtensionRunInput) =>
+    typedError<string, NativeError>(__TAURI_INVOKE("run_extension", { input })),
+  viewExtension: (input: ExtensionViewInput) =>
+    typedError<ExtensionView, NativeError>(
+      __TAURI_INVOKE("view_extension", { input }),
+    ),
+  validateExtensionView: (content: string) =>
+    typedError<ExtensionView, NativeError>(
+      __TAURI_INVOKE("validate_extension_view", { content }),
+    ),
+  pickExtensionFiles: () =>
+    typedError<ExtensionFileChoice[], NativeError>(
+      __TAURI_INVOKE("pick_extension_files"),
+    ),
+  saveExtensionArtifact: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+    artifact: ExtensionArtifact,
+  ) =>
+    typedError<string | null, NativeError>(
+      __TAURI_INVOKE("save_extension_artifact", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+        artifact,
+      }),
+    ),
+  extensionStorageInfo: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
+    typedError<ExtensionStorageInfo, NativeError>(
+      __TAURI_INVOKE("extension_storage_info", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+      }),
+    ),
+  clearExtensionStorage: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+    expectedRevision: number,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("clear_extension_storage", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+        expectedRevision,
+      }),
+    ),
+  extensionCredentialSlots: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
+    typedError<ExtensionCredentialSlot[], NativeError>(
+      __TAURI_INVOKE("extension_credential_slots", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+      }),
+    ),
+  setExtensionCredential: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+    origin: string,
+    alias: string,
+    secret: string,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("set_extension_credential", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+        origin,
+        alias,
+        secret,
+      }),
+    ),
+  deleteExtensionCredential: (
+    id: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+    origin: string,
+    alias: string,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("delete_extension_credential", {
+        id,
+        expectedSha256,
+        expectedGeneration,
+        origin,
+        alias,
+      }),
+    ),
+  openExtensionWindow: (
+    id: string,
+    commandId: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("open_extension_window", {
+        id,
+        commandId,
+        expectedSha256,
+        expectedGeneration,
+      }),
+    ),
+  openExtensionCenter: () =>
+    typedError<null, NativeError>(__TAURI_INVOKE("open_extension_center")),
+  openExtensionUi: (
+    id: string,
+    commandId: string,
+    expectedSha256: string,
+    expectedGeneration: number,
+  ) =>
+    typedError<string, NativeError>(
+      __TAURI_INVOKE("open_extension_ui", {
+        id,
+        commandId,
+        expectedSha256,
+        expectedGeneration,
+      }),
+    ),
+  closeExtensionUi: (token: string) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("close_extension_ui", { token }),
+    ),
   greet: (name: string, language: string | null) =>
     typedError<string, NativeError>(
       __TAURI_INVOKE("greet", { name, language }),
@@ -375,7 +624,394 @@ export type ErrorCode =
   | "UPDATE_DOWNLOAD_FAILED"
   | "UPDATE_INSTALL_FAILED"
   | "WINDOW_ERROR"
+  | "EXTENSION_INCOMPATIBLE"
+  | "EXTENSION_RUN_FAILED"
+  | "EXTENSION_TIMEOUT"
+  | "EXTENSION_BUSY"
+  | "EXTENSION_UNAVAILABLE"
+  | "MARKET_NOT_CONFIGURED"
+  | "MARKET_UNAVAILABLE"
+  | "MARKET_INCOMPATIBLE"
+  | "MARKET_EXPIRED"
+  | "MARKET_INVALID"
+  | "MARKET_CHANGED"
   | "INTERNAL";
+
+export type ExtensionArchivePreview = {
+  status: ExtensionArchiveStatus;
+  schemaVersion: number | null;
+  fingerprint: string | null;
+  installedCount: number;
+};
+
+export type ExtensionArchiveResult = {
+  archivePath: string;
+};
+
+export type ExtensionArchiveStatus =
+  "legacy" | "current" | "future" | "invalid" | "unavailable";
+
+export type ExtensionArtifact = {
+  name: string;
+  mediaType: string;
+  content: string;
+  encoding: ExtensionArtifactEncoding;
+};
+
+export type ExtensionArtifactEncoding = "utf8" | "base64";
+
+export type ExtensionChartSeries = {
+  label: string;
+  values: (number | null)[];
+};
+
+export type ExtensionChartType = "bar" | "line";
+
+export type ExtensionCommand =
+  ExtensionCommand_Serialize | ExtensionCommand_Deserialize;
+
+export type ExtensionCommand_Deserialize = {
+  id: string;
+  title: string;
+  function: string;
+  inputFormat: ExtensionInputFormat;
+  resultFormat: ExtensionResultFormat;
+  ui?: ExtensionUi_Deserialize | null;
+  permissions: ExtensionPermission[];
+};
+
+export type ExtensionCommand_Serialize = {
+  id: string;
+  title: string;
+  function: string;
+  inputFormat: ExtensionInputFormat;
+  resultFormat: ExtensionResultFormat;
+  ui: ExtensionUi_Serialize | null;
+  permissions: ExtensionPermission[];
+};
+
+export type ExtensionConsent = {
+  trusted: boolean;
+  grantedPermissions: ExtensionPermission[];
+};
+
+export type ExtensionCredentialSlot = {
+  origin: string;
+  alias: string;
+};
+
+export type ExtensionEffect =
+  | { kind: "http"; id: string; request: ExtensionHttpRequest }
+  | {
+      kind: "storage";
+      id: string;
+      expectedRevision: number;
+      changes: { [key in string]: JsonValue | null };
+    };
+
+export type ExtensionEffectResult = {
+  id: string;
+  value: JsonValue | null;
+  error: NativeError | null;
+};
+
+export type ExtensionFieldKind =
+  "text" | "textarea" | "number" | "select" | "checkbox" | "date";
+
+export type ExtensionFileChoice = {
+  id: string;
+  name: string;
+  bytes: number | null;
+  mediaType: string;
+};
+
+export type ExtensionHostContext = {
+  permissions: ExtensionPermission[];
+  storage: ExtensionStorageSnapshot | null;
+};
+
+export type ExtensionHttpRequest = {
+  url: string;
+  method: string;
+  headers?: { [key in string]: string };
+  body?: string | null;
+  credential?: string | null;
+  networkMode?: ExtensionNetworkMode;
+};
+
+export type ExtensionIcon =
+  | "puzzle"
+  | "calculator"
+  | "gamepad"
+  | "notebook"
+  | "terminal"
+  | "image"
+  | "message-circle";
+
+export type ExtensionInfo = ExtensionInfo_Serialize | ExtensionInfo_Deserialize;
+
+export type ExtensionInfo_Deserialize = {
+  package: ExtensionPreview_Deserialize;
+  generation: number;
+  enabled: boolean;
+  grantedPermissions: ExtensionPermission[];
+  origin: ExtensionOrigin;
+  previousPackage?: ExtensionPreview_Deserialize | null;
+  previousOrigin?: ExtensionOrigin | null;
+};
+
+export type ExtensionInfo_Serialize = {
+  package: ExtensionPreview_Serialize;
+  generation: number;
+  enabled: boolean;
+  grantedPermissions: ExtensionPermission[];
+  origin: ExtensionOrigin;
+  previousPackage: ExtensionPreview_Serialize | null;
+  previousOrigin: ExtensionOrigin | null;
+};
+
+export type ExtensionInputFormat = "text" | "json";
+
+export type ExtensionManifest =
+  ExtensionManifest_Serialize | ExtensionManifest_Deserialize;
+
+export type ExtensionManifest_Deserialize = {
+  formatVersion: number;
+  apiVersion: number;
+  minHostVersion: string;
+  id: string;
+  version: string;
+  name: string;
+  author: string;
+  description: string;
+  icon?: ExtensionIcon | null;
+  commands: ExtensionCommand_Deserialize[];
+  permissions: ExtensionPermission[];
+  optionalPermissions: ExtensionPermission[];
+  network: ExtensionNetworkRule[];
+};
+
+export type ExtensionManifest_Serialize = {
+  formatVersion: number;
+  apiVersion: number;
+  minHostVersion: string;
+  id: string;
+  version: string;
+  name: string;
+  author: string;
+  description: string;
+  icon: ExtensionIcon | null;
+  commands: ExtensionCommand_Serialize[];
+  permissions: ExtensionPermission[];
+  optionalPermissions: ExtensionPermission[];
+  network: ExtensionNetworkRule[];
+};
+
+export type ExtensionNetworkMode = "direct" | "system";
+
+export type ExtensionNetworkRule = {
+  origin: string;
+  methods: string[];
+};
+
+export type ExtensionOrigin =
+  | { kind: "local" }
+  | { kind: "bundled" }
+  | { kind: "market"; source: MarketSource };
+
+export type ExtensionPermission =
+  | "text:read"
+  | "files:read"
+  | "network:https"
+  | "network:local"
+  | "network:images"
+  | "network:system-proxy"
+  | "links:open"
+  | "storage"
+  | "messaging:lan"
+  | "wallpapers:manage";
+
+export type ExtensionPreview =
+  ExtensionPreview_Serialize | ExtensionPreview_Deserialize;
+
+export type ExtensionPreview_Deserialize = {
+  manifest: ExtensionManifest_Deserialize;
+  sha256: string;
+  bytes: number;
+  uiDocuments?: ExtensionUiDocument[];
+};
+
+export type ExtensionPreview_Serialize = {
+  manifest: ExtensionManifest_Serialize;
+  sha256: string;
+  bytes: number;
+  uiDocuments?: ExtensionUiDocument[];
+};
+
+export type ExtensionResultFormat = "text" | "json" | "markdown" | "view";
+
+export type ExtensionRunInput = {
+  id: string;
+  commandId: string;
+  expectedSha256: string;
+  expectedGeneration: number;
+  inputText: string;
+  fileIds: string[];
+  url: string | null;
+};
+
+export type ExtensionRunPhase = "queued" | "running";
+
+export type ExtensionRunStatus = {
+  id: string;
+  owner: string;
+  phase: ExtensionRunPhase;
+};
+
+export type ExtensionService = "lan" | "wallpaper" | "resources" | "links";
+
+export type ExtensionSnapshot =
+  ExtensionSnapshot_Serialize | ExtensionSnapshot_Deserialize;
+
+export type ExtensionSnapshot_Deserialize = {
+  revision: number;
+  items: ExtensionInfo_Deserialize[];
+  runs: ExtensionRunStatus[];
+};
+
+export type ExtensionSnapshot_Serialize = {
+  revision: number;
+  items: ExtensionInfo_Serialize[];
+  runs: ExtensionRunStatus[];
+};
+
+export type ExtensionStorageInfo = {
+  revision: number;
+  entries: number;
+  bytes: number;
+};
+
+export type ExtensionStorageSnapshot = {
+  revision: number;
+  values: { [key in string]: JsonValue };
+};
+
+export type ExtensionUi = ExtensionUi_Serialize | ExtensionUi_Deserialize;
+
+export type ExtensionUiDocument = {
+  id: string;
+  sha256: string;
+  bytes: number;
+};
+
+export type ExtensionUi_Deserialize = {
+  sidebar: boolean;
+  window: boolean;
+  document?: string | null;
+};
+
+export type ExtensionUi_Serialize = {
+  sidebar: boolean;
+  window: boolean;
+  document?: string | null;
+};
+
+export type ExtensionView = {
+  version: number;
+  state: string;
+  display: string;
+  description: string;
+  fields: ExtensionViewField[];
+  groups: ExtensionViewGroup[];
+  tabs?: ExtensionViewTab[];
+  blocks?: ExtensionViewBlock[];
+  errors?: { [key in string]: string };
+  effects?: ExtensionEffect[];
+  artifacts?: ExtensionArtifact[];
+};
+
+export type ExtensionViewAction = {
+  id: string;
+  label: string;
+  disabled: boolean;
+  primary: boolean;
+  ariaLabel?: string | null;
+};
+
+export type ExtensionViewBlock =
+  | { kind: "markdown"; text: string }
+  | { kind: "metrics"; items: ExtensionViewMetric[] }
+  | { kind: "table"; columns: string[]; rows: string[][] }
+  | {
+      kind: "chart";
+      chartType: ExtensionChartType;
+      label: string;
+      labels: string[];
+      series: ExtensionChartSeries[];
+    }
+  | {
+      kind: "progress";
+      label: string;
+      value: number | null;
+      max: number | null;
+    }
+  | { kind: "image"; src: string; alt: string };
+
+export type ExtensionViewDataInput = {
+  inputText: string;
+  fileIds: string[];
+  url: string | null;
+};
+
+export type ExtensionViewField = {
+  id: string;
+  label: string;
+  value: string;
+  kind?: ExtensionFieldKind | null;
+  options?: ExtensionViewOption[];
+  maxBytes?: number | null;
+};
+
+export type ExtensionViewGroup = {
+  columns: number;
+  actions: ExtensionViewAction[];
+  board?: boolean;
+};
+
+export type ExtensionViewInput = {
+  id: string;
+  commandId: string;
+  expectedSha256: string;
+  expectedGeneration: number;
+  request: ExtensionViewRequest;
+  data?: ExtensionViewDataInput | null;
+};
+
+export type ExtensionViewMetric = {
+  label: string;
+  value: string;
+};
+
+export type ExtensionViewOption = {
+  value: string;
+  label: string;
+};
+
+export type ExtensionViewRequest = {
+  version: number;
+  action: string | null;
+  state: string;
+  fields: { [key in string]: string };
+  locale: string;
+  host?: ExtensionHostContext | null;
+  results?: ExtensionEffectResult[];
+};
+
+export type ExtensionViewTab = {
+  id: string;
+  label: string;
+  active: boolean;
+};
 
 export type FrontendError = {
   message: string;
@@ -402,6 +1038,100 @@ export type LifecycleRequest = {
   id: number;
   action: LifecycleAction;
   windows: string[];
+};
+
+export type MarketCatalog = MarketCatalog_Serialize | MarketCatalog_Deserialize;
+
+export type MarketCatalog_Deserialize = {
+  schemaVersion: number;
+  revision: number;
+  repository: string;
+  issuedAt: number | null;
+  expiresAt: number | null;
+  entries: MarketEntry_Deserialize[];
+};
+
+export type MarketCatalog_Serialize = {
+  schemaVersion: number;
+  revision: number;
+  repository: string;
+  issuedAt: number | null;
+  expiresAt: number | null;
+  entries: MarketEntry_Serialize[];
+};
+
+export type MarketCategory = "text" | "data" | "tools" | "games";
+
+export type MarketDownload =
+  MarketDownload_Serialize | MarketDownload_Deserialize;
+
+export type MarketDownload_Deserialize = {
+  content: string;
+  preview: ExtensionPreview_Deserialize;
+  source: MarketSource;
+};
+
+export type MarketDownload_Serialize = {
+  content: string;
+  preview: ExtensionPreview_Serialize;
+  source: MarketSource;
+};
+
+export type MarketEntry = MarketEntry_Serialize | MarketEntry_Deserialize;
+
+export type MarketEntry_Deserialize = {
+  package: ExtensionPreview_Deserialize;
+  category: MarketCategory;
+  featured: boolean;
+  releaseTag: string;
+  asset: string;
+  packageSha256: string;
+  packageBytes: number;
+};
+
+export type MarketEntry_Serialize = {
+  package: ExtensionPreview_Serialize;
+  category: MarketCategory;
+  featured: boolean;
+  releaseTag: string;
+  asset: string;
+  packageSha256: string;
+  packageBytes: number;
+};
+
+export type MarketIncompatibleEntry = {
+  id: string;
+  name: string;
+  version: string;
+  minHostVersion: string;
+  category: MarketCategory;
+};
+
+export type MarketSnapshot =
+  MarketSnapshot_Serialize | MarketSnapshot_Deserialize;
+
+export type MarketSnapshot_Deserialize = {
+  catalog: MarketCatalog_Deserialize;
+  incompatibleEntries: MarketIncompatibleEntry[];
+  hostVersion: string;
+  fetchedAt: number | null;
+  stale: boolean;
+};
+
+export type MarketSnapshot_Serialize = {
+  catalog: MarketCatalog_Serialize;
+  incompatibleEntries: MarketIncompatibleEntry[];
+  hostVersion: string;
+  fetchedAt: number | null;
+  stale: boolean;
+};
+
+/**  此收据仅说明来源；安装入口必须重新与已验签目录及完整包内容核对。 */
+export type MarketSource = {
+  repository: string;
+  publicKeyFingerprint: string;
+  catalogRevision: number;
+  packageSha256: string;
 };
 
 export type NativeError = {

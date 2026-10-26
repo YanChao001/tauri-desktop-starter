@@ -9,7 +9,12 @@ export default tseslint.config(
       "dist/**",
       "dist-web/**",
       "artifacts/**",
+      ".cache/**",
       "node_modules/**",
+      "marketplace/**",
+      "examples/extensions/node_modules/**",
+      "examples/extensions/dist/**",
+      "examples/extensions/**/target/**",
       "src-tauri/**",
       // shadcn 原子组件沿用上游编码风格；行为修复仍需类型检查与回归验证
       "src/components/ui/**",
@@ -39,7 +44,7 @@ export default tseslint.config(
   },
   {
     // 应用源码是浏览器环境：误用 process、Buffer 这类 Node API 会直接报错
-    files: ["src/**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}", "sdk/*.{js,ts}"],
     languageOptions: { globals: globals.browser },
   },
   {
@@ -47,10 +52,18 @@ export default tseslint.config(
     files: [
       "*.config.{js,ts}",
       "scripts/**/*.mjs",
+      "examples/extensions/*.mjs",
       "e2e/**/*.mjs",
       "wdio*.mjs",
     ],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: [
+      "examples/extensions/javascript/*.js",
+      "examples/extensions/typescript/*.ts",
+    ],
+    languageOptions: { globals: { Host: "readonly", I32: "readonly" } },
   },
   {
     // 架构约束：系统能力只能从 lib/tauri.ts 出去。

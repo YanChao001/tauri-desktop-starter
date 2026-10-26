@@ -9,36 +9,21 @@ import {
   DatabaseIcon,
   ActivityIcon,
   DownloadIcon,
+  PuzzleIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { MessageKey as DictKey } from "@/i18n/zh-CN";
-
-/**
- * 页面按路由懒加载，避免未访问页面的控件增加启动解析成本。
- */
-const Overview = lazy(() => import("@/pages/overview"));
-const Components = lazy(() => import("@/pages/components"));
-const Motion = lazy(() => import("@/pages/motion"));
-const Bridge = lazy(() => import("@/pages/bridge"));
-const Settings = lazy(() => import("@/pages/settings"));
-const Desktop = lazy(() => import("@/pages/desktop"));
-const Database = lazy(() => import("@/pages/database"));
-const Diagnostics = lazy(() => import("@/pages/diagnostics"));
-const Updates = lazy(() => import("@/pages/updates"));
-const Workbench = lazy(() => import("@/pages/workbench"));
-const Tasks = lazy(() => import("@/pages/tasks"));
-const System = lazy(() => import("@/pages/system"));
-const Network = lazy(() => import("@/pages/network"));
-const DataStudio = lazy(() => import("@/pages/data-studio"));
-const Media = lazy(() => import("@/pages/media"));
-const Catalog = lazy(() => import("@/pages/catalog"));
-const Recovery = lazy(() => import("@/pages/recovery"));
+import type { ExtensionInfo } from "@/lib/tauri";
+import { canRunExtensionCommand } from "@/features/extensions/extension-model";
+import { resolveExtensionIcon } from "@/features/extensions/extension-icon";
+import { matchPath } from "react-router-dom";
 
 type PageComponent = ComponentType | LazyExoticComponent<ComponentType>;
 
 export const NAVIGATION_GROUPS = [
   { id: "experience", labelKey: "navGroup.experience" },
   { id: "capabilities", labelKey: "navGroup.capabilities" },
+  { id: "extensions", labelKey: "ext.installed" },
   { id: "system", labelKey: "navGroup.system" },
 ] as const satisfies readonly { id: string; labelKey: DictKey }[];
 
@@ -57,6 +42,8 @@ export type AppRoute = {
   group: NavigationGroup;
   icon: LucideIcon;
   component: PageComponent;
+  /** 导航意图只预载模块，不挂载页面或执行数据 / 原生操作。 */
+  preload?: () => void;
   /**
    * 作为父路由的默认页，只有首页该为 true。
    * 它和 `exact` 是两件事：前者决定路由结构，后者只影响导航高亮。
@@ -65,7 +52,64 @@ export type AppRoute = {
   /** 导航高亮是否精确匹配。父级路径（如 "/settings"）通常不需要 */
   exact?: boolean;
   demoOnly?: boolean;
+  hidden?: boolean;
 };
+export type AppNavigationItem = Pick<
+  AppRoute,
+  "path" | "labelKey" | "group" | "icon" | "exact" | "preload"
+> & { label?: string };
+
+export function extensionPath(id: string, command: string, window = false) {
+  return `${window ? "/extension-window" : "/extensions/app"}/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
+}
+export function extensionNavigation(
+  items: readonly ExtensionInfo[],
+  currentPath?: string,
+): AppNavigationItem[] {
+  return items.flatMap((item) => {
+    const manifest = item.package.manifest;
+    return manifest.commands
+      .filter(
+        (command) =>
+          canRunExtensionCommand(item, command) &&
+          (command.ui?.sidebar ||
+            (currentPath &&
+              matchPath(
+                { path: extensionPath(manifest.id, command.id), end: true },
+                currentPath,
+              ))) &&
+          command.resultFormat === "view",
+      )
+      .map((command) => ({
+        path: extensionPath(manifest.id, command.id),
+        labelKey: "ext.title" as const,
+        label:
+          command.ui?.sidebar &&
+          manifest.commands.filter((entry) => entry.ui?.sidebar).length === 1
+            ? manifest.name
+            : `${manifest.name}: ${command.title}`,
+        icon: resolveExtensionIcon(manifest.icon),
+        group: "extensions" as const,
+        exact: true,
+      }));
+  });
+}
+export const WINDOW_ROUTES = [
+  {
+    path: "/extension-window/:extensionId/:commandId",
+    ...lazyPage(() => import("@/pages/extension-window")),
+  },
+];
+
+function lazyPage(load: () => Promise<{ default: ComponentType }>) {
+  return {
+    component: lazy(load),
+    preload: () => {
+      // import 自身复用模块缓存；预载失败交给实际导航时的错误边界展示。
+      void load().catch(() => {});
+    },
+  };
+}
 
 export const APP_ROUTES: AppRoute[] = [
   {
@@ -73,7 +117,7 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.overview",
     group: "experience",
     icon: LayoutDashboardIcon,
-    component: Overview,
+    ...lazyPage(() => import("@/pages/overview")),
     index: true,
     exact: true,
   },
@@ -82,49 +126,65 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.catalog",
     group: "experience",
     icon: BlocksIcon,
-    component: Catalog,
+    ...lazyPage(() => import("@/pages/catalog")),
   },
   {
     path: "/recovery",
     labelKey: "recovery.title",
     group: "system",
     icon: ActivityIcon,
-    component: Recovery,
+    ...lazyPage(() => import("@/pages/recovery")),
   },
   {
     path: "/workbench",
     labelKey: "nav.workbench",
     group: "capabilities",
     icon: BlocksIcon,
-    component: Workbench,
+    ...lazyPage(() => import("@/pages/workbench")),
   },
   {
     path: "/tasks",
     labelKey: "nav.tasks",
     group: "capabilities",
     icon: ActivityIcon,
-    component: Tasks,
+    ...lazyPage(() => import("@/pages/tasks")),
   },
   {
     path: "/system",
     labelKey: "nav.system",
     group: "capabilities",
     icon: MonitorIcon,
-    component: System,
+    ...lazyPage(() => import("@/pages/system")),
+  },
+  {
+    path: "/extensions",
+    labelKey: "nav.extensions",
+    group: "capabilities",
+    icon: PuzzleIcon,
+    ...lazyPage(() => import("@/pages/extensions")),
+    exact: true,
+  },
+  {
+    path: "/extensions/app/:extensionId/:commandId",
+    labelKey: "ext.title",
+    group: "extensions",
+    icon: PuzzleIcon,
+    ...lazyPage(() => import("@/pages/extension-app")),
+    hidden: true,
   },
   {
     path: "/network",
     labelKey: "nav.network",
     group: "capabilities",
     icon: TerminalIcon,
-    component: Network,
+    ...lazyPage(() => import("@/pages/network")),
   },
   {
     path: "/data-studio",
     labelKey: "nav.dataStudio",
     group: "experience",
     icon: DatabaseIcon,
-    component: DataStudio,
+    ...lazyPage(() => import("@/pages/data-studio")),
     demoOnly: true,
   },
   {
@@ -132,7 +192,7 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.media",
     group: "experience",
     icon: SparklesIcon,
-    component: Media,
+    ...lazyPage(() => import("@/pages/media")),
     demoOnly: true,
   },
   {
@@ -140,7 +200,7 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.components",
     group: "experience",
     icon: BlocksIcon,
-    component: Components,
+    ...lazyPage(() => import("@/pages/components")),
     demoOnly: true,
   },
   {
@@ -148,7 +208,7 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.motion",
     group: "experience",
     icon: SparklesIcon,
-    component: Motion,
+    ...lazyPage(() => import("@/pages/motion")),
     demoOnly: true,
   },
   {
@@ -156,21 +216,21 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.desktop",
     group: "capabilities",
     icon: MonitorIcon,
-    component: Desktop,
+    ...lazyPage(() => import("@/pages/desktop")),
   },
   {
     path: "/database",
     labelKey: "nav.database",
     group: "capabilities",
     icon: DatabaseIcon,
-    component: Database,
+    ...lazyPage(() => import("@/pages/database")),
   },
   {
     path: "/bridge",
     labelKey: "nav.bridge",
     group: "capabilities",
     icon: TerminalIcon,
-    component: Bridge,
+    ...lazyPage(() => import("@/pages/bridge")),
     demoOnly: true,
   },
   {
@@ -178,30 +238,32 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "nav.diagnostics",
     group: "system",
     icon: ActivityIcon,
-    component: Diagnostics,
+    ...lazyPage(() => import("@/pages/diagnostics")),
   },
   {
     path: "/updates",
     labelKey: "nav.updates",
     group: "system",
     icon: DownloadIcon,
-    component: Updates,
+    ...lazyPage(() => import("@/pages/updates")),
   },
   {
     path: "/settings",
     labelKey: "nav.settings",
     group: "system",
     icon: SettingsIcon,
-    component: Settings,
+    ...lazyPage(() => import("@/pages/settings")),
   },
 ];
 
 /** 按当前路径找对应路由，用于面包屑与导航高亮。 */
 export function matchRoute(pathname: string): AppRoute {
   const matched = APP_ROUTES.find((route) =>
-    route.exact
-      ? pathname === route.path
-      : pathname === route.path || pathname.startsWith(`${route.path}/`),
+    route.path.includes(":")
+      ? matchPath({ path: route.path, end: true }, pathname) !== null
+      : route.exact
+        ? pathname === route.path
+        : pathname === route.path || pathname.startsWith(`${route.path}/`),
   );
   if (matched) return matched;
 

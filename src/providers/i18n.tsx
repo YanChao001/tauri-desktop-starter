@@ -1,16 +1,10 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useContext, useMemo, type ReactNode } from "react";
 import { getLocale } from "@/i18n/registry";
-import { createTranslator, type Translate } from "@/i18n/translate";
-import { useSettings, type Language } from "@/providers/settings";
+import { createTranslator } from "@/i18n/translate";
+import { useSettings } from "@/providers/settings";
+import { I18nContext, type I18nContextValue } from "./i18n-context";
 
 export type { MessageKey as DictKey } from "@/i18n/zh-CN";
-
-type I18nContextValue = {
-  language: Language;
-  t: Translate;
-};
-
-const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();

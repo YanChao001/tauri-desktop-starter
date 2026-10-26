@@ -1,4 +1,5 @@
 import { zhExperience } from "./zh-experience";
+import { zhWorkflows } from "./zh-workflows";
 import { zhFeatures } from "./zh-features";
 import { zhShowroom } from "./zh-showroom";
 import { zhComponents } from "./zh-components";
@@ -12,6 +13,7 @@ import { zhCatalog } from "./zh-catalog";
 import { zhRecovery } from "./zh-recovery";
 /** 默认语言也是词条键的唯一来源。 */
 export const zhCN = {
+  ...zhWorkflows,
   ...zhFeatures,
   ...zhShowroom,
   ...zhComponents,
@@ -66,6 +68,8 @@ export const zhCN = {
   "common.resetDone": "已恢复默认偏好",
   "common.cancel": "取消",
   "common.close": "关闭",
+  "common.helpFor": "了解{name}",
+  "common.details": "查看详情",
   "common.renderError": "界面出错了",
   "common.reload": "重新加载",
   "common.language": "语言",
@@ -199,6 +203,11 @@ export const zhCN = {
   "settings.skinLightweight": "手绘线条纹理",
   "settings.languageDescription": "即时切换界面语言，并记住你的选择",
   "settings.libraryCount": "{count} / {max} 张",
+  "settings.wallpapersImported": "已加入 {count} 张壁纸",
+  "settings.wallpaperImportFailed": "{count} 张图片未能导入",
+  "settings.wallpaperImportDetails": "未导入的图片",
+  "settings.wallpaperRemoved": "壁纸已移除",
+  "settings.wallpaperRenamed": "壁纸名称已更新",
   "settings.libraryEmpty": "添加喜欢的图片，建立自己的壁纸收藏",
   "settings.libraryFull": "图库最多保存 24 张壁纸，请先删除不需要的图片。",
   "settings.libraryError": "壁纸未能保存或读取，已有图片已保留。请重试。",

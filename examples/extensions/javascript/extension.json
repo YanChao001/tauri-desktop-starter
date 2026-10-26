@@ -1,0 +1,31 @@
+{
+  "formatVersion": 3,
+  "apiVersion": 2,
+  "id": "example.javascript-text",
+  "version": "1.0.0",
+  "name": "文本摘要",
+  "author": "Example author",
+  "description": "Unicode case conversion using the Extism JavaScript PDK.",
+  "commands": [
+    {
+      "id": "uppercase",
+      "title": "Uppercase",
+      "function": "uppercase",
+      "inputFormat": "text",
+      "resultFormat": "text",
+      "permissions": ["text:read"]
+    },
+    {
+      "id": "lowercase",
+      "title": "Lowercase",
+      "function": "lowercase",
+      "inputFormat": "text",
+      "resultFormat": "text",
+      "permissions": ["text:read"]
+    }
+  ],
+  "permissions": ["text:read"],
+  "minHostVersion": "0.1.4",
+  "optionalPermissions": [],
+  "network": []
+}

@@ -7,6 +7,7 @@ import {
 } from "react";
 import { PlusIcon, SaveIcon, TrashIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
+import { useSearchParams } from "react-router-dom";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { BackupPanel } from "@/components/database/backup-panel";
 import { ConflictPanel } from "@/components/database/conflict-panel";
@@ -134,6 +135,8 @@ function recoverDraft(value: NoteDraft | null) {
   });
 }
 export default function Database() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedNote = searchParams.get("note");
   const { t, language } = useI18n();
   const latest = useLatestTranslator();
   const [query, setQuery] = useState("");
@@ -168,6 +171,53 @@ export default function Database() {
   const mounted = useRef(false);
   const draftRead = useRef(0);
   const dirty = isDirty(draft, original);
+  useEffect(() => {
+    if (
+      !requestedNote ||
+      !/^[1-9]\d{0,9}$/.test(requestedNote) ||
+      Number(requestedNote) > 2_147_483_647 ||
+      !draftReady ||
+      pending ||
+      !isTauri()
+    )
+      return;
+    let stopped = false;
+    const originalAtRequest = editor.original;
+    const clearRequest = () =>
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          if (next.get("note") === requestedNote) next.delete("note");
+          return next;
+        },
+        { replace: true },
+      );
+    void getNote(Number(requestedNote))
+      .then((note) => {
+        if (stopped || editor.pending) return;
+        if (editor.original !== originalAtRequest) {
+          clearRequest();
+          return;
+        }
+        if (isDirty(editor.draft, editor.original)) {
+          nextDraft.current = note;
+          setDiscardOpen(true);
+        } else {
+          applyDraft(note);
+          setRemote(null);
+        }
+        clearRequest();
+      })
+      .catch((reason: unknown) => {
+        if (stopped) return;
+        if (editor.original === originalAtRequest)
+          changeEditor({ error: reason });
+        clearRequest();
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [requestedNote, draftReady, pending, setSearchParams]);
   const searchTooLong = utf8Length(query) > 200;
   const bodyTooLong = utf8Length(draft.body) > 65536;
   useEffect(() => {
@@ -483,15 +533,25 @@ export default function Database() {
     mutationError !== null &&
     "code" in mutationError &&
     (mutationError.code === "CONFLICT" || mutationError.code === "NOT_FOUND");
+  useEffect(() => {
+    if (draftReady && mutationError)
+      toast.error(nativeErrorText(mutationError, latest), {
+        id: "note-editor-error",
+      });
+  }, [draftReady, mutationError, latest]);
+  useEffect(() => {
+    if (error && page)
+      toast.error(nativeErrorText(error, latest), { id: "note-query-error" });
+  }, [error, page, latest]);
   return (
     <NativePage
       title={t("database.title")}
       description={t("database.description")}
     >
-      <ResourceError error={error} retry={() => void reload()} />
+      <ResourceError error={page ? null : error} retry={() => void reload()} />
       {!draftReady ? (
         <ResourceError error={mutationError} retry={() => void retryDraft()} />
-      ) : mutationError ? (
+      ) : mutationError && conflicted ? (
         <div
           role="alert"
           className="rounded-lg border border-destructive/40 bg-background p-3 text-sm"
@@ -501,6 +561,7 @@ export default function Database() {
       ) : null}
       {conflicted ? (
         <ConflictPanel
+          local={draft}
           remote={remote}
           pending={pending}
           keepLocal={() => {
@@ -513,46 +574,52 @@ export default function Database() {
             setRemote(null);
           }}
           saveCopy={() => void save(true).catch(() => {})}
+          merge={(value) => {
+            if (!remote || pending || remote.id !== editor.draft.id) return;
+            changeEditor({ original: { ...remote }, error: null });
+            editDraft({ ...editor.draft, ...value, version: remote.version });
+            setRemote(null);
+          }}
         />
       ) : null}
-      {draftNotice && dirty ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          {t(
-            draftNotice === "recovered"
-              ? "data.draftRecovered"
-              : "data.draftSaved",
-          )}
+      <div className="space-y-1">
+        <div className="flex flex-wrap gap-2">
+          <Input
+            type="search"
+            maxLength={200}
+            className="min-w-48 flex-1"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("database.searchPlaceholder")}
+            aria-label={t("database.search")}
+            aria-invalid={searchTooLong}
+            aria-describedby={searchTooLong ? "note-search-error" : undefined}
+          />
+          <Button
+            variant="outline"
+            disabled={pending || !draftReady}
+            onClick={() => select(blank())}
+          >
+            <PlusIcon />
+            {t("database.new")}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={loading}
+            onClick={() => void reload()}
+            aria-label={t("common.refresh")}
+          >
+            <RefreshCwIcon />
+          </Button>
+        </div>
+        <p
+          id="note-search-error"
+          role={searchTooLong ? "alert" : undefined}
+          className="h-5 truncate text-xs text-destructive"
+        >
+          {searchTooLong ? t("errors.INPUT_TOO_LONG") : null}
         </p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Input
-          type="search"
-          maxLength={200}
-          className="min-w-48 flex-1"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("database.searchPlaceholder")}
-          aria-label={t("database.search")}
-          aria-invalid={searchTooLong}
-          aria-describedby={searchTooLong ? "note-search-error" : undefined}
-        />
-        <Button
-          variant="outline"
-          disabled={pending || !draftReady}
-          onClick={() => select(blank())}
-        >
-          <PlusIcon />
-          {t("database.new")}
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          disabled={loading}
-          onClick={() => void reload()}
-          aria-label={t("common.refresh")}
-        >
-          <RefreshCwIcon />
-        </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -600,50 +667,39 @@ export default function Database() {
           </Select>
         </div>
       </div>
-      {selected.size ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background p-3">
-          <span className="text-sm">
-            {t("data.selected", { count: selected.size })}
-          </span>
-          {trash ? (
-            <>
-              <Button
-                size="sm"
-                disabled={pending}
-                onClick={() => setBulkAction("restore")}
-              >
-                {t("data.restoreSelected")}
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={pending}
-                onClick={() => setBulkAction("purge")}
-              >
-                {t("data.purge")}
-              </Button>
-            </>
-          ) : (
+      <div className="flex min-h-8 flex-wrap items-center gap-2">
+        <span className="text-sm">
+          {t("data.selected", { count: selected.size })}
+        </span>
+        {trash ? (
+          <>
+            <Button
+              size="sm"
+              disabled={pending || !selected.size}
+              onClick={() => setBulkAction("restore")}
+            >
+              {t("data.restoreSelected")}
+            </Button>
             <Button
               size="sm"
               variant="destructive"
-              disabled={pending}
-              onClick={() => setBulkAction("trash")}
+              disabled={pending || !selected.size}
+              onClick={() => setBulkAction("purge")}
             >
-              {t("data.trashSelected")}
+              {t("data.purge")}
             </Button>
-          )}
-        </div>
-      ) : null}
-      {searchTooLong ? (
-        <p
-          id="note-search-error"
-          role="alert"
-          className="text-xs text-destructive"
-        >
-          {t("errors.INPUT_TOO_LONG")}
-        </p>
-      ) : null}
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={pending || !selected.size}
+            onClick={() => setBulkAction("trash")}
+          >
+            {t("data.trashSelected")}
+          </Button>
+        )}
+      </div>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(0,2fr)]">
         <Card>
           <CardContent className="max-h-[28rem] space-y-1 overflow-y-auto p-3">
@@ -770,15 +826,13 @@ export default function Database() {
                   }
                   placeholder={t("database.bodyPlaceholder")}
                 />
-                {bodyTooLong ? (
-                  <p
-                    id="note-body-error"
-                    role="alert"
-                    className="text-xs text-destructive"
-                  >
-                    {t("errors.INPUT_TOO_LONG")}
-                  </p>
-                ) : null}
+                <p
+                  id="note-body-error"
+                  role={bodyTooLong ? "alert" : undefined}
+                  className="h-5 truncate text-xs text-destructive"
+                >
+                  {bodyTooLong ? t("errors.INPUT_TOO_LONG") : null}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -822,11 +876,21 @@ export default function Database() {
                 ) : null}
                 {dirty ? (
                   <Badge variant="outline">{t("database.unsaved")}</Badge>
-                ) : draft.version ? (
-                  <span className="text-xs text-muted-foreground">
-                    {t("database.version", { version: draft.version })}
-                  </span>
                 ) : null}
+                <span
+                  role="status"
+                  className="h-5 min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                >
+                  {draftNotice && dirty
+                    ? t(
+                        draftNotice === "recovered"
+                          ? "data.draftRecovered"
+                          : "data.draftSaved",
+                      )
+                    : draft.version
+                      ? t("database.version", { version: draft.version })
+                      : null}
+                </span>
               </div>
             </form>
           </CardContent>
@@ -856,11 +920,6 @@ export default function Database() {
             <DialogTitle>{t("database.confirmDelete")}</DialogTitle>
             <DialogDescription>{t("data.trashDescription")}</DialogDescription>
           </DialogHeader>
-          {mutationError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {nativeErrorText(mutationError, t)}
-            </p>
-          ) : null}
           <DialogFooter>
             <Button
               variant="outline"
@@ -902,11 +961,6 @@ export default function Database() {
               })}
             </DialogDescription>
           </DialogHeader>
-          {mutationError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {nativeErrorText(mutationError, t)}
-            </p>
-          ) : null}
           <DialogFooter>
             <Button
               variant="outline"
@@ -940,11 +994,6 @@ export default function Database() {
               {t("database.discardDescription")}
             </DialogDescription>
           </DialogHeader>
-          {mutationError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {nativeErrorText(mutationError, t)}
-            </p>
-          ) : null}
           <DialogFooter>
             <Button
               variant="outline"

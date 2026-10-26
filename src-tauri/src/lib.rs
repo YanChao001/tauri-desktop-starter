@@ -17,6 +17,24 @@ mod database;
 mod desktop;
 mod diagnostics;
 mod error;
+mod extension_commands;
+mod extension_execution;
+pub mod extension_host;
+mod extension_lan;
+mod extension_market;
+mod extension_market_commands;
+mod extension_network;
+mod extension_paths;
+mod extension_resources;
+pub mod extension_runtime;
+mod extension_services;
+mod extension_storage;
+pub mod extension_view;
+mod extension_wallpaper;
+mod extension_windows;
+mod extension_worker;
+pub mod extensions;
+mod file_commands;
 mod lifecycle;
 mod recovery;
 mod redaction;
@@ -96,8 +114,11 @@ pub fn run() {
     };
     let builder = tauri::Builder::default()
         .manage(desktop::DesktopState::default())
+        .manage(extension_windows::ExtensionWindows::default())
+        .manage(extensions::ui::ExtensionUiStore::default())
         .manage(lifecycle::LifecycleState::default())
         .manage(system_commands::ActivationInbox::default());
+    let builder = extensions::ui::register_protocol(builder);
 
     // 单实例必须最先注册，让重复启动在初始化日志等共享资源前退出。
     #[cfg(desktop)]
@@ -113,14 +134,17 @@ pub fn run() {
         // （没有存档时也会），因此这两项不能参与状态恢复。
         .plugin(window_state.build())
         .plugin(window_geometry::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(all(desktop, not(windows), not(feature = "e2e")))]
@@ -145,6 +169,24 @@ pub fn run() {
         let initialized = recovery::initialize(&paths)?;
         let workbench = workbench::WorkbenchState::open(initialized.recovery.workbench_root())?;
         let system = system_commands::SystemState::open(paths.config.join("workspace.json"));
+        app.manage(extensions::ExtensionStore::new(
+            paths.data.join("extensions"),
+            initialized.recovery.is_isolated(),
+        ));
+        app.manage(extension_market::ExtensionMarket::new(
+            paths.data.join("extension-market"),
+            initialized.recovery.is_isolated(),
+        ));
+        app.manage(extension_host::ExtensionHostStore::new(
+            paths.data.join("extension-data"),
+            initialized.recovery.is_isolated(),
+            app.config().identifier.clone(),
+        ));
+        app.manage(extension_services::ExtensionServices::default());
+        app.manage(extension_lan::ExtensionLan::new(
+            paths.data.join("extension-data/lan"),
+            initialized.recovery.is_isolated(),
+        ));
         app.manage(wallpapers::WallpaperStore::new(
             initialized.recovery.wallpaper_path(),
         ));
@@ -211,7 +253,8 @@ pub fn run() {
                 {
                     // 协商完成后仍可能正在安装；窗口关闭不能穿透执行期的占用。
                     api.prevent_close();
-                } else if app.state::<storage::SettingsStore>().run_in_background()
+                } else if matches!(window.label(), "main" | "secondary")
+                    && app.state::<storage::SettingsStore>().run_in_background()
                     && desktop::status(app).tray_available
                 {
                     api.prevent_close();
@@ -221,6 +264,7 @@ pub fn run() {
                 } else if app
                     .state::<lifecycle::LifecycleState>()
                     .is_dirty(Some(window.label()))
+                    || window.label().starts_with("extension-")
                 {
                     api.prevent_close();
                     lifecycle::request_action(
@@ -234,6 +278,23 @@ pub fn run() {
                 workbench::handle_drop(window.app_handle(), window.label(), paths.clone());
             }
             if let tauri::WindowEvent::Destroyed = event {
+                window
+                    .app_handle()
+                    .state::<extensions::ui::ExtensionUiStore>()
+                    .close_window(window.label());
+                if let Err(error) = window
+                    .app_handle()
+                    .state::<extensions::ExtensionStore>()
+                    .begin_window_close(window.label())
+                {
+                    log::warn!("Cannot stop destroyed window extensions: {error}");
+                }
+                let service_owners =
+                    extension_services::take_window_owners(window.app_handle(), window.label());
+                tauri::async_runtime::spawn(extension_services::close_window(
+                    window.app_handle().clone(),
+                    service_owners,
+                ));
                 window
                     .app_handle()
                     .state::<lifecycle::LifecycleState>()
@@ -256,8 +317,28 @@ pub fn run() {
         .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            if matches!(event, tauri::RunEvent::Exit) {
+                // App::run 在结束时直接退出进程，须在最终退出事件回收拥有的 worker。
+                extension_lan::shutdown(app);
+                extension_runtime::shutdown_workers();
+                return;
+            }
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
                 let state = app.state::<lifecycle::LifecycleState>();
+                let reservation = match state.reserve_exit() {
+                    Ok(Some(reservation)) => reservation,
+                    Ok(None) => {
+                        api.prevent_exit();
+                        lifecycle::defer_exit_for_window_creation(app, code);
+                        return;
+                    }
+                    Err(error) => {
+                        api.prevent_exit();
+                        log::warn!("Cannot reserve application exit: {error}");
+                        return;
+                    }
+                };
+                let mut can_exit = true;
                 if !state
                     .approved_exit
                     .load(std::sync::atomic::Ordering::Acquire)
@@ -268,10 +349,38 @@ pub fn run() {
                             || !app.webview_windows().is_empty()
                         {
                             api.prevent_exit();
+                            can_exit = false;
                         }
                     } else if state.is_dirty(None) {
                         api.prevent_exit();
+                        drop(reservation);
                         lifecycle::request_action(app, lifecycle::LifecycleAction::Quit, None);
+                        return;
+                    }
+                }
+                if can_exit {
+                    if let Err(error) = reservation.commit() {
+                        api.prevent_exit();
+                        log::warn!("Cannot confirm application exit: {error}");
+                        return;
+                    }
+                    state
+                        .approved_exit
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    let store = app.state::<extensions::ExtensionStore>();
+                    let initiated = store.begin_shutdown();
+                    // 正常退出先拒绝新运行并取消当前任务，等 broker 和 Wasm 实际结束后退出。
+                    if store.is_running() {
+                        api.prevent_exit();
+                        if initiated {
+                            let store = store.inner().clone();
+                            let handle = app.clone();
+                            let exit_code = code.unwrap_or(0);
+                            tauri::async_runtime::spawn_blocking(move || {
+                                store.wait_stopped();
+                                handle.exit(exit_code);
+                            });
+                        }
                     }
                 }
             }

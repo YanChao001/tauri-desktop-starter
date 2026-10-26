@@ -2,13 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CopyIcon, RefreshCwIcon } from "lucide-react";
 import { NativePage, ResourceError } from "@/components/native-page";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardDescription,
-} from "@/components/ui/card";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
@@ -25,6 +20,14 @@ export default function Diagnostics() {
   const [copying, setCopying] = useState(false);
   const running = useRef(false);
   const mounted = useRef(false);
+  const notifiedError = useRef<unknown>(null);
+  useEffect(() => {
+    if (!error) notifiedError.current = null;
+    else if (data && notifiedError.current !== error) {
+      notifiedError.current = error;
+      toast.error(nativeErrorText(error, latest));
+    }
+  }, [data, error, latest]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -50,7 +53,7 @@ export default function Diagnostics() {
       title={t("diagnostics.title")}
       description={t("diagnostics.description")}
     >
-      <ResourceError error={error} retry={() => void reload()} />
+      <ResourceError error={data ? null : error} retry={() => void reload()} />
       <div className="flex gap-2">
         <Button
           disabled={loading || copying || !data}
@@ -70,14 +73,20 @@ export default function Diagnostics() {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">{t("diagnostics.preview")}</CardTitle>
-          <CardDescription>{t("diagnostics.logs")}</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            {t("diagnostics.preview")}
+            <HelpTooltip
+              label={`${t("diagnostics.preview")} · ${t("title.help")}`}
+            >
+              {t("diagnostics.logs")}
+            </HelpTooltip>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <CodeBlock
             data-testid="diagnostics-report"
             aria-label={t("diagnostics.preview")}
-            className="max-h-[32rem] whitespace-pre-wrap break-words"
+            className="h-96 max-h-[60dvh] whitespace-pre-wrap break-words"
             code={data ? JSON.stringify(data, null, 2) : t("common.loading")}
             language={data ? "json" : "text"}
           />

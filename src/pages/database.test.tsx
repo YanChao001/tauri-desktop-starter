@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import {
   act,
   cleanup,
@@ -12,6 +13,7 @@ import * as native from "@/lib/tauri";
 import type { Note } from "@/lib/tauri";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import Database from "./database";
+import { toast } from "sonner";
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
@@ -69,8 +71,12 @@ function deferred<T>() {
 }
 let notes: Note[];
 let events: Array<() => void>;
-async function open() {
-  const view = render(<Database />);
+async function open(path = "/") {
+  const view = render(
+    <MemoryRouter initialEntries={[path]}>
+      <Database />
+    </MemoryRouter>,
+  );
   await waitFor(() => expect(native.queryNotes).toHaveBeenCalled());
   return view;
 }
@@ -117,6 +123,45 @@ describe("native note editor", () => {
       }
     }
     cleanup();
+  });
+
+  it("keeps a manually selected note ahead of a delayed search result", async () => {
+    const requested = deferred<Note>();
+    vi.mocked(native.getNote).mockReturnValueOnce(requested.promise);
+    await open("/database?note=2");
+    await waitFor(() => expect(native.getNote).toHaveBeenCalledWith(2));
+    fireEvent.click(await screen.findByText("First note"));
+    await act(async () =>
+      requested.resolve({ ...first, id: 2, title: "Search result" }),
+    );
+    expect(title()).toHaveValue(first.title);
+    expect(body()).toHaveValue(first.body);
+  });
+
+  it("requires confirmation before opening a search result over edits made during the read", async () => {
+    const requested = deferred<Note>();
+    vi.mocked(native.getNote).mockReturnValueOnce(requested.promise);
+    await open("/database?note=2");
+    await waitFor(() => expect(native.getNote).toHaveBeenCalledWith(2));
+    const draftTitle = title();
+    fireEvent.change(draftTitle, { target: { value: "Keep this draft" } });
+    await act(async () =>
+      requested.resolve({ ...first, id: 2, title: "Search result" }),
+    );
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(draftTitle).toHaveValue("Keep this draft");
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    expect(title()).toHaveValue("Keep this draft");
+  });
+
+  it("rejects search identities outside the native signed 32-bit range", async () => {
+    await open("/database?note=2147483648");
+    await waitFor(() => expect(title()).toBeEnabled());
+    expect(native.getNote).not.toHaveBeenCalled();
   });
 
   it("creates and updates notes using the returned version while deduplicating submissions", async () => {
@@ -337,7 +382,11 @@ describe("native note editor", () => {
     vi.useFakeTimers();
     try {
       await act(async () => {
-        render(<Database />);
+        render(
+          <MemoryRouter>
+            <Database />
+          </MemoryRouter>,
+        );
       });
       fireEvent.click(
         screen.getByRole("checkbox", { name: "Select First note" }),
@@ -380,9 +429,14 @@ describe("native note editor", () => {
         "trash",
       ),
     );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String), {
+        id: "note-editor-error",
+      }),
+    );
     expect(
-      await within(screen.getByRole("dialog")).findByRole("alert"),
-    ).toBeVisible();
+      within(screen.getByRole("dialog")).queryByRole("alert"),
+    ).not.toBeInTheDocument();
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel",
@@ -405,7 +459,11 @@ describe("native note editor", () => {
     vi.mocked(native.updateNote).mockRejectedValueOnce({ code: "CONFLICT" });
     fireEvent.submit(form());
     fireEvent.click(await screen.findByText("View remote content"));
-    expect(screen.getByText("Remote version")).toBeVisible();
+    expect(
+      screen
+        .getAllByText("Remote version")
+        .some((node) => node.tagName === "PRE"),
+    ).toBe(true);
     expect(body()).toHaveValue("My local work");
     fireEvent.click(
       screen.getByRole("button", { name: "Keep local and continue editing" }),
@@ -449,6 +507,61 @@ describe("native note editor", () => {
     await waitFor(() =>
       expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument(),
     );
+  });
+
+  it("merges chosen title and body without persisting, then still rejects a newer concurrent version", async () => {
+    await open();
+    fireEvent.click(await screen.findByText("First note"));
+    fireEvent.change(body(), { target: { value: "Local body" } });
+    vi.mocked(native.getNote).mockResolvedValueOnce({
+      ...first,
+      title: "Reviewed title",
+      body: "Reviewed body",
+      version: 2,
+    });
+    vi.mocked(native.updateNote).mockRejectedValueOnce({ code: "CONFLICT" });
+    fireEvent.submit(form());
+    const conflict = await screen.findByRole("region", {
+      name: "Note version conflict",
+    });
+    fireEvent.click(
+      await within(conflict).findByRole("radio", {
+        name: "Use other version title: Reviewed title",
+      }),
+    );
+    fireEvent.click(
+      within(conflict).getByRole("radio", { name: "Other version" }),
+    );
+    fireEvent.click(
+      within(conflict).getByRole("button", {
+        name: "Apply merged result to editor",
+      }),
+    );
+    expect(native.updateNote).toHaveBeenCalledOnce();
+    expect(title()).toHaveValue("Reviewed title");
+    expect(body()).toHaveValue("Reviewed body");
+    // 选择完全采用远端正文后，再做编辑以产生一次真实保存。
+    fireEvent.change(body(), {
+      target: { value: "Reviewed body with my addition" },
+    });
+    vi.mocked(native.getNote).mockResolvedValueOnce({
+      ...first,
+      body: "Changed again",
+      version: 3,
+    });
+    vi.mocked(native.updateNote).mockRejectedValueOnce({ code: "CONFLICT" });
+    fireEvent.submit(form());
+    await waitFor(() =>
+      expect(native.updateNote).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedVersion: 2,
+          title: "Reviewed title",
+          body: "Reviewed body with my addition",
+        }),
+      ),
+    );
+    await screen.findByRole("region", { name: "Note version conflict" });
+    expect(body()).toHaveValue("Reviewed body with my addition");
   });
 
   it("recovers the persisted window draft and waits for its deletion when discarded", async () => {
@@ -608,7 +721,12 @@ describe("native note editor", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByText(/Restored 253 records/)).toBeVisible();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringContaining("Restored 253 records"),
+      ),
+    );
+    expect(screen.queryByText(/Restored 253 records/)).not.toBeInTheDocument();
   });
 
   it("does not restore imported data when the native file picker is cancelled", async () => {

@@ -349,9 +349,12 @@ impl UpdateManager {
         )
         .await?;
         self.event(app, operation_id, UpdateStage::Installing, None, None);
+        let extensions = app.state::<crate::extensions::ExtensionStore>().pause();
         blocking::run(move || {
             // 停止等待不会取消阻塞安装；占用必须随真实安装任务完成后再释放。
             let _authorization = authorization;
+            extensions.wait_stopped();
+            let _extensions = extensions;
             update.install(bytes).map_err(|e| {
                 NativeError::operation(
                     ErrorCode::UpdateInstallFailed,

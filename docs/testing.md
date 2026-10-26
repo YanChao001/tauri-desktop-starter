@@ -4,15 +4,16 @@
 
 ## 测试分层
 
-| 层         | 工具                             | 关注点                                                                   |
-| ---------- | -------------------------------- | ------------------------------------------------------------------------ |
-| 前端纯逻辑 | Vitest                           | 设置迁移、并发同步、命令 / 快捷键、翻译和错误归一化                      |
-| 组件       | Testing Library + jsdom          | 路由恢复、保存 / 重试、输入保留、键盘操作和无障碍                        |
-| 工程脚本   | `node --test`                    | 版本、归档、路径边界、初始化事务 / 并发保护、诊断误判                    |
-| Rust       | `cargo test`                     | 入参边界、错误码、原子存储、revision、SQLite 迁移 / 冲突、更新策略与脱敏 |
-| IPC 契约   | tauri-specta 导出 + 少量调用断言 | 生成绑定未漂移、命令名 / 参数名 / DTO 一致                               |
-| 浏览器构建 | Playwright + axe                 | 子路径资源、刷新、偏好恢复、键盘、虚拟列表和自动无障碍扫描               |
-| 真实桌面   | WebdriverIO + 内嵌 WebDriver     | 启动显示、原生 IPC、语言、窗口和进程重启后的设置                         |
+| 层             | 工具                             | 关注点                                                                   |
+| -------------- | -------------------------------- | ------------------------------------------------------------------------ |
+| 前端纯逻辑     | Vitest                           | 设置迁移、并发同步、命令 / 快捷键、翻译和错误归一化                      |
+| 组件           | Testing Library + jsdom          | 路由恢复、保存 / 重试、输入保留、键盘操作和无障碍                        |
+| 工程脚本       | `node --test`                    | 版本、归档、路径边界、初始化事务 / 并发保护、诊断误判                    |
+| Rust           | `cargo test`                     | 入参边界、错误码、原子存储、revision、SQLite 迁移 / 冲突、更新策略与脱敏 |
+| IPC 契约       | tauri-specta 导出 + 少量调用断言 | 生成绑定未漂移、命令名 / 参数名 / DTO 一致                               |
+| 浏览器构建     | Playwright + axe                 | 子路径资源、刷新、偏好恢复、键盘、虚拟列表和自动无障碍扫描               |
+| 自定义扩展界面 | Playwright + axe + 原生 CLI      | 真实打包 HTML、受控消息桥、真实离线 Wasm、草稿、主题和隔离负例           |
+| 真实桌面       | WebdriverIO + 内嵌 WebDriver     | 启动显示、原生 IPC、语言、窗口和进程重启后的设置                         |
 
 按风险验证用户能感知的行为，不为覆盖率数字测试 getter、静态样式或实现细节。修复缺陷时优先增加可复现的回归。
 
@@ -38,7 +39,7 @@ pnpm exec vitest related --run src/lib/settings-sync.ts
 pnpm exec prettier --check docs/testing.md
 ```
 
-已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、身份配置与品牌资源一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查与桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
+已有检查通过后，仅在继续改动、出现失败或仍有明确疑点时重跑相关检查。CI 保留完整检查，不把 CI 的三平台验证全部复制到每次本地迭代。`pnpm verify` 包含格式、身份配置与品牌资源一致性、README 截图格式与尺寸、lint、类型、前端 / 脚本测试、版本检查、内置扩展来源与分发资源哈希检查及桌面前端构建；Rust、IPC 绑定、浏览器演示构建、Playwright 和真实桌面 E2E 需分别验证。它适合共享基础设施改动或交付前自查，不是每次提交的前置条件。
 
 新增测试应说明要防止哪种实际回归。可逆的样式、文案调整通常用预览确认；不复制配置数组、不重复测试第三方库本身，也不为已经被类型检查约束的普通赋值增加测试。自定义组件的行为修复、数据持久化、并发和外部输入边界仍保留针对性回归。
 
@@ -104,7 +105,73 @@ pnpm verify
 
 浏览器演示发布前执行 `pnpm build:web` 并通过 `pnpm exec vite preview --outDir dist-web` 预览，复核项目子路径下的资源加载、HashRouter 页面直接访问与刷新、localStorage 偏好恢复和窄屏布局。构建及部署方式见 [开发指南](./development.md#浏览器演示构建与部署)。桌面 E2E 与安装版验收分别提供原生行为和分发证据。
 
+## 自定义扩展界面
+
+从宿主根目录准备 CLI、内置 Wasm 和市场 Wasm，然后运行无头检查：
+
+```powershell
+pnpm build
+cargo build --locked --manifest-path src-tauri/Cargo.toml --bin extension-tool
+pnpm extension:demos:check
+node --test scripts/extension-ui-sdk.test.mjs examples/extensions/apps/ui.test.mjs
+$env:MARKET_REVISION = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+Push-Location marketplace
+node scripts/check.mjs
+Pop-Location
+pnpm test:extensions:ui
+```
+
+并行运行时可设置 `STARTER_EXTENSION_UI_RUN_ID` 为 1–80 个 ASCII 字母、数字、下划线或连字符，报告将写入 `artifacts/extensions/custom-ui/<run-id>/`，避免不同任务相互覆盖；未设置时沿用原目录。该值是运行标识，不接受文件系统路径。
+
+需先初始化 marketplace 子模块和安装 Wasm 目标；内置工作台源码变化后先执行 `pnpm extension:demos:build`，当前分发资源的完整重建比对使用 `pnpm extension:demos:check --rebuild`。市场 `check` 编译当前收录的科学计算器、贪吃蛇、局域网聊天和壁纸库，运行真实 Wasm fixture；与内置本地工作台共五个应用。单插件编译入口见各插件 README。已有匹配源码的构建可直接运行最后一条；变更插件 Rust 后必须重新编译对应模块。`STARTER_EXTENSION_TOOL` 可指定实际 CLI 绝对路径。报告与截图位于 `artifacts/extensions/custom-ui/`，报告记录 Wasm / UI 哈希和每轮真实动作。
+
+检查使用生产 React 外壳、完整包内 HTML 和 SDK，Wasm 动作由真实 extension-tool / worker 执行；局部 Canvas / 游戏交互在界面内运行。浏览器 fixture 替换协议传输、窗口、桌面服务与系统对话框边界，不访问用户数据，不启动真实 LAN 或修改图库；取消保存返回取消。验收需覆盖中英、明暗、窄屏大字号独立窗口、精简工具菜单、语言 / 主题切换、圆形过渡及减少动效、键盘、草稿保留、界面重载、无障碍、溢出，以及直接网络 / 存储 / WebRTC / 子框绕过与导航负例。源代码不暴露测试入口到生产应用。
+
+默认主流程按五个应用与四组 profile 形成 20 个场景：中文亮色 1120×800 / 16px、英文暗色 900×760 / 16px、中文亮色 360×760 / 20px 独立窗口、中文暗色 1920×1080 / 20px 嵌入。精确配置由 [runner](../e2e/extension-ui.mjs) 维护；定向筛选只说明实际执行的应用和 profile，不按默认总数报告通过。另检查内容框右缘与可用高度、单一整页滚动、普通状态字体、计算器三色曲线与同高按钮，以及可选权限全选 / 半选和窄屏换行。
+
+五个应用按实际功能检查：工作台四页签独立草稿、显式载入数据和失败保留输入；计算器运算、实际采样、平移缩放与求根 / 积分错误；贪吃蛇开始、转向、触控、暂停 / 失焦、音效首次手势与清理、进度恢复；LAN 界面授权、连接状态、收发 / 未读和错误反馈；壁纸界面来源 / 许可、原图下载与图库导入区别、CAS 冲突和取消。SDK 回归另检查作者 CSS 可以覆盖默认 layer，语言变化使用既有 state / fields 的 `action: null` 环境刷新，不初始化或重做业务动作。测试实现、报告和本次实际执行结果分别说明，不把待覆盖目标写成通过。
+
+它仍不验证真实 Tauri IPC、WebView2 / WKWebView / WebKitGTK 注入、原生文件对话框、平台音频策略、多机 LAN / 防火墙或必应及第三方图片在线服务。原生传输的脚本回归另检查顶层通信、子框拒绝、序列化、二进制和失败回退；跨平台真实 WebView 与正式安装仍需独立验收。
+
 ## Rust 测试
+
+CSV / 差异 / 搜索的前端回归就近维护于对应领域及文件 / 笔记页；无头浏览器 `workflows.spec.ts` 检查工作流和扩展页浏览器边界。扩展改动按领域选择原生服务、实际 Wasm 与无界面 worker 检查，命令见 [扩展验证](./extensions.md#验证)。这些检查不启动应用窗口，不替代正式安装、多窗口退出和目标平台验收；测试与 CI 配置描述覆盖范围，执行结果仍在 PR / 发布证据中记录。
+
+扩展包 / 注册表与调度检查格式 3 / API 2、最低宿主版本、必需 / 可选能力、命令门槛、明确审阅后授权、内置首次登记、回退撤权、2 项执行 / 16 项排队、按窗口串行、排队取消及旧窗口请求失效。声明任一新图片 / 系统代理 / 外链权限但 `minHostVersion` 低于 0.1.6 的清单必须拒绝。Host / network / storage 检查精确公网与本机来源、DNS 地址固定、凭据 origin 隔离、KV CAS / 配额 / 损坏拒写、类型化效果轮次、失败与取消。凭据服务单元测试使用内存替身，不能替代目标系统 keyring 验收。
+
+前端应用回归使用第三方 ID 视图夹具检查通用字段、图表、图片、错误关联、排队状态、输入保留、关闭等待、导航恢复、可选授权、显式数据发送、单独保存结果和会话导入。导入必须匹配插件身份 / 版本 / 哈希，不执行 Wasm 或恢复文件资源 ID；错误、取消和超限不能替换当前草稿。真实本地工作台 Wasm 检查文本、CSV / JSON、待办、文件 / 网络四页签、显式数据载入、效果请求与中英输出；新市场模块另运行手写 fixture，不能用前端 fixture 替代。
+
+服务验证按职责分层，要求使用临时数据和本轮源码，不修改用户图库：
+
+- `extension_services`：当前安装身份、启用和每项独立权限；读写门闩、活动租约、窗口 epoch 与最终提交覆盖关闭 / 退出 / 重启 / 更新等待；安全外链拒绝非 HTTPS、凭据及非法目标，旧包不自动取得新授权。
+- `extension_network`：精确 origin / 方法、HTTP 原额度和凭据来源；省略 `networkMode` 保持直连，`system` 缺少 `network:system-proxy` 时拒绝，环回 HTTP 不接受系统代理。覆盖有 / 无匹配代理、`NO_PROXY`、真实直连 DNS 全集合校验和地址固定，代理传输主机与目标的信任边界分别检查；不能以代理远端解析成功声称最终 IP 已校验。
+- `extension_resources`：`network:images` 独立授权、任意公网 HTTPS GET 图片的 URL / DNS / MIME / 真解码校验、字节 / 像素 / 解码内存额度、TTL、每所有者 / 全局配额及并发。覆盖跨窗口 epoch / 插件代次拒绝、关闭 / 撤权 / 替换清理、释放、资源持有期间的预览 / 保存、取消对话框及最终写入复核；`release` 只撤销新查找，不取消已取得 `Arc` 的在途保存，关窗仍拒绝最终写入。原图另存和重绘导入分别检查。
+- `extension_wallpaper`：仅图库列表、本机 / 资源导入、背景设置 CAS、重命名 / 移除及现有数据保留；与资源服务共用图片处理名额，缩略图不在最终提交窗口锁中执行，忙 / 损坏预览返回 `dataUrl: null` 并保留成功写入结果。旧供应商 `search` / `resultId` / Commons `pageId` 入口拒绝，不在宿主保留供应商解析测试。
+- `extension_lan`：临时历史与真实双端环回连接的收发回执、坏帧 / 超限、重连、最后窗口关闭和撤权清理，保留损坏 / 未来存档。固定 LAN 的后台接收不等于已实现通用后台任务。
+
+供应商 URL / 查询 / HTML / JSON 解析、搜索无结果与验证码等失败路径在市场插件测试中验证，再执行真实 Wasm HTTP 效果往返；宿主只验证能力和图片内容，不认证结果来自 Bing。另检查拒绝新网络权限后本机图库仍可用，旧 1.0.2 搜索须升级到配套 1.0.3 / 0.1.6，已有图库与设置不丢失。数学内核和游戏规则仍按各插件真实行为回归。宿主 toast、操作系统通知、固定 LAN 和通用后台能力按[实际能力矩阵](./extensions.md#受控桌面服务)区分，不为未提供的能力报告通过。
+
+从宿主根目录可聚焦运行服务与界面回归：
+
+```powershell
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_services
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_lan
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_network
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_resources
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib extension_wallpaper
+cargo test --locked --manifest-path examples/extensions/apps/Cargo.toml
+pnpm test src/features/extensions/extension-app-service.test.tsx src/features/extensions/extension-ui-bridge.test.ts
+```
+
+这些命令仍需准备下述 `dist/`；没有匹配测试的过滤器不构成验收通过。媒体能力变化需重新编译匹配的 0.1.6 工具与应用进程，兼容说明见 [扩展指南](./extensions.md#架构与兼容范围)。原生宿主不再提供旧 Bing / Commons 联网测试入口；供应商联通需从配套插件的真实 HTTP 链路验收，分别记录已授权的 direct / system 模式、关键词来源和图片原站。存在 Fake-IP / 非公网 DNS 时直连必须拒绝，不能以浏览器替身或预先准备的图片冒充原生下载通过。
+
+真实网络、系统代理、系统另存及取消、图库导入 / 多窗口同步、多机 LAN / 防火墙、真实窗口关闭和后台接收、目标 WebView 与正式安装版均须在隔离设备或已安排的前台时段单列实际结果。离线图片 fixture、浏览器服务替身与 CI 配置只说明各自边界，不能预言这些平台行为已通过。
+
+`pnpm extension:demos:check` 快速核对源码、清单、锁文件、工具链、构建脚本、参考构建平台与模块哈希回执；Windows x64 参考平台用 `--rebuild` 实际编译并逐字节比较提交 Wasm，Linux / macOS 用显式 `--compile` 真实编译并保留参考资源。三端 Rust CI 都对提交模块与本次重编模块分别执行 ABI / UI 校验及同套手写 fixture；构建契约见 [内置应用资源](./extensions.md#内置应用资源)。开发 CLI `extension:validate` 不实例化，`extension:test` 在真实 worker 中执行离线 fixture；可用 1–32 项顺序 fixture 验证取消后下一项仍成功。`pnpm extension:test:worker` 检查真实子进程协议、超限、环境清理、实例隔离与停止回收。普通 `cargo test` 的进程内运行时测试不能代替 worker 边界，离线 fixture 不代替网络 / KV 效果端到端检查。CI 中的 Rust / 上游与 JS / TS 编译任务不代表本机或其他平台已经实测。
+
+官方市场检查目录 schema 2 签名与有效期、跨重启最高 revision、同 revision 内容替换、换仓库 / 公钥、来源收据、包篡改、清单不符、下架与重定向边界，使用临时信任存档保留损坏 / 未来版本原件。线上联通验收需使用已发布的配套目录，核对实际 latest、签名有效期与公开附件；旧 schema 1 或其他不兼容目录被拒绝时不能当作新版目录验收。维护者在市场仓库发布后，分别检查发现、下载、审阅和来源安装；不以离线 fixture 或本地导入代替。市场仓库构建、签名与发布检查独立运行，普通宿主 CI 不要求拉取子模块。
+
+市场演进回归还需使用同一签名目录混合当前插件与未知未来清单，验证可用项保持可发现、未来摘要没有下载 / 升级操作、原生附件下载前拒绝不兼容版本。提高最低宿主不能掩盖坏外围元数据、重复 ID / JSON 键、超限、坏签名、时间或源身份；仅修改隔离正文也必须触发同修订替换拒绝。具体隔离范围与完整 payload 摘要规则见[官方市场契约](./extensions.md#官方插件市场)。
 
 ```bash
 pnpm build
@@ -229,8 +296,10 @@ CI 保留截图产物并通过 `pnpm docs:previews:check` 检查已提交图片�
 
 - `frontend`：冻结安装、品牌资源一致性、README 截图格式与尺寸、版本 / 脚本测试、格式、lint、类型、前端测试，以及桌面前端与浏览器演示的分别构建。
 - `browser-smoke`：构建浏览器产物，运行 Chromium 子路径 / 交互 / 无障碍冒烟，失败上传截图与 trace；Pages 部署另有相同门禁。
-- `rust`：三端 Clippy / Rust 测试；Windows 另跑格式和生成绑定检查。
+- `rust`：三端 Clippy / Rust 测试、内置 Wasm 真编译与双模块 ABI / UI 和 fixture 验证；Windows 参考平台另做模块逐字节比对、格式和生成绑定检查，失败保留必要模块与编译器证据。
 - `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志，Windows 成功时另存 README 截图。
 - `quality-gate`：汇总全部检查，仅所有前置任务成功时通过；分支保护使用此项作为必需检查。
+
+Rust / SDK 的 Linux 检查使用 Ubuntu 24.04，以满足固定 `extism-js` 编译器的 glibc 2.39 要求；真实桌面 E2E 与 Linux 分发构建仍保留 Ubuntu 22.04 基线。
 
 CI 配置覆盖的目标平台，不等于当前开发机全部实测过。发布时仍需在目标平台检查安装 / 卸载、签名、自启动、托盘和真实版本升级，尤其不能用测试构建代替正式安装包验收。

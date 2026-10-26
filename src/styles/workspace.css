@@ -118,8 +118,7 @@
   color: var(--muted-foreground);
   font-size: 0.7rem;
 }
-.workspace-empty,
-.workspace-help {
+.workspace-empty {
   padding: 0.7rem 0.4rem;
   color: var(--muted-foreground);
   font-size: 0.75rem;

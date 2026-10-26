@@ -137,7 +137,7 @@ export function useWorkspace() {
             }
           const route = activationRoute ?? workspace.routes[label];
           if (route && baseline === navigation.current.generation) visit(route);
-          setReady(true);
+          setReady(label === "main" || label === "secondary");
         })
         .catch((reason: unknown) => {
           reportClientError(reason);
@@ -150,7 +150,12 @@ export function useWorkspace() {
   }, []);
   useEffect(() => {
     let stopped = false;
-    if (ready && isTauri() && pendingNavigation.current === null)
+    if (
+      ready &&
+      isTauri() &&
+      pendingNavigation.current === null &&
+      APP_ROUTES.some((route) => !route.hidden && route.path === pathname)
+    )
       saving.current = saving.current
         .then(async () => {
           if (!stopped) await saveWorkspaceRoute(pathname);
