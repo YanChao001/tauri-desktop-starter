@@ -628,6 +628,7 @@
           $("tabs").replaceChildren(
             ...(view.tabs ?? []).map((tab) => {
               const button = actionButton({ ...tab, primary: tab.active });
+              button.dataset.variant = "outline";
               button.setAttribute("role", "tab");
               button.setAttribute("aria-selected", String(tab.active));
               button.setAttribute("aria-controls", "panel");

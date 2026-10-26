@@ -17,6 +17,12 @@ declare global {
       exportPath: string | null;
       artifacts: ExtensionArtifact[];
       work: UnsavedWork | null;
+      serviceCalls: {
+        service: string;
+        request: Record<string, unknown>;
+        boundaryMock: true;
+      }[];
+      sessionViewValidationBoundaryMockCalls: number;
     };
   }
 }
@@ -26,10 +32,13 @@ window.__extensionUiTest = {
   exportPath: null,
   artifacts: [],
   work: null,
+  serviceCalls: [],
+  sessionViewValidationBoundaryMockCalls: 0,
 };
 const configuration = (await fetch("/fixture/config").then((response) =>
   response.json(),
 )) as { snapshot: ExtensionSnapshot };
+const fixtureSession = crypto.randomUUID();
 export const isTauri = () => true;
 export const extensionSnapshot = async () =>
   structuredClone(configuration.snapshot);
@@ -63,7 +72,7 @@ async function request<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/fixture/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...(body as object), fixtureSession }),
   });
   const result = (await response.json()) as {
     code?: "EXTENSION_RUN_FAILED";
@@ -79,6 +88,13 @@ async function request<T>(path: string, body: unknown): Promise<T> {
 }
 export const viewExtension = (input: ExtensionViewInput) =>
   request<ExtensionView>("view", input);
+// This UI-only import test reuses an unchanged export from real Wasm. It does not test Rust parsing.
+export const validateExtensionView = async (
+  content: string,
+): Promise<ExtensionView> => {
+  window.__extensionUiTest.sessionViewValidationBoundaryMockCalls++;
+  return JSON.parse(content) as ExtensionView;
+};
 export const openExtensionUi = (
   id: string,
   commandId: string,
@@ -93,6 +109,28 @@ export const openExtensionUi = (
   });
 export const closeExtensionUi = (token: string) =>
   request<void>("close", { token });
+/** Explicit browser boundary substitute; native LAN/gallery services have separate tests. */
+export const requestExtensionService = (
+  id: string,
+  expectedSha256: string,
+  expectedGeneration: number,
+  service: "lan" | "wallpaper",
+  serviceRequest: Record<string, unknown>,
+) => {
+  window.__extensionUiTest.serviceCalls.push({
+    service,
+    request: serviceRequest,
+    boundaryMock: true,
+  });
+  return request<unknown>("service", {
+    id,
+    expectedSha256,
+    expectedGeneration,
+    service,
+    request: serviceRequest,
+    boundaryMock: true,
+  });
+};
 export async function saveTextExport(name: string, content: string) {
   window.__extensionUiTest.exports.push({ name, content });
   return window.__extensionUiTest.exportPath;

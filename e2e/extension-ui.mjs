@@ -17,6 +17,7 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { readUiDocuments } from "../scripts/extension-ui-resources.mjs";
+import { createBoundaryServices } from "./extensions/service-fixture.mjs";
 
 const root = resolve(import.meta.dirname, ".."),
   cache = join(root, ".cache");
@@ -48,11 +49,58 @@ const init =
   sdk.replace(
     'location.hostname !== "extension-ui.localhost"',
     '(location.hostname !== "127.0.0.1" || !location.pathname.startsWith("/fixture/ui/"))',
-  );
+  ) +
+  `
+  window.__audioResumeStates=[];window.__audioSuspendStates=[];
+  if(window.AudioContext){const resume=AudioContext.prototype.resume;AudioContext.prototype.resume=function(...args){const result=resume.apply(this,args);result.then(()=>window.__audioResumeStates.push(this.state));return result;};}
+  if(window.AudioContext){const suspend=AudioContext.prototype.suspend;AudioContext.prototype.suspend=function(...args){const result=suspend.apply(this,args);result.then(()=>window.__audioSuspendStates.push(this.state));return result;};}
+  window.__viewTransitionProbe={starts:0,clips:[]};
+  if(document.startViewTransition){const start=document.startViewTransition.bind(document);document.startViewTransition=function(callback){window.__viewTransitionProbe.starts++;return start(callback);};}
+  const animate=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(options?.pseudoElement==="::view-transition-new(root)")window.__viewTransitionProbe.clips.push({frames,options});return animate.call(this,frames,options);};
+  `;
 const csp = (
   await readFile(join(root, "src-tauri/src/extension_ui.rs"), "utf8")
 ).match(/pub const UI_CSP: &str = "([^"]+)"/)[1];
-const names = ["arcade-2048", "nonogram", "story-dice", "text-tools", "lab"];
+const names = [
+  "scientific-calculator",
+  "snake",
+  "lan-chat",
+  "wallpaper-browser",
+  "lab",
+];
+const selectedNames = process.argv
+  .slice(2)
+  .filter((value) => !value.startsWith("--"));
+const selectedProfiles = process.argv
+  .find((value) => value.startsWith("--profiles="))
+  ?.slice("--profiles=".length)
+  .split(",")
+  .map(Number);
+if (
+  selectedNames.some((name) => !names.includes(name)) ||
+  selectedProfiles?.some((index) => ![0, 1, 2].includes(index))
+)
+  throw Error("Use plugin names and optional --profiles=0,1,2");
+const sharedInputs = Object.fromEntries(
+  await Promise.all(
+    [
+      "sdk/extension-ui.js",
+      "src/features/extensions/extension-custom-ui.tsx",
+      "src/features/extensions/extension-app.tsx",
+      "src/pages/extension-window.tsx",
+      "src/components/title-bar.tsx",
+      "src/hooks/use-theme-switch.ts",
+      "src-tauri/src/native-ipc.js",
+      "src-tauri/src/extension_ui.rs",
+      "e2e/extensions/main.tsx",
+      "e2e/extensions/fixture.css",
+      "e2e/extensions/native.ts",
+      "e2e/extensions/providers.tsx",
+      "e2e/extensions/service-fixture.mjs",
+    ].map(async (path) => [path, hash(await readFile(join(root, path)))]),
+  ),
+);
+const services = createBoundaryServices();
 const plugins = [],
   calls = [],
   leases = new Map(),
@@ -106,6 +154,59 @@ async function cleanupFixture() {
     throw Error("Unexpected UI fixture directory");
   await rm(temporary, { recursive: true });
 }
+async function observeSdk(frame) {
+  await frame.locator("html").evaluate(async () => {
+    window.__sdkSnapshot = await starter.ready;
+    starter.onChange((snapshot) => {
+      window.__sdkSnapshot = snapshot;
+    });
+  });
+}
+async function idle(page, frame) {
+  await expect
+    .poll(
+      () => frame.locator("html").evaluate(() => window.__sdkSnapshot?.busy),
+      { timeout: 60000 },
+    )
+    .toBe(false);
+  await expect
+    .poll(() => frame.locator("main").getAttribute("aria-busy"), {
+      timeout: 60000,
+    })
+    .not.toBe("true");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("[data-extension-surface]")
+        ?.closest("[aria-busy]")
+        ?.getAttribute("aria-busy") !== "true",
+  );
+}
+async function settled(frame) {
+  await frame.locator("html").evaluate(async () => {
+    await document.fonts.ready;
+    let quiet = 0;
+    for (let iteration = 0; iteration < 120 && quiet < 3; iteration++) {
+      for (const element of document.querySelectorAll("main *"))
+        void getComputedStyle(element).color;
+      const animations = document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.playState !== "finished" &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime),
+        );
+      quiet = animations.length ? 0 : quiet + 1;
+      await Promise.allSettled(
+        animations.map((animation) => animation.finished),
+      );
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      );
+    }
+    if (quiet < 3) throw Error("Theme animations did not settle");
+  });
+}
 try {
   for (const name of names) {
     const source =
@@ -148,7 +249,12 @@ try {
       generation: 1,
       origin: { kind: "local" },
       enabled: true,
-      grantedPermissions: [],
+      grantedPermissions: [
+        ...manifest.permissions,
+        ...manifest.optionalPermissions.filter((permission) =>
+          ["messaging:lan", "wallpapers:manage"].includes(permission),
+        ),
+      ],
       package: {
         manifest,
         sha256: hash(wasm),
@@ -157,6 +263,12 @@ try {
       },
       previousPackage: null,
       previousOrigin: null,
+    };
+    plugin.inputHashes = {
+      ...sharedInputs,
+      manifest: hash(JSON.stringify(manifest)),
+      wasm: hash(wasm),
+      ui: hash(JSON.stringify(uiDocuments)),
     };
     plugins.push(plugin);
   }
@@ -230,13 +342,26 @@ try {
               !plugin ||
               input.expectedGeneration !== 1 ||
               input.expectedSha256 !== plugin.item.package.sha256 ||
-              !plugin.manifest.commands.some(
-                (command) =>
-                  command.id === input.commandId &&
-                  command.resultFormat === "view",
-              )
+              (path !== "/fixture/service" &&
+                !plugin.manifest.commands.some(
+                  (command) =>
+                    command.id === input.commandId &&
+                    command.resultFormat === "view",
+                ))
             )
               throw Error("Invalid fixture identity");
+            if (path === "/fixture/service") {
+              const required =
+                input.service === "lan" ? "messaging:lan" : "wallpapers:manage";
+              if (
+                !plugin.item.grantedPermissions.includes(required) ||
+                (input.service === "lan" && plugin.name !== "lan-chat") ||
+                (input.service === "wallpaper" &&
+                  plugin.name !== "wallpaper-browser")
+              )
+                throw Error("Undeclared boundary service");
+              return json(response, services.request(input));
+            }
             if (path === "/fixture/open") {
               const token = randomBytes(24).toString("hex");
               leases.set(token, plugin);
@@ -270,6 +395,11 @@ try {
           );
           next();
         } catch (error) {
+          console.error(
+            "Boundary fixture rejected request",
+            path,
+            error.message,
+          );
           json(
             response,
             { code: "EXTENSION_RUN_FAILED", message: error.message },
@@ -312,16 +442,21 @@ try {
       window: "true",
     },
   ];
-  for (const profile of process.argv.includes("--security-only")
+  for (const profile of process.argv.some((value) =>
+    ["--security-only", "--settings-only"].includes(value),
+  )
     ? []
-    : profiles) {
+    : profiles.filter(
+        (_profile, index) =>
+          !selectedProfiles || selectedProfiles.includes(index),
+      )) {
     const context = await browser.newContext({
       viewport: { width: profile.width, height: profile.height },
       reducedMotion: "reduce",
     });
     await context.addInitScript({ content: init });
     for (const name of names.filter(
-      (name) => !process.argv[2] || process.argv.slice(2).includes(name),
+      (name) => !selectedNames.length || selectedNames.includes(name),
     )) {
       const page = await context.newPage(),
         errors = [],
@@ -336,93 +471,318 @@ try {
       );
       const frame = page.frameLocator("iframe");
       await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
-      await page.waitForFunction(
-        () =>
-          document.querySelector("[aria-busy]")?.getAttribute("aria-busy") ===
-          "false",
-        null,
-        { timeout: 60000 },
-      );
-      await expect(frame.locator("main")).toHaveAttribute(
-        "aria-busy",
-        "false",
-        { timeout: 60000 },
-      );
+      await observeSdk(frame);
+      await idle(page, frame);
       const before = calls.length;
       async function action(id) {
+        const previous = calls.length;
         await frame.locator(`[data-action="${id}"]`).click();
-        await expect(frame.locator("main")).toHaveAttribute(
-          "aria-busy",
-          "false",
-          { timeout: 60000 },
-        );
+        await expect
+          .poll(() => calls.length, { timeout: 60000 })
+          .toBeGreaterThan(previous);
+        await idle(page, frame);
       }
-      if (name === "arcade-2048") {
-        await frame.locator("#board").focus();
-        await page.keyboard.press("ArrowLeft");
-        await expect(frame.locator("#steps")).toHaveText("1", {
-          timeout: 60000,
-        });
-        await expect(frame.locator('[data-action="left"]')).toHaveAttribute(
-          "aria-disabled",
-          "false",
-        );
-        await action("undo");
-        await expect(frame.locator("#steps")).toHaveText("0");
-      } else if (name === "nonogram") {
-        await action("cell-0");
-        await expect(frame.locator('[data-cell="cell-0"]')).toHaveClass(
-          /filled/,
-        );
-        await frame.locator('[data-cell="cell-0"]').focus();
-        await page.keyboard.press("ArrowRight");
-        await expect(frame.locator('[data-cell="cell-1"]')).toBeFocused();
-        await frame.locator('[data-action="puzzle-1"]').click();
-        await expect(frame.getByRole("dialog")).toBeVisible();
-        await frame.locator("#cancel").click();
-        await expect(frame.locator('[data-action="puzzle-0"]')).toHaveAttribute(
-          "aria-selected",
-          "true",
-        );
-      } else if (name === "story-dice") {
-        await frame.locator('[data-field="lock-0"]').check();
-        await frame.locator("#draft").fill("保留这段测试草稿");
-        await action("roll");
-        await expect(frame.locator("#draft")).toHaveValue("保留这段测试草稿");
-        await expect(frame.locator('[data-field="lock-0"]')).toBeChecked();
-        await frame.locator('[data-action="use-prompt"]').click();
-        await expect(frame.getByRole("dialog")).toBeVisible();
-        await frame.locator("#cancel").click();
-        await expect(frame.locator("#draft")).toHaveValue("保留这段测试草稿");
+      const beforeServices = services.calls.length;
+      if (name === "scientific-calculator") {
+        await frame.locator("#expression").fill("2^3^2");
+        await action("calculate");
+        await expect(frame.locator("#result")).toHaveText("512");
+        await frame.locator("#angle").selectOption("deg");
+        await frame.locator("#expression").fill("sin(90)");
+        await action("calculate");
+        await expect(frame.locator("#result")).toHaveText("1");
+        await frame.locator("#functions").fill("x^2-4");
+        for (const [id, value] of [
+          ["xmin", "0"],
+          ["xmax", "3"],
+          ["ymin", "-5"],
+          ["ymax", "6"],
+        ])
+          await frame.locator("#" + id).fill(value);
+        await action("plot");
+        await expect(frame.locator("#legend span")).toHaveCount(1);
+        await frame.locator("#curve").selectOption("0");
+        await frame.locator("#a").fill("0");
+        await frame.locator("#b").fill("3");
+        await action("root");
+        expect(
+          Number(await frame.locator("#result").textContent()),
+        ).toBeCloseTo(2, 8);
+        await frame.locator("#b").fill("2");
+        await action("integrate");
+        expect(
+          Number(await frame.locator("#result").textContent()),
+        ).toBeCloseTo(-16 / 3, 8);
         await action("export");
         expect(
+          await page.evaluate(() => window.__extensionUiTest.artifacts.length),
+        ).toBeGreaterThan(0);
+        await expect(frame.locator("#artifacts button")).toBeVisible();
+        await frame.locator("#expression").fill("42+1");
+        await expect
+          .poll(() =>
+            frame
+              .locator("html")
+              .evaluate(
+                () => window.__sdkSnapshot?.checkpoint?.fields?.expression,
+              ),
+          )
+          .toBe("42+1");
+      } else if (name === "snake") {
+        await frame.locator("#start").click();
+        await frame.locator("#board").focus();
+        await page.keyboard.press("ArrowDown");
+        await expect
+          .poll(
+            () =>
+              frame
+                .locator("html")
+                .evaluate(() =>
+                  window.__sdkSnapshot?.checkpoint?.moves?.includes("down"),
+                ),
+            { timeout: 10000 },
+          )
+          .toBe(true);
+        await page.keyboard.press("Space");
+        await expect(frame.locator("#overlay")).toBeVisible();
+        await expect
+          .poll(() =>
+            frame
+              .locator("html")
+              .evaluate(() =>
+                window.__audioSuspendStates?.includes("suspended"),
+              ),
+          )
+          .toBe(true);
+        await frame.locator("#start").click();
+        await expect
+          .poll(() =>
+            frame
+              .locator("html")
+              .evaluate(() => window.__audioResumeStates?.includes("running")),
+          )
+          .toBe(true);
+        await page.keyboard.press("Space");
+        await expect(frame.locator("#overlay")).toBeVisible();
+        const replay = await frame.locator("html").evaluate(async () =>
+          starter.run("validate", {
+            checkpoint: JSON.stringify(window.__sdkSnapshot.checkpoint),
+          }),
+        );
+        expect(replay.description).toMatch(/Wasm/);
+      } else if (name === "lan-chat") {
+        await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
+        await frame.locator("#nickname").fill("Fixture tester");
+        await frame.locator("#start").click();
+        await expect(frame.locator("#stop")).toBeEnabled();
+        await frame.locator("#address").fill("192.168.1.21");
+        await frame.locator("#connect").click();
+        await expect(frame.locator("#contacts [data-peer]")).toHaveCount(1);
+        await frame.locator("#draft").fill("Fixture message 你好");
+        await frame.locator("#send").click();
+        await expect(frame.locator("#draft")).toHaveValue("");
+        await expect(frame.locator("#messages")).toContainText(
+          "Fixture message 你好",
+        );
+        const sendsBefore = services.calls.filter(
+          (call) => call.service === "lan" && call.request.action === "send",
+        ).length;
+        await frame.locator("#draft").fill("Multiline draft");
+        await frame.locator("#draft").press("Shift+Enter");
+        await expect(frame.locator("#draft")).toHaveValue("Multiline draft\n");
+        expect(
+          services.calls.filter(
+            (call) => call.service === "lan" && call.request.action === "send",
+          ).length,
+        ).toBe(sendsBefore);
+        await frame.locator("#draft").fill("IME draft");
+        await frame.locator("#draft").dispatchEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          isComposing: true,
+          bubbles: true,
+        });
+        await expect(frame.locator("#draft")).toHaveValue("IME draft");
+        expect(
+          services.calls.filter(
+            (call) => call.service === "lan" && call.request.action === "send",
+          ).length,
+        ).toBe(sendsBefore);
+        await frame.locator("#draft").fill("Keyboard message");
+        await frame.locator("#draft").press("Enter");
+        await expect(frame.locator("#draft")).toHaveValue("");
+        await expect(frame.locator("#messages")).toContainText(
+          "Keyboard message",
+        );
+        await frame.locator("#draft").fill("Retained unsent draft");
+        const chatLayout = await frame.locator(".chat").evaluate((node) => ({
+          headerBottom: node.querySelector(".chat-head").getBoundingClientRect()
+            .bottom,
+          logTop: node.querySelector("#messages").getBoundingClientRect().top,
+          logBottom: node.querySelector("#messages").getBoundingClientRect()
+            .bottom,
+          composerTop: node.querySelector("#composer").getBoundingClientRect()
+            .top,
+        }));
+        expect(chatLayout.headerBottom).toBeLessThanOrEqual(
+          chatLayout.logTop + 1,
+        );
+        expect(chatLayout.logBottom).toBeLessThanOrEqual(
+          chatLayout.composerTop + 1,
+        );
+        await frame.locator("#export").click();
+        await expect
+          .poll(() =>
+            page.evaluate(() => window.__extensionUiTest.artifacts.length),
+          )
+          .toBeGreaterThan(0);
+        await expect(frame.locator("#draft")).toHaveValue(
+          "Retained unsent draft",
+        );
+        expect(
           await page.evaluate(
             () => window.__extensionUiTest.artifacts[0].content,
           ),
-        ).toContain("保留这段测试草稿");
-        expect(
-          await page.evaluate(() => window.__extensionUiTest.work.dirty),
-        ).toBe(true);
-      } else if (name === "text-tools") {
-        await frame.locator("#text").fill("Hello 你好\n");
-        await frame.locator("#mode").selectOption("upper");
-        await action("apply");
-        await expect(frame.locator("#output")).toContainText("HELLO 你好");
-        await action("export-txt");
-        expect(
-          await page.evaluate(
-            () => window.__extensionUiTest.artifacts[0].content,
-          ),
-        ).toContain("HELLO 你好");
+        ).toContain("Fixture message 你好");
+      } else if (name === "wallpaper-browser") {
+        await expect(frame.locator("#import")).toBeEnabled();
+        await expect(frame.locator("#network-mode")).toHaveCSS(
+          "box-sizing",
+          "border-box",
+        );
+        await expect(frame.locator("#network-mode")).toHaveCSS(
+          "min-height",
+          `${parseFloat(profile.font) * 2}px`,
+        );
+        await frame.locator("#query").fill("landscape");
+        await frame.locator("#search").click();
+        await frame.locator('#results [data-page-id="123"]').click();
+        await expect(frame.locator("#preview-image")).toBeVisible();
+        await frame.locator("#download-original").click();
+        await expect(frame.locator("#notice")).toContainText(
+          profile.language === "zh" ? "取消" : "cancelled",
+        );
+        await frame.locator("#add-to-gallery").click();
+        await frame.locator("#local-tab").click();
+        const card = frame.locator(
+          '#gallery [data-wallpaper-id="' + "f".repeat(64) + '"]',
+        );
+        await expect(card).toBeVisible();
+        await card.locator('[data-action="apply"]').click();
+        await expect(card).toHaveClass(/active/);
+        await card.locator('[data-action="rename"]').click();
+        await expect(frame.locator("#confirm-dialog")).toBeVisible();
+        await frame.locator("#rename-value").fill("Unsaved rename");
+        await frame.locator("#dialog-cancel").click();
+        await expect(card.locator("h2")).toHaveText("Fixture landscape");
+        await card.locator('[data-action="remove"]').click();
+        await frame.locator("#dialog-cancel").click();
+        await expect(card).toBeVisible();
+        await frame.locator("#import").click();
+        await expect(frame.locator("#notice")).toContainText(
+          profile.language === "zh" ? "取消" : "cancelled",
+        );
+        await expect
+          .poll(() =>
+            frame
+              .locator("html")
+              .evaluate(() => window.__sdkSnapshot.checkpoint?.tab),
+          )
+          .toBe("local");
       } else {
-        await action("tab-text");
         await frame.locator('[data-field="text"]').fill("hello 你好");
+        await frame.locator('[data-field="mode"]').selectOption("upper");
         await action("analyze");
-        await expect(frame.getByRole("table").first()).toBeVisible();
-        await action("tab-game");
-        await action("hint");
-        await expect(frame.locator(".board")).toBeVisible();
+        await expect(frame.locator("#results pre")).toContainText("HELLO 你好");
+        await action("tab-data");
+        await action("data-sample-csv");
+        await expect(
+          frame.locator("#results table:visible").first(),
+        ).toBeVisible();
+        await action("tab-todo");
+        await frame.locator('[data-field="todo"]').fill("Retain task draft");
+        await action("tab-connections");
+        await action("tab-todo");
+        await expect(frame.locator('[data-field="todo"]')).toHaveValue(
+          "Retain task draft",
+        );
       }
+      // Import an unchanged export from real Wasm. Only the read-only Rust view
+      // validation boundary is substituted; this must never execute another Wasm action.
+      const toolsLabel =
+        profile.language === "zh" ? "扩展工具" : "Extension tools";
+      await page.getByRole("button", { name: toolsLabel, exact: true }).click();
+      const exportedBefore = await page.evaluate(
+        () => window.__extensionUiTest.exports.length,
+      );
+      await settled(page);
+      const hostDefaultControl = await page
+        .getByRole("button", {
+          name: profile.language === "zh" ? "导出会话" : "Export session",
+          exact: true,
+        })
+        .evaluate((node) => ({
+          height: node.getBoundingClientRect().height,
+          fontSize: getComputedStyle(node).fontSize,
+          boxSizing: getComputedStyle(node).boxSizing,
+        }));
+      expect(hostDefaultControl.height).toBeCloseTo(
+        parseFloat(profile.font) * 2,
+        0,
+      );
+      await page
+        .getByRole("button", {
+          name: profile.language === "zh" ? "导出会话" : "Export session",
+          exact: true,
+        })
+        .click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__extensionUiTest.exports.length),
+        )
+        .toBe(exportedBefore + 1);
+      const exported = await page.evaluate(() =>
+        window.__extensionUiTest.exports.at(-1),
+      );
+      await page.keyboard.press("Escape");
+      if (name === "scientific-calculator")
+        await frame.locator("#expression").fill("999");
+      else if (name === "lab")
+        await frame.locator('[data-field="todo"]').fill("Changed after export");
+      else if (name === "lan-chat")
+        await frame.locator("#draft").fill("Changed after export");
+      else if (name === "wallpaper-browser") {
+        await frame.locator("#remote-tab").click();
+        await frame.locator("#query").fill("Changed after export");
+      }
+      const importedFrame = await page.locator("iframe").elementHandle();
+      const callsBeforeImport = calls.length;
+      await page.getByRole("button", { name: toolsLabel, exact: true }).click();
+      await page
+        .getByLabel(
+          profile.language === "zh" ? "导入会话 JSON" : "Import session JSON",
+          { exact: true },
+        )
+        .setInputFiles({
+          name: exported.name,
+          mimeType: "application/json",
+          buffer: Buffer.from(exported.content),
+        });
+      await page
+        .getByRole("dialog")
+        .getByRole("button", {
+          name:
+            profile.language === "zh"
+              ? "替换当前会话"
+              : "Replace current session",
+          exact: true,
+        })
+        .click();
+      await importedFrame.waitForElementState("hidden");
+      await observeSdk(frame);
+      await idle(page, frame);
+      expect(calls.length).toBe(callsBeforeImport);
+      await page.keyboard.press("Escape");
       // Common host tools sit outside plugin content. Rebuilding only the frame
       // must restore checkpoints/fields without restarting the Wasm session.
       const beforeReload = calls.length;
@@ -441,18 +801,146 @@ try {
         .click();
       await page.keyboard.press("Escape");
       await oldFrame.waitForElementState("hidden");
-      await expect(frame.locator("main")).toHaveAttribute(
-        "aria-busy",
-        "false",
-        { timeout: 60000 },
-      );
+      await observeSdk(frame);
+      await idle(page, frame);
       expect(calls.length).toBe(beforeReload);
-      if (name === "story-dice") {
-        await expect(frame.locator("#draft")).toHaveValue("保留这段测试草稿");
-        await expect(frame.locator('[data-field="lock-0"]')).toBeChecked();
-      } else if (name === "text-tools") {
-        await expect(frame.locator("#text")).toHaveValue("Hello 你好\n");
-        await expect(frame.locator("#output")).toContainText("HELLO 你好");
+      if (name === "scientific-calculator") {
+        await expect(frame.locator("#expression")).toHaveValue("42+1");
+        await expect(frame.locator("#functions")).toHaveValue("x^2-4");
+      } else if (name === "snake") {
+        await expect(frame.locator("#overlay")).toBeVisible();
+        const checkpoint = await frame
+          .locator("html")
+          .evaluate(() => window.__sdkSnapshot.checkpoint);
+        await page.waitForTimeout(250);
+        expect(
+          await frame
+            .locator("html")
+            .evaluate(() => window.__sdkSnapshot.checkpoint.moves),
+        ).toEqual(checkpoint.moves);
+      } else if (name === "lan-chat")
+        await expect(frame.locator("#draft")).toHaveValue(
+          "Retained unsent draft",
+        );
+      else if (name === "wallpaper-browser") {
+        await expect(frame.locator("#query")).toHaveValue("landscape");
+        await expect(frame.locator("#local-tab")).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+      } else
+        await expect(frame.locator('[data-field="todo"]')).toHaveValue(
+          "Retain task draft",
+        );
+      const beforeShort = await page.locator("iframe").boundingBox();
+      await page.evaluate(() => {
+        window.__shortTaskSpinner = false;
+        window.__shortTaskObserver = new MutationObserver(() => {
+          if (
+            document.querySelector(
+              ".app-main .animate-spin,.app-main [role=progressbar]",
+            )
+          )
+            window.__shortTaskSpinner = true;
+        });
+        window.__shortTaskObserver.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+        });
+      });
+      await frame
+        .locator("html")
+        .evaluate(async () =>
+          starter.checkpoint(
+            window.__sdkSnapshot.checkpoint,
+            window.__sdkSnapshot.dirty,
+          ),
+        );
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      const afterShort = await page.locator("iframe").boundingBox();
+      expect(Math.abs(afterShort.y - beforeShort.y)).toBeLessThanOrEqual(0.5);
+      expect(
+        Math.abs(afterShort.height - beforeShort.height),
+      ).toBeLessThanOrEqual(0.5);
+      expect(
+        await page.evaluate(() => {
+          window.__shortTaskObserver.disconnect();
+          return window.__shortTaskSpinner;
+        }),
+      ).toBe(false);
+      await settled(frame);
+      await expect
+        .poll(() =>
+          frame
+            .locator("html")
+            .evaluate(() =>
+              Array.from(document.fonts).some(
+                (face) =>
+                  face.family.replaceAll('"', "") === "Geist Variable" &&
+                  face.status === "loaded",
+              ),
+            ),
+        )
+        .toBe(true);
+      await expect(frame.locator("style[data-starter-defaults]")).toHaveCount(
+        1,
+      );
+      const defaults = await frame.locator("html").evaluate(() => ({
+        scrollbar: getComputedStyle(
+          document.documentElement,
+          "::-webkit-scrollbar",
+        ).width,
+        font: getComputedStyle(document.documentElement).fontFamily,
+        controls: [...document.querySelectorAll("input,select,button")]
+          .filter((node) => node.getBoundingClientRect().height > 0)
+          .slice(0, 15)
+          .map((node) => ({
+            id: node.id,
+            action: node.dataset.action,
+            height: node.getBoundingClientRect().height,
+            minHeight: getComputedStyle(node).minHeight,
+            fontSize: getComputedStyle(node).fontSize,
+            boxSizing: getComputedStyle(node).boxSizing,
+          })),
+      }));
+      defaults.hostDefaultControl = hostDefaultControl;
+      expect(defaults.scrollbar).toBe("8px");
+      if (name === "lab") {
+        expect(
+          defaults.controls.find((control) => control.id === "field-todo")
+            .height,
+        ).toBeCloseTo(hostDefaultControl.height, 0);
+        defaults.tabs = await frame
+          .locator("#tabs button")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => ({
+              selected: node.getAttribute("aria-selected") === "true",
+              background: getComputedStyle(node).backgroundColor,
+              color: getComputedStyle(node).color,
+            })),
+          );
+        const selectedTab = defaults.tabs.find((tab) => tab.selected);
+        const otherTabs = defaults.tabs.filter((tab) => !tab.selected);
+        expect(otherTabs).toHaveLength(3);
+        for (const tab of otherTabs)
+          expect(tab.background).not.toBe(selectedTab.background);
+      }
+      if (["lan-chat", "wallpaper-browser"].includes(name)) {
+        const normal = defaults.controls.find(
+          (control) =>
+            control.id === (name === "lan-chat" ? "start" : "settings"),
+        );
+        expect(normal.boxSizing).toBe("border-box");
+        expect(parseFloat(normal.minHeight)).toBe(parseFloat(profile.font) * 2);
+        expect(parseFloat(normal.fontSize)).toBe(
+          parseFloat(profile.font) * 0.875,
+        );
       }
       const overflow = await page.evaluate(() => ({
         root: document.documentElement.scrollWidth > innerWidth + 1,
@@ -489,13 +977,29 @@ try {
       ).toBe(false);
       if (profile.window === "true") {
         await expect(
-          page.getByRole("button", { name: "切换主题" }),
-        ).toHaveCount(0);
-        await expect(page.getByRole("combobox", { name: "语言" })).toHaveCount(
-          0,
-        );
+          page.getByRole("button", {
+            name: profile.language === "zh" ? "切换主题" : "Toggle theme",
+            exact: true,
+          }),
+        ).toBeVisible();
         await expect(
-          page.getByRole("button", { name: "最小化" }),
+          page.getByRole("combobox", {
+            name: profile.language === "zh" ? "语言" : "Language",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", {
+            name:
+              profile.language === "zh" ? "打开快速操作" : "Open quick actions",
+            exact: true,
+          }),
+        ).toHaveCount(0);
+        await expect(
+          page.getByRole("button", {
+            name: profile.language === "zh" ? "最小化" : "Minimize",
+            exact: true,
+          }),
         ).toBeVisible();
       }
       const violations = (
@@ -516,18 +1020,163 @@ try {
       });
       report.push({
         plugin: name,
+        inputHashes: plugins.find((plugin) => plugin.name === name).inputHashes,
         profile,
+        authorUiLanguageCoverage:
+          name === "lan-chat"
+            ? "Chinese author UI; English profile covers host and SDK locale/theme only"
+            : "Chinese and English author UI",
         actualWasmActions: calls.slice(before).map((call) => call.action),
         errors,
         warnings,
         axeViolations: violations.length,
         nativeIpc: false,
+        defaults,
+        shortCheckpointStable: true,
+        serviceBoundaryMock: services.calls.slice(beforeServices),
+        sessionViewValidationBoundaryMock: await page.evaluate(
+          () =>
+            window.__extensionUiTest.sessionViewValidationBoundaryMockCalls > 0,
+        ),
       });
+      await writeFile(
+        join(output, "progress.json"),
+        JSON.stringify({ cases: report }, null, 2),
+      );
       console.log(
         `PASS ${name} ${profile.language} ${profile.width}px ${profile.window === "true" ? "standalone" : "embedded"}`,
       );
       await page.close();
     }
+    await context.close();
+  }
+  if (
+    !process.argv.includes("--security-only") &&
+    (!selectedNames.length || selectedNames.includes("scientific-calculator"))
+  ) {
+    const context = await browser.newContext({
+      viewport: { width: 1120, height: 800 },
+      reducedMotion: "no-preference",
+    });
+    await context.addInitScript({ content: init });
+    const first = await context.newPage(),
+      second = await context.newPage();
+    const url = `http://127.0.0.1:${port}/?plugin=scientific-calculator&window=true&language=zh&theme=light&motion=full&font=16px`;
+    await first.goto(url);
+    const child = first.frameLocator("iframe");
+    await expect(child.locator("h1")).toBeVisible({ timeout: 60000 });
+    await observeSdk(child);
+    await idle(first, child);
+    await child.locator("#expression").fill("123+4");
+    await expect
+      .poll(() =>
+        child
+          .locator("html")
+          .evaluate(() => window.__sdkSnapshot?.checkpoint?.fields?.expression),
+      )
+      .toBe("123+4");
+    await second.goto(url);
+    await expect(second.frameLocator("iframe").locator("h1")).toBeVisible({
+      timeout: 60000,
+    });
+    await second.evaluate(() =>
+      window.__extensionSettingsTest.update({
+        language: "en",
+        accent: "indigo",
+        radius: "round",
+        font: "mono",
+      }),
+    );
+    await expect(child.locator("html")).toHaveAttribute("lang", "en");
+    await idle(first, child);
+    await expect(child.locator("#expression")).toHaveValue("123+4");
+    const hostFont = await first
+      .locator("html")
+      .evaluate((node) => getComputedStyle(node).fontFamily);
+    expect(
+      await child
+        .locator("html")
+        .evaluate((node) => getComputedStyle(node).fontFamily),
+    ).toBe(hostFont);
+    const hostRadius = await first
+      .locator("html")
+      .evaluate((node) =>
+        getComputedStyle(node).getPropertyValue("--radius").trim(),
+      );
+    expect(
+      await child
+        .locator("html")
+        .evaluate((node) =>
+          getComputedStyle(node).getPropertyValue("--radius").trim(),
+        ),
+    ).toBe(hostRadius);
+    await first.bringToFront();
+    await first
+      .getByRole("button", { name: "Toggle theme", exact: true })
+      .click();
+    await expect
+      .poll(
+        () =>
+          child
+            .locator("html")
+            .evaluate((node) => node.classList.contains("dark")),
+        { timeout: 10000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          child
+            .locator("html")
+            .evaluate(() => window.__viewTransitionProbe.clips.length),
+        { timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
+    const childTransition = await child
+      .locator("html")
+      .evaluate(() => window.__viewTransitionProbe);
+    expect(childTransition.starts).toBeGreaterThan(0);
+    expect(childTransition.clips.at(-1).frames.clipPath[0]).toMatch(
+      /^circle\(0px at/,
+    );
+    expect(childTransition.clips.at(-1).options.pseudoElement).toBe(
+      "::view-transition-new(root)",
+    );
+    expect(childTransition.clips.at(-1).options.duration).toBe(520);
+    expect(
+      await first.evaluate(() => window.__viewTransitionProbe.starts),
+    ).toBeGreaterThan(0);
+    await settled(child);
+    await second.evaluate(() =>
+      window.__extensionSettingsTest.update({ theme: "light", language: "zh" }),
+    );
+    await expect(child.locator("html")).toHaveAttribute("lang", "zh-CN");
+    await expect
+      .poll(() =>
+        child
+          .locator("html")
+          .evaluate((node) => node.classList.contains("light")),
+      )
+      .toBe(true);
+    await idle(first, child);
+    await expect(child.locator("#expression")).toHaveValue("123+4");
+    await writeFile(
+      join(output, "cross-window-settings.json"),
+      JSON.stringify(
+        {
+          settingsBoundaryMock: true,
+          nativeSettingsSync: false,
+          actualSdk: true,
+          realViewTransition: childTransition,
+          retainedDraft: true,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      "PASS reactive cross-window settings fixture, real SDK snapshots/font/radius and circular View Transition",
+    );
     await context.close();
   }
   const securityPage = await browser.newPage();
@@ -538,7 +1187,7 @@ try {
     return route.abort();
   });
   await securityPage.goto(
-    `http://127.0.0.1:${port}/?plugin=text-tools&window=true`,
+    `http://127.0.0.1:${port}/?plugin=scientific-calculator&window=true`,
   );
   const securityFrame = securityPage.frameLocator("iframe");
   await expect(securityFrame.locator("main")).toHaveAttribute(
@@ -617,15 +1266,65 @@ try {
         provenance: plugins.map((plugin) => ({
           id: plugin.manifest.id,
           version: plugin.manifest.version,
+          minHostVersion: plugin.manifest.minHostVersion,
           wasm: plugin.item.package.sha256,
           ui: plugin.item.package.uiDocuments,
         })),
         nativeIpc: false,
+        serviceNativeBoundary:
+          "LAN and wallpaper services are explicit browser boundaryMock substitutes",
+        sessionValidationNativeBoundary:
+          "Imports reuse unchanged real-Wasm exports; Rust view parsing is boundaryMock here",
       },
       null,
       2,
     ),
   );
+} catch (error) {
+  const pages = [];
+  for (const context of browser?.contexts() ?? [])
+    for (const page of context.pages()) {
+      const state = { url: page.url() };
+      try {
+        state.child = await page
+          .frameLocator("iframe")
+          .locator("html")
+          .evaluate(() => ({
+            notice: document.querySelector("#notice")?.textContent,
+            error: document.querySelector("#error")?.textContent,
+            draft: document.querySelector("#draft")?.value,
+            snapshotBusy: window.__sdkSnapshot?.busy,
+            defaultControl: [
+              ...document.querySelectorAll("#start,#field-todo,#network-mode"),
+            ].map((node) => ({
+              id: node.id,
+              boxSizing: getComputedStyle(node).boxSizing,
+              height: node.getBoundingClientRect().height,
+              fontSize: getComputedStyle(node).fontSize,
+            })),
+          }));
+        await page.screenshot({
+          path: join(output, `failure-${pages.length}.png`),
+        });
+      } catch {
+        // The failed page may already have detached its opaque child.
+      }
+      pages.push(state);
+    }
+  await writeFile(
+    join(output, "failure.json"),
+    JSON.stringify(
+      {
+        message: error.message,
+        pages,
+        cases: report,
+        services: services.calls,
+      },
+      null,
+      2,
+    ),
+  );
+  throw error;
 } finally {
   await browser?.close();
   if (server)
