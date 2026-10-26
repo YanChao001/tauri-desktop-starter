@@ -1,17 +1,35 @@
+import { useEffect } from "react";
 import { AlertCircleIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { useSettings } from "@/providers/settings";
 import { useI18n } from "@/providers/i18n";
 export function SettingsPersistence({
   compact = false,
+  showFutureWarning = true,
 }: {
   compact?: boolean;
+  showFutureWarning?: boolean;
 }) {
   const { persistence, persistenceError, retrySave } = useSettings();
   const { t } = useI18n();
-  if (compact && persistence !== "error") return null;
   const failed = persistence === "error";
   const busy = persistence === "loading" || persistence === "saving";
+  const future = failed && persistenceError === "FUTURE_SETTINGS_VERSION";
+  useEffect(() => {
+    // 由全局常驻的 compact 实例维护提示，页面切换不撤掉仍有效的保存错误。
+    if (!compact) return;
+    const id = "settings-persistence";
+    if (!failed || future) {
+      toast.dismiss(id);
+      return;
+    }
+    toast.error(t("settings.persistenceError"), {
+      id,
+      duration: Infinity,
+      action: { label: t("common.retry"), onClick: retrySave },
+    });
+  }, [compact, failed, future, persistenceError, retrySave, t]);
+  if (compact && !future) return null;
   if (!failed)
     return busy ? (
       <span role="status" className="sr-only">
@@ -22,10 +40,13 @@ export function SettingsPersistence({
         )}
       </span>
     ) : null;
-  const text =
-    persistenceError === "FUTURE_SETTINGS_VERSION"
-      ? t("settings.persistenceFuture")
-      : t("settings.persistenceError");
+  if (!future)
+    return (
+      <span role="status" className="sr-only">
+        {t("settings.persistenceError")}
+      </span>
+    );
+  if (!showFutureWarning) return null;
   return (
     <div
       role="alert"
@@ -33,13 +54,8 @@ export function SettingsPersistence({
     >
       <span className="flex items-center gap-2">
         <AlertCircleIcon className="size-4 shrink-0 text-destructive" />
-        {text}
+        {t("settings.persistenceFuture")}
       </span>
-      {failed && persistenceError !== "FUTURE_SETTINGS_VERSION" ? (
-        <Button variant="outline" size="sm" onClick={retrySave}>
-          {t("common.retry")}
-        </Button>
-      ) : null}
     </div>
   );
 }

@@ -10,6 +10,8 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { RecordsTable } from "./records-table";
 import { saveTextExport } from "@/lib/tauri";
+import { toast } from "sonner";
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import type { UnsavedWork } from "@/providers/unsaved-work";
 
 vi.mock("@/lib/tauri", async (original) => ({
@@ -98,7 +100,10 @@ it("uses stable selection through filtering and retains failed bulk records", ()
     screen.getByRole("checkbox", { name: "Select all filtered records" }),
   ).toBePartiallyChecked();
   fireEvent.click(screen.getByRole("button", { name: "Archive selected" }));
-  expect(screen.getByRole("status")).toHaveTextContent("1 succeeded, 1 failed");
+  expect(toast.error).toHaveBeenCalledWith(
+    expect.stringContaining("1 succeeded, 1 failed"),
+  );
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Select record 7")).toBeChecked();
   expect(screen.getByLabelText("Select record 2")).not.toBeChecked();
   fireEvent.change(screen.getByRole("searchbox"), {

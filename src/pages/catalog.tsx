@@ -69,6 +69,11 @@ export default function Catalog() {
           <h3 id="capability-list-heading" className="text-base font-medium">
             {t("catalog.modules")}
           </h3>
+          <HelpTooltip
+            label={t("common.helpFor", { name: t("catalog.modules") })}
+          >
+            {t("catalog.statusHint")}
+          </HelpTooltip>
           <Input
             type="search"
             aria-label={t("catalog.search")}
@@ -94,9 +99,6 @@ export default function Catalog() {
             </SelectContent>
           </Select>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {t("catalog.statusHint")}
-        </p>
         <div className="grid items-start gap-3 md:grid-cols-2">
           {routes.map((route) => {
             const detail = capabilityFor(route.path);
@@ -214,3 +216,4 @@ export default function Catalog() {
     </div>
   );
 }
+import { HelpTooltip } from "@/components/help-tooltip";

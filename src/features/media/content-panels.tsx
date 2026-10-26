@@ -1,14 +1,10 @@
 import { SafeMarkdown } from "@/components/safe-markdown";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/providers/i18n";
 import { markdownExample, mediaKind } from "./model";
@@ -19,8 +15,14 @@ export function MarkdownPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.media.markdown")}</CardTitle>
-        <CardDescription>{t("labs.media.markdownHint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.media.markdown")}
+          <HelpTooltip
+            label={`${t("labs.media.markdown")} · ${t("title.help")}`}
+          >
+            {t("labs.media.markdownHint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="grid items-start gap-4 lg:grid-cols-2">
         <div className="space-y-2">
@@ -61,9 +63,6 @@ export function MediaPreview() {
     url: string;
     kind: "image" | "audio" | "video";
   } | null>(null);
-  const [error, setError] = useState<"invalidFile" | "decodeError" | null>(
-    null,
-  );
   const player = useRef<HTMLMediaElement | null>(null);
   useEffect(() => {
     const current = player.current;
@@ -75,8 +74,12 @@ export function MediaPreview() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.media.file")}</CardTitle>
-        <CardDescription>{t("labs.media.fileHint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.media.file")}
+          <HelpTooltip label={`${t("labs.media.file")} · ${t("title.help")}`}>
+            {t("labs.media.fileHint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <Label htmlFor="media-file">{t("labs.media.choose")}</Label>
@@ -91,10 +94,9 @@ export function MediaPreview() {
             if (!file) return;
             const kind = mediaKind(file);
             if (!kind) {
-              setError("invalidFile");
+              toast.error(t("labs.media.invalidFile"));
               return;
             }
-            setError(null);
             setPreview({
               name: file.name,
               url: URL.createObjectURL(file),
@@ -102,11 +104,6 @@ export function MediaPreview() {
             });
           }}
         />
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {t(`labs.media.${error}`)}
-          </p>
-        ) : null}
         {preview ? (
           <div className="space-y-3 rounded-md bg-muted/40 p-3">
             <p className="break-all text-xs text-muted-foreground">
@@ -116,7 +113,7 @@ export function MediaPreview() {
               <img
                 src={preview.url}
                 alt={preview.name}
-                onError={() => setError("decodeError")}
+                onError={() => toast.error(t("labs.media.decodeError"))}
                 className="mx-auto max-h-80 max-w-full rounded-md object-contain"
               />
             ) : preview.kind === "audio" ? (
@@ -129,7 +126,7 @@ export function MediaPreview() {
                 src={preview.url}
                 className="w-full"
                 aria-label={preview.name}
-                onError={() => setError("decodeError")}
+                onError={() => toast.error(t("labs.media.decodeError"))}
               />
             ) : (
               <video
@@ -141,14 +138,13 @@ export function MediaPreview() {
                 src={preview.url}
                 className="max-h-80 w-full rounded-md"
                 aria-label={preview.name}
-                onError={() => setError("decodeError")}
+                onError={() => toast.error(t("labs.media.decodeError"))}
               />
             )}
             <Button
               variant="outline"
               onClick={() => {
                 setPreview(null);
-                setError(null);
               }}
             >
               {t("labs.media.clear")}

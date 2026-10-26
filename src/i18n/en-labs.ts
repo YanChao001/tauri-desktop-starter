@@ -41,6 +41,7 @@ export const enLabs = {
   "labs.network.cacheHint":
     "GET stays fresh for 30 seconds. POST never retries automatically. Cache belongs to this page session only.",
   "labs.network.offline": "Simulate offline",
+  "labs.network.offlineState": "Offline · requests paused",
   "labs.network.offlineHint":
     "New requests are paused offline. Existing cached data remains readable. Turn simulation off or restore the network to retry.",
   "labs.network.message": "POST content",

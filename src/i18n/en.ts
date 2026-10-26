@@ -71,6 +71,8 @@ export const en = {
   "common.resetDone": "Preferences reset",
   "common.cancel": "Cancel",
   "common.close": "Close",
+  "common.helpFor": "Help for {name}",
+  "common.details": "View details",
   "common.renderError": "The interface encountered an error",
   "common.reload": "Reload",
   "common.language": "Language",
@@ -217,6 +219,11 @@ export const en = {
   "settings.languageDescription":
     "Switch the interface language instantly and remember your choice",
   "settings.libraryCount": "{count} / {max} images",
+  "settings.wallpapersImported": "Added {count} wallpapers",
+  "settings.wallpaperImportFailed": "Could not import {count} images",
+  "settings.wallpaperImportDetails": "Images not imported",
+  "settings.wallpaperRemoved": "Wallpaper removed",
+  "settings.wallpaperRenamed": "Wallpaper name updated",
   "settings.libraryEmpty":
     "Add your favorite images to start a wallpaper collection",
   "settings.libraryFull":

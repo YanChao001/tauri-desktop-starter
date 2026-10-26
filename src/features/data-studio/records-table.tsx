@@ -1,5 +1,6 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { CsvImport } from "./csv-import";
 import { recordsCsv } from "./csv";
 import { saveTextExport, NativeBridgeError } from "@/lib/tauri";
@@ -24,13 +25,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -102,10 +97,6 @@ export function RecordsTable() {
   const [widths, setWidths] = useState(INITIAL_WIDTHS);
   const [detail, setDetail] = useState<DemoRecord | null>(null);
   const detailOrigin = useRef<HTMLButtonElement | null>(null);
-  const [batch, setBatch] = useState<{
-    success: number;
-    failed: number;
-  } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   // 表格按 data 缓存 accessor 值；翻译变化必须同时更新行模型和搜索值。
   const data = useMemo(
@@ -278,7 +269,6 @@ export function RecordsTable() {
     setRecords(next);
     setDirty(true);
     setImported(true);
-    setBatch(null);
     setDetail(null);
     table.setRowSelection({});
     table.setGlobalFilter("");
@@ -293,16 +283,22 @@ export function RecordsTable() {
     table.setRowSelection(
       Object.fromEntries(result.failed.map((id) => [String(id), true])),
     );
-    setBatch({
+    const message = t("labs.data.batchResult", {
       success: result.successful.length,
       failed: result.failed.length,
     });
+    if (result.failed.length) toast.error(message);
+    else toast.success(message);
   }
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.data.records")}</CardTitle>
-        <CardDescription>{t("labs.data.batchHint")}</CardDescription>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>{t("labs.data.records")}</CardTitle>
+          <HelpTooltip label={`${t("labs.data.records")} · ${t("title.help")}`}>
+            {t("labs.data.batchHint")}
+          </HelpTooltip>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <CsvImport
@@ -404,9 +400,15 @@ export function RecordsTable() {
             {t("labs.data.archive")}
           </Button>
         </div>
-        <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-          <span>{t("labs.data.selected", { count: selected.length })}</span>
-          <span>{t("labs.data.virtualHint")}</span>
+        <div className="flex h-6 min-w-0 items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate tabular-nums">
+            {t("labs.data.selected", { count: selected.length })}
+          </span>
+          <HelpTooltip
+            label={`${t("labs.data.records")} · ${t("labs.data.virtual")}`}
+          >
+            {t("labs.data.virtualHint")}
+          </HelpTooltip>
         </div>
         <Dialog
           open={replacement !== null}
@@ -434,11 +436,6 @@ export function RecordsTable() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        {batch ? (
-          <p role="status" className="rounded-md bg-muted p-3 text-sm">
-            {t("labs.data.batchResult", batch)}
-          </p>
-        ) : null}
         <div
           ref={scroll}
           tabIndex={0}

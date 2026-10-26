@@ -3,14 +3,9 @@ import { toast } from "sonner";
 import { DownloadIcon, RotateCcwIcon, ExternalLinkIcon } from "lucide-react";
 import { ExternalLink } from "@/components/external-link";
 import { SettingRow } from "@/components/setting-row";
-import { NativePage, ResourceError } from "@/components/native-page";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardDescription,
-} from "@/components/ui/card";
+import { NativePage } from "@/components/native-page";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -49,6 +44,20 @@ export default function Updates() {
     : null;
   const restartingRef = useRef(false);
   const mounted = useRef(false);
+  const notifiedError = useRef<unknown>(null);
+  useEffect(() => {
+    if (!error) notifiedError.current = null;
+    else if (notifiedError.current !== error) {
+      notifiedError.current = error;
+      toast.error(nativeErrorText(error, latest), {
+        id: "updates-error",
+        action: {
+          label: latest("common.retry"),
+          onClick: () => void checkUpdates(),
+        },
+      });
+    }
+  }, [error, latest]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -62,6 +71,29 @@ export default function Updates() {
         Math.round(((progress.downloaded ?? 0) / progress.total) * 100),
       )
     : undefined;
+  const statusMessage =
+    phase === "downloading"
+      ? t("updates.downloading", {
+          progress:
+            percent === undefined
+              ? `${Math.round((progress?.downloaded ?? 0) / 1024)} KB`
+              : `${percent}%`,
+        })
+      : phase === "installing"
+        ? t("updates.installing")
+        : phase === "installed"
+          ? t("updates.installed")
+          : status && !status.configured
+            ? t("updates.notConfigured")
+            : status?.available
+              ? t("updates.available", { version: status.version ?? "" })
+              : phase === "ready" && status
+                ? t("updates.latest")
+                : phase === "checking"
+                  ? t("updates.checking")
+                  : phase === "error"
+                    ? ""
+                    : t("updates.idle");
   async function install() {
     if (
       installingRef.current ||
@@ -98,15 +130,16 @@ export default function Updates() {
       title={t("updates.title")}
       description={t("updates.description")}
     >
-      <ResourceError error={error} retry={() => void checkUpdates()} />
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">
+          <CardTitle className="flex items-center gap-2 text-sm">
             {t("updates.configuration")}
+            <HelpTooltip
+              label={`${t("updates.configuration")} · ${t("title.help")}`}
+            >
+              {t("updates.configurationDescription")}
+            </HelpTooltip>
           </CardTitle>
-          <CardDescription>
-            {t("updates.configurationDescription")}
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -123,11 +156,17 @@ export default function Updates() {
           </div>
           <SettingRow
             label={
-              <label htmlFor="auto-check-updates">
-                {t("updates.autoCheck")}
-              </label>
+              <span className="flex items-center gap-2">
+                <label htmlFor="auto-check-updates">
+                  {t("updates.autoCheck")}
+                </label>
+                <HelpTooltip
+                  label={`${t("updates.autoCheck")} · ${t("title.help")}`}
+                >
+                  {t("updates.autoCheckHint")}
+                </HelpTooltip>
+              </span>
             }
-            hint={t("updates.autoCheckHint")}
           >
             <Switch
               id="auto-check-updates"
@@ -157,80 +196,58 @@ export default function Updates() {
               disabled={busy || phase === "installed"}
               data-testid="check-updates"
             >
-              {t(phase === "checking" ? "updates.checking" : "updates.check")}
+              {t(
+                phase === "error"
+                  ? "common.retry"
+                  : phase === "checking"
+                    ? "updates.checking"
+                    : "updates.check",
+              )}
             </Button>
             {status ? (
               <span className="text-xs text-muted-foreground">
                 {t("updates.current", { version: status.currentVersion })}
               </span>
             ) : null}
+            {checkedAt ? (
+              <HelpTooltip label={`${t("updates.check")} · ${t("title.help")}`}>
+                {t("updates.lastChecked", { time: checkedAt })}
+              </HelpTooltip>
+            ) : null}
           </div>
-          {checkedAt ? (
-            <p className="text-xs text-muted-foreground">
-              {t("updates.lastChecked", { time: checkedAt })}
-            </p>
-          ) : phase === "idle" ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              {t("updates.idle")}
-            </p>
-          ) : null}
-          {status && !status.configured ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              {t("updates.notConfigured")}
-            </p>
-          ) : status && !status.available && phase === "ready" ? (
-            <p role="status" className="text-sm">
-              {t("updates.latest")}
-            </p>
-          ) : null}
-          {status?.available ? (
-            <div className="space-y-3">
-              <p className="font-medium">
-                {t("updates.available", { version: status.version ?? "" })}
-              </p>
-              {status.body ? (
-                <div>
-                  <h3 className="mb-1 text-xs text-muted-foreground">
-                    {t("updates.releaseNotes")}
-                  </h3>
-                  <p className="whitespace-pre-wrap text-sm">{status.body}</p>
-                </div>
-              ) : null}
-              {phase !== "installed" ? (
-                <Button
-                  onClick={() => setConfirmInstall(operationId)}
-                  disabled={busy}
-                >
-                  <DownloadIcon />
-                  {t("updates.install")}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-          {phase === "downloading" ? (
-            <div role="status" className="space-y-2">
-              <p className="text-xs">
-                {t("updates.downloading", {
-                  progress:
-                    percent === undefined
-                      ? `${Math.round((progress?.downloaded ?? 0) / 1024)} KB`
-                      : `${percent}%`,
-                })}
-              </p>
+          <div role="status" className="h-12 overflow-auto text-sm">
+            {statusMessage}
+          </div>
+          <div className="h-2">
+            {phase === "downloading" ? (
               <Progress value={percent} aria-label={t("updates.install")} />
-            </div>
-          ) : null}
-          {phase === "installing" ? (
-            <p role="status">{t("updates.installing")}</p>
-          ) : null}
-          {phase === "installed" ? (
-            <div role="status" className="space-y-3">
-              <p>{t("updates.installed")}</p>
+            ) : null}
+          </div>
+          <div className="min-h-8">
+            {phase === "installed" ? (
               <Button onClick={() => setConfirmRestart(true)}>
                 <RotateCcwIcon />
                 {t("updates.restart")}
               </Button>
-            </div>
+            ) : status?.available ? (
+              <Button
+                onClick={() => setConfirmInstall(operationId)}
+                disabled={busy}
+              >
+                <DownloadIcon />
+                {t("updates.install")}
+              </Button>
+            ) : null}
+          </div>
+          {status?.available && status.body ? (
+            <details className="text-sm">
+              <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t("updates.releaseNotes")}
+              </summary>
+              <p className="mt-2 h-48 overflow-auto whitespace-pre-wrap break-words">
+                {status.body}
+              </p>
+            </details>
           ) : null}
         </CardContent>
       </Card>

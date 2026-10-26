@@ -14,6 +14,7 @@ import { SkinPicker } from "@/components/skin-picker";
 import { SettingsSearch } from "@/components/settings-search";
 import { SettingsPersistence } from "@/components/settings-persistence";
 import { SettingRow } from "@/components/setting-row";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,13 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -43,6 +38,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import {
@@ -106,7 +107,6 @@ export default function Settings() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [windowGeometry, setGeometry] = useState<WindowGeometry | null>(null);
   const [windowError, setWindowError] = useState<unknown>(null);
-  const [resetError, setResetError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
   const mounted = useRef(false);
   const running = useRef(false);
@@ -194,7 +194,13 @@ export default function Settings() {
         toast.success(translateLatest("settings.windowSizeApplied"));
       }
     } catch (error) {
-      if (mounted.current) setWindowError(error);
+      if (mounted.current)
+        toast.error(nativeErrorText(error, translateLatest), {
+          action: {
+            label: translateLatest("common.refresh"),
+            onClick: () => void refreshWindow(),
+          },
+        });
     } finally {
       running.current = false;
       if (mounted.current) setPending(false);
@@ -206,7 +212,6 @@ export default function Settings() {
     running.current = true;
     geometryGeneration.current++;
     setPending(true);
-    setResetError(null);
     try {
       const geometry = native ? await resetWindowGeometry(false) : null;
       if (geometry && mounted.current) acceptGeometry(geometry);
@@ -216,7 +221,7 @@ export default function Settings() {
         toast.success(translateLatest("common.resetDone"));
       }
     } catch (error) {
-      if (mounted.current) setResetError(error);
+      if (mounted.current) toast.error(nativeErrorText(error, translateLatest));
     } finally {
       running.current = false;
       if (mounted.current) setPending(false);
@@ -298,9 +303,14 @@ export default function Settings() {
   return (
     <div className="studio-page settings-studio">
       <div className="studio-intro">
-        <span className="studio-eyebrow">{t("studio.settingsEyebrow")}</span>
-        <h2>{t("settings.title")}</h2>
-        <p>{t("settings.subtitle")}</p>
+        <div className="flex items-center gap-2">
+          <h2>{t("settings.title")}</h2>
+          <HelpTooltip
+            label={t("common.helpFor", { name: t("settings.title") })}
+          >
+            {t("settings.subtitle")}
+          </HelpTooltip>
+        </div>
       </div>
 
       <SettingsSearch />
@@ -316,9 +326,6 @@ export default function Settings() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">{t("settings.appearance")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t("settings.appearanceHint")}
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <SettingRow id="settings-language" label={t("common.language")}>
@@ -359,12 +366,7 @@ export default function Settings() {
             tabIndex={-1}
             className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">{t("settings.accent")}</Label>
-              <span className="text-[11px] text-muted-foreground">
-                {t("settings.accentHint")}
-              </span>
-            </div>
+            <Label className="text-xs">{t("settings.accent")}</Label>
             <div className="flex flex-wrap gap-2">
               {ACCENTS.map((accent) => {
                 const active = settings.accent === accent;
@@ -551,12 +553,20 @@ export default function Settings() {
 
       <Card id="settings-window" tabIndex={-1}>
         <CardHeader>
-          <CardTitle className="text-sm">{t("settings.windowSize")}</CardTitle>
-          <CardDescription className="text-xs">
-            {t(
-              native ? "settings.windowSizeHint" : "settings.windowBrowserHint",
-            )}
-          </CardDescription>
+          <div className="flex items-center gap-1.5">
+            <CardTitle className="text-sm">
+              {t("settings.windowSize")}
+            </CardTitle>
+            <HelpTooltip
+              label={t("common.helpFor", { name: t("settings.windowSize") })}
+            >
+              {t(
+                native
+                  ? "settings.windowSizeHint"
+                  : "settings.windowBrowserHint",
+              )}
+            </HelpTooltip>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div
@@ -578,7 +588,7 @@ export default function Settings() {
                 preset.width === windowGeometry.width &&
                 preset.height === windowGeometry.height;
               const reasonId = `window-${preset.id}-unavailable`;
-              return (
+              const control = (
                 <button
                   key={preset.id}
                   data-window-preset={preset.id}
@@ -598,6 +608,7 @@ export default function Settings() {
                     active
                       ? "border-primary bg-primary/5"
                       : "hover:bg-muted/50",
+                    unavailable && "pointer-events-none h-full w-full",
                   )}
                 >
                   <span className="text-sm">{t(preset.label)}</span>
@@ -607,44 +618,87 @@ export default function Settings() {
                       : t("settings.windowDefaultSize")}
                   </span>
                   {preset.id === "standard" && fittedDefault ? (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="sr-only">
                       {t("settings.windowSizeFitted")}
                     </span>
                   ) : null}
                   {unavailable ? (
-                    <span
-                      id={reasonId}
-                      className="text-xs text-muted-foreground"
-                    >
+                    <span id={reasonId} className="sr-only">
                       {t("settings.windowPresetUnavailable")}
                     </span>
                   ) : null}
                 </button>
               );
+              return unavailable ? (
+                <TooltipProvider
+                  key={preset.id}
+                  delayDuration={650}
+                  skipDelayDuration={0}
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        role="group"
+                        aria-label={t(preset.label)}
+                        aria-describedby={reasonId}
+                        tabIndex={0}
+                        className="block min-w-0 cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {control}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {t("settings.windowPresetUnavailable")}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                control
+              );
             })}
           </div>
-          {native && windowGeometry ? (
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {t("settings.windowCurrentSize", {
-                width: windowGeometry.width,
-                height: windowGeometry.height,
-              })}
-            </p>
-          ) : null}
-          {windowError ? (
-            <div
-              role="alert"
-              className="flex flex-wrap items-center justify-between gap-2 text-sm text-destructive"
-            >
-              <span>{nativeErrorText(windowError, t)}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pending}
-                onClick={() => void refreshWindow()}
-              >
-                {t("common.retry")}
-              </Button>
+          {native ? (
+            <div className="flex h-8 min-w-0 items-center justify-between gap-2 text-xs">
+              {windowError ? (
+                <>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      role="alert"
+                      className="min-w-0 truncate text-destructive"
+                    >
+                      {nativeErrorText(windowError, t)}
+                    </span>
+                    <HelpTooltip
+                      label={t("common.helpFor", {
+                        name: nativeErrorText(windowError, t),
+                      })}
+                      className="shrink-0"
+                    >
+                      {nativeErrorText(windowError, t)}
+                    </HelpTooltip>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => void refreshWindow()}
+                  >
+                    {t("common.retry")}
+                  </Button>
+                </>
+              ) : (
+                <span
+                  className="truncate text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {windowGeometry
+                    ? t("settings.windowCurrentSize", {
+                        width: windowGeometry.width,
+                        height: windowGeometry.height,
+                      })
+                    : t("common.loading")}
+                </span>
+              )}
             </div>
           ) : null}
           <Separator />
@@ -683,9 +737,6 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">{t("settings.runtime")}</CardTitle>
-              <CardDescription className="text-xs">
-                {t("settings.runtimeHint")}
-              </CardDescription>
             </CardHeader>
             <CardContent className="divide-y">
               <SettingRow label={t("settings.appVersion")}>
@@ -705,9 +756,6 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">{t("settings.links")}</CardTitle>
-              <CardDescription className="text-xs">
-                {t("settings.linksHint")}
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-1">
               {LINKS.map((link) => (
@@ -730,18 +778,17 @@ export default function Settings() {
       </details>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed px-4 py-3">
-        <div className="space-y-0.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <p className="text-sm">{t("common.reset")}</p>
-          <p className="text-xs text-muted-foreground">
+          <HelpTooltip label={t("common.helpFor", { name: t("common.reset") })}>
             {t("settings.resetHint")}
-          </p>
+          </HelpTooltip>
         </div>
         <Button
           variant="outline"
           size="sm"
           disabled={pending}
           onClick={() => {
-            setResetError(null);
             setConfirmReset(true);
           }}
         >
@@ -762,11 +809,6 @@ export default function Settings() {
               {t("settings.resetConfirmDescription")}
             </DialogDescription>
           </DialogHeader>
-          {resetError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {nativeErrorText(resetError, t)}
-            </p>
-          ) : null}
           <DialogFooter>
             <Button
               variant="outline"

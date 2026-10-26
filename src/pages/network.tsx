@@ -1,21 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  isCancelledError,
   QueryClient,
   QueryClientProvider,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { CodeBlock } from "@/components/code-block";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -39,6 +35,7 @@ import {
   CredentialPanel,
   SessionPanel,
 } from "@/features/network/session-panel";
+import { HelpTooltip } from "@/components/help-tooltip";
 
 function NetworkLab() {
   const { t } = useI18n();
@@ -51,10 +48,8 @@ function NetworkLab() {
   );
   const [simulatedOffline, setSimulatedOffline] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
-  const [notice, setNotice] = useState<
-    "cancelled" | "cacheHit" | "cacheMiss" | "cacheOffline" | null
-  >(null);
   const attempts = useRef(0);
+  const mounted = useRef(false);
   const postController = useRef<AbortController | null>(null);
   const postInFlight = useRef(false);
   const offline = simulatedOffline || (mode === "https" && !online);
@@ -92,16 +87,19 @@ function NetworkLab() {
       });
     },
     retry: false,
+    onError: reportError,
     onSettled: () => {
       postInFlight.current = false;
       postController.current = null;
     },
   });
   useEffect(() => {
+    mounted.current = true;
     const update = () => setOnline(navigator.onLine);
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
     return () => {
+      mounted.current = false;
       window.removeEventListener("online", update);
       window.removeEventListener("offline", update);
       postController.current?.abort();
@@ -113,13 +111,35 @@ function NetworkLab() {
       postController.current?.abort();
     }
   }, [offline, client]);
-  const error = mutation.status === "idle" ? query.error : mutation.error;
   function errorText(reason: unknown) {
     return reason instanceof NetworkLabError
       ? t(`labs.network.error.${reason.code}`)
       : nativeErrorText(reason, t);
   }
+  function reportError(reason: unknown) {
+    if (
+      mounted.current &&
+      !isCancelledError(reason) &&
+      !(reason instanceof NetworkLabError && reason.code === "cancelled")
+    )
+      toast.error(errorText(reason));
+  }
   const busy = query.isFetching || mutation.isPending;
+  const lastError = mutation.status === "idle" ? query.error : mutation.error;
+  const statusText = offline
+    ? t("labs.network.offlineState")
+    : busy
+      ? t("labs.loading")
+      : lastError
+        ? t(
+            lastError instanceof NetworkLabError &&
+              lastError.code === "cancelled"
+              ? "labs.network.error.cancelled"
+              : "labs.network.requestError",
+          )
+        : mutation.data || query.data
+          ? t("labs.network.normal")
+          : t("labs.idle");
   const validTimeout =
     Number.isInteger(timeoutMs) && timeoutMs >= 100 && timeoutMs <= 10000;
   async function readCache() {
@@ -127,9 +147,8 @@ function NetworkLab() {
     const state = client.getQueryState(queryKey);
     const fresh = !!state?.data && Date.now() - state.dataUpdatedAt < 30000;
     mutation.reset();
-    setNotice(null);
     if (offline) {
-      if (state?.data) setNotice("cacheOffline");
+      if (state?.data) toast.info(t("labs.network.cacheOffline"));
       return;
     }
     attempts.current = 0;
@@ -151,28 +170,41 @@ function NetworkLab() {
         retryDelay: 400,
         networkMode: "always",
       });
-      setNotice(fresh ? "cacheHit" : "cacheMiss");
-    } catch {
-      /* Query 状态统一显示失败，已有缓存仍可读。 */
+      if (mounted.current)
+        toast.info(
+          t(fresh ? "labs.network.cacheHit" : "labs.network.cacheMiss"),
+        );
+    } catch (reason) {
+      reportError(reason);
     }
   }
   return (
     <div className="studio-page space-y-5">
       <div className="studio-intro">
         <span className="studio-eyebrow">{t("labs.eyebrow")}</span>
-        <h2>{t("labs.network.title")}</h2>
-        <p>{t("labs.network.description")}</p>
+        <h2 className="flex items-center gap-2">
+          {t("labs.network.title")}
+          <HelpTooltip
+            label={`${t("labs.network.title")} · ${t("title.help")}`}
+          >
+            {t("labs.network.description")}
+          </HelpTooltip>
+        </h2>
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>GET / POST</CardTitle>
-          <CardDescription>
-            {t(
-              mode === "fixture"
-                ? "labs.network.fixtureHint"
-                : "labs.network.liveHint",
-            )}
-          </CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            GET / POST
+            <HelpTooltip
+              label={`${t("labs.network.mode")} · ${t("title.help")}`}
+            >
+              {t(
+                mode === "fixture"
+                  ? "labs.network.fixtureHint"
+                  : "labs.network.liveHint",
+              )}
+            </HelpTooltip>
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -184,7 +216,6 @@ function NetworkLab() {
                 onValueChange={(value) => {
                   setMode(value === "https" ? "https" : "fixture");
                   mutation.reset();
-                  setNotice(null);
                 }}
               >
                 <SelectTrigger id="request-mode" className="w-full">
@@ -206,7 +237,6 @@ function NetworkLab() {
                 onValueChange={(value) => {
                   setFault(value as FixtureFault);
                   mutation.reset();
-                  setNotice(null);
                 }}
               >
                 <SelectTrigger id="request-fault" className="w-full">
@@ -245,26 +275,27 @@ function NetworkLab() {
                 onChange={(event) => {
                   setTimeoutMs(event.target.valueAsNumber);
                   mutation.reset();
-                  setNotice(null);
                 }}
                 aria-invalid={!validTimeout}
               />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={simulatedOffline}
-              onCheckedChange={(checked) =>
-                setSimulatedOffline(checked === true)
-              }
-            />
-            {t("labs.network.offline")}
-          </label>
-          {offline ? (
-            <p role="status" className="rounded-md bg-muted p-3 text-sm">
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={simulatedOffline}
+                onCheckedChange={(checked) =>
+                  setSimulatedOffline(checked === true)
+                }
+              />
+              {t("labs.network.offline")}
+            </label>
+            <HelpTooltip
+              label={`${t("labs.network.offline")} · ${t("title.help")}`}
+            >
               {t("labs.network.offlineHint")}
-            </p>
-          ) : null}
+            </HelpTooltip>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               disabled={busy || offline || !validTimeout}
@@ -272,8 +303,7 @@ function NetworkLab() {
                 if (postInFlight.current) return;
                 attempts.current = 0;
                 mutation.reset();
-                setNotice(null);
-                void query.refetch();
+                void query.refetch({ throwOnError: true }).catch(reportError);
               }}
             >
               {t("labs.network.get")}
@@ -285,13 +315,18 @@ function NetworkLab() {
             >
               {t("labs.network.cache")}
             </Button>
+            <HelpTooltip
+              label={`${t("labs.network.cache")} · ${t("title.help")}`}
+            >
+              {t("labs.network.cacheHint")}
+            </HelpTooltip>
             <Button
               variant="outline"
               disabled={!busy}
               onClick={() => {
                 void client.cancelQueries({ queryKey: ["lab-echo"] });
                 postController.current?.abort();
-                setNotice("cancelled");
+                toast.info(t("labs.network.cancelled"));
               }}
             >
               {t("labs.network.cancel")}
@@ -302,15 +337,11 @@ function NetworkLab() {
               onClick={() => {
                 void client.resetQueries({ queryKey: ["lab-echo"] });
                 mutation.reset();
-                setNotice(null);
               }}
             >
               {t("labs.network.clearCache")}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {t("labs.network.cacheHint")}
-          </p>
           <form
             className="flex flex-wrap items-end gap-2"
             onSubmit={(event) => {
@@ -322,7 +353,6 @@ function NetworkLab() {
                 client.isFetching({ queryKey: ["lab-echo"] }) === 0
               ) {
                 postInFlight.current = true;
-                setNotice(null);
                 mutation.mutate();
               }
             }}
@@ -347,26 +377,14 @@ function NetworkLab() {
               {t("labs.network.post")}
             </Button>
           </form>
-          <p role="status" className="text-sm">
-            {busy
-              ? t("labs.loading")
-              : notice
-                ? t(`labs.network.${notice}`)
-                : t("labs.idle")}
+          <p role="status" className="h-5 truncate text-sm">
+            {statusText}
+            {mutation.status === "idle" && query.failureCount > 0 ? (
+              <span className="ml-2 text-xs text-muted-foreground">
+                {t("labs.network.attempts", { count: query.failureCount })}
+              </span>
+            ) : null}
           </p>
-          {mutation.status === "idle" && query.failureCount > 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {t("labs.network.attempts", { count: query.failureCount })}
-            </p>
-          ) : null}
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-md border border-destructive/40 p-3 text-sm text-destructive"
-            >
-              {errorText(error)}
-            </p>
-          ) : null}
           <section aria-label={t("labs.network.response")}>
             <h3 className="mb-2 text-sm font-medium">
               {t("labs.network.response")}

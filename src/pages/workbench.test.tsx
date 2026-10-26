@@ -13,6 +13,7 @@ import type { UnsavedWork } from "@/providers/unsaved-work";
 import * as native from "@/lib/tauri";
 import { workbenchEditor } from "@/components/workbench/editor-store";
 import Workbench from "./workbench";
+import { toast } from "sonner";
 
 const lifecycle = vi.hoisted(() => ({ work: null as UnsavedWork | null }));
 vi.mock("@/providers/unsaved-work", () => ({
@@ -30,7 +31,7 @@ vi.mock("@/providers/commands", () => ({ useRegisterCommands: () => {} }));
 vi.mock("@/components/native-page", () => ({
   NativePage: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   createNote: vi.fn(),
@@ -270,9 +271,14 @@ describe("file workbench", () => {
         body: "note copy",
       }),
     );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("workbench.imported", {
+        action: { label: "workbench.openNotes", onClick: expect.any(Function) },
+      }),
+    );
     expect(
-      await screen.findByRole("link", { name: "workbench.openNotes" }),
-    ).toHaveAttribute("href", "#/database");
+      screen.queryByRole("link", { name: "workbench.openNotes" }),
+    ).not.toBeInTheDocument();
     expect(workbenchEditor.hasUnsavedChanges()).toBe(true);
     expect(editor).toHaveValue("note copy");
   });

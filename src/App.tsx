@@ -24,6 +24,7 @@ import { DemoMotion } from "@/components/demo-motion";
 import { UnsavedWorkProvider } from "@/providers/unsaved-work";
 import { RecoveryGate } from "@/components/recovery-gate";
 import { THEME_STORAGE_KEY } from "@/lib/settings-model";
+import { SettingsPersistence } from "@/components/settings-persistence";
 
 function AppEffects() {
   useExternalLinks();
@@ -32,7 +33,12 @@ function AppEffects() {
 }
 function WorkspaceIntegration() {
   const { pathname } = useLocation();
-  if (pathname.startsWith("/extension-window/")) return null;
+  if (pathname.startsWith("/extension-window/"))
+    return (
+      <div className="fixed right-4 bottom-4 z-40 w-[min(32rem,calc(100%-2rem))]">
+        <SettingsPersistence compact />
+      </div>
+    );
   return (
     <>
       <ExtensionCommands />

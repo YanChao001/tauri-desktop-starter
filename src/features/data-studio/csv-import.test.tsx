@@ -8,12 +8,29 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { CsvImport } from "./csv-import";
 import { MAX_CSV_BYTES } from "./csv";
+import { saveTextExport } from "@/lib/tauri";
+import { toast } from "sonner";
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("@/lib/tauri", () => ({ saveTextExport: vi.fn() }));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
   return { useI18n: () => ({ t: createTranslator(en), language: "en" }) };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+it("keeps CSV input errors separate from export failures shown as toasts", async () => {
+  vi.mocked(saveTextExport).mockRejectedValueOnce({ code: "STORAGE_IO" });
+  render(<CsvImport onImport={vi.fn()} />);
+  fireEvent.click(screen.getByText("Import, validate and export"));
+  fireEvent.click(screen.getByRole("button", { name: "Download CSV sample" }));
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(expect.any(String)),
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
 it("requires explicit partial import consent and invalidates a preview when the source changes", () => {
   const imported = vi.fn();
   render(<CsvImport onImport={imported} />);

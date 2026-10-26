@@ -8,7 +8,7 @@ import {
 } from "react";
 import { FilePlus2Icon, FolderOpenIcon, SaveIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { NativePage } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { DocumentPreview } from "@/components/workbench/document-preview";
 import { TextDiff } from "@/components/text-diff";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { workbenchEditor } from "@/components/workbench/editor-store";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { nativeErrorText } from "@/lib/native-error";
@@ -47,6 +48,7 @@ import type { AppCommand } from "@/commands/types";
 
 export default function Workbench() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const requestedFile = searchParams.get("file");
   const { t } = useI18n();
   const latest = useLatestTranslator();
@@ -63,13 +65,14 @@ export default function Workbench() {
     : false;
   const [recent, setRecent] = useState<RecentWorkbenchFile[]>([]);
   const [error, setError] = useState<unknown>(null);
-  const [dropErrors, setDropErrors] = useState<string[]>([]);
   const pending = state.pending;
   const [conflict, setConflict] = useState(false);
   const [remote, setRemote] = useState<WorkbenchDocument | null>(null);
   const [closeId, setCloseId] = useState<string | null>(null);
-  const [imported, setImported] = useState(false);
   const mounted = useRef(false);
+  useEffect(() => {
+    if (error && !conflict) toast.error(nativeErrorText(error, latest));
+  }, [error, conflict, latest]);
   useEffect(() => {
     if (!requestedFile || pending || !isTauri()) return;
     let stopped = false;
@@ -136,7 +139,10 @@ export default function Workbench() {
       void onWorkbenchDrop((batch) => {
         if (disposed) return;
         workbenchEditor.open(batch.files);
-        setDropErrors(batch.errors);
+        if (batch.errors.length)
+          toast.error(batch.errors[0], {
+            description: batch.errors.slice(1).join("\n") || undefined,
+          });
         void refreshRecent().catch((reason) => {
           if (!disposed) setError(reason);
         });
@@ -262,11 +268,15 @@ export default function Workbench() {
           body: selected.draft,
         });
         if (mounted.current) {
-          setImported(true);
-          toast.success(latest("workbench.imported"));
+          toast.success(latest("workbench.imported"), {
+            action: {
+              label: latest("workbench.openNotes"),
+              onClick: () => navigate("/database"),
+            },
+          });
         }
       }),
-    [selected, jsonError, perform, latest],
+    [selected, jsonError, perform, latest, navigate],
   );
   const commands = useMemo<AppCommand[]>(
     () => [
@@ -380,14 +390,12 @@ export default function Workbench() {
         >
           {t("workbench.sample")}
         </Button>
+        <HelpTooltip label={t("workbench.drop")}>
+          <p>{t("workbench.drop")}</p>
+          <p>{t("workbench.limits")}</p>
+        </HelpTooltip>
       </div>
-      <div className="rounded-xl border border-dashed bg-muted/30 p-5 text-sm">
-        <p>{t("workbench.drop")}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {t("workbench.limits")}
-        </p>
-      </div>
-      {error ? (
+      {error && conflict ? (
         <p
           role="alert"
           className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive"
@@ -395,10 +403,10 @@ export default function Workbench() {
           {conflict ? t("workbench.conflict") : nativeErrorText(error, t)}
         </p>
       ) : null}
-      {dropErrors.length || state.activationErrors.length ? (
+      {state.activationErrors.length ? (
         <div className="space-y-2 rounded-lg border p-3 text-sm">
-          <ul role="alert">
-            {[...dropErrors, ...state.activationErrors].map((reason, index) => (
+          <ul role="alert" className="max-h-28 overflow-auto">
+            {state.activationErrors.map((reason, index) => (
               <li key={index}>
                 {typeof reason === "string"
                   ? reason
@@ -410,7 +418,6 @@ export default function Workbench() {
             size="sm"
             variant="outline"
             onClick={() => {
-              setDropErrors([]);
               workbenchEditor.clearActivationErrors();
             }}
           >
@@ -509,9 +516,14 @@ export default function Workbench() {
                 {(selected.document.bytes ?? 0).toLocaleString()} B
               </span>
             </div>
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {selected.document.path || t("workbench.localDraft")}
-            </p>
+            <div className="flex h-6 min-w-0 items-center gap-2">
+              <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                {selected.document.path || t("workbench.localDraft")}
+              </p>
+              <HelpTooltip label={selected.document.name}>
+                {selected.document.path || t("workbench.localDraft")}
+              </HelpTooltip>
+            </div>
             <div className="flex flex-wrap gap-2">
               {selected.document.kind !== "image" ? (
                 <>
@@ -564,14 +576,6 @@ export default function Workbench() {
                 {t("workbench.reveal")}
               </Button>
             </div>
-            {imported && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t("workbench.imported")}{" "}
-                <a className="underline underline-offset-4" href="#/database">
-                  {t("workbench.openNotes")}
-                </a>
-              </p>
-            )}
             {selected.remoteChanged && !conflict ? (
               <p role="alert" className="text-sm text-destructive">
                 {t("workbench.conflict")}
@@ -599,15 +603,13 @@ export default function Workbench() {
                   }
                   className="font-mono"
                 />
-                {jsonError ? (
-                  <p
-                    id="workbench-json-error"
-                    role="alert"
-                    className="text-xs text-destructive"
-                  >
-                    {t("workbench.invalidJson")}
-                  </p>
-                ) : null}
+                <p
+                  id="workbench-json-error"
+                  role={jsonError ? "alert" : undefined}
+                  className="h-10 overflow-auto text-xs text-destructive"
+                >
+                  {jsonError ? t("workbench.invalidJson") : null}
+                </p>
               </div>
             ) : null}
             <div className="min-w-0 space-y-2 border-t pt-4">

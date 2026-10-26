@@ -5,6 +5,37 @@ import AxeBuilder from "@axe-core/playwright";
 import appConfig from "../../app.config.json" with { type: "json" };
 
 const KEY = `${appConfig.browserStorageNamespace}:settings`;
+
+test("settings search opens over the page without moving settings or stealing input focus", async ({
+  page,
+}) => {
+  await seed(page);
+  await page.goto("./#/settings");
+  const target = page.locator("#settings-theme");
+  const layout = () =>
+    target.evaluate((element) => ({
+      top:
+        element.getBoundingClientRect().top +
+        (element.closest("main")?.scrollTop ?? 0),
+      height: element.getBoundingClientRect().height,
+    }));
+  const before = await layout();
+  const search = page.getByRole("searchbox", {
+    name: "Search settings",
+    exact: true,
+  });
+  await search.fill("font");
+  await expect(
+    page.getByRole("dialog", { name: "Search settings", exact: true }),
+  ).toBeVisible();
+  await expect(search).toBeFocused();
+  expect(await layout()).toEqual(before);
+  await search.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Search settings", exact: true }),
+  ).toHaveCount(0);
+  expect(await layout()).toEqual(before);
+});
 const routes = [
   "/",
   "/catalog",
@@ -133,7 +164,7 @@ for (const theme of ["light", "dark"]) {
         .getByRole("button", { name: "Check input", exact: true })
         .click();
       await expect(
-        page.getByRole("status").filter({ hasText: "Check passed" }),
+        page.locator("[data-sonner-toast]").filter({ hasText: "Check passed" }),
       ).toBeVisible();
       await page
         .getByRole("button", { name: "Buttons & badges", exact: true })
@@ -315,15 +346,16 @@ test("shared selects retain form validation, disabled choices and pagination", a
   await page.getByRole("option", { name: "Business", exact: true }).click();
   await expect(page.getByLabel("Company name", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Submit demo request" }).click();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(
+    page.getByLabel("Company name", { exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#order-company-error")).toContainText(
     "Business requests require a company name",
   );
   await kind.click();
   await page.getByRole("option", { name: "Personal", exact: true }).click();
   await expect(page.getByLabel("Company name", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("alert")).not.toContainText(
-    "Business requests require a company name",
-  );
+  await expect(page.locator("#order-company-error")).toHaveCount(0);
 });
 
 for (const theme of ["light", "dark"]) {
@@ -874,7 +906,17 @@ test("wallpaper library supports multi-import, rename, deletion and shared brows
     second,
   ]);
   await expect(page.locator(".wallpaper-card")).toHaveCount(2);
-  await expect(page.getByRole("alert")).toContainText("broken.png");
+  await page
+    .locator('[data-sonner-toast][data-type="error"]')
+    .getByRole("button", { name: "View details" })
+    .click();
+  const importDetails = page.getByRole("dialog", {
+    name: "Images not imported",
+  });
+  await expect(importDetails).toContainText("broken.png");
+  await importDetails
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
   await expect(
     page.getByRole("radio", { name: "Use wallpaper: rose.png", exact: true }),
   ).toBeChecked();
@@ -1070,7 +1112,17 @@ test("a local background imports, survives reload, keeps the last good image on 
     mimeType: "image/png",
     buffer: Buffer.from("broken image"),
   });
-  await expect(page.getByRole("alert")).toContainText("could not be read");
+  await page
+    .locator('[data-sonner-toast][data-type="error"]')
+    .getByRole("button", { name: "View details" })
+    .click();
+  const importDetails = page.getByRole("dialog", {
+    name: "Images not imported",
+  });
+  await expect(importDetails).toContainText("could not be read");
+  await importDetails
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
   await expect(page.locator("[data-custom-background]")).toHaveAttribute(
     "src",
     saved.customBackground.dataUrl,

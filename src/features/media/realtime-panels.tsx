@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { CodeBlock } from "@/components/code-block";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,7 +29,6 @@ export function WebSocketPanel() {
   const [log, setLog] = useState<
     { direction: "sent" | "received"; text: string }[]
   >([]);
-  const [error, setError] = useState<unknown>(null);
   const [sending, setSending] = useState(false);
   const handle = useRef<SocketHandle | null>(null);
   const generation = useRef(0);
@@ -49,7 +44,6 @@ export function WebSocketPanel() {
   }, []);
   async function connect() {
     const current = ++generation.current;
-    setError(null);
     setState("connecting");
     if (mode === "fixture") {
       setState("connected");
@@ -80,20 +74,21 @@ export function WebSocketPanel() {
       setState("connected");
     } catch (reason) {
       if (mounted.current && current === generation.current) {
-        setError(reason);
+        toast.error(nativeErrorText(reason, t));
         setState("disconnected");
       }
     }
   }
   async function disconnect() {
-    generation.current++;
+    const current = ++generation.current;
     const connection = handle.current;
     handle.current = null;
     setState("disconnected");
     try {
       await connection?.close();
     } catch (reason) {
-      if (mounted.current) setError(reason);
+      if (mounted.current && current === generation.current)
+        toast.error(nativeErrorText(reason, t));
     }
   }
   async function send() {
@@ -108,7 +103,6 @@ export function WebSocketPanel() {
     const text = message;
     sendBusy.current = true;
     setSending(true);
-    setError(null);
     try {
       if (mode === "wss") {
         if (!handle.current) return;
@@ -124,7 +118,8 @@ export function WebSocketPanel() {
       ]);
       setMessage("");
     } catch (reason) {
-      if (mounted.current && current === generation.current) setError(reason);
+      if (mounted.current && current === generation.current)
+        toast.error(nativeErrorText(reason, t));
     } finally {
       sendBusy.current = false;
       if (mounted.current) setSending(false);
@@ -133,8 +128,12 @@ export function WebSocketPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.socket.title")}</CardTitle>
-        <CardDescription>{t("labs.socket.hint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.socket.title")}
+          <HelpTooltip label={`${t("labs.socket.title")} · ${t("title.help")}`}>
+            {t("labs.socket.hint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -144,7 +143,6 @@ export function WebSocketPanel() {
             onValueChange={(value) => {
               setMode(value === "wss" ? "wss" : "fixture");
               setLog([]);
-              setError(null);
             }}
           >
             <SelectTrigger aria-label={t("labs.network.mode")}>
@@ -168,7 +166,10 @@ export function WebSocketPanel() {
           >
             {t("labs.socket.disconnect")}
           </Button>
-          <span role="status" className="text-xs text-muted-foreground">
+          <span
+            role="status"
+            className="w-28 truncate text-xs text-muted-foreground"
+          >
             {t(`labs.socket.${state}`)}
           </span>
         </div>
@@ -194,15 +195,10 @@ export function WebSocketPanel() {
             {t("labs.socket.send")}
           </Button>
         </form>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {nativeErrorText(error, t)}
-          </p>
-        ) : null}
         <ol
           aria-label={t("labs.socket.log")}
           aria-live="polite"
-          className="max-h-52 space-y-1 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"
+          className="h-52 space-y-1 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"
         >
           {log.length ? (
             log.map((entry, index) => (
@@ -227,7 +223,6 @@ export function SidecarPanel() {
   const [output, setOutput] = useState<Awaited<
     ReturnType<typeof runDemoSidecar>
   > | null>(null);
-  const [error, setError] = useState<unknown>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
   useEffect(() => {
@@ -240,12 +235,11 @@ export function SidecarPanel() {
     if (!native || !validWorkerInput(input) || busy.current) return;
     busy.current = true;
     setPending(true);
-    setError(null);
     try {
       const result = await runDemoSidecar(input);
       if (mounted.current) setOutput(result);
     } catch (reason) {
-      if (mounted.current) setError(reason);
+      if (mounted.current) toast.error(nativeErrorText(reason, t));
     } finally {
       busy.current = false;
       if (mounted.current) setPending(false);
@@ -254,8 +248,14 @@ export function SidecarPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("labs.sidecar.title")}</CardTitle>
-        <CardDescription>{t("labs.sidecar.hint")}</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          {t("labs.sidecar.title")}
+          <HelpTooltip
+            label={`${t("labs.sidecar.title")} · ${t("title.help")}`}
+          >
+            {t("labs.sidecar.hint")}
+          </HelpTooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3" aria-busy={pending}>
         {!native ? (
@@ -282,20 +282,16 @@ export function SidecarPanel() {
               !validWorkerInput(input) ? "sidecar-error" : undefined
             }
           />
-          {!validWorkerInput(input) ? (
-            <p id="sidecar-error" className="text-xs text-destructive">
-              {t("labs.sidecar.tooLong")}
-            </p>
-          ) : null}
-          <Button disabled={!native || pending || !validWorkerInput(input)}>
+          <p id="sidecar-error" className="h-4 text-xs text-destructive">
+            {!validWorkerInput(input) ? t("labs.sidecar.tooLong") : null}
+          </p>
+          <Button
+            className="min-w-44"
+            disabled={!native || pending || !validWorkerInput(input)}
+          >
             {pending ? t("labs.loading") : t("labs.sidecar.run")}
           </Button>
         </form>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {nativeErrorText(error, t)}
-          </p>
-        ) : null}
         <CodeBlock
           aria-label={t("labs.media.preview")}
           code={output ? JSON.stringify(output, null, 2) : t("labs.idle")}

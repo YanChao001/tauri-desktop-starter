@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -108,7 +110,7 @@ export function CsvImport({
     try {
       await saveTextExport(name, text);
     } catch (reason) {
-      if (token === generation.current) setError(reason);
+      if (token === generation.current) toast.error(nativeErrorText(reason, t));
     } finally {
       if (token === generation.current) setPending(false);
     }
@@ -118,7 +120,6 @@ export function CsvImport({
     <details className="rounded-lg border bg-muted/20 p-4">
       <summary className="cursor-pointer font-medium">{t("csv.title")}</summary>
       <div className="mt-4 space-y-4">
-        <p className="text-sm text-muted-foreground">{t("csv.hint")}</p>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -153,13 +154,18 @@ export function CsvImport({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="csv-source">{t("csv.source")}</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="csv-source">{t("csv.source")}</Label>
+            <HelpTooltip label={t("csv.hint")}>{t("csv.hint")}</HelpTooltip>
+          </div>
           <Textarea
             id="csv-source"
             value={source}
             rows={5}
             disabled={busy}
             className="font-mono text-xs"
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "csv-source-error" : undefined}
             onChange={(event) => {
               setSource(event.target.value);
               setTable(null);
@@ -170,20 +176,26 @@ export function CsvImport({
             {t("csv.check")}
           </Button>
         </div>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error instanceof CsvError
+        <p
+          id="csv-source-error"
+          role={error ? "alert" : undefined}
+          className="h-10 overflow-auto text-sm text-destructive"
+        >
+          {error
+            ? error instanceof CsvError
               ? t(`csv.error.${error.code}`)
-              : nativeErrorText(error, t)}
-          </p>
-        ) : null}
+              : nativeErrorText(error, t)
+            : null}
+        </p>
         {table ? (
           <>
             <fieldset className="space-y-3">
-              <legend className="font-medium">{t("csv.mapping")}</legend>
-              <p className="text-xs text-muted-foreground">
-                {t("csv.defaults")}
-              </p>
+              <legend className="flex items-center gap-2 font-medium">
+                {t("csv.mapping")}
+                <HelpTooltip label={`${t("csv.mapping")} · ${t("title.help")}`}>
+                  {t("csv.defaults")}
+                </HelpTooltip>
+              </legend>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {RECORD_FIELDS.map((field) => (
                   <div key={field} className="space-y-1">
@@ -223,7 +235,7 @@ export function CsvImport({
             </fieldset>
             {result ? (
               <>
-                <p role="status" className="text-sm">
+                <p role="status" className="h-6 truncate text-sm tabular-nums">
                   {t("csv.summary", {
                     valid: result.records.length,
                     invalid: result.rejected,
@@ -231,10 +243,14 @@ export function CsvImport({
                 </p>
                 {result.issues.length ? (
                   <div className="space-y-3 rounded-md border p-3">
-                    <h4 className="text-sm font-medium">{t("csv.issues")}</h4>
-                    <p className="text-xs text-muted-foreground">
-                      {t("csv.issueHint")}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium">{t("csv.issues")}</h4>
+                      <HelpTooltip
+                        label={`${t("csv.issues")} · ${t("title.help")}`}
+                      >
+                        {t("csv.issueHint")}
+                      </HelpTooltip>
+                    </div>
                     <div className="max-h-48 overflow-auto">
                       <table className="w-full text-left text-xs">
                         <thead>
@@ -297,12 +313,15 @@ export function CsvImport({
                 </Button>
               </>
             ) : (
-              <p role="alert" className="text-sm text-destructive">
+              <p
+                role="alert"
+                className="h-10 overflow-auto text-sm text-destructive"
+              >
                 {t("csv.error.mapping")}
               </p>
             )}
             <div
-              className="overflow-auto rounded-md border"
+              className="max-h-80 overflow-auto rounded-md border"
               tabIndex={0}
               role="region"
               aria-label={t("csv.preview")}

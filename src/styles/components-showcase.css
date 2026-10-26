@@ -199,12 +199,6 @@
   gap: 1rem;
   margin-block: 1.5rem 1rem;
 }
-.studio-switch-row p {
-  font-size: 0.65rem;
-  line-height: 1.5;
-  color: var(--muted-foreground);
-  margin-top: 0.3rem;
-}
 .studio-author-toggle {
   display: flex;
   align-items: center;
@@ -703,6 +697,29 @@
 .resource-table-name > span {
   white-space: normal;
 }
+.library-results {
+  position: relative;
+}
+.library-content[data-obscured="true"] {
+  visibility: hidden;
+}
+.library-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.library-loading > .library-skeleton-grid {
+  flex: 1;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+}
+.library-skeleton-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
 .library-empty {
   min-height: 17rem;
   display: flex;
@@ -714,6 +731,18 @@
   border: 1px dashed var(--border);
   border-radius: 1rem;
   padding: 2rem;
+}
+.library-empty.library-failed {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+.library-empty.library-failed[data-layout="list"] {
+  flex-direction: row;
+  gap: 0.6rem;
+  padding: 0.75rem;
 }
 .library-empty > svg {
   width: 1.5rem;
@@ -733,6 +762,10 @@
   margin-block: 0.75rem 1.2rem;
 }
 .resource-skeleton {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 0.7rem;
   border: 1px solid var(--border);
   border-radius: 1rem;

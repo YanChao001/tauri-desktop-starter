@@ -13,6 +13,7 @@ import * as native from "@/lib/tauri";
 import type { Note } from "@/lib/tauri";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import Database from "./database";
+import { toast } from "sonner";
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
@@ -428,9 +429,14 @@ describe("native note editor", () => {
         "trash",
       ),
     );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String), {
+        id: "note-editor-error",
+      }),
+    );
     expect(
-      await within(screen.getByRole("dialog")).findByRole("alert"),
-    ).toBeVisible();
+      within(screen.getByRole("dialog")).queryByRole("alert"),
+    ).not.toBeInTheDocument();
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel",
@@ -715,7 +721,12 @@ describe("native note editor", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByText(/Restored 253 records/)).toBeVisible();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringContaining("Restored 253 records"),
+      ),
+    );
+    expect(screen.queryByText(/Restored 253 records/)).not.toBeInTheDocument();
   });
 
   it("does not restore imported data when the native file picker is cancelled", async () => {

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { NativePage, ResourceError } from "@/components/native-page";
+import { NativePage } from "@/components/native-page";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
+import { nativeErrorText } from "@/lib/native-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,11 +32,11 @@ import {
 
 export default function System() {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const [text, setText] = useState(APP_CONFIG.name);
   const [shortcut, setShortcut] = useState("CommandOrControl+Shift+Space");
   const [registered, setRegistered] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
   const [events, setEvents] = useState<Activation[]>([]);
   const unregister = useRef<(() => Promise<void>) | null>(null);
   const alive = useRef(true);
@@ -72,7 +75,7 @@ export default function System() {
             );
         })
         .catch((reason: unknown) => {
-          if (!disposed) setError(reason);
+          if (!disposed) toast.error(nativeErrorText(reason, latest));
         });
     }
     return () => {
@@ -82,17 +85,16 @@ export default function System() {
       void unregister.current?.().catch(reportClientError);
       unregister.current = null;
     };
-  }, []);
+  }, [latest]);
   async function run(action: () => Promise<void>) {
     if (running.current) return;
     running.current = true;
     setBusy(true);
-    setError(null);
     try {
       await action();
-      if (alive.current) toast.success(t("system.success"));
+      if (alive.current) toast.success(latest("system.success"));
     } catch (reason) {
-      if (alive.current) setError(reason);
+      if (alive.current) toast.error(nativeErrorText(reason, latest));
     } finally {
       running.current = false;
       if (alive.current) setBusy(false);
@@ -101,12 +103,15 @@ export default function System() {
   return (
     <NativePage title={t("system.title")} description={t("system.description")}>
       <div className="space-y-5">
-        <ResourceError error={error} retry={() => setError(null)} />
         <section className="space-y-3 rounded-xl border bg-card p-5">
-          <h2 className="font-semibold">{t("system.notification")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("system.permission")}
-          </p>
+          <h2 className="flex items-center gap-2 font-semibold">
+            {t("system.notification")}
+            <HelpTooltip
+              label={`${t("system.notification")} · ${t("title.help")}`}
+            >
+              {t("system.permission")}
+            </HelpTooltip>
+          </h2>
           <Button
             disabled={busy}
             onClick={() =>
@@ -125,10 +130,12 @@ export default function System() {
           </Button>
         </section>
         <section className="space-y-3 rounded-xl border bg-card p-5">
-          <h2 className="font-semibold">{t("system.shortcut")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("system.shortcutHelp")}
-          </p>
+          <h2 className="flex items-center gap-2 font-semibold">
+            {t("system.shortcut")}
+            <HelpTooltip label={`${t("system.shortcut")} · ${t("title.help")}`}>
+              {t("system.shortcutHelp")}
+            </HelpTooltip>
+          </h2>
           <div className="flex flex-wrap gap-2">
             <Select
               value={shortcut}
@@ -203,18 +210,25 @@ export default function System() {
           </div>
         </section>
         <section className="space-y-3 rounded-xl border bg-card p-5">
-          <h2 className="font-semibold">{t("system.deepLink")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("system.deepLinkHelp", {
-              deepLink,
-              extension: APP_CONFIG.integration.fileExtension,
-            })}
-          </p>
+          <h2 className="flex items-center gap-2 font-semibold">
+            {t("system.deepLink")}
+            <HelpTooltip label={`${t("system.deepLink")} · ${t("title.help")}`}>
+              {t("system.deepLinkHelp", {
+                deepLink,
+                extension: APP_CONFIG.integration.fileExtension,
+              })}
+            </HelpTooltip>
+          </h2>
           <code className="block select-text break-all rounded bg-muted p-3 text-xs">
             {deepLink}
           </code>
           <h3 className="text-sm font-medium">{t("system.events")}</h3>
-          <ul className="space-y-2 text-sm" aria-live="polite">
+          <ul
+            className="h-48 space-y-2 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-live="polite"
+            aria-label={t("system.events")}
+            tabIndex={0}
+          >
             {events.length ? (
               events.map((event) => (
                 <li key={event.id} className="break-all rounded border p-2">

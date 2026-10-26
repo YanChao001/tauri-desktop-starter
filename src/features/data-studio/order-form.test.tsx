@@ -9,11 +9,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@/i18n/translate";
 import { en } from "@/i18n/en";
 import { OrderForm } from "./order-form";
+import { toast } from "sonner";
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ language: "en", t: createTranslator(en) }),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("complex demo form", () => {
   it("retains every input after a failed submission and permits retry", async () => {
@@ -32,18 +37,24 @@ describe("complex demo form", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Submit demo request" }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Input was retained",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("Input was retained"),
+      ),
     );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Applicant")).toHaveValue("Ada Lovelace");
     expect(screen.getByLabelText("Description")).toHaveValue("Design review");
     fireEvent.click(screen.getByLabelText("Simulate submission failure"));
     fireEvent.click(
       screen.getByRole("button", { name: "Submit demo request" }),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Demo submitted",
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringContaining("Demo submitted"),
+      ),
     );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("locates a conditional field error and keeps dynamic line identities usable", async () => {
@@ -56,6 +67,9 @@ describe("complex demo form", () => {
     expect(screen.getAllByLabelText("Description")).toHaveLength(1);
     fireEvent.click(
       screen.getByRole("button", { name: "Submit demo request" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Check these fields/ }),
     );
     const company = await screen.findByRole("link", {
       name: /Company name: Business requests require/,

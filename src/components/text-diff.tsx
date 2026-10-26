@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useI18n } from "@/providers/i18n";
@@ -43,10 +44,14 @@ export function TextDiff({
   };
   return (
     <section className="space-y-3" aria-label={t("diff.title")}>
-      <h4 className="text-sm font-medium">
-        {t("diff.title")} · {t("diff.count", { count: changes })}
-      </h4>
-      <p className="text-xs text-muted-foreground">{t("diff.hint")}</p>
+      <div className="flex h-6 min-w-0 items-center gap-2">
+        <h4 className="min-w-0 truncate text-sm font-medium tabular-nums">
+          {t("diff.title")} · {t("diff.count", { count: changes })}
+        </h4>
+        <HelpTooltip label={`${t("diff.title")} · ${t("title.help")}`}>
+          {t("diff.hint")}
+        </HelpTooltip>
+      </div>
       <div
         className="max-h-[28rem] space-y-3 overflow-auto rounded-md border p-3"
         tabIndex={0}

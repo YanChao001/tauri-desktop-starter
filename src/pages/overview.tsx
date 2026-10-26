@@ -359,7 +359,7 @@ export default function Overview() {
             </div>
             <SparklesIcon size={16} />
           </div>
-          <div className="showroom-pointer-hint">
+          <div className="sr-only">
             {t(reduced ? "showroom.reduced" : "showroom.pointer")}
           </div>
         </div>
@@ -370,8 +370,14 @@ export default function Overview() {
         aria-labelledby="showroom-vibes-heading"
       >
         <div>
-          <h3 id="showroom-vibes-heading">{t("showroom.chooseVibe")}</h3>
-          <p>{t("showroom.vibeHint")}</p>
+          <div className="flex items-center gap-2">
+            <h3 id="showroom-vibes-heading">{t("showroom.chooseVibe")}</h3>
+            <HelpTooltip
+              label={t("common.helpFor", { name: t("showroom.chooseVibe") })}
+            >
+              {t("showroom.vibeHint")}
+            </HelpTooltip>
+          </div>
         </div>
         <fieldset className="showroom-vibe-options">
           <legend className="sr-only">{t("showroom.chooseVibe")}</legend>
@@ -432,3 +438,4 @@ export default function Overview() {
     </div>
   );
 }
+import { HelpTooltip } from "@/components/help-tooltip";

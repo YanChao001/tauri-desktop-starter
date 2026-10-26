@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { useId, useState } from "react";
 import { TextDiff } from "@/components/text-diff";
 import { Label } from "@/components/ui/label";
@@ -37,8 +38,12 @@ export function ConflictPanel({
       className="space-y-3 rounded-lg border border-amber-500/50 bg-background p-4"
       aria-label={t("data.conflict")}
     >
-      <h3 className="font-medium">{t("data.conflict")}</h3>
-      <p className="text-sm text-muted-foreground">{t("data.conflictHint")}</p>
+      <div className="flex items-center gap-2">
+        <h3 className="font-medium">{t("data.conflict")}</h3>
+        <HelpTooltip label={`${t("data.conflict")} · ${t("title.help")}`}>
+          {t("data.conflictHint")}
+        </HelpTooltip>
+      </div>
       {remote ? (
         <>
           <RadioGroup
@@ -47,13 +52,17 @@ export function ConflictPanel({
             onValueChange={(choice) => setTitleSelection({ revision, choice })}
             disabled={pending}
           >
-            <Label htmlFor={`${id}-local`}>
+            <Label htmlFor={`${id}-local`} className="min-w-0">
               <RadioGroupItem id={`${id}-local`} value="local" />
-              {t("diff.keepTitle")}: {local.title}
+              <span className="min-w-0 truncate" title={local.title}>
+                {t("diff.keepTitle")}: {local.title}
+              </span>
             </Label>
-            <Label htmlFor={`${id}-remote`}>
+            <Label htmlFor={`${id}-remote`} className="min-w-0">
               <RadioGroupItem id={`${id}-remote`} value="remote" />
-              {t("diff.remoteTitle")}: {remote.title}
+              <span className="min-w-0 truncate" title={remote.title}>
+                {t("diff.remoteTitle")}: {remote.title}
+              </span>
             </Label>
           </RadioGroup>
           <TextDiff
@@ -74,7 +83,9 @@ export function ConflictPanel({
           <summary className="cursor-pointer text-sm">
             {t("data.viewRemote")}
           </summary>
-          <h4 className="mt-2 font-medium">{remote.title}</h4>
+          <h4 className="mt-2 truncate font-medium" title={remote.title}>
+            {remote.title}
+          </h4>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">
             {remote.body}
           </pre>

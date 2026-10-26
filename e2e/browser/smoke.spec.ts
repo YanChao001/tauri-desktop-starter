@@ -101,9 +101,13 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await expect(
     json.locator('[data-token="string"]').filter({ hasText: /^"fixture"$/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Read cache / fetch" }).click();
+  await page
+    .getByRole("button", { name: "Read cache / fetch", exact: true })
+    .click();
   await expect(
-    page.getByText("Used fresh cached data without a new request."),
+    page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Used fresh cached data without a new request." }),
   ).toBeVisible();
   const message = page.getByRole("textbox", { name: "POST content" });
   await message.fill("Keyboard fixture request");
@@ -113,12 +117,15 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await expect(
     page.getByRole("button", { name: "Run GET", exact: true }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Read cache / fetch" }).click();
+  await page
+    .getByRole("button", { name: "Read cache / fetch", exact: true })
+    .click();
   await expect(result).toContainText('"method": "GET"');
   await expect(
-    page.getByText(
-      "Read the last cached response offline. It may be stale; no request was made.",
-    ),
+    page.locator("[data-sonner-toast]").filter({
+      hasText:
+        "Read the last cached response offline. It may be stale; no request was made.",
+    }),
   ).toBeVisible();
   expect(external).toEqual([]);
 });

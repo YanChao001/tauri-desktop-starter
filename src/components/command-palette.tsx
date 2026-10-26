@@ -1,7 +1,8 @@
 import { Command } from "cmdk";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useContentSearch } from "@/features/content-search/use-content-search";
-import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { SearchIcon } from "lucide-react";
 import {
   Dialog,
@@ -29,6 +30,27 @@ export function CommandPalette() {
   const { commands, execute, paletteOpen, setPaletteOpen } = useCommands();
   const [query, setQuery] = useState("");
   const content = useContentSearch(query, paletteOpen);
+  const { failed, retry } = content;
+  const notifiedFailure = useRef(false);
+  useEffect(() => {
+    if (!paletteOpen || !failed) {
+      notifiedFailure.current = false;
+      return;
+    }
+    if (notifiedFailure.current) return;
+    notifiedFailure.current = true;
+    toast.error(t("search.failed"), {
+      id: "command-palette-search",
+      action: {
+        label: t("common.retry"),
+        onClick: () => {
+          setPaletteOpen(true);
+          setQuery(query);
+          retry();
+        },
+      },
+    });
+  }, [paletteOpen, failed, retry, query, setPaletteOpen, t]);
   return (
     <Dialog
       open={paletteOpen}
@@ -58,30 +80,24 @@ export function CommandPalette() {
               placeholder={t("commands.placeholder")}
               aria-label={t("commands.title")}
             />
-          </div>
-          <p className="px-4 pt-2 text-xs text-muted-foreground" role="status">
-            {t(
-              content.tooLong
-                ? "search.limit"
-                : content.loading
-                  ? "search.loading"
-                  : content.native
-                    ? "search.hint"
-                    : "search.browser",
-            )}
-          </p>
-          {content.failed ? (
-            <div
-              className="flex items-center gap-2 px-4 pt-2 text-xs"
-              role="alert"
+            <HelpTooltip
+              label={t("common.helpFor", { name: t("commands.title") })}
             >
-              <span>{t("search.failed")}</span>
-              <Button variant="ghost" size="sm" onClick={content.retry}>
-                {t("common.retry")}
-              </Button>
-            </div>
-          ) : null}
-          <Command.List className="max-h-[min(60vh,24rem)] overflow-y-auto p-2">
+              {t(content.native ? "search.hint" : "search.browser")}
+            </HelpTooltip>
+          </div>
+          <p
+            className="mx-4 h-5 overflow-auto text-xs text-muted-foreground"
+            role="status"
+            tabIndex={content.tooLong ? 0 : undefined}
+          >
+            {content.tooLong
+              ? t("search.limit")
+              : content.loading
+                ? t("search.loading")
+                : ""}
+          </p>
+          <Command.List className="h-[min(60vh,24rem)] overflow-y-auto p-2">
             <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
               {t("commands.empty")}
             </Command.Empty>

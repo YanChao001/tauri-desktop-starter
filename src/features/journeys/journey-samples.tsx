@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { saveTextExport } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
@@ -13,7 +15,6 @@ const CHANGED =
 export function JourneySamples({ path }: { path: string }) {
   const { t } = useI18n();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<unknown>(null);
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -25,26 +26,23 @@ export function JourneySamples({ path }: { path: string }) {
     return null;
   async function download(name: string, text: string) {
     setPending(true);
-    setError(null);
     try {
       await saveTextExport(name, text);
     } catch (reason) {
-      if (mounted.current) setError(reason);
+      if (mounted.current) toast.error(nativeErrorText(reason, t));
     } finally {
       if (mounted.current) setPending(false);
     }
   }
+  const hint = t(
+    path === "/data-studio"
+      ? "samples.csvHint"
+      : path === "/tasks"
+        ? "samples.tasksHint"
+        : "samples.textHint",
+  );
   return (
-    <div className="mt-3 space-y-2 border-t pt-3">
-      <p className="text-xs text-muted-foreground">
-        {t(
-          path === "/data-studio"
-            ? "samples.csvHint"
-            : path === "/tasks"
-              ? "samples.tasksHint"
-              : "samples.textHint",
-        )}
-      </p>
+    <div className="mt-3 border-t pt-3">
       <div className="flex flex-wrap gap-2">
         {path === "/data-studio" ? (
           <Button
@@ -75,12 +73,8 @@ export function JourneySamples({ path }: { path: string }) {
             </Button>
           </>
         )}
+        <HelpTooltip label={hint}>{hint}</HelpTooltip>
       </div>
-      {error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {nativeErrorText(error, t)}
-        </p>
-      ) : null}
     </div>
   );
 }

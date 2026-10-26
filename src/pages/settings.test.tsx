@@ -192,7 +192,35 @@ describe("设置页", () => {
     );
   });
 
-  it("浏览器预览禁用原生尺寸预设，但允许保存启动位置偏好", () => {
+  it("皮肤说明保留无障碍关联，键盘聚焦后才显示补充文案", async () => {
+    render(<SettingsView />);
+    const skin = screen.getByRole("radio", { name: "云朵晴空" });
+    expect(skin).toHaveAccessibleDescription(
+      "蓬松云团与小太阳，像随手画下的好天气",
+    );
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.focus(skin);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "蓬松云团与小太阳，像随手画下的好天气",
+    );
+  });
+
+  it("首次读取窗口范围失败保留紧凑恢复入口，重试后恢复预设", async () => {
+    vi.mocked(desktop.isTauri).mockReturnValue(true);
+    vi.mocked(desktop.getWindowGeometry)
+      .mockRejectedValueOnce({ code: "WINDOW_ERROR" })
+      .mockResolvedValueOnce(geometry);
+    render(<SettingsView />);
+    expect(await screen.findByRole("alert")).toBeVisible();
+    const presets = within(screen.getByRole("group", { name: "窗口大小" }));
+    expect(presets.getByRole("button", { name: "标准" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await screen.findByText("当前尺寸 1120 × 740");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(presets.getByRole("button", { name: "标准" })).toBeEnabled();
+  });
+
+  it("浏览器预览禁用原生尺寸预设，环境说明按需展示且允许保存启动位置偏好", async () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     for (const button of presets.getAllByRole("button"))
@@ -202,8 +230,12 @@ describe("设置页", () => {
       screen.queryByRole("button", { name: "应用窗口大小" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText("窗口大小由桌面应用管理，浏览器预览中不可修改。"),
-    ).toBeVisible();
+      screen.queryByText("窗口大小由桌面应用管理，浏览器预览中不可修改。"),
+    ).not.toBeInTheDocument();
+    fireEvent.focus(screen.getByRole("button", { name: "了解窗口大小" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "窗口大小由桌面应用管理，浏览器预览中不可修改。",
+    );
     expect(desktop.getWindowGeometry).not.toHaveBeenCalled();
     expect(screen.getByRole("radio", { name: "记住上次位置" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "居中" }));
@@ -289,6 +321,12 @@ describe("设置页", () => {
     expect(
       presets.getByRole("button", { name: "舒适" }),
     ).toHaveAccessibleDescription("不符合当前屏幕可用范围");
+    const disabledReason = presets.getByRole("group", { name: "舒适" });
+    expect(disabledReason).toHaveAttribute("tabindex", "0");
+    fireEvent.focus(disabledReason);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "不符合当前屏幕可用范围",
+    );
     expect(presets.getByRole("button", { name: "标准" })).toHaveTextContent(
       "1000 × 700",
     );
@@ -372,7 +410,7 @@ describe("设置页", () => {
     expect(desktop.setWindowSize).not.toHaveBeenCalled();
   });
 
-  it("应用尺寸期间阻止重复操作，原生失败后可刷新范围恢复", async () => {
+  it("应用尺寸期间阻止重复操作，失败通过toast提供刷新且不插入错误横幅", async () => {
     vi.mocked(desktop.isTauri).mockReturnValue(true);
     let rejectSize!: (error: unknown) => void;
     vi.mocked(desktop.setWindowSize).mockImplementation(
@@ -391,7 +429,8 @@ describe("设置页", () => {
     expect(desktop.setWindowSize).toHaveBeenCalledExactlyOnceWith(960, 640);
     expect(presets.getByRole("button", { name: "舒适" })).toBeDisabled();
     await act(async () => rejectSize({ code: "WINDOW_ERROR" }));
-    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(toast.error).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByText("当前尺寸 1120 × 740")).toBeVisible();
     vi.mocked(desktop.getWindowGeometry).mockResolvedValue({
       ...geometry,
@@ -400,9 +439,10 @@ describe("设置页", () => {
       maxWidth: 1000,
       maxHeight: 700,
     });
-    fireEvent.click(
-      within(screen.getByRole("alert")).getByRole("button", { name: "重试" }),
-    );
+    const refresh = vi.mocked(toast.error).mock.calls.at(-1)?.[1]?.action as
+      { label: string; onClick(): void } | undefined;
+    expect(refresh?.label).toBe("刷新");
+    await act(async () => refresh?.onClick());
     await screen.findByText("当前尺寸 1000 × 700");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(presets.getByRole("button", { name: "舒适" })).toBeDisabled();
@@ -486,7 +526,9 @@ describe("设置页", () => {
     await screen.findByText("当前尺寸 1280 × 800");
     const dialog = confirmReset();
     fireEvent.click(dialog.getByRole("button", { name: "重置偏好" }));
-    await waitFor(() => expect(dialog.getByRole("alert")).toBeVisible());
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeVisible();
     expect(desktop.resetWindowGeometry).toHaveBeenCalledExactlyOnceWith(false);
     expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
     expect(screen.getByText("当前尺寸 1280 × 800")).toBeInTheDocument();
@@ -507,7 +549,8 @@ describe("设置页", () => {
     await screen.findByText("当前尺寸 1280 × 800");
     const dialog = confirmReset();
     fireEvent.click(dialog.getByRole("button", { name: "重置偏好" }));
-    await waitFor(() => expect(dialog.getByRole("alert")).toBeVisible());
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(screen.getByText("当前尺寸 1120 × 740")).toBeInTheDocument();
     expect(toast.success).not.toHaveBeenCalled();

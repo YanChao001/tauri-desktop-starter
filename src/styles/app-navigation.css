@@ -185,6 +185,18 @@
   padding: 1.25rem 1.75rem 2.5rem;
 }
 
+/* 隔离文档负责阅读宽度与内边距，滚动条属于完整的应用内容区。 */
+.app-main:has([data-extension-custom-ui]) {
+  scrollbar-gutter: auto;
+}
+
+.app-main:has([data-extension-custom-ui])
+  > :is(.app-page-content, .app-extension-window-content) {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
 .app-route-context {
   margin-bottom: 1.15rem;
   color: var(--muted-foreground);

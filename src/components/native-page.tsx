@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AlertCircleIcon, LayersIcon, ArrowRightIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { useI18n, type DictKey } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { isTauri } from "@/lib/tauri";
@@ -103,8 +104,18 @@ export function NativePage({
     <div className="studio-page">
       {title || description ? (
         <div className="studio-intro">
-          {title ? <h2>{title}</h2> : null}
-          {description ? <p>{description}</p> : null}
+          {title ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <h2>{title}</h2>
+              {description ? (
+                <HelpTooltip label={t("common.helpFor", { name: title })}>
+                  {description}
+                </HelpTooltip>
+              ) : null}
+            </div>
+          ) : description ? (
+            <p>{description}</p>
+          ) : null}
         </div>
       ) : null}
       {isTauri() ? (
