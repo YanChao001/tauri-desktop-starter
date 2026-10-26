@@ -131,6 +131,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
 
       - name: 验证 Rust 生成的 IPC 类型
         if: matrix.platform == 'windows-latest'
