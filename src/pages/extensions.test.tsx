@@ -538,13 +538,13 @@ it("checks an installed bundled lab without opening an invalid same-version upgr
   vi.mocked(native.previewExtension).mockResolvedValue(bundledLab);
   marketPage();
   const check = await screen.findByRole("button", {
-    name: "Check bundled lab for updates",
+    name: "Check bundled workbench for updates",
   });
   await waitFor(() => expect(check).toBeEnabled());
   expect(native.extensionDemo).not.toHaveBeenCalled();
   fireEvent.click(check);
   expect(
-    await screen.findByText("The bundled lab is already up to date."),
+    await screen.findByText("The bundled workbench is already up to date."),
   ).toBeVisible();
   expect(native.extensionDemo).toHaveBeenCalledExactlyOnceWith(
     "starter.extension-lab",
@@ -572,7 +572,7 @@ it("reviews a newer bundled lab and installs it only after confirmation using th
   vi.mocked(native.installExtension).mockResolvedValue(snapshot);
   marketPage();
   const check = await screen.findByRole("button", {
-    name: "Check bundled lab for updates",
+    name: "Check bundled workbench for updates",
   });
   await waitFor(() => expect(check).toBeEnabled());
   fireEvent.click(check);
@@ -598,12 +598,12 @@ it.each([
   [
     "3.0.0",
     bundledLab.sha256,
-    "The installed lab is newer than the bundled version.",
+    "The installed workbench is newer than the bundled version.",
   ],
   [
     "2.0.0",
     "a".repeat(64),
-    "The installed lab has the same version but different contents.",
+    "The installed workbench has the same version but different contents.",
   ],
 ])(
   "retains an installed lab at %s when a bundled replacement cannot upgrade it",
@@ -624,7 +624,7 @@ it.each([
     vi.mocked(native.previewExtension).mockResolvedValue(bundledLab);
     marketPage();
     const check = await screen.findByRole("button", {
-      name: "Check bundled lab for updates",
+      name: "Check bundled workbench for updates",
     });
     await waitFor(() => expect(check).toBeEnabled());
     fireEvent.click(check);

@@ -33,9 +33,7 @@
   "network": [
     {
       "origin": "https://jsonplaceholder.typicode.com",
-      "methods": [
-        "GET"
-      ]
+      "methods": ["GET"]
     }
   ]
 }

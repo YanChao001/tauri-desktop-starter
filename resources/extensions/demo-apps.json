@@ -2,7 +2,7 @@
   "sources": {
     "Cargo.lock": "160ffbb3382b5a4559daadcdb8632f444d249e0f22ea8927cc7a8ae1c5fcf526",
     "Cargo.toml": "ba5af5eb285902c968c7d99d08e31371068d351457a1ca1aae3fd63dcddba768",
-    "extension.json": "15d8e65e121b2198d2c490542a20bf7549a76430191c2d0fd06fdd18ae54b683",
+    "extension.json": "2bbeaa363810e352d8bc816381c7c46f23b496c2a9ad50a70ed1fa6d0148f84b",
     "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
     "src/app.rs": "bc8750f4cf7fa336c68460c207ad4ba4f0ae7ee0b409ed965f4d31aad6afa5ef",
     "src/data.rs": "b0a169d6b8241c44840ef09145168ea812f984728f6644a2af35f963596bf5da",
