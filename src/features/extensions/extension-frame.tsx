@@ -42,7 +42,6 @@ export function ExtensionFrame({
   const restoringFocus = useRef(false);
   const toolbar = (
     <>
-      {target?.placement === "navigation" ? feedback : null}
       <TooltipProvider delayDuration={650} skipDelayDuration={0}>
         <Tooltip
           open={hintOpen && !open}
@@ -106,7 +105,7 @@ export function ExtensionFrame({
                   {t("ext.appSessionHint")}
                 </ExtensionHelp>
               </PopoverHeader>
-              {target?.placement === "titlebar" ? feedback : null}
+              {feedback}
               <div className="space-y-3">{tools}</div>
             </PopoverContent>
           </Popover>
@@ -117,8 +116,13 @@ export function ExtensionFrame({
   return (
     <div className="min-w-0">
       {target ? createPortal(toolbar, target.node) : null}
-      {target?.placement === "titlebar" ? (
-        <span role="status" aria-live="polite" className="sr-only">
+      {target && !open ? (
+        <span
+          role="status"
+          aria-label={t("ext.appStatus")}
+          aria-live="polite"
+          className="sr-only"
+        >
           {announcement}
         </span>
       ) : null}

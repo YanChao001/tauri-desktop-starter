@@ -252,8 +252,8 @@ it("keeps session tools out of the main workflow and preserves a draft when endi
     screen.queryByText("Export session", { selector: "button" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getByText("Request stop", { selector: "button" }),
-  ).not.toBeVisible();
+    screen.queryByText("Request stop", { selector: "button" }),
+  ).not.toBeInTheDocument();
   fireEvent.change(input, { target: { value: "Keep my progress" } });
   const end = sessionButton("End session");
   fireEvent.click(end);
@@ -277,6 +277,9 @@ it("labels the collected tools after a hover delay and dismisses the hint throug
   const trigger = screen.getByRole("button", {
     name: "Extension tools",
   });
+  expect(
+    screen.getAllByRole("status", { name: "Execution status" }),
+  ).toHaveLength(1);
   vi.useFakeTimers();
   fireEvent.pointerMove(trigger, { pointerType: "mouse" });
   await act(async () => vi.advanceTimersByTimeAsync(600));
@@ -285,7 +288,16 @@ it("labels the collected tools after a hover delay and dismisses the hint throug
   expect(screen.getByRole("tooltip")).toHaveTextContent("Extension tools");
   fireEvent.click(trigger);
   expect(screen.getByRole("region", { name: "Extension tools" })).toBeVisible();
+  expect(
+    screen.getAllByRole("status", { name: "Execution status" }),
+  ).toHaveLength(1);
+  expect(
+    screen.getByRole("status", { name: "Execution status" }),
+  ).not.toHaveClass("sr-only");
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(
+    screen.getAllByRole("status", { name: "Execution status" }),
+  ).toHaveLength(1);
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   fireEvent.keyDown(document.body, { key: "Escape" });
@@ -402,8 +414,8 @@ it("keeps feedback and footer controls mounted across running, stopping and sett
     .mockReturnValueOnce(pending.promise);
   const mounted = render(app());
   const submit = await screen.findByRole("button", { name: "Submit" });
-  const stop = screen.getByText("Request stop", { selector: "button" });
   const end = sessionButton("End session");
+  const stop = screen.getByText("Request stop", { selector: "button" });
   const status = screen.getByRole("status", { name: "Execution status" });
   expect(stop).toBeDisabled();
   expect(status).toBeEmptyDOMElement();
@@ -434,6 +446,7 @@ it("does not flash running feedback or a stop control for a short action", async
     .mockReturnValueOnce(pending.promise);
   render(app());
   const submit = await screen.findByRole("button", { name: "Submit" });
+  openSessionTools();
   const stop = screen.getByText("Request stop", { selector: "button" });
   const status = screen.getByRole("status", { name: "Execution status" });
   vi.useFakeTimers();
@@ -537,6 +550,7 @@ it("shows queued status for this window and lets the user cancel its waiting ope
       screen.getByRole("status", { name: "Execution status" }),
     ).toHaveTextContent("Queued, waiting for a runtime slot…"),
   );
+  openSessionTools();
   fireEvent.click(screen.getByText("Request stop", { selector: "button" }));
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith(
@@ -916,6 +930,7 @@ it("observes a retained run directly after remount and preserves its failure fee
   fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
+  openSessionTools();
   expect(screen.getByRole("button", { name: "Submit" })).toHaveAttribute(
     "aria-disabled",
     "true",

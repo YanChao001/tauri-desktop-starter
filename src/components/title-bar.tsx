@@ -129,8 +129,12 @@ export function TitleBar({
       className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b bg-background/80 backdrop-blur"
     >
       <div
+        data-extension-window-identity={standalone ? "" : undefined}
+        data-native-traffic-lights={native && mac ? "" : undefined}
+        data-tauri-drag-region={standalone ? "" : undefined}
         className={cn(
           "flex min-w-0 items-center gap-2 pl-3",
+          standalone && "flex-1 pr-2",
           native && mac && "pl-[78px]",
         )}
       >
@@ -145,15 +149,25 @@ export function TitleBar({
             className="size-6 shrink-0"
           />
         ) : (
-          <span
-            role="img"
-            aria-label={extension?.name ?? t("ext.title")}
-            title={extension?.name}
-            data-tauri-drag-region
-            className="flex size-6 shrink-0 items-center justify-center"
-          >
-            <ExtensionIcon name={extension?.icon} className="size-5" />
-          </span>
+          <>
+            <span
+              role="img"
+              aria-label={extension?.name ?? t("ext.title")}
+              data-extension-window-icon
+              data-tauri-drag-region
+              className="flex size-6 shrink-0 items-center justify-center"
+            >
+              <ExtensionIcon name={extension?.icon} className="size-5" />
+            </span>
+            <span
+              data-extension-window-title
+              data-tauri-drag-region
+              title={extension?.name ?? t("ext.title")}
+              className="min-w-0 truncate text-sm font-medium"
+            >
+              {extension?.name ?? t("ext.title")}
+            </span>
+          </>
         )}
 
         {settings.menuBar && !standalone ? (
@@ -245,9 +259,11 @@ export function TitleBar({
       </div>
 
       {!native && !standalone ? <CompactNavigation /> : null}
-      <div data-tauri-drag-region className="min-w-2 flex-1" />
+      {!standalone ? (
+        <div data-tauri-drag-region className="min-w-2 flex-1" />
+      ) : null}
 
-      <div className="flex items-stretch">
+      <div className="flex shrink-0 items-stretch">
         {!standalone ? (
           <Tooltip disableHoverableContent>
             <TooltipTrigger asChild>

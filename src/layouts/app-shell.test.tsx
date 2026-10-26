@@ -84,6 +84,10 @@ function renderShell(initial = "/") {
         <Route element={<AppShell />}>
           <Route index element={<Page />} />
           <Route path="settings" element={<Page />} />
+          <Route
+            path="extensions/app/:extensionId/:commandId"
+            element={<Page />}
+          />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -142,6 +146,16 @@ describe("应用内容导航", () => {
     expect(window.scrollTo).not.toHaveBeenCalled();
     expect(main.scrollTop).toBe(240);
     expect(screen.getByRole("textbox", { name: "Page input" })).toHaveFocus();
+  });
+
+  it("扩展正文不显示导航标识行，普通页面保留位置上下文", () => {
+    renderShell("/extensions/app/example.lab/open");
+    expect(screen.getByRole("heading", { name: "Page content" })).toBeVisible();
+    expect(document.querySelector(".app-route-context")).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "/settings" }));
+    expect(
+      screen.getByRole("navigation", { name: "navContext.location" }),
+    ).toHaveTextContent("nav.settings");
   });
 
   it("目标页模块未就绪时显示预布局骨架，加载后立即切换", async () => {

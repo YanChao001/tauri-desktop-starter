@@ -172,14 +172,16 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   fireEvent.click(link);
   expect(await screen.findByLabelText("Draft")).toHaveValue("Keep this edit");
   expect(native.viewExtension).toHaveBeenCalledOnce();
-  expect(document.querySelector(".app-route-context")).toHaveTextContent(
-    "Lab app",
-  );
+  expect(document.querySelector(".app-route-context")).toBeNull();
   expect(document.querySelector("[data-extension-surface] header")).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Open in separate window" }),
   ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Extension tools" }));
+  const trigger = screen.getByRole("button", { name: "Extension tools" });
+  expect(trigger.closest("a")).toBeNull();
+  expect(trigger.closest("[data-sidebar-extension]")).toBe(link.parentElement);
+  fireEvent.click(trigger);
+  expect(link).toHaveAttribute("aria-current", "page");
   fireEvent.click(
     screen.getByRole("button", { name: "Open in separate window" }),
   );

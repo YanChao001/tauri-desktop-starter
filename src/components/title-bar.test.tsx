@@ -184,6 +184,9 @@ describe("TitleBar 窗口订阅", () => {
   it("keeps language, theme and native controls without host navigation in a standalone window", () => {
     vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
     renderTitleBar(true);
+    expect(
+      document.querySelector("[data-extension-window-title]"),
+    ).toHaveTextContent("ext.title");
     expect(screen.queryByRole("button", { name: "title.file" })).toBeNull();
     expect(screen.queryByRole("button", { name: "commands.open" })).toBeNull();
     expect(
@@ -223,6 +226,10 @@ describe("TitleBar 窗口订阅", () => {
     );
     expect(themeIndex).toBeLessThan(toolsIndex);
     expect(toolsIndex).toBeLessThan(minimizeIndex);
-    expect(screen.queryByText("Scientific calculator")).not.toBeInTheDocument();
+    const title = screen.getByText("Scientific calculator");
+    expect(title).toHaveAttribute("data-extension-window-title");
+    expect(title).toHaveAttribute("title", "Scientific calculator");
+    expect(title).toHaveAttribute("data-tauri-drag-region");
+    expect(title).toHaveClass("truncate");
   });
 });

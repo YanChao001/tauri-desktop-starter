@@ -23,24 +23,15 @@ import { JourneyGuide } from "@/features/journeys/journey-guide";
 import { currentJourney } from "@/features/journeys/model";
 import { useAppChrome } from "@/hooks/use-app-chrome";
 import "@/styles/app-navigation.css";
-import {
-  ExtensionChromeProvider,
-  ExtensionChromeSlot,
-} from "@/features/extensions/extension-chrome-slot";
-import { ExtensionIcon } from "@/features/extensions/extension-icon";
+import { ExtensionChromeProvider } from "@/features/extensions/extension-chrome-slot";
 
 /** 感知路由的应用布局；页面失败时保留导航能力 */
 export function AppShell() {
   const { pathname, search } = useLocation();
   const { data } = useExtensions();
-  const extensionRoutes = extensionNavigation(data?.items ?? []);
+  const extensionRoutes = extensionNavigation(data?.items ?? [], pathname);
   const dynamicRoute = extensionRoutes.find((route) => route.path === pathname);
   const extensionSurface = pathname.startsWith("/extensions/app/");
-  const extensionItem = data?.items.find((item) =>
-    pathname.startsWith(
-      `/extensions/app/${encodeURIComponent(item.package.manifest.id)}/`,
-    ),
-  );
   const current = dynamicRoute ?? matchRoute(pathname);
   const group =
     NAVIGATION_GROUPS.find(({ id }) => id === current.group) ??
@@ -109,27 +100,11 @@ export function AppShell() {
           tabIndex={-1}
         >
           <div className="app-page-content">
-            <nav
-              aria-label={t("navContext.location")}
-              className={cn(
-                "app-route-context",
-                extensionSurface && "app-route-context-extension",
-              )}
-            >
-              {extensionSurface ? (
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <ExtensionIcon
-                    name={extensionItem?.package.manifest.icon}
-                    className="size-4 shrink-0"
-                  />
-                  <span
-                    className="truncate text-sm font-medium text-foreground"
-                    title={extensionItem?.package.manifest.name}
-                  >
-                    {extensionItem?.package.manifest.name ?? t("ext.title")}
-                  </span>
-                </div>
-              ) : (
+            {!extensionSurface ? (
+              <nav
+                aria-label={t("navContext.location")}
+                className="app-route-context"
+              >
                 <ol>
                   <li className="app-route-context-group">
                     <span
@@ -145,14 +120,8 @@ export function AppShell() {
                     {dynamicRoute?.label ?? t(current.labelKey)}
                   </li>
                 </ol>
-              )}
-              {extensionSurface ? (
-                <ExtensionChromeSlot
-                  placement="navigation"
-                  className="flex shrink-0 items-center gap-2"
-                />
-              ) : null}
-            </nav>
+              </nav>
+            ) : null}
             {!extensionSurface ? <JourneyGuide /> : null}
             <Suspense
               key={pathname}

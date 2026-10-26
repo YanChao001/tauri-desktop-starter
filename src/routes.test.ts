@@ -86,6 +86,24 @@ describe("路由配置与匹配", () => {
     ]);
     expect(extensionNavigation([item])[0]?.icon).toBe(NotebookPenIcon);
     expect(
+      extensionNavigation([item], "/extensions/app/example.mixed/hidden").map(
+        (entry) => entry.path,
+      ),
+    ).toEqual([
+      "/extensions/app/example.mixed/offline",
+      "/extensions/app/example.mixed/hidden",
+    ]);
+    expect(
+      extensionNavigation([item], "/extensions/app/example.mixed/online").map(
+        (entry) => entry.path,
+      ),
+    ).toEqual(["/extensions/app/example.mixed/offline"]);
+    expect(
+      extensionNavigation([item], "/extensions/app/example.mixed/tool").map(
+        (entry) => entry.path,
+      ),
+    ).toEqual(["/extensions/app/example.mixed/offline"]);
+    expect(
       extensionNavigation([
         { ...item, grantedPermissions: ["network:https"] },
       ]).map((entry) => entry.path),
@@ -94,5 +112,11 @@ describe("路由配置与匹配", () => {
       "/extensions/app/example.mixed/online",
     ]);
     expect(extensionNavigation([{ ...item, enabled: false }])).toEqual([]);
+    expect(
+      extensionNavigation(
+        [{ ...item, enabled: false }],
+        "/extensions/app/example.mixed/hidden",
+      ),
+    ).toEqual([]);
   });
 });

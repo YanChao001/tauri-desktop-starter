@@ -64,6 +64,7 @@ export function extensionPath(id: string, command: string, window = false) {
 }
 export function extensionNavigation(
   items: readonly ExtensionInfo[],
+  currentPath?: string,
 ): AppNavigationItem[] {
   return items.flatMap((item) => {
     const manifest = item.package.manifest;
@@ -71,13 +72,19 @@ export function extensionNavigation(
       .filter(
         (command) =>
           canRunExtensionCommand(item, command) &&
-          command.ui?.sidebar &&
+          (command.ui?.sidebar ||
+            (currentPath &&
+              matchPath(
+                { path: extensionPath(manifest.id, command.id), end: true },
+                currentPath,
+              ))) &&
           command.resultFormat === "view",
       )
       .map((command) => ({
         path: extensionPath(manifest.id, command.id),
         labelKey: "ext.title" as const,
         label:
+          command.ui?.sidebar &&
           manifest.commands.filter((entry) => entry.ui?.sidebar).length === 1
             ? manifest.name
             : `${manifest.name}: ${command.title}`,

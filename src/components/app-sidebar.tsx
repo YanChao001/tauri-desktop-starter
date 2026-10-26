@@ -1,5 +1,5 @@
 import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { matchPath, NavLink, useLocation } from "react-router-dom";
 import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -22,6 +22,7 @@ import { useCommands } from "@/providers/commands";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { NAVIGATION_GROUPS, type AppNavigationItem } from "@/routes";
+import { ExtensionChromeSlot } from "@/features/extensions/extension-chrome-slot";
 
 export function AppSidebar({
   routes,
@@ -123,42 +124,65 @@ export function AppSidebar({
             </p>
             <div className="space-y-0.5">
               {group.routes.map(
-                ({ path, labelKey, label, icon: Icon, exact, preload }) => (
-                  <Tooltip
-                    key={path}
-                    open={collapsed && tooltip === path}
-                    onOpenChange={(open) => tooltipChanged(path, open)}
-                  >
-                    <TooltipTrigger asChild>
-                      <NavLink
-                        to={path}
-                        end={exact}
-                        className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
-                        onPointerEnter={preload}
-                        onPointerMove={() => trackTooltip(path)}
-                        onFocus={() => {
-                          trackTooltip(path);
-                          preload?.();
-                        }}
-                        onPointerLeave={() => leaveTooltip(path)}
-                        onBlur={() => leaveTooltip(path)}
+                ({ path, labelKey, label, icon: Icon, exact, preload }) => {
+                  const currentExtension =
+                    group.id === "extensions" &&
+                    !!matchPath({ path, end: exact }, pathname);
+                  return (
+                    <div
+                      key={path}
+                      data-sidebar-extension={
+                        currentExtension ? path : undefined
+                      }
+                      className={
+                        currentExtension ? "app-sidebar-extension" : undefined
+                      }
+                    >
+                      <Tooltip
+                        open={collapsed && tooltip === path}
+                        onOpenChange={(open) => tooltipChanged(path, open)}
                       >
-                        <Icon className="size-4 shrink-0" aria-hidden="true" />
-                        <span className="app-sidebar-label min-w-0 flex-1 truncate">
-                          {label ?? t(labelKey)}
-                        </span>
-                      </NavLink>
-                    </TooltipTrigger>
-                    {collapsed && tooltip === path ? (
-                      <TooltipContent side="right" className="space-y-0.5">
-                        <p className="text-[10px] opacity-65">
-                          {t(group.labelKey)}
-                        </p>
-                        <p>{label ?? t(labelKey)}</p>
-                      </TooltipContent>
-                    ) : null}
-                  </Tooltip>
-                ),
+                        <TooltipTrigger asChild>
+                          <NavLink
+                            to={path}
+                            end={exact}
+                            className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
+                            onPointerEnter={preload}
+                            onPointerMove={() => trackTooltip(path)}
+                            onFocus={() => {
+                              trackTooltip(path);
+                              preload?.();
+                            }}
+                            onPointerLeave={() => leaveTooltip(path)}
+                            onBlur={() => leaveTooltip(path)}
+                          >
+                            <Icon
+                              className="size-4 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="app-sidebar-label min-w-0 flex-1 truncate">
+                              {label ?? t(labelKey)}
+                            </span>
+                          </NavLink>
+                        </TooltipTrigger>
+                        {collapsed && tooltip === path ? (
+                          <TooltipContent side="right" className="space-y-0.5">
+                            <p className="text-[10px] opacity-65">
+                              {t(group.labelKey)}
+                            </p>
+                            <p>{label ?? t(labelKey)}</p>
+                          </TooltipContent>
+                        ) : null}
+                      </Tooltip>
+                      {currentExtension ? (
+                        <ExtensionChromeSlot
+                          placement="navigation"
+                          className="app-sidebar-extension-tools"
+                        />
+                      ) : null}
+                    </div>
+                  );
+                },
               )}
             </div>
           </div>
