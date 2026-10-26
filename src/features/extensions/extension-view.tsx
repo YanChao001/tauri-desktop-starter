@@ -4,6 +4,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -162,7 +164,11 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
       <div className="min-w-0 space-y-3 rounded-xl border bg-card p-4">
         <Suspense
           fallback={
-            <p className="text-sm text-muted-foreground">{block.label}</p>
+            <Skeleton
+              className="h-64 w-full"
+              role="status"
+              aria-label={block.label}
+            />
           }
         >
           <ExtensionChart block={block} />
@@ -196,6 +202,7 @@ export function ExtensionView({
   fields,
   blocked,
   invalidFields,
+  invalidFieldValues,
   onField,
   onAction,
 }: {
@@ -203,6 +210,7 @@ export function ExtensionView({
   fields: Record<string, string>;
   blocked: boolean;
   invalidFields: ReadonlySet<string>;
+  invalidFieldValues?: ReadonlySet<string>;
   onField: (id: string, value: string) => void;
   onAction: (action: string) => void;
 }) {
@@ -225,6 +233,11 @@ export function ExtensionView({
             const byteLimit = extensionFieldBytes(field);
             const fieldError = view.errors?.[field.id];
             const invalid = invalidFields.has(field.id) || Boolean(fieldError);
+            const errorText = invalidFields.has(field.id)
+              ? invalidFieldValues?.has(field.id)
+                ? t("ext.fieldInvalid")
+                : t("ext.fieldLimit", { bytes: byteLimit })
+              : (fieldError ?? "");
             const errorId = `${fieldId}-error`;
             const props = {
               id: fieldId,
@@ -317,13 +330,24 @@ export function ExtensionView({
                     )}
                   </>
                 )}
-                {invalid ? (
-                  <p id={errorId} className="text-xs text-destructive">
-                    {invalidFields.has(field.id)
-                      ? t("ext.fieldLimit", { bytes: byteLimit })
-                      : fieldError}
-                  </p>
-                ) : null}
+                <div className="h-5 min-w-0">
+                  {invalid ? (
+                    <div className="flex min-w-0 items-center gap-1">
+                      <p
+                        id={errorId}
+                        className="min-w-0 truncate text-xs text-destructive"
+                      >
+                        {errorText}
+                      </p>
+                      <HelpTooltip
+                        label={errorText}
+                        className="size-5 shrink-0"
+                      >
+                        <span className="break-words">{errorText}</span>
+                      </HelpTooltip>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             );
           })}

@@ -12,6 +12,12 @@ pub async fn save_text_export(
     name: String,
     content: String,
 ) -> NativeResult<Option<String>> {
+    validate_export_name(&name)?;
+    blocking::run(move || workbench::save_text_content(&app, &name, &content, 8 * 1024 * 1024))
+        .await
+}
+
+pub(crate) fn validate_export_name(name: &str) -> NativeResult<()> {
     if name.len() > 100
         || name.is_empty()
         || !name
@@ -26,6 +32,5 @@ pub async fn save_text_export(
             "Use a plain CSV, JSON or text export name",
         ));
     }
-    blocking::run(move || workbench::save_text_content(&app, &name, &content, 8 * 1024 * 1024))
-        .await
+    Ok(())
 }

@@ -11,11 +11,14 @@ import userEvent from "@testing-library/user-event";
 import * as native from "@/lib/tauri";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import { ExtensionRunner } from "./extension-runner";
+import { toast } from "sonner";
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
   runExtension: vi.fn(),
   cancelExtension: vi.fn(),
+  saveExtensionSession: vi.fn(),
   saveTextExport: vi.fn(),
   pickExtensionFiles: vi.fn(),
 }));
@@ -75,7 +78,8 @@ function deferred<T>() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(native.cancelExtension).mockResolvedValue(undefined);
-  vi.mocked(native.saveTextExport).mockResolvedValue("saved.json");
+  vi.mocked(native.saveExtensionSession).mockResolvedValue("saved.json");
+  vi.mocked(native.saveTextExport).mockResolvedValue("saved.txt");
 });
 afterEach(() => {
   cleanup();
@@ -127,7 +131,7 @@ it("exports the actual final result when completion races with lifecycle cancell
     nativeRun.resolve("Final result before stop");
     await saving;
   });
-  expect(native.saveTextExport).toHaveBeenCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenCalledWith(
     "extension-session.json",
     expect.stringContaining("Final result before stop"),
   );
@@ -151,10 +155,11 @@ it("keeps input and previous output after failure and leaves a cancelled export 
   await screen.findByText("<script>plain text</script>");
   expect(document.querySelector("script")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
-  await screen.findByRole("alert");
+  await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Input text")).toHaveValue("Keep this input");
   expect(screen.getByText("<script>plain text</script>")).toBeVisible();
-  vi.mocked(native.saveTextExport).mockResolvedValueOnce(null);
+  vi.mocked(native.saveExtensionSession).mockResolvedValueOnce(null);
   await act(async () => {
     await expect(lifecycle.work!.save()).rejects.toMatchObject({
       code: "USER_CANCELLED",
@@ -165,7 +170,7 @@ it("keeps input and previous output after failure and leaves a cancelled export 
     await lifecycle.work!.save();
   });
   expect(lifecycle.work?.dirty).toBe(false);
-  expect(native.saveTextExport).toHaveBeenLastCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenLastCalledWith(
     "extension-session.json",
     expect.stringContaining("Keep this input"),
   );
@@ -211,7 +216,7 @@ it("does not clear or save anything for an already aborted lifecycle request", a
   controller.abort();
   await expect(lifecycle.work!.save(controller.signal)).rejects.toThrow();
   await expect(lifecycle.work!.discard(controller.signal)).rejects.toThrow();
-  expect(native.saveTextExport).not.toHaveBeenCalled();
+  expect(native.saveExtensionSession).not.toHaveBeenCalled();
   expect(native.runExtension).not.toHaveBeenCalled();
   expect(screen.getByLabelText("Input text")).toHaveValue("Retain");
 });
@@ -231,7 +236,7 @@ it("waits for an active file picker and exports the selection that actually comp
   );
   expect(lifecycle.work?.dirty).toBe(true);
   const saving = lifecycle.work!.save();
-  expect(native.saveTextExport).not.toHaveBeenCalled();
+  expect(native.saveExtensionSession).not.toHaveBeenCalled();
   await act(async () => {
     selecting.resolve([
       {
@@ -243,7 +248,7 @@ it("waits for an active file picker and exports the selection that actually comp
     ]);
     await saving;
   });
-  expect(native.saveTextExport).toHaveBeenCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenCalledWith(
     "extension-session.json",
     expect.stringContaining('"new-selection.txt"'),
   );
@@ -274,7 +279,7 @@ it("keeps an old installation's exportable draft without sending it to a same-ha
   expect(screen.getByRole("button", { name: "Run extension" })).toBeDisabled();
   await act(async () => lifecycle.work!.save());
   const saved = JSON.parse(
-    String(vi.mocked(native.saveTextExport).mock.calls.at(-1)?.[1]),
+    String(vi.mocked(native.saveExtensionSession).mock.calls.at(-1)?.[1]),
   ) as { extensionId: string; inputText: string; result: { text: string } };
   expect(saved).toMatchObject({
     extensionId: "test.tool",
@@ -293,3 +298,49 @@ it("keeps an old installation's exportable draft without sending it to a same-ha
     expect.objectContaining({ expectedGeneration: 2, inputText: "" }),
   );
 });
+
+it.each([
+  ["text", "txt", "Original text result"],
+  ["json", "json", '{"count":2}'],
+  ["markdown", "md", "# Original Markdown result"],
+] as const)(
+  "saves the original %s result with a native-compatible name for long manifest IDs",
+  async (format, suffix, result) => {
+    const extensionId = "example." + "a".repeat(72);
+    const commandId = "b".repeat(80);
+    const longIds: native.ExtensionInfo = {
+      ...tool,
+      package: {
+        ...tool.package,
+        manifest: {
+          ...tool.package.manifest,
+          id: extensionId,
+          commands: tool.package.manifest.commands.map((command) => ({
+            ...command,
+            id: commandId,
+            resultFormat: format,
+          })),
+        },
+      },
+    };
+    vi.mocked(native.runExtension).mockResolvedValueOnce(result);
+    render(
+      <ExtensionRunner
+        items={[longIds]}
+        runs={[]}
+        onSettled={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+    const save = screen.getByRole("button", { name: "Save result separately" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
+    const [name, content] = vi.mocked(native.saveTextExport).mock.calls[0]!;
+    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(100);
+    expect(name).toMatch(/^[A-Za-z0-9._-]+$/);
+    expect(name.startsWith(`${extensionId}-`)).toBe(true);
+    expect(name.endsWith(`.${suffix}`)).toBe(true);
+    expect(content).toBe(result);
+  },
+);

@@ -4,6 +4,7 @@ import {
   ExtensionUiBridge,
   parseUiRequest,
   UI_CHECKPOINT_BYTES,
+  UI_NOTIFICATION_BYTES,
   type ExtensionUiRequest,
 } from "./extension-ui-bridge";
 
@@ -98,6 +99,104 @@ it("forwards registered service requests without accepting a native identity", a
     }),
   ).toThrow();
 });
+it.each([
+  {
+    service: "resources" as const,
+    request: { action: "fetch-image", url: "https://images.example.com/a.jpg" },
+  },
+  {
+    service: "links" as const,
+    request: { url: "https://source.example.com/article" },
+  },
+])(
+  "forwards the $service service through the same authenticated port",
+  async ({ service, request }) => {
+    const { channel, execute, received, failed } = connect();
+    channel.port2.postMessage({
+      version: 1,
+      id: 1,
+      method: "service",
+      params: { service, request },
+    });
+    await vi.waitFor(() =>
+      expect(received).toContainEqual({ id: 1, result: { state: "next" } }),
+    );
+    expect(execute).toHaveBeenCalledExactlyOnceWith({
+      method: "service",
+      service,
+      request,
+    });
+    expect(failed).not.toHaveBeenCalled();
+  },
+);
+it.each([
+  { service: "http", request: { url: "https://example.com" } },
+  { service: "Resources", request: {} },
+  { service: "resources", request: [] },
+  { service: "links", request: null },
+  { service: "resources", request: {}, expectedSha256: "forged" },
+  { service: "links", request: {}, generation: 99 },
+  { service: "links", request: {}, url: "https://example.com" },
+])(
+  "rejects an invalid service envelope without granting a new transport",
+  (params) => {
+    expect(() =>
+      parseUiRequest({ version: 1, id: 1, method: "service", params }),
+    ).toThrow("Invalid extension UI request");
+  },
+);
+it.each(["info", "success", "error"])(
+  "forwards a bounded plain-text %s notification over the authenticated port",
+  async (tone) => {
+    const { channel, execute, received } = connect();
+    channel.port2.postMessage({
+      version: 1,
+      id: 1,
+      method: "notify",
+      params: { message: "<b>搜索失败，请重试。</b>", tone },
+    });
+    await vi.waitFor(() =>
+      expect(received).toContainEqual({ id: 1, result: { state: "next" } }),
+    );
+    expect(execute).toHaveBeenCalledExactlyOnceWith({
+      method: "notify",
+      message: "<b>搜索失败，请重试。</b>",
+      tone,
+    });
+  },
+);
+it.each([
+  { message: "", tone: "info" },
+  { message: " \n\t", tone: "info" },
+  { message: "bad\0text", tone: "error" },
+  { message: "x".repeat(UI_NOTIFICATION_BYTES + 1), tone: "success" },
+  { message: "图".repeat(Math.ceil(UI_NOTIFICATION_BYTES / 3)), tone: "info" },
+  { message: "message", tone: "warning" },
+  { message: "message", tone: ["info"] },
+  { message: 123, tone: "info" },
+  { message: "message" },
+  { message: "message", tone: "info", html: true },
+  { message: "message", tone: "info", duration: Infinity },
+])(
+  "rejects invalid notification text, tones and presentation controls",
+  (params) => {
+    expect(() =>
+      parseUiRequest({ version: 1, id: 1, method: "notify", params }),
+    ).toThrow("Invalid extension UI request");
+  },
+);
+it("accepts the exact UTF-8 notification byte limit", () => {
+  const message = "图".repeat(682) + "ab";
+  expect(new TextEncoder().encode(message).length).toBe(UI_NOTIFICATION_BYTES);
+  expect(
+    parseUiRequest({
+      version: 1,
+      id: 1,
+      method: "notify",
+      params: { message, tone: "info" },
+    }).request,
+  ).toEqual({ method: "notify", message, tone: "info" });
+});
 it("coalesces synchronous state changes to the latest snapshot and preserves control-message order", async () => {
   const { bridge, received } = connect();
   for (let revision = 0; revision < 100; revision++)
@@ -165,13 +264,32 @@ it("revokes a replayed sequence and cannot deliver late results after disposal",
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(received).not.toContainEqual({ id: 1, result: "late" });
 });
-it("caps in-flight operations and rejects a flooding peer", async () => {
-  const execute = vi.fn(() => new Promise(() => {}));
-  const { channel, failed } = connect(execute);
-  for (let id = 1; id <= 5; id++) channel.port2.postMessage(message(id));
-  await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
-  expect(execute).toHaveBeenCalledTimes(4);
-});
+it.each(["run", "resources", "links"] as const)(
+  "caps in-flight %s operations and rejects a flooding peer",
+  async (service) => {
+    const execute = vi.fn(() => new Promise(() => {}));
+    const { channel, failed } = connect(execute);
+    for (let id = 1; id <= 5; id++)
+      channel.port2.postMessage(
+        service === "run"
+          ? message(id)
+          : {
+              version: 1,
+              id,
+              method: "service",
+              params: {
+                service,
+                request:
+                  service === "resources"
+                    ? { action: "preview", resourceId: "resource" }
+                    : { url: "https://example.com" },
+              },
+            },
+      );
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
+    expect(execute).toHaveBeenCalledTimes(4);
+  },
+);
 it("caps message frequency even when every operation completes immediately", async () => {
   const { channel, failed } = connect();
   for (let id = 1; id <= 61; id++) {

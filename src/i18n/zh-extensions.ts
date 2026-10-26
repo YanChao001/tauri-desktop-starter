@@ -51,6 +51,7 @@ export const zhExtensions = {
   "ext.market.currentVersion": "本机版本：{version}",
   "ext.market.installHint": "下载后审阅并安装",
   "ext.market.download": "下载并审阅",
+  "ext.market.hostRequired": "需要应用 {version} 或更高版本",
   "ext.market.downloading": "正在下载并校验…",
   "ext.market.update": "下载更新",
   "ext.market.updateTo": "更新至 {version}",
@@ -68,6 +69,7 @@ export const zhExtensions = {
   "ext.market.expired":
     "已验签的市场目录已过期。需要市场维护者续签并发布更高修订号的目录，再刷新市场。已安装扩展和本地扩展包导入仍可使用。",
   "ext.market.changed": "该市场版本已变更或下架，请刷新目录后重新选择。",
+  "ext.fieldInvalid": "请先修正此字段的值，再运行扩展。",
   "ext.fieldLimit":
     "每个字段最多输入 {bytes} 个 UTF-8 字节，请缩短内容后再执行。",
   "nav.extensions": "扩展中心",
@@ -133,7 +135,8 @@ export const zhExtensions = {
   "ext.trust": "我同意向此扩展交付已授权的数据，并了解作者信息未经签名认证。",
   "ext.grantHint":
     "同意必需权限，并按需勾选可选权限。不授权可选联网能力时仍可使用离线命令；启用后也能修改授权。",
-  "ext.permission.files:read": "文件读取：接收本次选中的已授权文本文件内容",
+  "ext.permission.files:read":
+    "文件读取：接收本次由用户选择并确认发送的文件内容，包括二进制文件",
   "ext.permission.network:https": "HTTPS：调用已声明的公共来源及 HTTP 方法",
   "ext.allowedHosts": "声明的网络来源与方法",
   "ext.uninstall": "卸载",
@@ -209,6 +212,7 @@ export const zhExtensions = {
   "ext.minHostVersion": "最低宿主版本",
   "ext.requiredPermissions": "必需权限",
   "ext.optionalPermissions": "可选权限",
+  "ext.selectAllOptionalPermissions": "全选可选权限",
   "ext.managePermissions": "管理权限",
   "ext.savePermissions": "保存权限",
   "ext.limitedCommands": "当前授权可使用 {total} 个命令中的 {available} 个。",
@@ -256,5 +260,10 @@ export const zhExtensions = {
   "ext.permission.messaging:lan":
     "内网通信：主动监听和连接私有网段，发送和保存聊天记录（明文）",
   "ext.permission.wallpapers:manage":
-    "壁纸管理：浏览许可明确的公共图片、导入与管理图库、切换应用背景",
+    "图库管理：导入图片、管理本机图库与应用背景；不包含网络访问",
+  "ext.permission.network:images":
+    "公网图片：下载任意公共 HTTPS 来源的图片并预览、另存；请求 URL 可向来源发送数据",
+  "ext.permission.network:system-proxy":
+    "系统代理：允许已授权的公网请求沿用系统或环境代理；代理可在本机或内网，宿主无法核验代理解析的最终地址",
+  "ext.permission.links:open": "外部链接：在默认浏览器打开公共 HTTPS 网页",
 } as const;

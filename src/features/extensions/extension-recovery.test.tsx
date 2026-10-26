@@ -9,8 +9,11 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import * as native from "@/lib/tauri";
 import { ExtensionRecovery } from "./extension-recovery";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
@@ -157,9 +160,22 @@ it("retains a successful archive receipt when initialization rejects", async () 
   expect(
     await screen.findByText("The old extension directory was archived."),
   ).toBeVisible();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Initialization failed",
+  const failure = await screen.findByRole("alert");
+  expect(failure).toHaveTextContent("Initialization failed");
+  expect(failure.closest('[tabindex="0"]')).not.toBeNull();
+  expect(toast.error).toHaveBeenCalledWith(
+    "Operation failed: Initialization failed",
   );
+  expect(
+    screen.getByText("C:/app-data/extensions.archive-20261025"),
+  ).toBeVisible();
+  reload.mockResolvedValueOnce(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(reload).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+  );
+  expect(native.archiveLegacyExtensions).toHaveBeenCalledOnce();
   expect(
     screen.getByText("C:/app-data/extensions.archive-20261025"),
   ).toBeVisible();
@@ -182,6 +198,7 @@ it("invalidates a rejected fingerprint and requires another inspection before re
   );
   await confirmArchive();
   await screen.findByRole("alert");
+  expect(toast.error).toHaveBeenCalledOnce();
   expect(native.previewExtensionArchive).toHaveBeenCalledOnce();
   expect(native.archiveLegacyExtensions).toHaveBeenCalledOnce();
   expect(
@@ -248,4 +265,29 @@ it("does not reload or write into a new screen after an archive completes follow
   view.unmount();
   await act(async () => archived.resolve({ archivePath: "C:/archive" }));
   expect(reload).not.toHaveBeenCalled();
+});
+
+it("settles a failed inspection and lets the user inspect again while announcing its error", async () => {
+  vi.mocked(native.previewExtensionArchive).mockRejectedValueOnce({
+    code: "STORAGE_IO",
+    message: "Archive preview cannot read the preserved directory.",
+  });
+  render(<ExtensionRecovery error={incompatible} reload={vi.fn()} />);
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  const failure = screen.getByRole("alert");
+  expect(failure).toHaveTextContent(
+    "Archive preview cannot read the preserved directory.",
+  );
+  expect(failure.closest('[tabindex="0"]')).not.toBeNull();
+  const inspect = screen.getByRole("button", { name: "Check archive again" });
+  expect(inspect).toBeEnabled();
+  expect(
+    screen.queryByText("Checking the extension archive…"),
+  ).not.toBeInTheDocument();
+  fireEvent.click(inspect);
+  expect(
+    await screen.findByRole("button", {
+      name: "Archive old extensions and rebuild",
+    }),
+  ).toBeEnabled();
 });

@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -7,8 +8,11 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import * as native from "@/lib/tauri";
 import { ExtensionResources } from "./extension-resources";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
@@ -144,5 +148,143 @@ it("retains entered credentials after a failed save and keeps storage visible wh
   );
   expect(screen.getByLabelText("Secret / access token")).toHaveValue(
     "keep-token",
+  );
+  await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+});
+
+it("settles an initial storage failure and keeps refresh available without reporting endless loading", async () => {
+  vi.mocked(native.extensionStorageInfo).mockRejectedValueOnce({
+    code: "STORAGE_CORRUPT",
+    message: "Private storage uses a newer schema version.",
+  });
+  render(<ExtensionResources item={item} />);
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  const storageStatus = screen.getByRole("status", {
+    name: "Plugin private storage",
+  });
+  expect(within(storageStatus).getByRole("alert")).toHaveTextContent(
+    "Private storage uses a newer schema version.",
+  );
+  expect(screen.queryByText("No result yet")).not.toBeInTheDocument();
+  expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  const refresh = screen.getByRole("button", { name: "Refresh" });
+  expect(refresh).toBeEnabled();
+  fireEvent.click(refresh);
+  await screen.findByText("2 entries · 100 bytes");
+  expect(within(storageStatus).queryByRole("alert")).not.toBeInTheDocument();
+  expect(native.extensionStorageInfo).toHaveBeenCalledTimes(2);
+});
+
+it("offers a refresh when credentials are the only resource and displays full long slot names on keyboard focus", async () => {
+  const alias = "a".repeat(64);
+  const origin = `https://${"long-service-host-".repeat(5)}example.com`;
+  const networkOnly: native.ExtensionInfo = {
+    ...item,
+    package: {
+      ...item.package,
+      manifest: {
+        ...item.package.manifest,
+        optionalPermissions: ["network:https"],
+      },
+    },
+  };
+  vi.mocked(native.extensionCredentialSlots)
+    .mockRejectedValueOnce({
+      code: "KEYRING_ERROR",
+      message: "Credential store is locked.",
+    })
+    .mockResolvedValueOnce([{ alias, origin }]);
+  render(<ExtensionResources item={networkOnly} />);
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  const credentialsStatus = screen.getByRole("status", {
+    name: "Service credentials",
+  });
+  expect(within(credentialsStatus).getByRole("alert")).toHaveTextContent(
+    "Credential store is locked.",
+  );
+  const refresh = screen.getByRole("button", { name: "Refresh" });
+  expect(refresh).toBeEnabled();
+  fireEvent.click(refresh);
+  const help = await screen.findByRole("button", { name: `${alias} · Help` });
+  expect(
+    within(credentialsStatus).queryByRole("alert"),
+  ).not.toBeInTheDocument();
+  fireEvent.focus(help);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    `${alias} · ${origin}`,
+  );
+});
+
+it("keeps a failed clear confirmation open for retry and reports the error as a toast", async () => {
+  vi.mocked(native.clearExtensionStorage).mockRejectedValueOnce({
+    code: "CONFLICT",
+  });
+  render(<ExtensionResources item={item} />);
+  await screen.findByText("2 entries · 100 bytes");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Clear private storage" }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  const clear = within(dialog).getByRole("button", {
+    name: "Clear private storage",
+  });
+  fireEvent.click(clear);
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  expect(dialog).toBeVisible();
+  expect(clear).toBeEnabled();
+  expect(dialog).toHaveAccessibleDescription(
+    expect.stringContaining("Current sessions and selected files are retained"),
+  );
+});
+
+it("does not restart resource loading after a save completes on a disposed screen", async () => {
+  let finish!: () => void;
+  vi.mocked(native.setExtensionCredential).mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const mounted = render(<ExtensionResources item={item} />);
+  await screen.findByText("2 entries · 100 bytes");
+  fireEvent.change(screen.getByLabelText("Credential alias"), {
+    target: { value: "api" },
+  });
+  fireEvent.change(screen.getByLabelText("Secret / access token"), {
+    target: { value: "secret" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+  mounted.unmount();
+  await act(async () => finish());
+  expect(native.extensionStorageInfo).toHaveBeenCalledOnce();
+  expect(native.extensionCredentialSlots).toHaveBeenCalledOnce();
+  expect(toast.error).not.toHaveBeenCalled();
+});
+
+it("keeps ordinary save failures separate from persistent resource read status", async () => {
+  render(<ExtensionResources item={item} />);
+  await screen.findByText("2 entries · 100 bytes");
+  vi.mocked(native.setExtensionCredential).mockRejectedValueOnce({
+    code: "KEYRING_ERROR",
+  });
+  fireEvent.change(screen.getByLabelText("Credential alias"), {
+    target: { value: "api" },
+  });
+  fireEvent.change(screen.getByLabelText("Secret / access token"), {
+    target: { value: "keep-secret" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  expect(
+    within(
+      screen.getByRole("status", { name: "Plugin private storage" }),
+    ).queryByRole("alert"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(
+      screen.getByRole("status", { name: "Service credentials" }),
+    ).queryByRole("alert"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Secret / access token")).toHaveValue(
+    "keep-secret",
   );
 });

@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +59,10 @@ export function ExtensionData({
   const [, refresh] = useReducer((revision: number) => revision + 1, 0);
   const [picking, setPicking] = useState(session.selecting !== null);
   const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    if (error)
+      toast.error(nativeErrorText(error, t), { id: `extension-data:${id}` });
+  }, [error, t, id]);
   const generation = useRef(0);
   useEffect(
     () => () => {
@@ -219,7 +224,7 @@ export function ExtensionData({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="sr-only">
           {nativeErrorText(error, t)}
         </p>
       ) : null}

@@ -53,6 +53,7 @@ export const enExtensions = {
   "ext.market.currentVersion": "Installed version: {version}",
   "ext.market.installHint": "Review before installing",
   "ext.market.download": "Download and review",
+  "ext.market.hostRequired": "Requires app {version} or newer",
   "ext.market.downloading": "Downloading and verifying…",
   "ext.market.update": "Download update",
   "ext.market.updateTo": "Update to {version}",
@@ -104,6 +105,8 @@ export const enExtensions = {
   "ext.appCloseHint":
     "Clear this session and exit without disabling or uninstalling the extension.",
   "ext.fieldLimit": "Each field accepts up to {bytes} UTF-8 bytes.",
+  "ext.fieldInvalid":
+    "Correct this field's value before running the extension.",
   "nav.extensions": "Extensions",
   "catalog.extensions":
     "Install Extism Wasm plugins with explicit text, file and network data access. Develop in Rust, JavaScript or TypeScript.",
@@ -143,7 +146,7 @@ export const enExtensions = {
   "ext.grantHint":
     "Approve required capabilities and choose any optional capabilities. Offline commands remain available when optional network access is declined. You can change grants later.",
   "ext.permission.files:read":
-    "Files: receive selected, authorized text file contents",
+    "Files: receive the contents of files you explicitly select and share, including binary files",
   "ext.permission.network:https":
     "HTTPS: call declared public origins and HTTP methods",
   "ext.allowedHosts": "Declared network origins and methods",
@@ -230,6 +233,7 @@ export const enExtensions = {
   "ext.minHostVersion": "Minimum host version",
   "ext.requiredPermissions": "Required capabilities",
   "ext.optionalPermissions": "Optional capabilities",
+  "ext.selectAllOptionalPermissions": "Select all optional capabilities",
   "ext.managePermissions": "Manage permissions",
   "ext.savePermissions": "Save permissions",
   "ext.limitedCommands":
@@ -282,5 +286,11 @@ export const enExtensions = {
   "ext.permission.messaging:lan":
     "LAN messaging: listen/connect to private addresses and store chat history (unencrypted)",
   "ext.permission.wallpapers:manage":
-    "Wallpapers: browse licensed public images, manage the library and change the app background",
+    "Gallery: import images and manage the local library and app background; does not include network access",
+  "ext.permission.network:images":
+    "Public images: download, preview and save images from any public HTTPS source; request URLs can send data to that source",
+  "ext.permission.network:system-proxy":
+    "System proxy: let authorized public requests use system or environment proxies; proxies may be local or private, and the host cannot verify their final DNS destination",
+  "ext.permission.links:open":
+    "External links: open public HTTPS web pages in the default browser",
 } as const;

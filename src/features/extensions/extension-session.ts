@@ -7,7 +7,7 @@ import {
 } from "@/lib/tauri";
 import { validateUiCheckpoint } from "./extension-ui-bridge";
 
-export const EXTENSION_SESSION_BYTES = 8 * 1024 * 1024;
+export const EXTENSION_SESSION_BYTES = 32 * 1024 * 1024;
 export type ExtensionSessionExport = {
   formatVersion: 1;
   kind: "view" | "tool";
@@ -40,6 +40,32 @@ function text(value: unknown, limit: number): value is string {
     new TextEncoder().encode(value).length <= limit
   );
 }
+function sessionDraft(
+  value: Record<string, unknown>,
+  tooLong: () => never = invalid,
+) {
+  function bounded(value: unknown, limit: number): string {
+    if (typeof value !== "string" || value.includes("\0")) invalid();
+    if (new TextEncoder().encode(value).length > limit) tooLong();
+    return value;
+  }
+  const inputText = bounded(value.inputText, 1024 * 1024);
+  const url = bounded(value.url, 4096);
+  if (!Array.isArray(value.files) || !record(value.fields)) invalid();
+  if (value.files.length > 16 || Object.keys(value.fields).length > 24)
+    tooLong();
+  const files = value.files.map((name: unknown) => bounded(name, 1024));
+  const entries: [string, string][] = [];
+  let bytes = 0;
+  for (const [key, field] of Object.entries(value.fields)) {
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(key)) invalid();
+    const draft = bounded(field, 256 * 1024);
+    bytes += new TextEncoder().encode(draft).length;
+    entries.push([key, draft]);
+  }
+  if (bytes > 1024 * 1024) tooLong();
+  return { inputText, url, files, fields: Object.fromEntries(entries) };
+}
 export function extensionSessionIdentity(
   item: ExtensionInfo,
   commandId: string,
@@ -50,6 +76,26 @@ export function extensionSessionIdentity(
     extensionVersion: item.package.manifest.version,
     sha256: item.package.sha256,
   };
+}
+/** 写出与恢复共用草稿硬额度，JSON 转义后的文件另核对原生保存预算。 */
+export function serializeExtensionSession(value: unknown): string {
+  if (!record(value)) invalid();
+  sessionDraft(value, () => {
+    throw new NativeBridgeError({
+      code: "INPUT_TOO_LONG",
+      message: "Extension session draft exceeds its recovery limits",
+      retryable: false,
+    });
+  });
+  const content = JSON.stringify(value, null, 2);
+  if (typeof content !== "string") invalid();
+  if (new TextEncoder().encode(content).length > EXTENSION_SESSION_BYTES)
+    throw new NativeBridgeError({
+      code: "INPUT_TOO_LONG",
+      message: "Encoded extension session exceeds 32 MiB",
+      retryable: false,
+    });
+  return content;
 }
 /** Native parsing reuses the authoritative view schema, including artifacts and budgets. */
 export async function parseExtensionSession(
@@ -112,26 +158,8 @@ export async function parseExtensionSession(
     Object.entries(identity).some(([key, expected]) => value[key] !== expected)
   )
     invalid();
-  if (
-    !text(value.inputText, 1024 * 1024) ||
-    !text(value.url, 4096) ||
-    !Array.isArray(value.files) ||
-    value.files.length > 16 ||
-    value.files.some((name: unknown) => !text(name, 1024)) ||
-    !record(value.fields) ||
-    Object.keys(value.fields).length > 24
-  )
-    invalid();
-  const entries: [string, string][] = [];
-  let bytes = 0;
-  for (const [key, field] of Object.entries(value.fields)) {
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(key) || !text(field, 256 * 1024))
-      invalid();
-    bytes += new TextEncoder().encode(field).length;
-    entries.push([key, field]);
-  }
-  if (bytes > 1024 * 1024) invalid();
-  const fields: Record<string, string> = Object.fromEntries(entries);
+  const draft = sessionDraft(value);
+  const { fields } = draft;
   let view: ExtensionView | null = null;
   if (kind === "view") {
     if (value.result !== null) invalid();
@@ -139,46 +167,13 @@ export async function parseExtensionSession(
       if (Object.keys(fields).length) invalid();
     } else {
       if (!record(value.view)) invalid();
-      const rawFields = value.view.fields;
-      if (
-        !Array.isArray(rawFields) ||
-        rawFields.length !== Object.keys(fields).length
-      )
-        invalid();
-      const restoredFields = rawFields.map((field: unknown) => {
-        if (
-          !record(field) ||
-          typeof field.id !== "string" ||
-          !Object.hasOwn(fields, field.id)
-        )
-          invalid();
-        return { ...field, value: fields[field.id] };
-      });
-      // Validate the values that will actually be rendered and sent, including
-      // number/date semantics, through the same Rust schema as live responses.
-      view = await validateExtensionView(
-        JSON.stringify({ ...value.view, fields: restoredFields }),
-      );
+      // 原生视图与未提交草稿分别验证；保留有界草稿，供用户恢复后纠正。
+      view = await validateExtensionView(JSON.stringify(value.view));
       if (
         view.fields.length !== Object.keys(fields).length ||
-        view.fields.some(
-          (field) =>
-            !Object.hasOwn(fields, field.id) ||
-            new TextEncoder().encode(fields[field.id] ?? "").length >
-              (field.maxBytes ?? 64 * 1024),
-        )
+        view.fields.some((field) => !Object.hasOwn(fields, field.id))
       )
         invalid();
-      for (const field of view.fields) {
-        const value = fields[field.id];
-        if (field.kind === "checkbox" && value !== "true" && value !== "false")
-          invalid();
-        if (
-          field.kind === "select" &&
-          !(field.options ?? []).some((option) => option.value === value)
-        )
-          invalid();
-      }
     }
   } else if (value.view !== null || Object.keys(fields).length) invalid();
   let result: ExtensionSessionExport["result"] = null;
@@ -214,10 +209,7 @@ export async function parseExtensionSession(
     kind,
     ...identity,
     ...(ui ? { ui } : {}),
-    inputText: value.inputText,
-    url: value.url,
-    files: value.files as string[],
-    fields,
+    ...draft,
     view,
     result,
   };

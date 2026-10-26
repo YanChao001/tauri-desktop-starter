@@ -6,7 +6,7 @@ import tailwind from "@tailwindcss/vite";
 import { chromium, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { createHash, randomBytes } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
   copyFile,
   mkdir,
@@ -16,6 +16,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { readUiDocuments } from "../scripts/extension-ui-resources.mjs";
 import { createBoundaryServices } from "./extensions/service-fixture.mjs";
 import {
@@ -35,12 +36,18 @@ import {
   frameGeometry,
   stableFrameGeometry,
   checkHostScroll,
+  checkPermissionConsent,
+  checkWallpaperCapabilityBoundaries,
 } from "./extensions/surface-checks.mjs";
 
 const root = resolve(import.meta.dirname, ".."),
   cache = join(root, ".cache");
-const output = join(root, "artifacts/extensions/custom-ui"),
-  port = 1449;
+// 并行审查可使用独立报告目录，不改动其他运行产生的截图和诊断。
+const runId = process.env.STARTER_EXTENSION_UI_RUN_ID;
+if (runId !== undefined && !/^[a-zA-Z0-9_-]{1,80}$/.test(runId))
+  throw Error("STARTER_EXTENSION_UI_RUN_ID must be a bounded plain identifier");
+const output = join(root, "artifacts/extensions/custom-ui", runId ?? "");
+let port = 0;
 await mkdir(cache, { recursive: true });
 await mkdir(output, { recursive: true });
 const temporary = await mkdtemp(join(cache, "extension-ui-"));
@@ -58,18 +65,99 @@ const bootstrap = await readFile(
   join(root, "src-tauri/src/native-ipc.js"),
   "utf8",
 );
+function installStartupProbe() {
+  const now = () => performance.timeOrigin + performance.now();
+  if (window === window.top) {
+    const events = [];
+    window.__extensionStartupEvents = events;
+    const record = (value) => {
+      if (events.length < 50) events.push({ at: now(), ...value });
+    };
+    record({ type: "fixture:top-document-start" });
+    window.addEventListener("message", (event) => {
+      const type = event.data?.type;
+      if (
+        ![
+          "starter:ready",
+          "starter:failed",
+          "starter:painted",
+          "fixture:startup-probe",
+        ].includes(type)
+      )
+        return;
+      const frame = document.querySelector("iframe");
+      record({
+        type,
+        origin: event.origin,
+        version: event.data.version,
+        sourceMatchesCurrentIframe: event.source === frame?.contentWindow,
+        iframePresent: !!frame,
+        iframeSrc: frame?.getAttribute("src")?.slice(0, 512),
+        documentState: document.readyState,
+        detail:
+          type === "fixture:startup-probe" ? event.data.detail : undefined,
+      });
+    });
+    document.addEventListener(
+      "load",
+      (event) => {
+        if (event.target instanceof HTMLIFrameElement)
+          record({
+            type: "fixture:iframe-load",
+            iframeSrc: event.target.getAttribute("src")?.slice(0, 512),
+          });
+      },
+      true,
+    );
+  } else {
+    const send = (type, extra = {}) =>
+      parent.postMessage(
+        {
+          type: "fixture:startup-probe",
+          detail: {
+            type,
+            at: now(),
+            url: location.href.slice(0, 512),
+            documentState: document.readyState,
+            ...extra,
+          },
+        },
+        "*",
+      );
+    send("fixture:child-document-start");
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "starter:connect")
+        send("starter:connect", {
+          sourceMatchesParent: event.source === parent,
+          origin: event.origin,
+          ports: event.ports.length,
+        });
+    });
+    document.addEventListener("DOMContentLoaded", () =>
+      send("fixture:child-dom-content-loaded", {
+        sdkPresent: typeof window.starter === "object",
+      }),
+    );
+    window.addEventListener("load", () =>
+      send("fixture:child-load", {
+        sdkPresent: typeof window.starter === "object",
+      }),
+    );
+  }
+}
 const init =
   `(${installPaintProbe.toString()})();\n` +
   'Object.defineProperty(window,"__TAURI_INTERNALS__",{value:{}});\n' +
   bootstrap
     .replaceAll("__INVOKE_KEY__", JSON.stringify("fixture-invoke-key"))
     .replaceAll("__STARTER_OS_NAME__", JSON.stringify("windows")) +
-  "\n" +
+  `\n(${installStartupProbe.toString()})();\n` +
   sdk.replace(
     'location.hostname !== "extension-ui.localhost"',
     '(location.hostname !== "127.0.0.1" || !location.pathname.startsWith("/fixture/ui/"))',
   ) +
   `
+  if(window!==window.top)parent.postMessage({type:"fixture:startup-probe",detail:{type:"fixture:after-sdk",at:performance.timeOrigin+performance.now(),url:location.href.slice(0,512),documentState:document.readyState,sdkPresent:typeof window.starter==="object"}},"*");
   window.__iframeProtocolRequests=[];window.__protocolErrors=[];
   window.addEventListener("message",event=>{if(window===window.top&&event.data?.type==="fixture:protocol-probe")window.__iframeProtocolRequests.push(event.data.value);});
   const postPortMessage=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...args){
@@ -115,9 +203,9 @@ const selectedProfiles = process.argv
   .map(Number);
 if (
   selectedNames.some((name) => !names.includes(name)) ||
-  selectedProfiles?.some((index) => ![0, 1, 2].includes(index))
+  selectedProfiles?.some((index) => ![0, 1, 2, 3].includes(index))
 )
-  throw Error("Use plugin names and optional --profiles=0,1,2");
+  throw Error("Use plugin names and optional --profiles=0,1,2,3");
 const sharedInputs = Object.fromEntries(
   await Promise.all(
     [
@@ -156,6 +244,80 @@ const sharedInputs = Object.fromEntries(
   ),
 );
 const services = createBoundaryServices();
+const pageDiagnostics = new WeakMap();
+function observeFixturePage(page) {
+  const diagnostics = { network: [], messages: [] };
+  pageDiagnostics.set(page, diagnostics);
+  const append = (list, value) => {
+    if (list.length < 50) list.push({ at: Date.now(), ...value });
+  };
+  const tracked = (request) => {
+    const path = new URL(request.url()).pathname;
+    return (
+      request.resourceType() === "document" ||
+      path === "/fixture/open" ||
+      path.startsWith("/fixture/ui/") ||
+      path === "/fixture/view"
+    );
+  };
+  const requestIds = new WeakMap();
+  let requestSerial = 0;
+  page.on("request", (request) => {
+    if (!tracked(request)) return;
+    requestIds.set(request, ++requestSerial);
+    append(diagnostics.network, {
+      event: "request",
+      id: requestSerial,
+      url: request.url().slice(0, 512),
+      method: request.method(),
+      resourceType: request.resourceType(),
+    });
+  });
+  page.on("response", (response) => {
+    const request = response.request();
+    if (tracked(request))
+      append(diagnostics.network, {
+        event: "response",
+        id: requestIds.get(request),
+        url: response.url().slice(0, 512),
+        status: response.status(),
+      });
+  });
+  page.on("requestfailed", (request) => {
+    if (tracked(request))
+      append(diagnostics.network, {
+        event: "request-failed",
+        id: requestIds.get(request),
+        url: request.url().slice(0, 512),
+        error: request.failure()?.errorText?.slice(0, 1000),
+      });
+  });
+  page.on("pageerror", (error) =>
+    append(diagnostics.messages, {
+      event: "pageerror",
+      message: error.message.slice(0, 2000),
+      stack: error.stack?.slice(0, 4000),
+    }),
+  );
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()))
+      append(diagnostics.messages, {
+        event: `console-${message.type()}`,
+        message: message.text().slice(0, 2000),
+        location: message.location(),
+      });
+  });
+  return page;
+}
+async function newFixturePage(context) {
+  return observeFixturePage(await context.newPage());
+}
+async function startupDiagnostics(page) {
+  return {
+    ...pageDiagnostics.get(page),
+    handshake: await page.evaluate(() => window.__extensionStartupEvents),
+  };
+}
 const plugins = [],
   calls = [],
   leases = new Map(),
@@ -163,7 +325,8 @@ const plugins = [],
 let serial = 0,
   server,
   browser;
-function runTool(action, plugin, fixture) {
+const executeTool = promisify(execFile);
+async function runTool(action, plugin, fixture) {
   const args = [
     action,
     "--manifest",
@@ -174,15 +337,14 @@ function runTool(action, plugin, fixture) {
     plugin.uiPath,
   ];
   if (fixture) args.push("--fixture", fixture);
-  return JSON.parse(
-    execFileSync(tool, args, {
-      cwd: root,
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 90000,
-      maxBuffer: 16 * 1024 * 1024,
-    }),
-  );
+  const { stdout } = await executeTool(tool, args, {
+    cwd: root,
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 90000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return JSON.parse(stdout);
 }
 async function body(request) {
   const buffers = [];
@@ -226,15 +388,15 @@ async function observeSdk(frame) {
   });
 }
 async function idle(page, frame) {
-  await expect(page.locator("iframe")).toHaveCSS("opacity", "1", {
-    timeout: 15000,
-  });
   await expect
     .poll(
       () => frame.locator("html").evaluate(() => window.__sdkSnapshot?.busy),
       { timeout: 60000 },
     )
     .toBe(false);
+  await expect(page.locator("iframe")).toHaveCSS("opacity", "1", {
+    timeout: 15000,
+  });
   await expect
     .poll(() => frame.locator("main").getAttribute("aria-busy"), {
       timeout: 60000,
@@ -308,7 +470,7 @@ try {
       writeFile(plugin.wasmPath, wasm),
       writeFile(plugin.uiPath, JSON.stringify(uiDocuments)),
     ]);
-    const validated = runTool("validate", plugin);
+    const validated = await runTool("validate", plugin);
     if (!validated.validated || validated.uiDocuments?.length !== 1)
       throw Error(`Missing native UI validation: ${name}`);
     plugin.item = {
@@ -317,8 +479,10 @@ try {
       enabled: true,
       grantedPermissions: [
         ...manifest.permissions,
-        ...manifest.optionalPermissions.filter((permission) =>
-          ["messaging:lan", "wallpapers:manage"].includes(permission),
+        ...manifest.optionalPermissions.filter(
+          (permission) =>
+            name === "wallpaper-browser" ||
+            ["messaging:lan", "wallpapers:manage"].includes(permission),
         ),
       ],
       package: {
@@ -366,16 +530,41 @@ try {
     name: "extension-ui-fixture",
     configurePreviewServer(server) {
       server.middlewares.use(async (request, response, next) => {
-        const path = new URL(request.url, "http://fixture").pathname;
+        const requestUrl = new URL(request.url, "http://fixture");
+        const path = requestUrl.pathname;
         try {
-          if (path === "/fixture/config")
+          if (path === "/fixture/config") {
+            const permissionProfile = requestUrl.searchParams.get(
+              "wallpaperPermissions",
+            );
             return json(response, {
               snapshot: {
                 revision: 1,
-                items: plugins.map((plugin) => plugin.item),
+                items: plugins.map((plugin) => {
+                  const item = structuredClone(plugin.item);
+                  if (plugin.name === "wallpaper-browser") {
+                    if (permissionProfile === "denied")
+                      item.grantedPermissions = [
+                        ...plugin.manifest.permissions,
+                      ];
+                    else if (permissionProfile === "direct")
+                      item.grantedPermissions = item.grantedPermissions.filter(
+                        (permission) => permission !== "network:system-proxy",
+                      );
+                    else if (permissionProfile === "links-only")
+                      item.grantedPermissions = item.grantedPermissions.filter(
+                        (permission) =>
+                          !["network:images", "network:system-proxy"].includes(
+                            permission,
+                          ),
+                      );
+                  }
+                  return item;
+                }),
                 runs: [],
               },
             });
+          }
           if (path.startsWith("/fixture/ui/")) {
             const token = path.split("/").at(-1),
               plugin = leases.get(token);
@@ -417,12 +606,17 @@ try {
             )
               throw Error("Invalid fixture identity");
             if (path === "/fixture/service") {
-              const required =
-                input.service === "lan" ? "messaging:lan" : "wallpapers:manage";
               if (
-                !plugin.item.grantedPermissions.includes(required) ||
+                !Array.isArray(input.boundaryGrantedPermissions) ||
+                input.boundaryGrantedPermissions.some(
+                  (permission) =>
+                    ![
+                      ...plugin.manifest.permissions,
+                      ...plugin.manifest.optionalPermissions,
+                    ].includes(permission),
+                ) ||
                 (input.service === "lan" && plugin.name !== "lan-chat") ||
-                (input.service === "wallpaper" &&
+                (["wallpaper", "resources", "links"].includes(input.service) &&
                   plugin.name !== "wallpaper-browser")
               )
                 throw Error("Undeclared boundary service");
@@ -459,24 +653,56 @@ try {
                     Math.min(input.boundaryViewDelayMs, 2000),
                   ),
                 );
-              const fixturePath = join(temporary, `request-${++serial}.json`);
-              await writeFile(
-                fixturePath,
-                JSON.stringify({
-                  command: input.commandId,
-                  input: input.request,
-                  expectJsonSubset: { version: 2 },
-                }),
-              );
-              const result = runTool("test", plugin, fixturePath);
-              if (result.smoke?.passed !== true)
-                throw Error("Wasm fixture failed");
-              calls.push({
-                plugin: plugin.name,
-                action: input.request.action,
-                fields: input.request.fields,
-              });
-              return json(response, result.smoke.output);
+              let viewRequest = input.request;
+              const host = {
+                permissions: input.boundaryGrantedPermissions,
+                storage: null,
+              };
+              if (plugin.name === "wallpaper-browser")
+                viewRequest = { ...viewRequest, host };
+              const seen = new Set();
+              for (let round = 0; round < 4; round++) {
+                const fixturePath = join(temporary, `request-${++serial}.json`);
+                await writeFile(
+                  fixturePath,
+                  JSON.stringify({
+                    command: input.commandId,
+                    input: viewRequest,
+                    expectJsonSubset: { version: 2 },
+                  }),
+                );
+                const result = await runTool("test", plugin, fixturePath);
+                if (result.smoke?.passed !== true)
+                  throw Error("Wasm fixture failed");
+                calls.push({
+                  plugin: plugin.name,
+                  action: viewRequest.action,
+                  fields: viewRequest.fields,
+                });
+                const view = result.smoke.output;
+                if (!view.effects.length) return json(response, view);
+                if (plugin.name !== "wallpaper-browser")
+                  throw Error("Unexpected effect in offline UI fixture");
+                for (const effect of view.effects) {
+                  if (seen.has(effect.id) || seen.size >= 16)
+                    throw Error("Repeated or excessive boundary effect");
+                  seen.add(effect.id);
+                }
+                viewRequest = {
+                  version: 2,
+                  action: "host-result",
+                  state: view.state,
+                  fields: Object.fromEntries(
+                    view.fields.map((field) => [field.id, field.value]),
+                  ),
+                  locale: input.request.locale,
+                  host,
+                  results: view.effects.map((effect) =>
+                    services.http(input, effect),
+                  ),
+                };
+              }
+              throw Error("Too many offline fixture effect rounds");
             }
             throw Error("Unknown fixture operation");
           }
@@ -506,6 +732,10 @@ try {
     plugins: [fixture],
     preview: { host: "127.0.0.1", port, strictPort: true },
   });
+  const address = server.httpServer.address();
+  if (!address || typeof address === "string")
+    throw Error("The extension UI fixture requires a local TCP address");
+  port = address.port;
   browser = await chromium.launch({ headless: true });
   const profiles = [
     {
@@ -532,9 +762,22 @@ try {
       font: "20px",
       window: "true",
     },
+    {
+      language: "zh",
+      theme: "dark",
+      width: 1920,
+      height: 1080,
+      font: "20px",
+      window: "false",
+    },
   ];
   for (const profile of process.argv.some((value) =>
-    ["--security-only", "--settings-only"].includes(value),
+    [
+      "--security-only",
+      "--settings-only",
+      "--consent-only",
+      "--capabilities-only",
+    ].includes(value),
   )
     ? []
     : profiles.filter(
@@ -549,7 +792,7 @@ try {
     for (const name of names.filter(
       (name) => !selectedNames.length || selectedNames.includes(name),
     )) {
-      const page = await context.newPage(),
+      const page = await newFixturePage(context),
         errors = [],
         warnings = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -615,6 +858,72 @@ try {
         await frame.locator("#expression").fill("sin(90)");
         await action("calculate");
         await expect(frame.locator("#result")).toHaveText("1");
+        await frame.locator("#functions").fill("sin(x)\ncos(x)\nx^2 / 10");
+        await action("plot");
+        await expect(frame.locator("#legend .dot")).toHaveCount(3);
+        await expect
+          .poll(() =>
+            frame.locator("#graph").evaluate((canvas) => {
+              const dots = [...document.querySelectorAll("#legend .dot")];
+              const swatch = document.createElement("canvas");
+              swatch.width = swatch.height = 1;
+              const sample = swatch.getContext("2d", {
+                willReadFrequently: true,
+              });
+              const colors = dots.map((dot) => {
+                sample.clearRect(0, 0, 1, 1);
+                sample.fillStyle = getComputedStyle(dot).backgroundColor;
+                sample.fillRect(0, 0, 1, 1);
+                return [...sample.getImageData(0, 0, 1, 1).data].slice(0, 3);
+              });
+              const readback = document.createElement("canvas");
+              readback.width = canvas.width;
+              readback.height = canvas.height;
+              const context = readback.getContext("2d", {
+                willReadFrequently: true,
+              });
+              context.drawImage(canvas, 0, 0);
+              const pixels = context.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+              ).data;
+              return colors.map((rgb) => {
+                let count = 0;
+                for (let offset = 0; offset < pixels.length; offset += 4)
+                  if (
+                    rgb.every(
+                      (value, index) =>
+                        Math.abs(value - pixels[offset + index]) <= 5,
+                    )
+                  )
+                    count++;
+                return {
+                  colored: Math.max(...rgb) - Math.min(...rgb) > 40,
+                  visible: count > 10,
+                  distinct:
+                    new Set(colors.map((color) => color.join(","))).size === 3,
+                };
+              });
+            }),
+          )
+          .toEqual(
+            Array.from({ length: 3 }, () => ({
+              colored: true,
+              visible: true,
+              distinct: true,
+            })),
+          );
+        const graphButtons = await frame
+          .locator(".graph-actions > button")
+          .evaluateAll((buttons) =>
+            buttons.map((button) => button.getBoundingClientRect().height),
+          );
+        expect(graphButtons).toHaveLength(3);
+        expect(
+          Math.max(...graphButtons) - Math.min(...graphButtons),
+        ).toBeLessThanOrEqual(1);
         await frame.locator("#functions").fill("x^2-4");
         for (const [id, value] of [
           ["xmin", "0"],
@@ -878,6 +1187,13 @@ try {
         );
         expect(replay.description).toMatch(/Wasm/);
       } else if (name === "lan-chat") {
+        const inheritedFont = await frame
+          .locator("body")
+          .evaluate((node) => getComputedStyle(node).fontFamily);
+        await expect(frame.locator("#addresses")).toHaveCSS(
+          "font-family",
+          inheritedFont,
+        );
         if (process.argv.includes("--stress-poll") || profile.width === 1120) {
           const polling = await checkLanPolling(page, frame);
           await writeFile(
@@ -976,6 +1292,8 @@ try {
         ).toContain("Fixture message 你好");
       } else if (name === "wallpaper-browser") {
         await expect(frame.locator("#import")).toBeEnabled();
+        await expect(frame.locator("#network-mode")).toHaveValue("system");
+        const beforeHttp = services.httpCalls.length;
         const popup = await checkSelectPopup(frame, "#network-mode");
         await writeFile(
           join(
@@ -994,13 +1312,139 @@ try {
         );
         await frame.locator("#query").fill("landscape");
         await frame.locator("#search").click();
-        await frame.locator('#results [data-page-id="123"]').click();
-        await expect(frame.locator("#preview-image")).toBeVisible();
-        await frame.locator("#download-original").click();
-        await expect(frame.locator("#notice")).toContainText(
-          profile.language === "zh" ? "取消" : "cancelled",
+        await idle(page, frame);
+        await expect(frame.locator("#results .result")).toHaveCount(2, {
+          timeout: 60000,
+        });
+        const searchCalls = calls
+          .slice(before)
+          .filter((call) => call.plugin === name);
+        expect(searchCalls.some((call) => call.action === "search")).toBe(true);
+        expect(searchCalls.some((call) => call.action === "host-result")).toBe(
+          true,
         );
+        expect(services.httpCalls.slice(beforeHttp)).toHaveLength(1);
+        expect(services.httpCalls.at(-1).receipt.value.body).toContain("iusc");
+        expect(services.httpCalls.at(-1).request.networkMode).toBe("system");
+        expect(
+          services.calls
+            .slice(beforeServices)
+            .some(
+              (call) =>
+                call.service === "wallpaper" &&
+                [
+                  "search",
+                  "preview",
+                  "download-original",
+                  "import-remote",
+                ].includes(call.request.action),
+            ),
+        ).toBe(false);
+        for (const card of await frame.locator("#results .result").all()) {
+          const layout = await card.evaluate((node) => {
+            const style = getComputedStyle(node);
+            const label = node.querySelector("strong");
+            return {
+              inset:
+                label.getBoundingClientRect().left -
+                node.getBoundingClientRect().left,
+              expected:
+                parseFloat(style.paddingLeft) +
+                parseFloat(style.borderLeftWidth),
+              overflow: node.scrollWidth - node.clientWidth,
+            };
+          });
+          expect(Math.abs(layout.inset - layout.expected)).toBeLessThanOrEqual(
+            1,
+          );
+          expect(layout.overflow).toBeLessThanOrEqual(1);
+        }
+        const layoutBeforeFailure = await frame
+          .locator("#search-form")
+          .evaluate((node) => ({
+            top: node.offsetTop,
+            height: node.offsetHeight,
+          }));
+        await frame.locator("#query").fill("fixture-search-failure");
+        await frame.locator("#search").click();
+        await idle(page, frame);
+        const toast = page.locator("[data-sonner-toast]").last();
+        await expect(toast).toHaveAttribute("data-type", "error", {
+          timeout: 60000,
+        });
+        await expect(toast).toContainText(
+          profile.language === "zh" ? "搜索" : "search",
+        );
+        await expect(frame.locator("#query")).toHaveValue(
+          "fixture-search-failure",
+        );
+        expect(
+          await frame.locator("#search-form").evaluate((node) => ({
+            top: node.offsetTop,
+            height: node.offsetHeight,
+          })),
+        ).toEqual(layoutBeforeFailure);
+        await expect(frame.locator("#results .result")).toHaveCount(2);
+        await frame.locator("#query").fill("landscape");
+        await frame.locator("#results .result").first().click();
+        await expect(frame.locator("#preview-image")).toBeVisible();
+        await expect.poll(() => services.activeResources()).toBe(0);
+        await frame.locator("#open-source").click();
+        await expect
+          .poll(
+            () =>
+              services.calls.filter((call) => call.service === "links").length,
+          )
+          .toBeGreaterThan(0);
+        await frame.locator("#download-original").click();
+        await expect(
+          page.locator("[data-sonner-toast]").filter({
+            hasText:
+              profile.language === "zh" ? "已取消保存。" : "Save cancelled.",
+          }),
+        ).toBeVisible();
+        await expect.poll(() => services.activeResources()).toBe(0);
         await frame.locator("#add-to-gallery").click();
+        await idle(page, frame);
+        await expect.poll(() => services.activeResources()).toBe(0);
+        const resourceCalls = await page.evaluate(() =>
+          window.__extensionUiTest.serviceCalls.filter(
+            (call) => call.service === "resources",
+          ),
+        );
+        const fetched = resourceCalls.filter(
+          (call) => call.request.action === "fetch-image",
+        );
+        expect(fetched).toHaveLength(3);
+        for (const call of fetched) {
+          expect(call.completed).toBe(true);
+          expect(
+            resourceCalls.filter(
+              (release) =>
+                release.request.action === "release" &&
+                release.request.resourceId === call.response.resourceId,
+            ),
+          ).toHaveLength(1);
+        }
+        expect(
+          resourceCalls
+            .filter((call) => call.request.action === "save")
+            .map((call) => call.response.cancelled),
+        ).toEqual([true]);
+        const releasedPreview = await frame
+          .locator("html")
+          .evaluate(async (_node, resourceId) => {
+            try {
+              await starter.services.request("resources", {
+                action: "preview",
+                resourceId,
+              });
+              return null;
+            } catch (error) {
+              return error.code;
+            }
+          }, fetched[0].response.resourceId);
+        expect(releasedPreview).toBe("NOT_FOUND");
         await frame.locator("#local-tab").click();
         const card = frame.locator(
           '#gallery [data-wallpaper-id="' + "f".repeat(64) + '"]',
@@ -1017,9 +1461,12 @@ try {
         await frame.locator("#dialog-cancel").click();
         await expect(card).toBeVisible();
         await frame.locator("#import").click();
-        await expect(frame.locator("#notice")).toContainText(
-          profile.language === "zh" ? "取消" : "cancelled",
-        );
+        await expect(
+          page.locator("[data-sonner-toast]").filter({
+            hasText:
+              profile.language === "zh" ? "已取消导入。" : "Import cancelled.",
+          }),
+        ).toBeVisible();
         await expect
           .poll(() =>
             frame
@@ -1476,6 +1923,7 @@ try {
         chrome,
         toolsHelp,
         hostScroll,
+        startupDiagnostics: await startupDiagnostics(page),
         initialPaint: {
           visibleFrames: initialPaint.visible.length,
           skeletonObserved: initialPaint.skeletonObserved,
@@ -1498,10 +1946,133 @@ try {
     await context.close();
   }
   if (
+    ![
+      "--security-only",
+      "--chrome-only",
+      "--artifact-only",
+      "--settings-only",
+      "--consent-only",
+    ].some((flag) => process.argv.includes(flag)) &&
+    (!selectedNames.length || selectedNames.includes("wallpaper-browser"))
+  ) {
+    for (const mode of ["denied", "direct", "links-only"]) {
+      const context = await browser.newContext({
+        viewport: { width: 900, height: 760 },
+        reducedMotion: "reduce",
+      });
+      await context.addInitScript({ content: init });
+      const page = await newFixturePage(context),
+        errors = [],
+        warnings = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("console", (message) => {
+        if (["error", "warning"].includes(message.type()))
+          warnings.push(message.text());
+      });
+      const beforeHttp = services.httpCalls.length;
+      const beforeServices = services.calls.length;
+      await page.goto(
+        `http://127.0.0.1:${port}/?plugin=wallpaper-browser&window=true&language=zh&theme=light&wallpaperPermissions=${mode}`,
+      );
+      const frame = page.frameLocator("iframe");
+      await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+      await observeSdk(frame);
+      await idle(page, frame);
+      const boundaries = await checkWallpaperCapabilityBoundaries(
+        page,
+        frame,
+        mode,
+      );
+      await idle(page, frame);
+      expect(services.activeResources()).toBe(0);
+      const network = services.httpCalls.slice(beforeHttp);
+      if (mode === "denied") {
+        expect(network).toHaveLength(0);
+        expect(
+          services.calls
+            .slice(beforeServices)
+            .filter((call) => call.service === "wallpaper")
+            .map((call) => call.request.action),
+        ).toEqual(
+          expect.arrayContaining([
+            "list",
+            "apply",
+            "rename",
+            "import",
+            "remove",
+          ]),
+        );
+      } else {
+        expect(network).toHaveLength(1);
+        expect(network[0].request.networkMode).toBe("direct");
+        if (mode === "links-only")
+          expect(
+            services.calls
+              .slice(beforeServices)
+              .filter((call) => call.service === "links")
+              .map((call) => call.request.url),
+          ).toEqual(["https://www.wikipedia.org/one"]);
+      }
+      expect(errors).toEqual([]);
+      expect(warnings).toEqual([]);
+      report.push({
+        plugin: "wallpaper-browser",
+        regression: "optional-network-boundaries",
+        ...boundaries,
+        offlineHttpBoundaryMock: network,
+        nativeIpc: false,
+      });
+      console.log(
+        `PASS wallpaper-browser ${mode} optional network boundary; local gallery retained`,
+      );
+      await context.close();
+    }
+  }
+  if (
     !process.argv.includes("--security-only") &&
+    !process.argv.includes("--chrome-only") &&
+    !process.argv.includes("--capabilities-only") &&
+    !process.argv.includes("--regressions-only")
+  ) {
+    for (const language of ["zh", "en"]) {
+      const context = await browser.newContext({
+        viewport: { width: 360, height: 760 },
+        reducedMotion: "reduce",
+      });
+      await context.addInitScript({ content: init });
+      const page = await newFixturePage(context);
+      await page.goto(
+        `http://127.0.0.1:${port}/?plugin=center&language=${language}&font=20px`,
+      );
+      for (const name of [
+        "lab",
+        "scientific-calculator",
+        "wallpaper-browser",
+      ]) {
+        const permissions = await checkPermissionConsent(
+          page,
+          plugins.find((plugin) => plugin.name === name).manifest,
+          language,
+          join(output, `permissions-${name}-${language}-360.png`),
+        );
+        report.push({
+          plugin: name,
+          regression: "permission-consent",
+          language,
+          permissions,
+          nativeIpc: false,
+        });
+      }
+      await context.close();
+    }
+  }
+  if (
+    !process.argv.includes("--security-only") &&
+    !process.argv.includes("--capabilities-only") &&
     !process.argv.includes("--regressions-only") &&
     !process.argv.includes("--chrome-only") &&
     !process.argv.includes("--artifact-only") &&
+    !process.argv.includes("--consent-only") &&
     (!selectedNames.length || selectedNames.includes("scientific-calculator"))
   ) {
     const context = await browser.newContext({
@@ -1509,8 +2080,8 @@ try {
       reducedMotion: "no-preference",
     });
     await context.addInitScript({ content: init });
-    const first = await context.newPage(),
-      second = await context.newPage();
+    const first = await newFixturePage(context),
+      second = await newFixturePage(context);
     const url = `http://127.0.0.1:${port}/?plugin=scientific-calculator&window=true&language=zh&theme=light&motion=full&font=16px`;
     await first.goto(url);
     const child = first.frameLocator("iframe");
@@ -1633,6 +2204,7 @@ try {
     ![
       "--security-only",
       "--settings-only",
+      "--capabilities-only",
       "--regressions-only",
       "--chrome-only",
       "--artifact-only",
@@ -1644,7 +2216,7 @@ try {
       reducedMotion: "reduce",
     });
     await context.addInitScript({ content: init });
-    const page = await context.newPage(),
+    const page = await newFixturePage(context),
       errors = [],
       warnings = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -1714,7 +2286,7 @@ try {
     );
     await context.close();
   }
-  const securityPage = await browser.newPage();
+  const securityPage = observeFixturePage(await browser.newPage());
   await securityPage.context().addInitScript({ content: init });
   let externalRequests = 0;
   await securityPage.route("https://denied.invalid/**", (route) => {
@@ -1791,15 +2363,17 @@ try {
   await writeFile(
     join(
       output,
-      process.argv.includes("--regressions-only")
-        ? "regressions-run.json"
-        : process.argv.includes("--chrome-only")
-          ? "chrome-run.json"
-          : process.argv.includes("--artifact-only")
-            ? "artifact-run.json"
-            : process.argv.includes("--security-only")
-              ? "security-run.json"
-              : "report.json",
+      process.argv.includes("--capabilities-only")
+        ? "capabilities-run.json"
+        : process.argv.includes("--regressions-only")
+          ? "regressions-run.json"
+          : process.argv.includes("--chrome-only")
+            ? "chrome-run.json"
+            : process.argv.includes("--artifact-only")
+              ? "artifact-run.json"
+              : process.argv.includes("--security-only")
+                ? "security-run.json"
+                : "report.json",
     ),
     JSON.stringify(
       {
@@ -1816,7 +2390,8 @@ try {
         })),
         nativeIpc: false,
         serviceNativeBoundary:
-          "LAN and wallpaper services are explicit browser boundaryMock substitutes",
+          "LAN, gallery, image-resource and external-link services are explicit browser boundaryMock substitutes; offline HTTP receipts are parsed by real packaged Wasm",
+        offlineHttpBoundaryMock: services.httpCalls,
         sessionValidationNativeBoundary:
           "Imports reuse unchanged real-Wasm exports; Rust view parsing is boundaryMock here",
         readinessTimingBoundaryMock:
@@ -1830,8 +2405,9 @@ try {
   const pages = [];
   for (const context of browser?.contexts() ?? [])
     for (const page of context.pages()) {
-      const state = { url: page.url() };
+      const state = { url: page.url(), diagnostics: pageDiagnostics.get(page) };
       try {
+        state.startupDiagnostics = await startupDiagnostics(page);
         state.protocolRequests = await page.evaluate(
           () => window.__iframeProtocolRequests,
         );
@@ -1848,6 +2424,9 @@ try {
             .frameLocator("iframe")
             .locator("html")
             .evaluate(() => ({
+              documentState: document.readyState,
+              sdkPresent: typeof window.starter === "object",
+              url: location.href,
               notice: document.querySelector("#notice")?.textContent,
               error: document.querySelector("#error")?.textContent,
               draft: document.querySelector("#draft")?.value,

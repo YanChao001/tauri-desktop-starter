@@ -222,6 +222,92 @@ const item: native.ExtensionInfo = {
   },
 };
 
+it.each([
+  { name: "standalone large text", top: 80, trailing: 30, height: 710 },
+  { name: "embedded page", top: 70, trailing: 50, height: 560 },
+  { name: "short viewport", top: 80, trailing: 30, height: 180 },
+])(
+  "fits the frame inside the $name region using actual trailing content and padding",
+  async ({ top, trailing, height }) => {
+    let resize: (() => void) | undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.mocked(native.openExtensionUi).mockResolvedValue({
+      url: "about:blank",
+      token: "layout",
+    });
+    vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
+    const result = render(
+      <main className="app-main">
+        <div data-testid="content">
+          <ExtensionCustomUi
+            item={item}
+            commandId="open"
+            view={null}
+            fields={{}}
+            checkpoint={null}
+            busy={false}
+            dirty={false}
+            execute={vi.fn()}
+          />
+        </div>
+      </main>,
+    );
+    const region = result.getByRole("main");
+    const content = result.getByTestId("content");
+    region.scrollTop = 17;
+    Object.defineProperty(region, "clientHeight", { get: () => height });
+    const rectangle = (y: number, size: number): DOMRect => ({
+      x: 0,
+      y,
+      left: 0,
+      top: y,
+      right: 640,
+      bottom: y + size,
+      width: 640,
+      height: size,
+      toJSON() {},
+    });
+    vi.spyOn(region, "getBoundingClientRect").mockImplementation(() =>
+      rectangle(50, height),
+    );
+    const frameHeight = () =>
+      parseFloat(
+        result.container.querySelector("iframe")?.style.height ?? "",
+      ) || 150;
+    vi.spyOn(content, "getBoundingClientRect").mockImplementation(() =>
+      rectangle(top - region.scrollTop, frameHeight() + trailing),
+    );
+    vi.spyOn(
+      HTMLIFrameElement.prototype,
+      "getBoundingClientRect",
+    ).mockImplementation(() =>
+      rectangle(top - region.scrollTop, frameHeight()),
+    );
+    await waitFor(() => {
+      const frame = result.container.querySelector("iframe");
+      expect(frame?.style.height).toBe(`${50 + height - top - trailing}px`);
+      expect(frame?.parentElement).not.toHaveClass("min-h-64");
+    });
+    // 再次缩小窗口时继续使用内容框内滚动，不以固定最小高度撑出外层滚动。
+    height -= 100;
+    act(() => resize?.());
+    await waitFor(() =>
+      expect(result.container.querySelector("iframe")?.style.height).toBe(
+        `${Math.max(1, 50 + height - top - trailing)}px`,
+      ),
+    );
+  },
+);
+
 it("updates environment and drafts without rereading the palette or reloading the frame for field edits and optional grants", async () => {
   const sent: unknown[] = [];
   vi.stubGlobal(

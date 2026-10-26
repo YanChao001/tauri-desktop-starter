@@ -14,6 +14,8 @@ import * as native from "@/lib/tauri";
 import Extensions from "./extensions";
 import { ExtensionsProvider } from "@/features/extensions/extensions-provider";
 import { useLocation } from "react-router-dom";
+import { toast } from "sonner";
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
   isTauri: () => true,
@@ -88,6 +90,8 @@ beforeEach(() => {
       repository: "owner/market",
       entries: [],
     },
+    hostVersion: "0.1.6",
+    incompatibleEntries: [],
     fetchedAt: Date.now(),
     stale: false,
   });
@@ -133,7 +137,13 @@ it("reviews permissions once and installs enabled without a separate activation 
   const review = await screen.findByRole("dialog");
   expect(within(review).getByText(preview.sha256)).toBeVisible();
   expect(native.installExtension).not.toHaveBeenCalled();
-  expect(within(review).getByRole("checkbox")).not.toBeChecked();
+  for (const checkbox of within(review).getAllByRole("checkbox"))
+    expect(checkbox).not.toBeChecked();
+  expect(
+    within(review).getByRole("checkbox", {
+      name: "Select all optional capabilities",
+    }),
+  ).toBeVisible();
   fireEvent.click(
     within(review).getByRole("button", { name: "Install and enable" }),
   );
@@ -235,6 +245,8 @@ it("downloads a market package for review and installs only after confirmation w
       repository: "owner/market",
       entries: [marketEntry],
     },
+    hostVersion: "0.1.6",
+    incompatibleEntries: [],
     fetchedAt: Date.now(),
     stale: false,
   });
@@ -295,6 +307,8 @@ it("offers numeric version updates and retains the installed package when downlo
       repository: "owner/market",
       entries: [marketEntry],
     },
+    hostVersion: "0.1.6",
+    incompatibleEntries: [],
     fetchedAt: Date.now(),
     stale: false,
   });
@@ -305,8 +319,11 @@ it("offers numeric version updates and retains the installed package when downlo
   await user.click(
     await screen.findByRole("button", { name: "Update to 1.10.0" }),
   );
-  await screen.findByText(
-    "Market catalog or package verification failed. No extensions were installed or changed.",
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      "Market catalog or package verification failed. No extensions were installed or changed.",
+      expect.anything(),
+    ),
   );
   expect(screen.getByRole("button", { name: "Disable" })).toBeEnabled();
   expect(native.installExtension).not.toHaveBeenCalled();
@@ -324,6 +341,8 @@ it("keeps a verified catalog visible after refresh failure and filters it withou
         repository: "owner/market",
         entries: [marketEntry],
       },
+      hostVersion: "0.1.6",
+      incompatibleEntries: [],
       fetchedAt: Date.now(),
       stale: false,
     })
@@ -334,8 +353,11 @@ it("keeps a verified catalog visible after refresh failure and filters it withou
   );
   await screen.findByRole("button", { name: "Download and review" });
   await user.click(screen.getByRole("button", { name: "Refresh market" }));
-  await screen.findByText(
-    "The plugin market is unavailable. Check your connection and refresh. Installed extensions remain available.",
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      "The plugin market is unavailable. Check your connection and refresh. Installed extensions remain available.",
+      expect.anything(),
+    ),
   );
   expect(
     screen.getByRole("button", { name: "Download and review" }),
@@ -485,7 +507,8 @@ it("enables offline commands without optional networking and allows grants to ch
   const dialog = await screen.findByRole("dialog");
   const confirm = within(dialog).getByRole("button", { name: "Enable" });
   expect(confirm).toBeEnabled();
-  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+  for (const checkbox of within(dialog).getAllByRole("checkbox"))
+    expect(checkbox).not.toBeChecked();
   fireEvent.click(confirm);
   await waitFor(() =>
     expect(native.setExtensionEnabled).toHaveBeenCalledWith(
@@ -500,7 +523,11 @@ it("enables offline commands without optional networking and allows grants to ch
     await screen.findByRole("button", { name: "Manage permissions" }),
   );
   const permissions = await screen.findByRole("dialog");
-  fireEvent.click(within(permissions).getByRole("checkbox"));
+  fireEvent.click(
+    within(permissions).getByRole("checkbox", {
+      name: "Select all optional capabilities",
+    }),
+  );
   fireEvent.click(
     within(permissions).getByRole("button", { name: "Save permissions" }),
   );
@@ -543,9 +570,12 @@ it("checks an installed bundled lab without opening an invalid same-version upgr
   await waitFor(() => expect(check).toBeEnabled());
   expect(native.extensionDemo).not.toHaveBeenCalled();
   fireEvent.click(check);
-  expect(
-    await screen.findByText("The bundled workbench is already up to date."),
-  ).toBeVisible();
+  await waitFor(() =>
+    expect(toast.info).toHaveBeenCalledWith(
+      "The bundled workbench is already up to date.",
+      expect.anything(),
+    ),
+  );
   expect(native.extensionDemo).toHaveBeenCalledExactlyOnceWith(
     "starter.extension-lab",
   );
@@ -628,9 +658,12 @@ it.each([
     });
     await waitFor(() => expect(check).toBeEnabled());
     fireEvent.click(check);
-    expect(
-      await screen.findByText((content) => content.startsWith(text)),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        expect.stringContaining(text),
+        expect.anything(),
+      ),
+    );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(native.installExtension).not.toHaveBeenCalled();
   },

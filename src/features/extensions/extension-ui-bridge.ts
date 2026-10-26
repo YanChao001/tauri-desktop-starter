@@ -6,11 +6,17 @@ export type ExtensionUiRequest =
   | { method: "checkpoint"; value: string; dirty: boolean }
   | { method: "artifact"; index: number }
   | {
+      method: "notify";
+      message: string;
+      tone: "info" | "success" | "error";
+    }
+  | {
       method: "service";
-      service: "lan" | "wallpaper";
+      service: "lan" | "wallpaper" | "resources" | "links";
       request: Record<string, unknown>;
     };
 export const UI_CHECKPOINT_BYTES = 256 * 1024;
+export const UI_NOTIFICATION_BYTES = 2048;
 const MESSAGE_BYTES = 2 * 1024 * 1024;
 const STATE_BYTES = 12 * 1024 * 1024;
 function record(value: unknown): value is Record<string, unknown> {
@@ -114,10 +120,32 @@ export function parseUiRequest(message: unknown): {
         invalid();
       request = { method: "artifact", index: params.index };
       break;
+    case "notify":
+      if (
+        !keys(params, "message,tone") ||
+        typeof params.message !== "string" ||
+        !params.message.trim() ||
+        params.message.includes("\0") ||
+        new TextEncoder().encode(params.message).length >
+          UI_NOTIFICATION_BYTES ||
+        (params.tone !== "info" &&
+          params.tone !== "success" &&
+          params.tone !== "error")
+      )
+        invalid();
+      request = {
+        method: "notify",
+        message: params.message,
+        tone: params.tone,
+      };
+      break;
     case "service":
       if (
         !keys(params, "request,service") ||
-        (params.service !== "lan" && params.service !== "wallpaper") ||
+        (params.service !== "lan" &&
+          params.service !== "wallpaper" &&
+          params.service !== "resources" &&
+          params.service !== "links") ||
         !record(params.request)
       )
         invalid();

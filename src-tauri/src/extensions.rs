@@ -1,6 +1,7 @@
 //! Extism Wasm 扩展包、条件写入和运行租约。
 use crate::{
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
+    extension_paths::{directory, regular},
     extension_view::ExtensionIcon,
     storage::atomic_write,
 };
@@ -60,6 +61,12 @@ pub enum ExtensionPermission {
     NetworkHttps,
     #[serde(rename = "network:local")]
     NetworkLocal,
+    #[serde(rename = "network:images")]
+    NetworkImages,
+    #[serde(rename = "network:system-proxy")]
+    NetworkSystemProxy,
+    #[serde(rename = "links:open")]
+    LinksOpen,
     #[serde(rename = "storage")]
     Storage,
     #[serde(rename = "messaging:lan")]
@@ -312,6 +319,11 @@ pub struct WindowRunToken {
     owner: String,
     generation: u64,
 }
+#[derive(Default)]
+struct CacheCleanupState {
+    running: bool,
+    requested: bool,
+}
 struct StoreInner {
     root: PathBuf,
     isolated: bool,
@@ -322,6 +334,9 @@ struct StoreInner {
     run_changed: Condvar,
     services: Mutex<HashMap<String, usize>>,
     windows: Mutex<HashMap<String, WindowSession>>,
+    cache_cleanup: Mutex<CacheCleanupState>,
+    #[cfg(test)]
+    cleanup_workers: AtomicU32,
 }
 #[derive(Clone)]
 pub struct ExtensionStore(Arc<StoreInner>);
@@ -401,11 +416,7 @@ impl Drop for RunLease {
             promote_runs(&mut runs);
             self.store.0.run_changed.notify_all();
         }
-        if let Ok(_guard) = self.store.0.writing.lock()
-            && let Ok(registry) = self.store.read()
-        {
-            self.store.cleanup(&registry);
-        }
+        self.store.request_cache_cleanup();
     }
 }
 fn invalid(message: &str) -> NativeError {
@@ -440,7 +451,7 @@ pub(crate) fn valid_id(id: &str) -> bool {
                     .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         })
 }
-fn version(value: &str) -> NativeResult<(u16, u16, u16)> {
+pub(crate) fn version(value: &str) -> NativeResult<(u16, u16, u16)> {
     let parts: Vec<_> = value.split('.').collect();
     if parts.len() != 3
         || parts.iter().any(|part| {
@@ -504,6 +515,19 @@ impl ExtensionManifest {
                 "Required and optional permissions must be unique and disjoint",
             ));
         }
+        if declared.iter().any(|permission| {
+            matches!(
+                permission,
+                ExtensionPermission::NetworkImages
+                    | ExtensionPermission::NetworkSystemProxy
+                    | ExtensionPermission::LinksOpen
+            )
+        }) && version(&self.min_host_version)? < (0, 1, 6)
+        {
+            return Err(invalid(
+                "Image resources, external links and system proxies require minHostVersion 0.1.6 or newer",
+            ));
+        }
         if self.commands.is_empty() || self.commands.len() > 32 {
             return Err(invalid("Declare one to thirty-two commands"));
         }
@@ -565,6 +589,8 @@ impl ExtensionManifest {
                         ExtensionPermission::FilesRead
                             | ExtensionPermission::NetworkHttps
                             | ExtensionPermission::NetworkLocal
+                            | ExtensionPermission::NetworkImages
+                            | ExtensionPermission::NetworkSystemProxy
                     )
                 })
             {
@@ -593,6 +619,14 @@ impl ExtensionManifest {
         {
             return Err(invalid(
                 "Network permissions and corresponding origins must be declared together",
+            ));
+        }
+        if self.has_permission(ExtensionPermission::NetworkSystemProxy)
+            && !public_network
+            && !self.has_permission(ExtensionPermission::NetworkImages)
+        {
+            return Err(invalid(
+                "System proxy access requires declared public HTTP or image access",
             ));
         }
         Ok(())
@@ -686,27 +720,6 @@ fn promote_runs(runs: &mut VecDeque<ActiveRun>) {
     }
 }
 
-fn regular(path: &Path) -> NativeResult<bool> {
-    match fs::symlink_metadata(path) {
-        Ok(info) if info.is_file() && !info.is_symlink() => Ok(true),
-        Ok(_) => Err(invalid("Extension storage refuses links and directories")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(io("Cannot inspect extension storage", error)),
-    }
-}
-fn directory(path: &Path, create: bool) -> NativeResult<bool> {
-    match fs::symlink_metadata(path) {
-        Ok(info) if info.is_dir() && !info.is_symlink() => Ok(true),
-        Ok(_) => Err(invalid("Extension directory must be a real directory")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
-            fs::create_dir_all(path)
-                .map_err(|error| io("Cannot create extension directory", error))?;
-            directory(path, false)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(io("Cannot inspect extension directory", error)),
-    }
-}
 fn read_binary(path: &Path) -> NativeResult<Vec<u8>> {
     if !regular(path)? {
         return Err(NativeError::new(
@@ -799,6 +812,9 @@ impl ExtensionStore {
             run_changed: Condvar::new(),
             services: Mutex::new(HashMap::new()),
             windows: Mutex::new(HashMap::new()),
+            cache_cleanup: Mutex::new(CacheCleanupState::default()),
+            #[cfg(test)]
+            cleanup_workers: AtomicU32::new(0),
         }))
     }
     fn stop_matching(&self, predicate: impl Fn(&ActiveRun) -> bool) {
@@ -875,7 +891,8 @@ impl ExtensionStore {
                 "Unsupported extension registry version; original data kept",
             ));
         }
-        let registry: Registry = serde_json::from_value(value).map_err(|_| {
+        // 从原文解码，拒绝重复的安装身份或授权字段。
+        let registry: Registry = serde_json::from_slice(&bytes).map_err(|_| {
             NativeError::new(
                 ErrorCode::StorageCorrupt,
                 "Invalid extension registry; original data kept",
@@ -1009,6 +1026,49 @@ impl ExtensionStore {
                 }
                 // 只移除固定文件及空目录，不递归清理未知文件或跟随目录链接。
                 let _ = fs::remove_dir(entry.path());
+            }
+        }
+    }
+    fn request_cache_cleanup(&self) {
+        let Ok(mut cleanup) = self.0.cache_cleanup.lock() else {
+            return;
+        };
+        cleanup.requested = true;
+        if cleanup.running {
+            return;
+        }
+        cleanup.running = true;
+        drop(cleanup);
+        #[cfg(test)]
+        self.0.cleanup_workers.fetch_add(1, Ordering::Relaxed);
+        let store = self.clone();
+        let cleanup = move || store.drain_cache_cleanup();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            // 取消也会析构租约；每个存储最多保留一个执行器之外的清理任务。
+            runtime.spawn_blocking(cleanup);
+        } else {
+            cleanup();
+        }
+    }
+    fn drain_cache_cleanup(&self) {
+        loop {
+            let Ok(mut cleanup) = self.0.cache_cleanup.lock() else {
+                return;
+            };
+            cleanup.requested = false;
+            drop(cleanup);
+            if let Ok(_guard) = self.0.writing.lock()
+                && let Ok(registry) = self.read()
+            {
+                self.cleanup(&registry);
+            }
+            let Ok(mut cleanup) = self.0.cache_cleanup.lock() else {
+                return;
+            };
+            if !cleanup.requested {
+                // 请求与结束检查共用此锁，清理末尾到达的请求不会丢失。
+                cleanup.running = false;
+                return;
             }
         }
     }
@@ -2458,6 +2518,31 @@ mod tests {
         );
     }
     #[test]
+    fn media_permissions_remain_optional_and_proxy_cannot_exist_without_public_network() {
+        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        manifest.optional_permissions = vec![ExtensionPermission::NetworkSystemProxy];
+        assert!(manifest.validate().is_err());
+        manifest.min_host_version = "0.1.6".into();
+        assert!(manifest.validate().is_err());
+        manifest
+            .optional_permissions
+            .push(ExtensionPermission::NetworkImages);
+        manifest
+            .optional_permissions
+            .push(ExtensionPermission::LinksOpen);
+        manifest.validate().unwrap();
+        ExtensionConsent {
+            trusted: true,
+            granted_permissions: manifest.permissions.clone(),
+        }
+        .validate(&manifest)
+        .unwrap();
+        let mut command = manifest.commands[0].clone();
+        command.permissions.push(ExtensionPermission::NetworkImages);
+        manifest.commands[0] = command;
+        assert!(manifest.validate().is_err(), "文本命令不能接收网络资源请求");
+    }
+    #[test]
     fn defaults_install_once_disabled_and_never_overwrite_or_resurrect() {
         let (_dir, store) = store();
         store.initialize_bundled().unwrap();
@@ -2709,6 +2794,219 @@ mod tests {
             ErrorCode::ExtensionUnavailable
         );
     }
+    #[test]
+    fn duplicate_registry_and_installed_identity_fields_are_rejected_without_writes() {
+        let (_dir, store) = store();
+        let snapshot = install(&store);
+        let item = &snapshot.items[0];
+        let path = store.0.root.join("registry.json");
+        let original = fs::read_to_string(&path).unwrap();
+        for (field, replacement) in [
+            (
+                "\"schemaVersion\": 3,",
+                "\"schemaVersion\": 99, \"schemaVersion\": 3,",
+            ),
+            ("\"revision\": 1,", "\"revision\": 99, \"revision\": 1,"),
+            (
+                "\"generation\": 1,",
+                "\"generation\": 99, \"generation\": 1,",
+            ),
+            (
+                "\"enabled\": false,",
+                "\"enabled\": true, \"enabled\": false,",
+            ),
+            (
+                "\"formatVersion\": 3,",
+                "\"formatVersion\": 99, \"formatVersion\": 3,",
+            ),
+        ] {
+            assert!(original.contains(field), "Missing fixture field {field}");
+            let ambiguous = original.replacen(field, replacement, 1);
+            fs::write(&path, &ambiguous).unwrap();
+            assert_eq!(
+                store.snapshot().unwrap_err().code,
+                ErrorCode::StorageCorrupt,
+                "Accepted duplicate {field}"
+            );
+            assert_eq!(
+                store
+                    .uninstall(&item.package.manifest.id, snapshot.revision)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::StorageCorrupt
+            );
+            assert_eq!(fs::read(&path).unwrap(), ambiguous.as_bytes());
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    fn directory_link(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let output = std::process::Command::new("cmd.exe")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Cannot create registry test junction"
+            );
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn linked_registry_root_and_existing_or_missing_ancestors_are_never_used() {
+        let (temporary, store) = store();
+        let snapshot = install(&store);
+        let registry = store.0.root.join("registry.json");
+        let original = fs::read(&registry).unwrap();
+        let linked_root = temporary.path().join("linked-root");
+        let linked_parent = temporary.path().join("linked-parent");
+        directory_link(&store.0.root, &linked_root);
+        directory_link(temporary.path(), &linked_parent);
+        for root in [
+            linked_root.clone(),
+            linked_parent.join("extensions"),
+            linked_parent.join("missing/extensions"),
+        ] {
+            let through_link = ExtensionStore::new(root, false);
+            assert_eq!(
+                through_link.snapshot().unwrap_err().code,
+                ErrorCode::InvalidArgument
+            );
+            assert!(through_link.initialize_bundled().is_err());
+            assert!(
+                through_link
+                    .uninstall(&snapshot.items[0].package.manifest.id, snapshot.revision)
+                    .is_err()
+            );
+            assert_eq!(fs::read(&registry).unwrap(), original);
+            assert!(!temporary.path().join("missing").exists());
+        }
+        #[cfg(windows)]
+        {
+            fs::remove_dir(linked_parent).unwrap();
+            fs::remove_dir(linked_root).unwrap();
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn linked_package_cache_is_neither_written_nor_cleaned() {
+        let (temporary, store) = store();
+        fs::create_dir(&store.0.root).unwrap();
+        let target = temporary.path().join("outside");
+        let stale_module = target.join(digest(b"preserve external module"));
+        fs::create_dir_all(&stale_module).unwrap();
+        let stale_module = stale_module.join("module.wasm");
+        fs::write(&stale_module, b"preserve external module").unwrap();
+        let packages = store.0.root.join("packages");
+        directory_link(&target, &packages);
+        store.cleanup(&Registry::default());
+        assert_eq!(
+            fs::read(&stale_module).unwrap(),
+            b"preserve external module"
+        );
+        let content = demo_package();
+        let preview = preview_package(&content).unwrap();
+        assert!(store.install(&content, 0, false, &preview.sha256).is_err());
+        assert_eq!(fs::read_dir(&target).unwrap().count(), 1);
+        assert_eq!(
+            fs::read(&stale_module).unwrap(),
+            b"preserve external module"
+        );
+        assert!(!store.0.root.join("registry.json").exists());
+        #[cfg(windows)]
+        fs::remove_dir(packages).unwrap();
+    }
+
+    #[test]
+    fn async_lease_cleanup_is_coalesced_and_releases_admission_before_waiting() {
+        use std::{
+            sync::mpsc,
+            time::{Duration, Instant},
+        };
+
+        let (_temporary, store) = store();
+        let snapshot = enable(&store, &install(&store));
+        let item = &snapshot.items[0];
+        let run = store
+            .prepare(&item.package.manifest.id, &item.package.sha256)
+            .unwrap();
+        let module = store.asset(&item.package.sha256).unwrap();
+        store
+            .uninstall(&item.package.manifest.id, snapshot.revision)
+            .unwrap();
+        assert!(module.exists());
+        let writing = store.0.writing.lock().unwrap();
+        let (dropped_sender, dropped_receiver) = mpsc::channel();
+        let (continue_sender, continue_receiver) = mpsc::channel();
+        let (repeated_sender, repeated_receiver) = mpsc::channel();
+        let cleanup_store = store.clone();
+        let runtime = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap();
+            runtime.block_on(async move {
+                drop(run);
+                dropped_sender.send(()).unwrap();
+                continue_receiver.recv().unwrap();
+                // 单独压测租约析构，不受 Wasm 执行名额限制。
+                for _ in 0..256 {
+                    drop(RunLease {
+                        store: cleanup_store.clone(),
+                        stop: Arc::new(AtomicBool::new(false)),
+                    });
+                }
+                repeated_sender.send(()).unwrap();
+            });
+            // 退出运行时也会等待已经提交的阻塞清理任务完成。
+        });
+        let dropped = dropped_receiver.recv_timeout(Duration::from_secs(5));
+        let started_deadline = Instant::now() + Duration::from_secs(5);
+        let worker_started = loop {
+            let cleanup = store.0.cache_cleanup.lock().unwrap();
+            let started = cleanup.running && !cleanup.requested;
+            drop(cleanup);
+            if started || Instant::now() >= started_deadline {
+                break started;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        continue_sender.send(()).unwrap();
+        let repeated = repeated_receiver.recv_timeout(Duration::from_secs(5));
+        let cleanup_requested = {
+            let cleanup = store.0.cache_cleanup.lock().unwrap();
+            cleanup.running && cleanup.requested
+        };
+        let workers = store.0.cleanup_workers.load(Ordering::Relaxed);
+        let admission_released = !store.is_running();
+        let retained_while_locked = module.exists();
+        drop(writing);
+        runtime.join().unwrap();
+        assert!(
+            dropped.is_ok(),
+            "Lease drop waited on the registry write lock"
+        );
+        assert!(worker_started);
+        assert!(repeated.is_ok(), "Repeated lease drops waited for cleanup");
+        assert!(cleanup_requested, "Requests made during cleanup were lost");
+        assert_eq!(workers, 1, "Lease drops queued additional cleanup workers");
+        let cleanup = store.0.cache_cleanup.lock().unwrap();
+        assert!(!cleanup.running);
+        assert!(!cleanup.requested);
+        assert!(admission_released);
+        assert!(retained_while_locked);
+        assert!(!module.exists());
+    }
+
     #[test]
     fn pauses_and_shutdown_cancel_without_releasing_an_active_lease() {
         let (_dir, store) = store();

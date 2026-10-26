@@ -13,18 +13,23 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ExtensionService {
     Lan,
     Wallpaper,
+    Resources,
+    Links,
 }
 impl ExtensionService {
     fn permission(self) -> ExtensionPermission {
         match self {
             Self::Lan => ExtensionPermission::MessagingLan,
             Self::Wallpaper => ExtensionPermission::WallpapersManage,
+            Self::Resources => ExtensionPermission::NetworkImages,
+            Self::Links => ExtensionPermission::LinksOpen,
         }
     }
 }
@@ -85,7 +90,9 @@ impl ServicePermit {
     }
 }
 fn authorized(item: &ExtensionInfo, service: ExtensionService) -> NativeResult<()> {
-    let permission = service.permission();
+    require_permission(item, service.permission())
+}
+fn require_permission(item: &ExtensionInfo, permission: ExtensionPermission) -> NativeResult<()> {
     if !item.enabled
         || !item.package.manifest.has_permission(permission)
         || !item.granted_permissions.contains(&permission)
@@ -96,6 +103,61 @@ fn authorized(item: &ExtensionInfo, service: ExtensionService) -> NativeResult<(
         ));
     }
     Ok(())
+}
+
+// 服务权限不能隐式授予其他网络范围；按具体动作再检查组合能力。
+fn authorized_request(
+    item: &ExtensionInfo,
+    service: ExtensionService,
+    request: &serde_json::Value,
+) -> NativeResult<()> {
+    authorized(item, service)?;
+    if service == ExtensionService::Resources
+        && request
+            .get("networkMode")
+            .and_then(serde_json::Value::as_str)
+            == Some("system")
+    {
+        require_permission(item, ExtensionPermission::NetworkSystemProxy)?;
+    }
+    if service == ExtensionService::Wallpaper
+        && request.get("action").and_then(serde_json::Value::as_str) == Some("import-resource")
+    {
+        require_permission(item, ExtensionPermission::NetworkImages)?;
+    }
+    Ok(())
+}
+
+fn external_url(request: serde_json::Value) -> NativeResult<String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct LinkRequest {
+        url: String,
+    }
+    let request: LinkRequest = serde_json::from_value(request).map_err(|_| {
+        NativeError::new(ErrorCode::InvalidArgument, "Invalid external link request")
+    })?;
+    bounded_text(
+        &request.url,
+        crate::extension_network::HTTP_URL_LIMIT,
+        "External link",
+    )?;
+    if request.url.chars().any(char::is_control) {
+        return Err(NativeError::new(
+            ErrorCode::InvalidArgument,
+            "Invalid external link URL",
+        ));
+    }
+    // 浏览器负责最终连接；这里只校验公共 HTTPS 名称，不声称控制浏览器的 DNS。
+    let (source, fragment) = request
+        .url
+        .split_once('#')
+        .map_or((request.url.as_str(), None), |(source, fragment)| {
+            (source, Some(fragment))
+        });
+    let mut parsed = crate::extension_network::approved_public_url(source)?;
+    parsed.set_fragment(fragment);
+    Ok(parsed.into())
 }
 
 /// Registry identities and granted capabilities are independent of native window epochs.
@@ -150,7 +212,7 @@ pub async fn request_extension_service(
     })
     .await?;
     store.check_run_available(&token)?;
-    authorized(&item, service)?;
+    authorized_request(&item, service, &request)?;
     let permit = ServicePermit(store.begin_service(token.clone())?);
     let owner = permit.0.owner();
     {
@@ -184,10 +246,33 @@ pub async fn request_extension_service(
             crate::extension_wallpaper::request(
                 app.clone(),
                 &owner,
-                &item.package.manifest.id,
+                crate::extension_resources::ResourceIdentity::from(&item),
                 request,
                 permit.clone(),
             )
+            .await?
+        }
+        ExtensionService::Resources => {
+            crate::extension_resources::request(
+                app.clone(),
+                &owner,
+                crate::extension_resources::ResourceIdentity::from(&item),
+                request,
+                permit.clone(),
+            )
+            .await?
+        }
+        ExtensionService::Links => {
+            let url = external_url(request)?;
+            let app = app.clone();
+            blocking::run(move || {
+                permit.commit(|| {
+                    app.opener().open_url(url, None::<&str>).map_err(|_| {
+                        NativeError::new(ErrorCode::ExtensionRunFailed, "Cannot open external link")
+                    })?;
+                    Ok(serde_json::Value::Null)
+                })
+            })
             .await?
         }
     };
@@ -208,12 +293,13 @@ pub async fn reconcile(app: &tauri::AppHandle, snapshot: &ExtensionSnapshot) -> 
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Service identities unavailable"))?;
         retain_authorized_services(&mut identities, &snapshot.items)
     };
+    let resources = crate::extension_resources::retain_authorized(&snapshot.items);
     let app = app.clone();
     blocking::run(move || {
         for id in ids {
             crate::extension_lan::stop_extension(&app, &id);
         }
-        Ok(())
+        resources
     })
     .await
 }
@@ -235,10 +321,11 @@ pub async fn close_window(app: tauri::AppHandle, owners: Vec<String>) {
     let _guard = services.gate.write().await;
     let handle = app.clone();
     if let Err(error) = blocking::run(move || {
+        let resources = crate::extension_resources::close_owners(&owners);
         for owner in owners {
             crate::extension_lan::close_window(&handle, &owner);
         }
-        Ok(())
+        resources
     })
     .await
     {
@@ -257,7 +344,7 @@ mod tests {
             "formatVersion": 3, "apiVersion": 2, "minHostVersion": "0.1.4",
             "id": id, "version": "1.0.0", "name": "Service fixture", "author": "Test",
             "description": "Service boundary regression", "permissions": [],
-            "optionalPermissions": ["messaging:lan", "wallpapers:manage"], "network": [],
+            "optionalPermissions": ["messaging:lan", "wallpapers:manage", "network:images", "network:system-proxy", "links:open"], "network": [],
             "commands": [{"id":"open", "title":"Open", "function":"open", "inputFormat":"json", "resultFormat":"view", "permissions":[]}]
         })).unwrap();
         ExtensionInfo {
@@ -281,6 +368,96 @@ mod tests {
             .map(|service| ((item.package.manifest.id.clone(), service), item.clone()))
             .into_iter()
             .collect()
+    }
+
+    #[test]
+    fn resource_network_proxy_links_and_gallery_grants_do_not_substitute_each_other() {
+        use ExtensionPermission::{LinksOpen, NetworkImages, NetworkSystemProxy, WallpapersManage};
+        let fetch = json!({"action":"fetch-image", "url":"https://images.site.org/picture.jpg"});
+        let system = json!({"action":"fetch-image", "url":"https://images.site.org/picture.jpg", "networkMode":"system"});
+        let import =
+            json!({"action":"import-resource", "resourceId":"a".repeat(64), "name":"Image"});
+        let link = json!({"url":"https://images.site.org/source"});
+        for grant in [WallpapersManage, LinksOpen, NetworkSystemProxy] {
+            assert!(
+                authorized_request(
+                    &item("test.services", &[grant]),
+                    ExtensionService::Resources,
+                    &fetch
+                )
+                .is_err()
+            );
+        }
+        let images = item("test.services", &[NetworkImages]);
+        authorized_request(&images, ExtensionService::Resources, &fetch).unwrap();
+        assert!(authorized_request(&images, ExtensionService::Resources, &system).is_err());
+        assert!(authorized_request(&images, ExtensionService::Links, &link).is_err());
+        assert!(authorized_request(&images, ExtensionService::Wallpaper, &import).is_err());
+        let gallery = item("test.services", &[WallpapersManage]);
+        assert!(authorized_request(&gallery, ExtensionService::Wallpaper, &import).is_err());
+        authorized_request(
+            &gallery,
+            ExtensionService::Wallpaper,
+            &json!({"action":"list"}),
+        )
+        .unwrap();
+        let combined = item(
+            "test.services",
+            &[
+                NetworkImages,
+                NetworkSystemProxy,
+                WallpapersManage,
+                LinksOpen,
+            ],
+        );
+        authorized_request(&combined, ExtensionService::Resources, &system).unwrap();
+        authorized_request(&combined, ExtensionService::Wallpaper, &import).unwrap();
+        authorized_request(&combined, ExtensionService::Links, &link).unwrap();
+        let mut undeclared = combined.clone();
+        undeclared
+            .package
+            .manifest
+            .optional_permissions
+            .retain(|permission| *permission != NetworkSystemProxy);
+        assert!(authorized_request(&undeclared, ExtensionService::Resources, &system).is_err());
+        let mut disabled = combined;
+        disabled.enabled = false;
+        assert!(authorized_request(&disabled, ExtensionService::Resources, &fetch).is_err());
+    }
+
+    #[test]
+    fn external_links_are_bounded_public_https_and_not_native_routes_or_paths() {
+        assert_eq!(
+            external_url(json!({"url":"https://www.wikimedia.org/wiki/File#Licensing"})).unwrap(),
+            "https://www.wikimedia.org/wiki/File#Licensing"
+        );
+        for url in [
+            "http://www.wikimedia.org/image",
+            "file:///C:/secret.txt",
+            "tauri://localhost/",
+            "javascript:alert(1)",
+            "https://user:secret@www.wikimedia.org/",
+            "https://@www.wikimedia.org/",
+            "https://127.0.0.1/",
+            "https://192.168.0.1/",
+            "https://machine.local/",
+            "https://www.wikimedia.org:8080/",
+            "https://www.wikimedia.org/\nsecret",
+            "https://example.org/",
+        ] {
+            assert!(external_url(json!({"url":url})).is_err(), "{url}");
+        }
+        assert!(
+            external_url(json!({"url":format!("https://www.wikimedia.org/{}", "x".repeat(4096))}))
+                .is_err()
+        );
+        assert!(
+            external_url(json!({"url":"https://www.wikimedia.org/", "path":"C:/secret"})).is_err()
+        );
+        assert!(
+            external_url(json!({"url":"https://www.wikimedia.org/", "identity":"other.plugin"}))
+                .is_err()
+        );
     }
 
     #[test]

@@ -84,9 +84,24 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it.each(["lan", "wallpaper"] as const)(
-  "binds %s requests to the installed identity without locking Wasm actions or marking the session dirty",
-  async (service) => {
+it.each([
+  { service: "lan" as const, request: { action: "status" } },
+  { service: "wallpaper" as const, request: { action: "list" } },
+  {
+    service: "resources" as const,
+    request: {
+      action: "fetch-image",
+      url: "https://images.example.com/a.jpg",
+      networkMode: "direct",
+    },
+  },
+  {
+    service: "links" as const,
+    request: { url: "https://source.example.com/article" },
+  },
+])(
+  "binds $service requests to the installed identity without locking Wasm actions or marking the session dirty",
+  async ({ service, request }) => {
     let resolve!: (value: unknown) => void;
     vi.mocked(native.requestExtensionService).mockReturnValueOnce(
       new Promise((done) => {
@@ -104,7 +119,6 @@ it.each(["lan", "wallpaper"] as const)(
     );
     await waitFor(() => expect(native.viewExtension).toHaveBeenCalledOnce());
     await waitFor(() => expect(surface.busy).toBe(false));
-    const request = { action: "status" };
     let pending!: Promise<unknown>;
     act(() => {
       pending = surface.execute!({ method: "service", service, request });
@@ -151,3 +165,66 @@ it("propagates the native service rejection without replacing the plugin view or
   expect(native.viewExtension).toHaveBeenCalledOnce();
   expect(surface.dirty).toBe(false);
 });
+
+it.each([
+  ["number", "1", "1e999"],
+  ["date", "2026-10-26", "2026-02-30"],
+  ["select", "one", "missing"],
+  ["checkbox", "false", "invalid"],
+] as const)(
+  "rejects a %s draft in an SDK run before invoking Wasm and permits a corrected value",
+  async (kind, initial, invalid) => {
+    vi.mocked(native.viewExtension).mockResolvedValue({
+      version: 2,
+      state: "state",
+      display: "Value",
+      description: "",
+      fields: [
+        {
+          id: "value",
+          label: "Value",
+          kind,
+          value: initial,
+          ...(kind === "select"
+            ? { options: [{ label: "One", value: "one" }] }
+            : {}),
+        },
+      ],
+      groups: [],
+    });
+    render(
+      <ExtensionApp
+        item={item}
+        commandId="open"
+        runs={[]}
+        onClose={vi.fn()}
+        onSettled={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    await waitFor(() => expect(surface.busy).toBe(false));
+    await waitFor(() => expect(native.viewExtension).toHaveBeenCalledOnce());
+    await act(async () => {
+      await expect(
+        surface.execute!({
+          method: "run",
+          action: "submit",
+          fields: { value: invalid },
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    });
+    expect(native.viewExtension).toHaveBeenCalledOnce();
+    await act(async () => {
+      await surface.execute!({
+        method: "run",
+        action: "submit",
+        fields: { value: initial },
+      });
+    });
+    expect(native.viewExtension).toHaveBeenCalledTimes(2);
+    expect(native.viewExtension).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({ fields: { value: initial } }),
+      }),
+    );
+  },
+);

@@ -9,6 +9,7 @@ pub fn builder() -> Builder<tauri::Wry> {
     Builder::new()
         .commands(collect_commands![
             crate::file_commands::save_text_export,
+            extension_commands::save_extension_session,
             extension_commands::extension_snapshot,
             crate::extension_services::request_extension_service,
             extension_commands::preview_extension_archive,

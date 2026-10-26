@@ -6,7 +6,9 @@ import {
   type ExtensionViewInput,
   type ExtensionView,
   type ExtensionArtifact,
+  type ExtensionService,
 } from "../../src/lib/tauri";
+import type { NativeError } from "../../src/lib/generated/bindings";
 import type { UnsavedWork } from "../../src/providers/unsaved-work";
 
 declare global {
@@ -51,11 +53,14 @@ window.__extensionUiTest = {
   sessionViewValidationBoundaryMockCalls: 0,
   permissionGrantBoundaryMock: false,
 };
-const configuration = (await fetch("/fixture/config").then((response) =>
-  response.json(),
-)) as { snapshot: ExtensionSnapshot };
+const configuration = (await fetch(
+  `/fixture/config?${new URLSearchParams({
+    wallpaperPermissions:
+      new URLSearchParams(location.search).get("wallpaperPermissions") ?? "all",
+  })}`,
+).then((response) => response.json())) as { snapshot: ExtensionSnapshot };
 // A separate host-data dialog case grants only this declared optional permission.
-// The fifteen regular profiles retain their ungranted offline Lab experience.
+// The regular profiles retain their ungranted offline Lab experience.
 if (
   new URLSearchParams(location.search).get("hostDataBoundaryMock") === "true"
 ) {
@@ -101,6 +106,8 @@ export const openExtensionCenter = async () => {
   window.__extensionUiTest.commands.push("open-extension-center");
 };
 export const extensionMarketSnapshot = async () => ({
+  hostVersion: "0.1.6",
+  incompatibleEntries: [],
   catalog: {
     schemaVersion: 2,
     revision: 1,
@@ -116,16 +123,32 @@ async function request<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/fixture/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...(body as object), fixtureSession }),
+    body: JSON.stringify({
+      ...(body as object),
+      fixtureSession,
+      boundaryGallerySeed:
+        new URLSearchParams(location.search).get("wallpaperPermissions") ===
+        "denied",
+      boundaryGrantedPermissions: configuration.snapshot.items.find(
+        (item) => item.package.manifest.id === (body as { id?: string }).id,
+      )?.grantedPermissions,
+    }),
   });
   const result = (await response.json()) as {
-    code?: "EXTENSION_RUN_FAILED";
+    code?: NativeError["code"];
     message?: string;
-  };
+    boundaryMock?: boolean;
+    boundaryError?: {
+      code: NativeError["code"];
+      message: string;
+    };
+  } | null;
+  if (result?.boundaryMock && result.boundaryError)
+    throw new NativeBridgeError({ ...result.boundaryError, retryable: false });
   if (!response.ok)
     throw new NativeBridgeError({
-      code: result.code ?? "EXTENSION_RUN_FAILED",
-      message: result.message ?? "Fixture operation failed",
+      code: result?.code ?? "EXTENSION_RUN_FAILED",
+      message: result?.message ?? "Fixture operation failed",
       retryable: false,
     });
   return result as T;
@@ -186,12 +209,12 @@ export const closeExtensionUi = (token: string) => {
   });
   return request<void>("close", { token });
 };
-/** Explicit browser boundary substitute; native LAN/gallery services have separate tests. */
+/** Explicit browser boundary substitute; native services have separate tests. */
 export const requestExtensionService = (
   id: string,
   expectedSha256: string,
   expectedGeneration: number,
-  service: "lan" | "wallpaper",
+  service: ExtensionService,
   serviceRequest: Record<string, unknown>,
 ) => {
   const call = {
@@ -226,6 +249,9 @@ export async function saveTextExport(name: string, content: string) {
   window.__extensionUiTest.exports.push({ name, content });
   return window.__extensionUiTest.exportPath;
 }
+
+// 无头界面测试复用对话框边界替身；原生会话保存额度由 Rust 回归验证。
+export const saveExtensionSession = saveTextExport;
 export async function saveExtensionArtifact(
   _id: string,
   _hash: string,

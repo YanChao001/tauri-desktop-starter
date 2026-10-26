@@ -24,8 +24,9 @@ use std::{
 use tauri::Manager;
 
 const DEFAULT_PORT: u16 = 45873;
-const MAX_FRAME: usize = 16 * 1024;
 const MAX_TEXT: usize = 8 * 1024;
+// JSON 字符串最坏按每个正文字节转义为 6 字节，并为固定协议字段保留开销。
+const MAX_FRAME: usize = MAX_TEXT * 6 + 1024;
 const MAX_HISTORY: usize = 500;
 const MAX_CONTACTS: usize = 64;
 const MAX_CONNECTIONS: usize = 16;
@@ -531,6 +532,67 @@ impl Node {
             Ok(result)
         })
     }
+    fn forget_contact(&self, data: &mut Document, peer_id: &str) -> NativeResult<()> {
+        // 调用方在整个编辑与落盘期间持 data 锁；连接检查不能发生在取得该锁之前。
+        let runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| unavailable("LAN session is unavailable"))?;
+        if runtime.connections.contains_key(peer_id) {
+            return Err(invalid(
+                "Stop the LAN session before forgetting a connected contact",
+            ));
+        }
+        data.contacts.remove(peer_id);
+        data.messages.retain(|message| message.peer_id != peer_id);
+        Ok(())
+    }
+    fn receive_message(
+        &self,
+        peer_id: &str,
+        connection_id: &str,
+        id: &str,
+        content: String,
+    ) -> NativeResult<()> {
+        if !valid_token(id) {
+            return Err(invalid("LAN peer sent an invalid message identity"));
+        }
+        text(&content)?;
+        self.mutate(|data| {
+            // 已读到的帧也可能晚于连接替换或联系人删除，须在持 data 锁的写入链重新核对。
+            let runtime = self
+                .runtime
+                .lock()
+                .map_err(|_| unavailable("LAN session is unavailable"))?;
+            if !runtime
+                .connections
+                .get(peer_id)
+                .is_some_and(|connection| connection.id == connection_id)
+            {
+                return Err(unavailable("LAN connection was replaced or closed"));
+            }
+            let contact = data
+                .contacts
+                .get_mut(peer_id)
+                .ok_or_else(|| unavailable("The LAN contact no longer exists"))?;
+            if data.messages.iter().any(|message| message.id == id) {
+                return Ok(());
+            }
+            data.messages.push_back(Message {
+                id: id.into(),
+                peer_id: peer_id.into(),
+                sender: peer_id.into(),
+                nickname: contact.nickname.clone(),
+                text: content,
+                at: now(),
+                outgoing: false,
+                delivery: "received".into(),
+            });
+            contact.unread = (contact.unread + 1).min(MAX_HISTORY as u32);
+            contact.last_seen = now();
+            Ok(())
+        })
+    }
     fn status(&self) -> NativeResult<Value> {
         let data = self
             .data
@@ -957,33 +1019,7 @@ impl Node {
                 }
                 match frame {
                     Frame::Message { id, text: content } => {
-                        if !valid_token(&id) {
-                            return Err(invalid("LAN peer sent an invalid message identity"));
-                        }
-                        text(&content)?;
-                        self.mutate(|data| {
-                            if data.messages.iter().any(|message| message.id == id) {
-                                return Ok(());
-                            }
-                            data.messages.push_back(Message {
-                                id: id.clone(),
-                                peer_id: peer_id.clone(),
-                                sender: peer_id.clone(),
-                                nickname: data.contacts.get(&peer_id).map_or_else(
-                                    || peer_name.clone(),
-                                    |contact| contact.nickname.clone(),
-                                ),
-                                text: content,
-                                at: now(),
-                                outgoing: false,
-                                delivery: "received".into(),
-                            });
-                            if let Some(contact) = data.contacts.get_mut(&peer_id) {
-                                contact.unread = (contact.unread + 1).min(MAX_HISTORY as u32);
-                                contact.last_seen = now();
-                            }
-                            Ok(())
-                        })?;
+                        self.receive_message(&peer_id, &connection_id, &id, content)?;
                         let mut stream = writer
                             .lock()
                             .map_err(|_| unavailable("LAN sender is unavailable"))?;
@@ -1212,6 +1248,12 @@ enum Request {
         peer_id: String,
     },
 }
+fn parse_request(request: Value) -> NativeResult<Request> {
+    if serde_json::to_vec(&request).map_or(true, |value| value.len() > MAX_FRAME) {
+        return Err(invalid("LAN service request exceeds its size limit"));
+    }
+    serde_json::from_value(request).map_err(|_| invalid("Invalid LAN service request"))
+}
 struct Entry {
     node: Arc<Node>,
     owners: BTreeSet<String>,
@@ -1346,22 +1388,7 @@ impl ExtensionLan {
                 Ok(())
             })?,
             Request::Forget { peer_id } => {
-                if node
-                    .runtime
-                    .lock()
-                    .map_err(|_| unavailable("LAN session is unavailable"))?
-                    .connections
-                    .contains_key(&peer_id)
-                {
-                    return Err(invalid(
-                        "Stop the LAN session before forgetting a connected contact",
-                    ));
-                }
-                node.mutate_permitted(permit, |data| {
-                    data.contacts.remove(&peer_id);
-                    data.messages.retain(|message| message.peer_id != peer_id);
-                    Ok(())
-                })?;
+                node.mutate_permitted(permit, |data| node.forget_contact(data, &peer_id))?;
             }
         }
         node.status()
@@ -1419,11 +1446,7 @@ pub(crate) async fn request(
     request: Value,
     permit: ServicePermit,
 ) -> NativeResult<Value> {
-    if serde_json::to_vec(&request).map_or(true, |v| v.len() > MAX_FRAME) {
-        return Err(invalid("LAN service request exceeds its size limit"));
-    }
-    let request: Request =
-        serde_json::from_value(request).map_err(|_| invalid("Invalid LAN service request"))?;
+    let request = parse_request(request)?;
     permit.check()?;
     let state = app.state::<ExtensionLan>().inner.clone();
     let owner = owner.to_owned();
@@ -1670,6 +1693,51 @@ mod tests {
         store.wait_stopped();
     }
     #[test]
+    fn maximal_escaped_text_fits_both_service_requests_and_protocol_frames() {
+        let peer_id = token().unwrap();
+        for character in ['\\', '"', '\r', '\n', '\t'] {
+            let content = format!("{}x", character.to_string().repeat(MAX_TEXT - 1));
+            assert_eq!(content.len(), MAX_TEXT);
+            text(&content).unwrap();
+            let request = json!({"action":"send", "peerId":peer_id, "text":content});
+            let Request::Send { text: parsed, .. } = parse_request(request).unwrap() else {
+                panic!("Expected the original send request");
+            };
+            assert_eq!(parsed, content);
+            let frame = serde_json::to_vec(&Frame::Message {
+                id: token().unwrap(),
+                text: content.clone(),
+            })
+            .unwrap();
+            assert!(frame.len() <= MAX_FRAME);
+            let Frame::Message { text: decoded, .. } = serde_json::from_slice(&frame).unwrap()
+            else {
+                panic!("Expected the original message frame");
+            };
+            assert_eq!(decoded, content);
+        }
+        let worst_encoding = "\u{0001}".repeat(MAX_TEXT);
+        let encoded = serde_json::to_vec(&Frame::Message {
+            id: token().unwrap(),
+            text: worst_encoding.clone(),
+        })
+        .unwrap();
+        assert!(encoded.len() > MAX_TEXT * 6);
+        assert!(encoded.len() <= MAX_FRAME);
+        assert!(text(&worst_encoding).is_err());
+        assert!(text(&"x".repeat(MAX_TEXT + 1)).is_err());
+        assert!(
+            parse_request(json!({"action":"send", "peerId":peer_id, "text":"x".repeat(MAX_FRAME)}))
+                .is_err()
+        );
+        assert!(
+            parse_request(
+                json!({"action":"send", "peerId":peer_id, "text":"hello", "file":"private"})
+            )
+            .is_err()
+        );
+    }
+    #[test]
     fn service_permits_accept_epoch_owners_and_block_late_lan_side_effects() {
         let root = directory();
         let store = crate::extensions::ExtensionStore::new(root.path().join("extensions"), false);
@@ -1798,6 +1866,192 @@ mod tests {
             ErrorCode::ExtensionUnavailable
         );
         service.shutdown();
+    }
+    #[test]
+    fn forgetting_rechecks_a_connection_published_after_the_disconnected_observation() {
+        let root = directory();
+        let service = ExtensionLan::new(root.path().join("lan"), false);
+        service.dispatch("main", ID, Request::Status {}).unwrap();
+        let node = service.inner.entries.lock().unwrap()[ID].node.clone();
+        let peer_id = token().unwrap();
+        node.mutate(|data| {
+            data.contacts.insert(
+                peer_id.clone(),
+                Contact {
+                    id: peer_id.clone(),
+                    nickname: "重连朋友".into(),
+                    address: Ipv4Addr::LOCALHOST.to_string(),
+                    port: DEFAULT_PORT,
+                    last_seen: now(),
+                    unread: 0,
+                },
+            );
+            Ok(())
+        })
+        .unwrap();
+        let original = fs::read(&node.path).unwrap();
+        let receiver = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let stream = TcpStream::connect(receiver.local_addr().unwrap()).unwrap();
+        let (_remote, _) = receiver.accept().unwrap();
+        let data = node.data.lock().unwrap();
+        let mut next = data.clone();
+        assert!(node.runtime.lock().unwrap().connections.is_empty());
+        // 通道固定交错：先观察离线，再由握手线程发布连接，最后执行持 data 锁的删除规则。
+        let (published_tx, published_rx) = std::sync::mpsc::sync_channel(0);
+        let reconnecting = node.clone();
+        let connected_peer = peer_id.clone();
+        let publisher = thread::spawn(move || {
+            reconnecting.runtime.lock().unwrap().connections.insert(
+                connected_peer,
+                Connection {
+                    id: token().unwrap(),
+                    stream: Arc::new(Mutex::new(stream)),
+                    preferred: true,
+                },
+            );
+            published_tx.send(()).unwrap();
+        });
+        published_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            node.forget_contact(&mut next, &peer_id).unwrap_err().code,
+            ErrorCode::InvalidArgument
+        );
+        assert!(next.contacts.contains_key(&peer_id));
+        next.validate(ID).unwrap();
+        drop(data);
+        publisher.join().unwrap();
+        assert!(
+            service
+                .dispatch(
+                    "main",
+                    ID,
+                    Request::Forget {
+                        peer_id: peer_id.clone()
+                    }
+                )
+                .is_err()
+        );
+        assert_eq!(fs::read(&node.path).unwrap(), original);
+        node.mutate(|data| {
+            data.messages.push_back(Message {
+                id: token()?,
+                peer_id: peer_id.clone(),
+                sender: peer_id.clone(),
+                nickname: "重连朋友".into(),
+                text: "重连后的消息".into(),
+                at: now(),
+                outgoing: false,
+                delivery: "received".into(),
+            });
+            Ok(())
+        })
+        .unwrap();
+        Node::open(&node.root, ID).unwrap();
+        node.stop();
+        service
+            .dispatch("main", ID, Request::Forget { peer_id })
+            .unwrap();
+        let reopened = Node::open(&node.root, ID).unwrap();
+        let data = reopened.data.lock().unwrap();
+        assert!(data.contacts.is_empty());
+        assert!(data.messages.is_empty());
+    }
+    #[test]
+    fn replaced_connection_late_messages_cannot_restore_a_forgotten_contact() {
+        let root = directory();
+        let service = ExtensionLan::new(root.path().join("lan"), false);
+        service.dispatch("main", ID, Request::Status {}).unwrap();
+        let node = service.inner.entries.lock().unwrap()[ID].node.clone();
+        let peer_id = token().unwrap();
+        node.mutate(|data| {
+            data.contacts.insert(
+                peer_id.clone(),
+                Contact {
+                    id: peer_id.clone(),
+                    nickname: "重连朋友".into(),
+                    address: Ipv4Addr::LOCALHOST.to_string(),
+                    port: DEFAULT_PORT,
+                    last_seen: now(),
+                    unread: 0,
+                },
+            );
+            Ok(())
+        })
+        .unwrap();
+        let receiver = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let stream = Arc::new(Mutex::new(
+            TcpStream::connect(receiver.local_addr().unwrap()).unwrap(),
+        ));
+        let (_remote, _) = receiver.accept().unwrap();
+        let first_id = token().unwrap();
+        node.runtime.lock().unwrap().connections.insert(
+            peer_id.clone(),
+            Connection {
+                id: first_id.clone(),
+                stream: stream.clone(),
+                preferred: false,
+            },
+        );
+        node.receive_message(&peer_id, &first_id, &token().unwrap(), "有效消息".into())
+            .unwrap();
+        let late_id = token().unwrap();
+        let late_content = "旧连接已经读取、尚未写入历史的消息";
+        let second_id = token().unwrap();
+        // 直接固定各阶段，无需等待线程调度：A 已读帧，随后 B 替换 A。
+        node.runtime.lock().unwrap().connections.insert(
+            peer_id.clone(),
+            Connection {
+                id: second_id.clone(),
+                stream: stream.clone(),
+                preferred: true,
+            },
+        );
+        let before_replaced_frame = fs::read(&node.path).unwrap();
+        assert_eq!(
+            node.receive_message(&peer_id, &first_id, &late_id, late_content.into())
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionUnavailable
+        );
+        assert_eq!(fs::read(&node.path).unwrap(), before_replaced_frame);
+        node.runtime.lock().unwrap().connections.remove(&peer_id);
+        service
+            .dispatch(
+                "main",
+                ID,
+                Request::Forget {
+                    peer_id: peer_id.clone(),
+                },
+            )
+            .unwrap();
+        let forgotten = fs::read(&node.path).unwrap();
+        assert_eq!(
+            node.receive_message(&peer_id, &first_id, &late_id, late_content.into())
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionUnavailable
+        );
+        assert_eq!(fs::read(&node.path).unwrap(), forgotten);
+        // 即使新通道已经发表，但联系人尚未保存，入站写入也不能产生孤儿 peer_id。
+        node.runtime.lock().unwrap().connections.insert(
+            peer_id.clone(),
+            Connection {
+                id: second_id.clone(),
+                stream,
+                preferred: true,
+            },
+        );
+        assert_eq!(
+            node.receive_message(&peer_id, &second_id, &late_id, late_content.into())
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionUnavailable
+        );
+        assert_eq!(fs::read(&node.path).unwrap(), forgotten);
+        let reopened = Node::open(&node.root, ID).unwrap();
+        let data = reopened.data.lock().unwrap();
+        assert!(data.contacts.is_empty());
+        assert!(data.messages.is_empty());
     }
     #[test]
     fn future_corrupt_and_oversized_history_are_never_overwritten() {

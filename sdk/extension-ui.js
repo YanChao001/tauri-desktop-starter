@@ -107,7 +107,7 @@
     });
     observer.observe(document, { childList: true, subtree: true });
   }
-  let port, current;
+  let port, current, closedError;
   let sequence = 0;
   let reveal, fontSource;
   let paintScheduled = false,
@@ -652,19 +652,42 @@
     };
   }
   const selectPicker = installSelectPicker();
-  const ready = new Promise((resolve) => {
+  const ready = new Promise((resolve, reject) => {
+    const terminate = (message, code = "EXTENSION_UNAVAILABLE") => {
+      if (closedError) return;
+      closedError = Object.assign(new Error(message), {
+        code,
+        retryable: false,
+      });
+      reject(closedError);
+      window.removeEventListener("message", connect);
+      listeners.clear();
+      reveal?.cancel();
+      selectPicker.dispose();
+      for (const request of pending.values()) request.reject(closedError);
+      pending.clear();
+      const connection = port;
+      port = undefined;
+      if (connection) {
+        connection.onmessage = null;
+        connection.onmessageerror = null;
+        connection.close();
+      }
+    };
     const connect = (event) => {
       if (
         event.source !== parent ||
         event.data?.type !== "starter:connect" ||
         event.data.version !== 1 ||
         event.ports.length !== 1 ||
-        port
+        port ||
+        closedError
       )
         return;
       port = event.ports[0];
       window.removeEventListener("message", connect);
       port.onmessage = (event) => {
+        if (closedError) return;
         const message = event.data;
         if (message?.type === "state") {
           resolve(structuredClone(message.value));
@@ -674,14 +697,7 @@
         } else if (message?.type === "theme-transition") {
           prepareReveal(message.value);
         } else if (message?.type === "closed") {
-          reveal?.cancel();
-          selectPicker.dispose();
-          for (const request of pending.values()) {
-            request.reject(new Error("Extension surface closed"));
-          }
-          pending.clear();
-          port.close();
-          port = undefined;
+          terminate("Extension surface closed");
         } else if (Number.isSafeInteger(message?.id)) {
           const request = pending.get(message.id);
           if (!request) return;
@@ -696,14 +712,24 @@
           else request.resolve(message.result);
         }
       };
+      port.onmessageerror = () =>
+        terminate(
+          "Extension bridge message could not be read",
+          "INVALID_ARGUMENT",
+        );
       port.start();
     };
     window.addEventListener("message", connect);
   });
+  // 作者可能只订阅状态；初始化失败仍需结算，且不让未消费的 ready 产生未处理拒绝。
+  void ready.catch(() => {});
   async function request(method, params) {
     await ready;
     if (!port || pending.size >= 4 || sequence >= 2147483647)
-      throw new Error("Extension bridge unavailable or busy");
+      throw Object.assign(new Error("Extension bridge unavailable or busy"), {
+        code: "EXTENSION_UNAVAILABLE",
+        retryable: false,
+      });
     const id = ++sequence;
     const message = { version: 1, id, method, params };
     if (
@@ -726,6 +752,7 @@
     value: Object.freeze({
       ready,
       onChange(listener) {
+        if (closedError) return () => {};
         listeners.add(listener);
         if (current) notify(listener);
         return () => listeners.delete(listener);
@@ -742,8 +769,23 @@
       saveArtifact(index) {
         return request("artifact", { index });
       },
+      notify(message, { tone = "info" } = {}) {
+        return request("notify", { message, tone });
+      },
       services: Object.freeze({
         request(service, value) {
+          if (
+            service !== "lan" &&
+            service !== "wallpaper" &&
+            service !== "resources" &&
+            service !== "links"
+          )
+            return Promise.reject(
+              Object.assign(new Error("Unknown extension service"), {
+                code: "INVALID_ARGUMENT",
+                retryable: false,
+              }),
+            );
           return request("service", { service, request: value });
         },
       }),

@@ -209,6 +209,7 @@ async fn collect_data(
                         headers: BTreeMap::new(),
                         body: None,
                         credential: None,
+                        network_mode: crate::extension_network::ExtensionNetworkMode::Direct,
                     },
                 },
                 prepared.stop.clone(),

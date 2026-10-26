@@ -24,6 +24,8 @@ mod extension_lan;
 mod extension_market;
 mod extension_market_commands;
 mod extension_network;
+mod extension_paths;
+mod extension_resources;
 pub mod extension_runtime;
 mod extension_services;
 mod extension_storage;

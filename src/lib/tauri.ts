@@ -13,6 +13,7 @@ import type {
   ExtensionPreview,
   ExtensionRunInput,
   ExtensionSnapshot,
+  ExtensionService,
   ExtensionView,
   ExtensionViewInput,
   MarketDownload,
@@ -47,6 +48,7 @@ export type {
   MarketSource,
   MarketCatalog,
   MarketEntry,
+  MarketIncompatibleEntry,
   MarketSnapshot,
   MarketDownload,
   ExtensionCommand,
@@ -55,6 +57,7 @@ export type {
   ExtensionPreview,
   ExtensionInfo,
   ExtensionSnapshot,
+  ExtensionService,
   ExtensionRunInput,
   ExtensionIcon,
   ExtensionView,
@@ -116,7 +119,7 @@ export async function requestExtensionService(
   id: string,
   expectedSha256: string,
   expectedGeneration: number,
-  service: "lan" | "wallpaper",
+  service: ExtensionService,
   request: Record<string, unknown>,
 ): Promise<unknown> {
   const result = await callNative((commands) =>
@@ -424,6 +427,18 @@ export async function saveTextExport(
   // 下载导航异步消费 URL；延后释放，避免点击后立刻撤销导致空下载。
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   return name;
+}
+
+/** 会话按完整输入与结果的 JSON 转义预算保存，浏览器仍只发起本地下载。 */
+export async function saveExtensionSession(
+  name: string,
+  content: string,
+): Promise<string | null> {
+  if (isTauri())
+    return callNative((commands) =>
+      commands.saveExtensionSession(name, content),
+    );
+  return saveTextExport(name, content);
 }
 
 /** 用系统默认浏览器打开外链；在浏览器预览时退化为新标签页。 */

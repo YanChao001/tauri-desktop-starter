@@ -1,8 +1,8 @@
 use std::{
     collections::BTreeMap,
-    fs::{self, File, Metadata},
+    fs::File,
     io::Read,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
@@ -16,6 +16,7 @@ use specta::Type;
 
 use crate::{
     error::{ErrorCode, NativeError, NativeResult},
+    extension_paths::{directory, regular},
     extensions::valid_id,
     storage::atomic_write,
 };
@@ -84,69 +85,6 @@ fn valid_key(key: &str) -> bool {
         && key
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
-}
-
-fn linked(metadata: &Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & 0x400 != 0
-    }
-    #[cfg(not(windows))]
-    {
-        metadata.is_symlink()
-    }
-}
-
-/// 每次访问都检查所有祖先，避免合法末级目录藏在链接或 Windows junction 下。
-fn directory(path: &Path, create: bool) -> NativeResult<bool> {
-    if !path.is_absolute()
-        || path
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
-    {
-        return Err(invalid("Extension storage requires an absolute directory"));
-    }
-    let mut missing = false;
-    for ancestor in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
-        match fs::symlink_metadata(ancestor) {
-            Ok(metadata) if metadata.is_dir() && !linked(&metadata) => {}
-            Ok(_) => return Err(invalid("Extension storage refuses directory links")),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if !create {
-                    missing = true;
-                    continue;
-                }
-                match fs::create_dir(ancestor) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                    Err(error) => {
-                        return Err(io("Cannot create extension storage directory", error));
-                    }
-                }
-                let metadata = fs::symlink_metadata(ancestor)
-                    .map_err(|error| io("Cannot inspect extension storage directory", error))?;
-                if !metadata.is_dir() || linked(&metadata) {
-                    return Err(invalid("Extension storage refuses directory links"));
-                }
-            }
-            Err(error) => {
-                return Err(io("Cannot inspect extension storage directory", error));
-            }
-        }
-    }
-    Ok(!missing)
-}
-
-fn regular(path: &Path) -> NativeResult<bool> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() && !linked(&metadata) => Ok(true),
-        Ok(_) => Err(invalid(
-            "Extension storage refuses file links and directories",
-        )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(io("Cannot inspect extension storage file", error)),
-    }
 }
 
 impl ExtensionStorageStore {
@@ -348,6 +286,7 @@ impl ExtensionStorageStore {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
 
     const ID: &str = "org.example.notes";
 

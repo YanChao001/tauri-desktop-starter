@@ -316,18 +316,29 @@ export function ExtensionCustomUi({
   useLayoutEffect(() => {
     const node = frame.current;
     if (!node) return;
+    const region = node.closest<HTMLElement>(".app-main");
+    if (!region) return;
+    let content: HTMLElement = node;
+    while (content.parentElement && content.parentElement !== region)
+      content = content.parentElement;
     let scheduled = 0;
     const measure = () => {
-      const container = node.closest(".app-page-content");
-      const padding = container
-        ? parseFloat(getComputedStyle(container).paddingBottom)
-        : 24;
+      const rectangle = node.getBoundingClientRect();
+      // 使用实际布局的剩余空间，包含各层内边距、字号变化和后续错误提示。
+      // 加回外层滚动位置，避免收缩前残留的 scrollTop 反过来撑高内容框。
+      const trailing = Math.max(
+        0,
+        content.getBoundingClientRect().bottom - rectangle.bottom,
+      );
       const height = Math.max(
-        240,
+        1,
         Math.floor(
-          window.innerHeight -
-            node.getBoundingClientRect().top -
-            Math.max(24, padding),
+          region.getBoundingClientRect().top +
+            region.clientTop +
+            region.clientHeight -
+            rectangle.top -
+            region.scrollTop -
+            trailing,
         ),
       );
       if (node.style.height !== `${height}px`)
@@ -338,7 +349,8 @@ export function ExtensionCustomUi({
       scheduled = requestAnimationFrame(measure);
     };
     const observer = new ResizeObserver(schedule);
-    if (node.parentElement) observer.observe(node.parentElement);
+    observer.observe(content);
+    observer.observe(region);
     window.addEventListener("resize", schedule);
     measure();
     return () => {
@@ -348,7 +360,10 @@ export function ExtensionCustomUi({
     };
   }, [lease, connected, error, palette]);
   return (
-    <div className="relative min-h-64 min-w-0 bg-background">
+    <div
+      data-extension-custom-ui
+      className={`relative min-w-0 bg-background${!lease && !error ? " min-h-64" : ""}`}
+    >
       {error ? (
         <div role="alert" className="space-y-3 rounded-lg border p-4">
           <p>{t("ext.uiUnavailable")}</p>

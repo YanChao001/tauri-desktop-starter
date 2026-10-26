@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   DownloadIcon,
   ExternalLinkIcon,
@@ -23,6 +24,8 @@ import { useI18n } from "@/providers/i18n";
 import type { ExtensionInfo, MarketEntry, MarketSnapshot } from "@/lib/tauri";
 import { ExtensionIcon } from "./extension-icon";
 import { compareExtensionVersions } from "./market-model";
+import { ExtensionHelp } from "./extension-help";
+import { nativeErrorText } from "@/lib/native-error";
 
 export function ExtensionMarket({
   snapshot,
@@ -47,6 +50,17 @@ export function ExtensionMarket({
   const id = useId();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const refresh = useRef(onRefresh);
+  useEffect(() => {
+    refresh.current = onRefresh;
+  }, [onRefresh]);
+  useEffect(() => {
+    if (snapshot && error)
+      toast.error(nativeErrorText(error, t), {
+        id: `extension-market:${id}`,
+        action: { label: t("common.retry"), onClick: () => refresh.current() },
+      });
+  }, [snapshot, error, t, id]);
   const needle = query.trim().toLocaleLowerCase();
   const entries = (snapshot?.catalog.entries ?? [])
     .filter(
@@ -64,6 +78,13 @@ export function ExtensionMarket({
         Number(b.featured) - Number(a.featured) ||
         a.package.manifest.name.localeCompare(b.package.manifest.name),
     );
+  const incompatibleEntries = (snapshot?.incompatibleEntries ?? []).filter(
+    (entry) =>
+      (category === "all" || entry.category === category) &&
+      [entry.name, entry.id].some((text) =>
+        text.toLocaleLowerCase().includes(needle),
+      ),
+  );
   return (
     <section
       aria-label={t("ext.market.title")}
@@ -75,10 +96,10 @@ export function ExtensionMarket({
           <h3 className="flex items-center gap-2 font-semibold">
             <ShieldCheckIcon className="size-5 text-primary" />
             {t("ext.market.title")}
+            <ExtensionHelp label={t("ext.market.title")}>
+              {t("ext.market.hint")}
+            </ExtensionHelp>
           </h3>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {t("ext.market.hint")}
-          </p>
           {APP_CONFIG.extensionMarket.repository ? (
             <ExternalLink
               href={`https://github.com/${APP_CONFIG.extensionMarket.repository}`}
@@ -100,17 +121,22 @@ export function ExtensionMarket({
           {t("ext.market.refresh")}
         </Button>
       </div>
-      <ResourceError error={error} retry={onRefresh} />
-      {loading ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("ext.market.loading")}
-        </p>
-      ) : null}
-      {snapshot && (snapshot.stale || error) ? (
-        <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">
-          {t("ext.market.stale")}
-        </p>
-      ) : null}
+      <ResourceError error={!snapshot ? error : null} retry={onRefresh} />
+      <p
+        role="status"
+        className="h-5 truncate text-sm text-muted-foreground"
+        title={
+          snapshot && (snapshot.stale || error)
+            ? t("ext.market.stale")
+            : undefined
+        }
+      >
+        {loading
+          ? t("ext.market.loading")
+          : snapshot && (snapshot.stale || error)
+            ? t("ext.market.stale")
+            : ""}
+      </p>
       <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
         <div className="space-y-2">
           <Label htmlFor={`${id}-search`}>{t("ext.market.search")}</Label>
@@ -143,6 +169,12 @@ export function ExtensionMarket({
       <div className="grid gap-4 lg:grid-cols-2">
         {entries.map((entry) => {
           const manifest = entry.package.manifest;
+          const compatible =
+            snapshot !== null &&
+            compareExtensionVersions(
+              snapshot.hostVersion ?? "0.0.0",
+              manifest.minHostVersion,
+            ) >= 0;
           const current = installed.find(
             (item) => item.package.manifest.id === manifest.id,
           );
@@ -152,6 +184,17 @@ export function ExtensionMarket({
                 current.package.manifest.version,
               )
             : 1;
+          const downloadLabel = !compatible
+            ? t("ext.market.hostRequired", { version: manifest.minHostVersion })
+            : t(
+                !current
+                  ? "ext.market.download"
+                  : difference > 0
+                    ? "ext.market.update"
+                    : difference < 0
+                      ? "ext.market.newerInstalled"
+                      : "ext.market.installed",
+              );
           return (
             <article
               key={manifest.id}
@@ -180,39 +223,66 @@ export function ExtensionMarket({
               </div>
               <div className="flex min-w-0 flex-wrap items-end justify-between gap-3 self-end">
                 <p className="text-xs wrap-anywhere text-muted-foreground">
-                  {current
-                    ? t("ext.market.currentVersion", {
-                        version: current.package.manifest.version,
+                  {!compatible
+                    ? t("ext.market.hostRequired", {
+                        version: manifest.minHostVersion,
                       })
-                    : t("ext.market.installHint")}
+                    : current
+                      ? t("ext.market.currentVersion", {
+                          version: current.package.manifest.version,
+                        })
+                      : t("ext.market.installHint")}
                 </p>
                 <Button
-                  disabled={busy || difference <= 0}
+                  disabled={busy || difference <= 0 || !compatible}
                   aria-busy={downloadingId === manifest.id}
                   onClick={() => onDownload(entry)}
                 >
                   <DownloadIcon className="size-4" />
-                  {t(
-                    downloadingId === manifest.id
-                      ? "ext.market.downloading"
-                      : !current
-                        ? "ext.market.download"
-                        : difference > 0
-                          ? "ext.market.update"
-                          : difference < 0
-                            ? "ext.market.newerInstalled"
-                            : "ext.market.installed",
-                  )}
+                  <span className="grid">
+                    <span
+                      aria-hidden="true"
+                      className="invisible col-start-1 row-start-1"
+                    >
+                      {downloadLabel}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="invisible col-start-1 row-start-1"
+                    >
+                      {t("ext.market.downloading")}
+                    </span>
+                    <span className="col-start-1 row-start-1">
+                      {downloadingId === manifest.id
+                        ? t("ext.market.downloading")
+                        : downloadLabel}
+                    </span>
+                  </span>
                 </Button>
               </div>
             </article>
           );
         })}
+        {incompatibleEntries.map((entry) => (
+          <article
+            key={entry.id}
+            className="min-w-0 space-y-3 rounded-xl border bg-card p-5"
+          >
+            <h4 className="font-semibold wrap-anywhere">{entry.name}</h4>
+            <p className="text-sm wrap-anywhere text-muted-foreground">
+              {t("ext.market.hostRequired", { version: entry.minHostVersion })}
+            </p>
+            <p className="text-xs wrap-anywhere text-muted-foreground">
+              {entry.id} · v{entry.version}
+            </p>
+          </article>
+        ))}
       </div>
-      {snapshot && entries.length === 0 ? (
+      {snapshot && entries.length === 0 && incompatibleEntries.length === 0 ? (
         <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
           {t(
-            snapshot.catalog.entries.length
+            snapshot.catalog.entries.length +
+              (snapshot.incompatibleEntries?.length ?? 0)
               ? "ext.market.noMatches"
               : "ext.market.empty",
           )}

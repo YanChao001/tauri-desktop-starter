@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,6 +35,7 @@ export function ExtensionRecovery({
   reload: () => Promise<void>;
 }) {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const code = isRecord(error) ? error.code : null;
   const applicable =
     code === "EXTENSION_INCOMPATIBLE" || code === "STORAGE_CORRUPT";
@@ -75,8 +79,10 @@ export function ExtensionRecovery({
       if (
         lifecycle.current.epoch === current &&
         lifecycle.current.request === pending
-      )
+      ) {
         setFailure(reason);
+        toast.error(nativeErrorText(reason, latest));
+      }
     } finally {
       if (
         lifecycle.current.epoch === current &&
@@ -84,7 +90,7 @@ export function ExtensionRecovery({
       )
         setChecking(false);
     }
-  }, []);
+  }, [latest]);
 
   useEffect(() => {
     if (applicable && !archivePath) void inspect();
@@ -119,6 +125,7 @@ export function ExtensionRecovery({
     } catch (reason) {
       if (lifecycle.current.epoch !== current) return;
       setFailure(reason);
+      toast.error(nativeErrorText(reason, latest));
       setPreview(null);
       setConfirm(false);
     } finally {
@@ -130,50 +137,117 @@ export function ExtensionRecovery({
     }
   }
 
+  async function retryInitialization() {
+    if (locked.current || !archivePath) return;
+    const current = lifecycle.current.epoch;
+    locked.current = true;
+    setReloading(true);
+    setFailure(null);
+    try {
+      await reload();
+    } catch (reason) {
+      if (lifecycle.current.epoch !== current) return;
+      setFailure(reason);
+      toast.error(nativeErrorText(reason, latest));
+    } finally {
+      locked.current = false;
+      if (lifecycle.current.epoch === current) setReloading(false);
+    }
+  }
+
   if (!applicable && !archivePath) return null;
 
   const busy = checking || archiving || reloading;
+  const failureText = failure ? nativeErrorText(failure, t) : "";
+  const failureDetail =
+    isRecord(failure) &&
+    typeof failure.message === "string" &&
+    !failureText.includes(failure.message)
+      ? failure.message
+      : null;
+  const failureMessage = failure ? (
+    <div
+      role="alert"
+      className="space-y-1 whitespace-pre-wrap break-words text-sm text-destructive"
+    >
+      <p>{failureText}</p>
+      {failureDetail ? <p>{failureDetail}</p> : null}
+    </div>
+  ) : null;
   return (
     <section
       aria-label={t("ext.recovery.title")}
       className="space-y-3 rounded-xl border bg-card p-5"
     >
-      <h3 className="font-semibold">{t("ext.recovery.title")}</h3>
+      <h3 className="flex items-center gap-2 font-semibold">
+        {t("ext.recovery.title")}
+        <HelpTooltip label={`${t("ext.recovery.title")} · ${t("title.help")}`}>
+          {t("ext.recovery.checkHint")}
+        </HelpTooltip>
+      </h3>
       {archivePath ? (
         <div ref={receipt} tabIndex={-1} className="space-y-2 outline-none">
           <p role="status">{t("ext.recovery.archived")}</p>
           <p className="text-sm text-muted-foreground">
             {t("ext.recovery.archiveLocation")}
           </p>
-          <p className="break-all rounded-md bg-muted p-3 font-mono text-xs select-text">
+          <p
+            aria-label={t("ext.recovery.archiveLocation")}
+            tabIndex={0}
+            className="max-h-24 overflow-auto break-all rounded-md bg-muted p-3 font-mono text-xs select-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             {archivePath}
           </p>
           <p className="text-sm text-muted-foreground">
             {t("ext.recovery.afterArchive")}
           </p>
-          {reloading ? <p role="status">{t("common.loading")}</p> : null}
+          <div
+            tabIndex={failure ? 0 : undefined}
+            className="h-24 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {failureMessage}
+            {failure ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => void retryInitialization()}
+              >
+                {t("common.retry")}
+              </Button>
+            ) : (
+              <p role="status">{reloading ? t("common.loading") : ""}</p>
+            )}
+          </div>
         </div>
       ) : (
         <>
-          {checking ? (
-            <p role="status">{t("ext.recovery.checking")}</p>
-          ) : preview?.status === "legacy" && preview.fingerprint ? (
-            <p className="text-sm text-muted-foreground">
-              {t("ext.recovery.legacy", { count: preview.installedCount })}
-            </p>
-          ) : preview ? (
-            <p className="text-sm text-muted-foreground">
-              {t(
-                preview.status === "legacy"
-                  ? "ext.recovery.invalid"
-                  : STATUS_MESSAGES[preview.status],
-              )}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t("ext.recovery.checkHint")}
-            </p>
-          )}
+          <div
+            tabIndex={0}
+            className="h-24 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {checking ? (
+              <p role="status">{t("ext.recovery.checking")}</p>
+            ) : failure ? (
+              failureMessage
+            ) : preview?.status === "legacy" && preview.fingerprint ? (
+              <p className="text-sm text-muted-foreground">
+                {t("ext.recovery.legacy", { count: preview.installedCount })}
+              </p>
+            ) : preview ? (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  preview.status === "legacy"
+                    ? "ext.recovery.invalid"
+                    : STATUS_MESSAGES[preview.status],
+                )}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {t("ext.recovery.checkHint")}
+              </p>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               ref={checkButton}
@@ -220,7 +294,11 @@ export function ExtensionRecovery({
                   >
                     {t("ext.cancel")}
                   </Button>
-                  <Button disabled={archiving} onClick={() => void archive()}>
+                  <Button
+                    className="min-w-40"
+                    disabled={archiving}
+                    onClick={() => void archive()}
+                  >
                     {t(
                       archiving
                         ? "ext.recovery.archiving"
@@ -233,11 +311,6 @@ export function ExtensionRecovery({
           </div>
         </>
       )}
-      {failure ? (
-        <p role="alert" className="text-sm text-destructive">
-          {nativeErrorText(failure, t)}
-        </p>
-      ) : null}
     </section>
   );
 }

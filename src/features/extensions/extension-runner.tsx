@@ -1,4 +1,6 @@
 import { ExtensionOutput } from "./extension-output";
+import { toast } from "sonner";
+import { ExtensionHelp } from "./extension-help";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +29,7 @@ import {
   cancelExtension,
   pickExtensionFiles,
   saveTextExport,
+  saveExtensionSession,
   NativeBridgeError,
   type ExtensionInfo,
   type ExtensionSnapshot,
@@ -40,7 +43,10 @@ import {
 } from "./extension-model";
 import { useExtensionPhase } from "./use-extension-phase";
 import { ExtensionSessionImport } from "./extension-session-import";
-import { extensionSessionIdentity } from "./extension-session";
+import {
+  extensionSessionIdentity,
+  serializeExtensionSession,
+} from "./extension-session";
 import { useDelayedBusy } from "./use-delayed-busy";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 
@@ -77,6 +83,10 @@ export function ExtensionRunner({
   const lastOutput = useRef<typeof output>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    if (error)
+      toast.error(nativeErrorText(error, t), { id: `extension-runner:${id}` });
+  }, [error, t, id]);
   const [busy, setBusy] = useState(false);
   const [stopping, setStopping] = useState(false);
   const showProgress = useDelayedBusy(busy || stopping);
@@ -198,33 +208,29 @@ export function ExtensionRunner({
     if (alive.current) setExporting(true);
     try {
       await settle(signal);
-      const content = JSON.stringify(
-        {
-          formatVersion: 1,
-          kind: "tool",
-          ...(exportChoice
-            ? extensionSessionIdentity(
-                exportChoice.item,
-                exportChoice.command.id,
-              )
-            : {}),
-          fields: {},
-          view: null,
-          inputText: input,
-          files: latestFiles.current.map((file) => file.name),
-          url,
-          result: lastOutput.current
-            ? {
-                format: lastOutput.current.format,
-                text: lastOutput.current.text,
-              }
-            : null,
-        },
-        null,
-        2,
-      );
+      const content = serializeExtensionSession({
+        formatVersion: 1,
+        kind: "tool",
+        ...(exportChoice
+          ? extensionSessionIdentity(exportChoice.item, exportChoice.command.id)
+          : {}),
+        fields: {},
+        view: null,
+        inputText: input,
+        files: latestFiles.current.map((file) => file.name),
+        url,
+        result: lastOutput.current
+          ? {
+              format: lastOutput.current.format,
+              text: lastOutput.current.text,
+            }
+          : null,
+      });
       signal?.throwIfAborted();
-      const saved = await saveTextExport("extension-session.json", content);
+      const saved = await saveExtensionSession(
+        "extension-session.json",
+        content,
+      );
       signal?.throwIfAborted();
       if (saved === null)
         throw new NativeBridgeError({
@@ -389,7 +395,12 @@ export function ExtensionRunner({
       className="space-y-4 rounded-xl border bg-card p-5"
       aria-label={t("ext.runner")}
     >
-      <h3 className="font-semibold">{t("ext.runner")}</h3>
+      <div className="flex items-center gap-2">
+        <h3 className="font-semibold">{t("ext.runner")}</h3>
+        <ExtensionHelp label={t("ext.runner")}>
+          {t("ext.sessionHint")}
+        </ExtensionHelp>
+      </div>
       {choices.length ? (
         <div className="space-y-2">
           <Label htmlFor={`${id}-extension`}>{t("ext.choose")}</Label>
@@ -434,15 +445,13 @@ export function ExtensionRunner({
             className={LOCKED_INPUT_CLASS}
             value={input}
             aria-invalid={tooLong}
-            aria-describedby={`${id}-input-hint`}
+            aria-description={t("ext.inputHint")}
+            placeholder={t("ext.inputHint")}
             onChange={(event) => {
               setInput(event.target.value);
               setDirty(true);
             }}
           />
-          <p id={`${id}-input-hint`} className="text-xs text-muted-foreground">
-            {t("ext.inputHint")}
-          </p>
         </div>
       ) : null}
       {hasFiles ? (
@@ -456,7 +465,9 @@ export function ExtensionRunner({
           >
             {t("ext.files")}
           </Button>
-          <p className="text-xs text-muted-foreground">{t("ext.filesHint")}</p>
+          <ExtensionHelp label={t("ext.files")}>
+            {t("ext.filesHint")}
+          </ExtensionHelp>
           {files.length ? (
             <>
               <ul className="list-inside list-disc text-sm">
@@ -499,15 +510,14 @@ export function ExtensionRunner({
               setUrl(event.target.value);
               setDirty(true);
             }}
-            aria-describedby={`${id}-url-hint`}
+            aria-description={t("ext.urlHint")}
+            placeholder={t("ext.urlHint")}
           />
-          <p className="text-xs">
-            {t("ext.allowedHosts")}:{" "}
-            <code>{item ? extensionNetworkOrigins(item).join(", ") : ""}</code>
-          </p>
-          <p id={`${id}-url-hint`} className="text-xs text-muted-foreground">
-            {t("ext.urlHint")}
-          </p>
+          <ExtensionHelp label={t("ext.allowedHosts")}>
+            {item
+              ? extensionNetworkOrigins(item).join(", ")
+              : t("ext.noEnabled")}
+          </ExtensionHelp>
         </div>
       ) : null}
       <div className="flex flex-wrap gap-2">
@@ -545,11 +555,6 @@ export function ExtensionRunner({
           {t("ext.stop")}
         </Button>
       </div>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {nativeErrorText(error, t)}
-        </p>
-      ) : null}
       <p
         role="status"
         aria-label={t("ext.appStatus")}
@@ -570,7 +575,7 @@ export function ExtensionRunner({
           : ""}
       </p>
       <div className="space-y-2">
-        <h4 className="text-sm font-medium">
+        <h4 className="h-5 truncate text-sm font-medium">
           {t("ext.output")}
           {output ? ` · ${output.extensionId}` : ""}
         </h4>
@@ -579,38 +584,38 @@ export function ExtensionRunner({
           format={output?.format ?? "text"}
         />
       </div>
-      {output ? (
-        <Button
-          variant="outline"
-          disabled={locked}
-          data-operation-locked={locked}
-          className={LOCKED_CONTROL_CLASS}
-          onClick={() => {
-            if (exportLock.current) return;
-            exportLock.current = true;
-            setExporting(true);
-            const suffix =
-              output.format === "json"
-                ? "json"
-                : output.format === "markdown"
-                  ? "md"
-                  : "txt";
-            void saveTextExport(
-              `${output.extensionId}-${output.commandId}.${suffix}`,
-              output.text,
-            )
-              .catch((reason: unknown) => {
-                if (alive.current) setError(reason);
-              })
-              .finally(() => {
-                exportLock.current = false;
-                if (alive.current) setExporting(false);
-              });
-          }}
-        >
-          {t("ext.saveResult")}
-        </Button>
-      ) : null}
+      <Button
+        variant="outline"
+        disabled={locked || !output}
+        data-operation-locked={locked}
+        className={LOCKED_CONTROL_CLASS}
+        onClick={() => {
+          if (exportLock.current || !output) return;
+          exportLock.current = true;
+          setExporting(true);
+          const suffix =
+            output.format === "json"
+              ? "json"
+              : output.format === "markdown"
+                ? "md"
+                : "txt";
+          // Manifest IDs are ASCII, while the native export name is limited to 100 bytes.
+          const name = `${output.extensionId}-${output.commandId}`.slice(
+            0,
+            100 - suffix.length - 1,
+          );
+          void saveTextExport(`${name}.${suffix}`, output.text)
+            .catch((reason: unknown) => {
+              if (alive.current) setError(reason);
+            })
+            .finally(() => {
+              exportLock.current = false;
+              if (alive.current) setExporting(false);
+            });
+        }}
+      >
+        {t("ext.saveResult")}
+      </Button>
       {item && choice ? (
         <ExtensionSessionImport
           key={choice.key}
@@ -645,7 +650,6 @@ export function ExtensionRunner({
           }}
         />
       ) : null}
-      <p className="text-xs text-muted-foreground">{t("ext.sessionHint")}</p>
       <Dialog
         open={nextSelected !== null}
         onOpenChange={(open) => {

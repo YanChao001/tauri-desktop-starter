@@ -34,7 +34,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   openExtensionWindow: vi.fn(),
   openExtensionCenter: vi.fn(),
   closeWindow: vi.fn(),
-  saveTextExport: vi.fn(),
+  saveExtensionSession: vi.fn(),
   setWindowWorkState: vi.fn(),
   onLifecycleRequest: vi.fn(),
   onLifecycleFinished: vi.fn(),
@@ -121,7 +121,7 @@ beforeEach(() => {
   });
   vi.mocked(native.openExtensionWindow).mockResolvedValue(undefined);
   vi.mocked(native.closeWindow).mockResolvedValue(undefined);
-  vi.mocked(native.saveTextExport).mockResolvedValue("session.json");
+  vi.mocked(native.saveExtensionSession).mockResolvedValue("session.json");
   vi.mocked(native.setWindowWorkState).mockResolvedValue(undefined);
   vi.mocked(native.onLifecycleRequest).mockResolvedValue(vi.fn());
   vi.mocked(native.onLifecycleFinished).mockResolvedValue(vi.fn());
@@ -219,7 +219,7 @@ it("keeps session tools available in standalone mode without a redundant return 
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: "Export session" }));
   await waitFor(() =>
-    expect(native.saveTextExport).toHaveBeenCalledWith(
+    expect(native.saveExtensionSession).toHaveBeenCalledWith(
       "example.lab-session.json",
       expect.stringContaining("Standalone draft"),
     ),
@@ -302,7 +302,7 @@ it("keeps an edited session mounted and exportable when a snapshot refresh fails
   });
   fireEvent.click(screen.getByRole("menuitem", { name: "Export session" }));
   await waitFor(() =>
-    expect(native.saveTextExport).toHaveBeenCalledWith(
+    expect(native.saveExtensionSession).toHaveBeenCalledWith(
       "example.lab-session.json",
       expect.stringContaining("Keep through snapshot failure"),
     ),

@@ -93,7 +93,9 @@ const catalog = {
   ],
 };
 function signedEnvelope(catalog) {
-  const payload = Buffer.from(JSON.stringify(catalog));
+  const payload = Buffer.from(
+    typeof catalog === "string" ? catalog : JSON.stringify(catalog),
+  );
   const signature = sign(
     null,
     createHash("blake2b512").update(payload).digest(),
@@ -121,10 +123,71 @@ writeFileSync(join(root, "package.json"), pkg);
 // 历史 / 未来协议故意不满足当前 DTO，以验证版本诊断发生在验签后、
 // 完整反序列化之前；此处所有签名仍只使用上面的固定测试密钥。
 const { issuedAt: _issuedAt, expiresAt: _expiresAt, ...legacy } = catalog;
+function futureEntry(futureManifest) {
+  const content = Buffer.from(
+    JSON.stringify(
+      { manifest: futureManifest, wasm: wasm.toString("base64") },
+      null,
+      2,
+    ) + "\n",
+  );
+  return {
+    ...catalog.entries[0],
+    package: {
+      manifest: futureManifest,
+      sha256: hash(wasm),
+      bytes: wasm.length,
+    },
+    category: "tools",
+    featured: false,
+    asset: `${futureManifest.id}-${futureManifest.version}.starter-extension.json`,
+    packageSha256: hash(content),
+    packageBytes: content.length,
+  };
+}
+const futureManifest = {
+  ...structuredClone(manifest),
+  id: "market.future-tools",
+  name: "未来工具",
+  minHostVersion: "65535.0.0",
+  permissions: ["text:read", "future:capability"],
+};
+const knownFuture = {
+  ...structuredClone(manifest),
+  id: "market.next-tools",
+  name: "新版工具",
+  minHostVersion: "65535.0.0",
+};
+const mixed = {
+  ...catalog,
+  entries: [
+    catalog.entries[0],
+    futureEntry(futureManifest),
+    futureEntry(knownFuture),
+  ],
+};
+const changed = {
+  ...mixed,
+  entries: [
+    catalog.entries[0],
+    futureEntry({
+      ...futureManifest,
+      description: "Changed future-only metadata",
+    }),
+    futureEntry(knownFuture),
+  ],
+};
+const duplicate = JSON.stringify(mixed).replace(
+  '"minHostVersion":"65535.0.0"',
+  '"minHostVersion":"0.1.4","minHostVersion":"65535.0.0"',
+);
 for (const [filename, value] of [
   ["catalog.json", catalog],
   ["catalog-schema-1.json", { ...legacy, schemaVersion: 1 }],
   ["catalog-schema-99.json", { schemaVersion: 99, futureFormat: true }],
+  ["catalog-mixed-future.json", mixed],
+  ["catalog-mixed-future-changed.json", changed],
+  ["catalog-mixed-future-duplicate.json", duplicate],
 ]) {
   writeFileSync(
     join(root, filename),

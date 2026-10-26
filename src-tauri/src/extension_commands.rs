@@ -15,6 +15,26 @@ use crate::{
 };
 use tauri::{Emitter, Manager};
 
+const SESSION_EXPORT_BYTES: usize = 32 * 1024 * 1024;
+
+fn validate_session_export(name: &str, content: &str) -> NativeResult<()> {
+    crate::file_commands::validate_export_name(name)?;
+    bounded_text(content, SESSION_EXPORT_BYTES, "Extension session")
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn save_extension_session(
+    app: tauri::AppHandle,
+    name: String,
+    content: String,
+) -> NativeResult<Option<String>> {
+    // 会话包含输入和结果的 JSON 转义；专用额度不扩大普通文本导出范围。
+    validate_session_export(&name, &content)?;
+    blocking::run(move || workbench::save_text_content(&app, &name, &content, SESSION_EXPORT_BYTES))
+        .await
+}
+
 fn emit(app: &tauri::AppHandle) {
     let _ = app.emit(extensions::EXTENSIONS_EVENT, ());
 }
@@ -388,4 +408,54 @@ pub async fn delete_extension_credential(
         )
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escaped_maximum_session_data_fits_without_widening_text_exports() {
+        let content = serde_json::json!({
+            "inputText": "\u{1}".repeat(1024 * 1024),
+            "result": {"format": "text", "text": "\u{1}".repeat(4 * 1024 * 1024)}
+        })
+        .to_string();
+        assert!(content.len() > 16 * 1024 * 1024);
+        assert!(validate_session_export("extension-session.json", &content).is_ok());
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("extension-session.json");
+        let saved =
+            workbench::save_text_content_with_picker(&content, SESSION_EXPORT_BYTES, || {
+                Ok(Some(path.clone()))
+            })
+            .unwrap();
+        assert_eq!(saved, Some(path.to_string_lossy().into_owned()));
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            content.len() as u64
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+        assert!(
+            workbench::save_text_content_with_picker(&content, 8 * 1024 * 1024, || {
+                panic!("Oversized ordinary exports must fail before opening the save dialog")
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn session_exports_keep_name_and_content_boundaries() {
+        assert!(validate_session_export("../session.json", "{}").is_err());
+        assert!(validate_session_export("session.exe", "{}").is_err());
+        assert!(validate_session_export("session.json", "\0").is_err());
+        let oversized = "x".repeat(SESSION_EXPORT_BYTES + 1);
+        assert!(validate_session_export("session.json", &oversized).is_err());
+        assert!(
+            workbench::save_text_content_with_picker(&oversized, SESSION_EXPORT_BYTES, || {
+                panic!("Oversized sessions must fail before opening the save dialog")
+            })
+            .is_err()
+        );
+    }
 }

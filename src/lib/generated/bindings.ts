@@ -8,6 +8,10 @@ export const commands = {
     typedError<string | null, NativeError>(
       __TAURI_INVOKE("save_text_export", { name, content }),
     ),
+  saveExtensionSession: (name: string, content: string) =>
+    typedError<string | null, NativeError>(
+      __TAURI_INVOKE("save_extension_session", { name, content }),
+    ),
   extensionSnapshot: () =>
     typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("extension_snapshot"),
@@ -732,6 +736,7 @@ export type ExtensionHttpRequest = {
   headers?: { [key in string]: string };
   body?: string | null;
   credential?: string | null;
+  networkMode?: ExtensionNetworkMode;
 };
 
 export type ExtensionIcon =
@@ -802,6 +807,8 @@ export type ExtensionManifest_Serialize = {
   network: ExtensionNetworkRule[];
 };
 
+export type ExtensionNetworkMode = "direct" | "system";
+
 export type ExtensionNetworkRule = {
   origin: string;
   methods: string[];
@@ -817,6 +824,9 @@ export type ExtensionPermission =
   | "files:read"
   | "network:https"
   | "network:local"
+  | "network:images"
+  | "network:system-proxy"
+  | "links:open"
   | "storage"
   | "messaging:lan"
   | "wallpapers:manage";
@@ -858,7 +868,7 @@ export type ExtensionRunStatus = {
   phase: ExtensionRunPhase;
 };
 
-export type ExtensionService = "lan" | "wallpaper";
+export type ExtensionService = "lan" | "wallpaper" | "resources" | "links";
 
 export type ExtensionSnapshot =
   ExtensionSnapshot_Serialize | ExtensionSnapshot_Deserialize;
@@ -1089,17 +1099,29 @@ export type MarketEntry_Serialize = {
   packageBytes: number;
 };
 
+export type MarketIncompatibleEntry = {
+  id: string;
+  name: string;
+  version: string;
+  minHostVersion: string;
+  category: MarketCategory;
+};
+
 export type MarketSnapshot =
   MarketSnapshot_Serialize | MarketSnapshot_Deserialize;
 
 export type MarketSnapshot_Deserialize = {
   catalog: MarketCatalog_Deserialize;
+  incompatibleEntries: MarketIncompatibleEntry[];
+  hostVersion: string;
   fetchedAt: number | null;
   stale: boolean;
 };
 
 export type MarketSnapshot_Serialize = {
   catalog: MarketCatalog_Serialize;
+  incompatibleEntries: MarketIncompatibleEntry[];
+  hostVersion: string;
   fetchedAt: number | null;
   stale: boolean;
 };

@@ -1,9 +1,19 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { en } from "@/i18n/en";
 import * as native from "@/lib/tauri";
 import { ExtensionMarket } from "./extension-market";
 import { useExtensionMarket } from "./use-extension-market";
+import { toast } from "sonner";
+import { marketUpdate } from "./market-model";
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
@@ -13,7 +23,8 @@ vi.mock("@/lib/tauri", async (original) => ({
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
-  return { useI18n: () => ({ t: createTranslator(en), language: "en" }) };
+  const t = createTranslator(en);
+  return { useI18n: () => ({ t, language: "en" }) };
 });
 
 const entry: native.MarketEntry = {
@@ -43,6 +54,8 @@ const entry: native.MarketEntry = {
   packageBytes: 200,
 };
 const snapshot: native.MarketSnapshot = {
+  hostVersion: "0.1.6",
+  incompatibleEntries: [],
   catalog: {
     schemaVersion: 2,
     revision: 10,
@@ -63,10 +76,14 @@ function Market({
   data = null,
   error = null,
   loading = false,
+  onRefresh = vi.fn(),
+  onDownload = vi.fn(),
 }: {
   data?: native.MarketSnapshot | null;
   error?: unknown;
   loading?: boolean;
+  onRefresh?: () => void;
+  onDownload?: (entry: native.MarketEntry) => void;
 }) {
   return (
     <ExtensionMarket
@@ -76,8 +93,8 @@ function Market({
       busy={false}
       downloadingId={null}
       installed={[]}
-      onRefresh={vi.fn()}
-      onDownload={vi.fn()}
+      onRefresh={onRefresh}
+      onDownload={onDownload}
     />
   );
 }
@@ -131,6 +148,85 @@ it("does not infer an empty market while the first catalog is loading", () => {
   ).not.toBeInTheDocument();
 });
 
+it("keeps compatible entries usable while unknown future entries only show their host requirement", () => {
+  const download = vi.fn();
+  render(
+    <Market
+      onDownload={download}
+      data={{
+        ...snapshot,
+        incompatibleEntries: [
+          {
+            id: "example.future",
+            name: "Future Tool",
+            version: "1.0.0",
+            minHostVersion: "2.0.0",
+            category: "tools",
+          },
+        ],
+      }}
+    />,
+  );
+  const future = screen
+    .getByRole("heading", { name: "Future Tool" })
+    .closest("article");
+  if (!future) throw new Error("Expected a future plugin card");
+  expect(within(future).getByText("Requires app 2.0.0 or newer")).toBeVisible();
+  expect(within(future).queryByRole("button")).not.toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", { name: en["ext.market.download"] }),
+  );
+  expect(download).toHaveBeenCalledExactlyOnceWith(entry);
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "Future Tool" },
+  });
+  expect(screen.getByRole("heading", { name: "Future Tool" })).toBeVisible();
+  expect(
+    screen.queryByRole("heading", { name: "Word Lab" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText(en["ext.market.empty"])).not.toBeInTheDocument();
+});
+
+it("disables known future downloads and excludes them from installed update actions", () => {
+  const future = {
+    ...entry,
+    package: {
+      ...entry.package,
+      manifest: { ...entry.package.manifest, minHostVersion: "0.2.0" },
+    },
+  };
+  const download = vi.fn();
+  render(
+    <Market
+      onDownload={download}
+      data={{
+        ...snapshot,
+        catalog: { ...snapshot.catalog, entries: [future] },
+      }}
+    />,
+  );
+  const button = screen.getByRole("button", {
+    name: "Requires app 0.2.0 or newer",
+  });
+  expect(button).toBeDisabled();
+  fireEvent.click(button);
+  expect(download).not.toHaveBeenCalled();
+  const installed: native.ExtensionInfo = {
+    package: {
+      ...entry.package,
+      manifest: { ...entry.package.manifest, version: "1.0.0" },
+    },
+    generation: 1,
+    enabled: false,
+    grantedPermissions: [],
+    origin: { kind: "local" },
+    previousPackage: null,
+    previousOrigin: null,
+  };
+  expect(marketUpdate([future], installed, "0.1.6")).toBeUndefined();
+  expect(marketUpdate([entry], installed, "0.1.6")).toBe(entry);
+});
+
 it("distinguishes a verified empty catalog from filters with no matches", () => {
   const view = render(<Market data={emptySnapshot} />);
   expect(screen.getByText(en["ext.market.empty"])).toBeVisible();
@@ -152,6 +248,32 @@ it("retains the native stale-catalog status without a separate error", () => {
   expect(screen.getByRole("heading", { name: "Word Lab" })).toBeVisible();
 });
 
+it("keeps an existing error toast stable while its retry callback changes", () => {
+  const error = { code: "MARKET_UNAVAILABLE" };
+  const firstRefresh = vi.fn();
+  const latestRefresh = vi.fn();
+  const view = render(
+    <Market data={snapshot} error={error} onRefresh={firstRefresh} />,
+  );
+  expect(toast.error).toHaveBeenCalledTimes(1);
+  const retry = vi.mocked(toast.error).mock.calls[0]?.[1]?.action;
+  view.rerender(
+    <Market data={snapshot} error={error} loading onRefresh={latestRefresh} />,
+  );
+  expect(toast.error).toHaveBeenCalledTimes(1);
+  if (
+    !retry ||
+    typeof retry !== "object" ||
+    !("onClick" in retry) ||
+    typeof retry.onClick !== "function"
+  )
+    throw new Error("Expected a retry action");
+  render(<button onClick={retry.onClick}>Retry retained error</button>);
+  fireEvent.click(screen.getByRole("button", { name: "Retry retained error" }));
+  expect(latestRefresh).toHaveBeenCalledTimes(1);
+  expect(firstRefresh).not.toHaveBeenCalled();
+});
+
 it("keeps the last verified catalog after refresh fails and identifies it until a valid refresh replaces it", async () => {
   vi.mocked(native.extensionMarketSnapshot)
     .mockResolvedValueOnce(snapshot)
@@ -163,9 +285,15 @@ it("keeps the last verified catalog after refresh fails and identifies it until 
   render(<LiveMarket />);
   await screen.findByRole("heading", { name: "Word Lab" });
   fireEvent.click(screen.getByRole("button", { name: "Refresh market" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    en["ext.market.incompatible"],
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      en["ext.market.incompatible"],
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Retry" }),
+      }),
+    ),
   );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Word Lab" })).toBeVisible();
   expect(screen.getByRole("status")).toHaveTextContent(en["ext.market.stale"]);
   expect(screen.queryByText(en["ext.market.empty"])).not.toBeInTheDocument();
@@ -174,7 +302,7 @@ it("keeps the last verified catalog after refresh fails and identifies it until 
   });
   expect(screen.getByText(en["ext.market.noMatches"])).toBeVisible();
   expect(screen.getByText(en["ext.market.stale"])).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh market" }));
   expect(await screen.findByText(en["ext.market.empty"])).toBeVisible();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText(en["ext.market.stale"])).not.toBeInTheDocument();

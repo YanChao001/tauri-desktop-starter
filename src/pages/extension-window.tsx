@@ -33,7 +33,7 @@ export default function ExtensionWindow() {
           className="app-main app-scroll-region outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           tabIndex={0}
         >
-          <div className="mx-auto max-w-6xl p-4 sm:p-6">
+          <div className="app-extension-window-content mx-auto max-w-6xl p-4 sm:p-6">
             <RouteErrorBoundary
               onBack={() => void execute("close-window")}
               backLabel="common.close"

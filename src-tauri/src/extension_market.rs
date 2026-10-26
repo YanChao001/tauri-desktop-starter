@@ -1,13 +1,19 @@
 //! 维护者控制的签名目录与包下载；不执行插件，也不接受前端 URL。
 use crate::{
     blocking,
-    error::{ErrorCode, NativeError, NativeResult},
-    extensions::{ExtensionPreview, PACKAGE_LIMIT, preview_package},
+    error::{ErrorCode, NativeError, NativeResult, bounded_text},
+    extensions::{
+        ExtensionManifest, ExtensionPreview, PACKAGE_LIMIT, preview_package,
+        ui::{ExtensionUiDocument, UI_DOCUMENT_LIMIT, UI_TOTAL_LIMIT, valid_document_id},
+        valid_id, version,
+    },
     storage::atomic_write,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use minisign_verify::{PublicKey, Signature};
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 use specta::Type;
 use std::{
@@ -28,6 +34,7 @@ const SIGNATURE_LIFETIME: u64 = 30 * 24 * 60 * 60;
 const FUTURE_TOLERANCE: u64 = 300;
 const TRUST_LIMIT: usize = 64 * 1024;
 const TRUST_SOURCES: usize = 64;
+const JSON_DEPTH_LIMIT: usize = 64;
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -170,8 +177,19 @@ pub struct MarketCatalog {
 #[serde(rename_all = "camelCase")]
 pub struct MarketSnapshot {
     pub catalog: MarketCatalog,
+    pub incompatible_entries: Vec<MarketIncompatibleEntry>,
+    pub host_version: String,
     pub fetched_at: f64,
     pub stale: bool,
+}
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketIncompatibleEntry {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub min_host_version: String,
+    pub category: MarketCategory,
 }
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -186,9 +204,60 @@ struct SignedCatalog {
     payload: String,
     signature: String,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CatalogWire {
+    schema_version: u32,
+    revision: u32,
+    repository: String,
+    issued_at: u64,
+    expires_at: u64,
+    entries: Vec<EntryWire>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EntryWire {
+    package: PreviewWire,
+    category: MarketCategory,
+    featured: bool,
+    release_tag: String,
+    asset: String,
+    package_sha256: String,
+    package_bytes: u32,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PreviewWire {
+    manifest: Box<RawValue>,
+    sha256: String,
+    bytes: u32,
+    #[serde(default)]
+    ui_documents: Vec<ExtensionUiDocument>,
+}
+// 仅未来 manifest 的正文可保持不透明；身份、显示名和最低版本始终按当前边界校验。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestHeader {
+    id: String,
+    name: String,
+    version: String,
+    min_host_version: String,
+}
+impl ManifestHeader {
+    fn incompatible(self, category: MarketCategory) -> MarketIncompatibleEntry {
+        MarketIncompatibleEntry {
+            id: self.id,
+            name: self.name,
+            version: self.version,
+            min_host_version: self.min_host_version,
+            category,
+        }
+    }
+}
 #[derive(Clone)]
 struct VerifiedCatalog {
     catalog: MarketCatalog,
+    incompatible_entries: Vec<MarketIncompatibleEntry>,
     identity: MarketIdentity,
     digest: String,
     fetched_at: f64,
@@ -248,6 +317,78 @@ fn valid_digest(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+struct UniqueJson(usize);
+impl<'de> DeserializeSeed<'de> for UniqueJson {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<(), D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if self.0 > JSON_DEPTH_LIMIT {
+            return Err(serde::de::Error::custom(
+                "Catalog JSON exceeds its depth limit",
+            ));
+        }
+        deserializer.deserialize_any(self)
+    }
+}
+impl<'de> Visitor<'de> for UniqueJson {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("bounded JSON without duplicate object keys")
+    }
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_seq<A>(self, mut sequence: A) -> Result<(), A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        while sequence
+            .next_element_seed(UniqueJson(self.0 + 1))?
+            .is_some()
+        {}
+        Ok(())
+    }
+    fn visit_map<A>(self, mut map: A) -> Result<(), A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut keys = HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !keys.insert(key) {
+                return Err(serde::de::Error::custom("Duplicate catalog JSON key"));
+            }
+            map.next_value_seed(UniqueJson(self.0 + 1))?;
+        }
+        Ok(())
+    }
+}
+fn validate_unique_json(bytes: &[u8]) -> NativeResult<()> {
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    UniqueJson(0)
+        .deserialize(&mut deserializer)
+        .and_then(|()| deserializer.end())
+        .map_err(|_| failure(ErrorCode::MarketInvalid))
+}
+
 fn now_seconds() -> NativeResult<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -255,14 +396,17 @@ fn now_seconds() -> NativeResult<u64> {
         .map_err(|_| failure(ErrorCode::MarketInvalid))
 }
 fn validate_catalog_time(catalog: &MarketCatalog, now: u64) -> NativeResult<()> {
-    if catalog.issued_at == 0
-        || catalog.issued_at > now.saturating_add(FUTURE_TOLERANCE)
-        || catalog.expires_at <= catalog.issued_at
-        || catalog.expires_at - catalog.issued_at > SIGNATURE_LIFETIME
+    validate_time(catalog.issued_at, catalog.expires_at, now)
+}
+fn validate_time(issued_at: u64, expires_at: u64, now: u64) -> NativeResult<()> {
+    if issued_at == 0
+        || issued_at > now.saturating_add(FUTURE_TOLERANCE)
+        || expires_at <= issued_at
+        || expires_at - issued_at > SIGNATURE_LIFETIME
     {
         return Err(failure(ErrorCode::MarketInvalid));
     }
-    if catalog.expires_at <= now {
+    if expires_at <= now {
         return Err(failure(ErrorCode::MarketExpired));
     }
     Ok(())
@@ -294,6 +438,7 @@ fn verify_catalog_at(
         Signature::decode(&signed.signature).map_err(|_| failure(ErrorCode::MarketInvalid))?;
     key.verify(&payload, &signature, false)
         .map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    validate_unique_json(&payload)?;
     // 只有验签后的版本字段可用于兼容性诊断；先识别版本，避免旧版或未来
     // DTO 缺失当前字段时被误报为完整性校验失败。
     #[derive(Deserialize)]
@@ -306,13 +451,11 @@ fn verify_catalog_at(
     if version.schema_version != 2 {
         return Err(failure(ErrorCode::MarketIncompatible));
     }
-    let catalog: MarketCatalog =
-        serde_json::from_slice(&payload).map_err(|_| failure(ErrorCode::MarketInvalid))?;
-    validate_catalog(&catalog, config)?;
-    validate_catalog_time(&catalog, now)?;
+    let (catalog, incompatible_entries) = decode_catalog(&payload, config, now)?;
     let valid_for = Duration::from_secs(catalog.expires_at - now);
     Ok(VerifiedCatalog {
         catalog,
+        incompatible_entries,
         identity: config.identity()?,
         digest: digest(&payload),
         fetched_at: now as f64 * 1000.0,
@@ -320,16 +463,132 @@ fn verify_catalog_at(
         valid_for,
     })
 }
-fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeResult<()> {
-    if catalog.schema_version != 2 {
+fn validate_catalog_header(
+    schema_version: u32,
+    revision: u32,
+    repository: &str,
+    entries: usize,
+    config: &MarketConfig,
+) -> NativeResult<()> {
+    if schema_version != 2 {
         return Err(failure(ErrorCode::MarketIncompatible));
     }
-    if catalog.revision == 0
-        || !catalog.repository.eq_ignore_ascii_case(&config.repository)
-        || catalog.entries.len() > 100
+    if revision == 0 || !repository.eq_ignore_ascii_case(&config.repository) || entries > 100 {
+        return Err(failure(ErrorCode::MarketInvalid));
+    }
+    Ok(())
+}
+fn validate_wire_entry(entry: &EntryWire, revision: u32) -> NativeResult<ManifestHeader> {
+    let header: ManifestHeader = serde_json::from_str(entry.package.manifest.get())
+        .map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    if !valid_id(&header.id)
+        || version(&header.version).is_err()
+        || version(&header.min_host_version).is_err()
+        || bounded_text(&header.name, 120, "Market extension name").is_err()
+        || header.name.trim().is_empty()
+        || !valid_digest(&entry.package.sha256)
+        || !valid_digest(&entry.package_sha256)
+        || entry.package.bytes == 0
+        || entry.package.bytes > 16 * 1024 * 1024
+        || entry.package_bytes == 0
+        || entry.package_bytes as usize > PACKAGE_LIMIT
+        || entry.release_tag != format!("market-{revision}")
+        || entry.asset != format!("{}-{}.starter-extension.json", header.id, header.version)
+        || entry.package.ui_documents.len() > 32
     {
         return Err(failure(ErrorCode::MarketInvalid));
     }
+    let mut documents = HashSet::new();
+    let mut total = 0_u64;
+    for document in &entry.package.ui_documents {
+        total += u64::from(document.bytes);
+        if !valid_document_id(&document.id)
+            || !documents.insert(&document.id)
+            || !valid_digest(&document.sha256)
+            || document.bytes == 0
+            || document.bytes as usize > UI_DOCUMENT_LIMIT
+            || total > UI_TOTAL_LIMIT as u64
+        {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+    }
+    Ok(header)
+}
+fn decode_catalog(
+    payload: &[u8],
+    config: &MarketConfig,
+    now: u64,
+) -> NativeResult<(MarketCatalog, Vec<MarketIncompatibleEntry>)> {
+    let wire: CatalogWire =
+        serde_json::from_slice(payload).map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    validate_catalog_header(
+        wire.schema_version,
+        wire.revision,
+        &wire.repository,
+        wire.entries.len(),
+        config,
+    )?;
+    validate_time(wire.issued_at, wire.expires_at, now)?;
+    let host = version(env!("CARGO_PKG_VERSION"))?;
+    let mut ids = HashSet::new();
+    let mut entries = Vec::new();
+    let mut incompatible = Vec::new();
+    for entry in wire.entries {
+        // 校验所有外围元数据，再决定是否隔离 manifest；未来声明不能隐藏坏附件或重复身份。
+        let header = validate_wire_entry(&entry, wire.revision)?;
+        if !ids.insert(header.id.clone()) {
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        let future = version(&header.min_host_version)? > host;
+        let manifest: ExtensionManifest = match serde_json::from_str(entry.package.manifest.get()) {
+            Ok(manifest) => manifest,
+            Err(_) if future => {
+                incompatible.push(header.incompatible(entry.category));
+                continue;
+            }
+            Err(_) => return Err(failure(ErrorCode::MarketInvalid)),
+        };
+        if let Err(error) = manifest.validate_structure() {
+            if future && error.code == ErrorCode::ExtensionIncompatible {
+                incompatible.push(header.incompatible(entry.category));
+                continue;
+            }
+            return Err(failure(ErrorCode::MarketInvalid));
+        }
+        entries.push(MarketEntry {
+            package: ExtensionPreview {
+                manifest,
+                sha256: entry.package.sha256,
+                bytes: entry.package.bytes,
+                ui_documents: entry.package.ui_documents,
+            },
+            category: entry.category,
+            featured: entry.featured,
+            release_tag: entry.release_tag,
+            asset: entry.asset,
+            package_sha256: entry.package_sha256,
+            package_bytes: entry.package_bytes,
+        });
+    }
+    let catalog = MarketCatalog {
+        schema_version: wire.schema_version,
+        revision: wire.revision,
+        repository: wire.repository,
+        issued_at: wire.issued_at,
+        expires_at: wire.expires_at,
+        entries,
+    };
+    validate_catalog(&catalog, config)?;
+    Ok((catalog, incompatible))
+}
+fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeResult<()> {
+    validate_catalog_header(
+        catalog.schema_version,
+        catalog.revision,
+        &catalog.repository,
+        catalog.entries.len(),
+        config,
+    )?;
     let mut ids = HashSet::new();
     for entry in &catalog.entries {
         entry
@@ -361,11 +620,14 @@ fn validate_catalog(catalog: &MarketCatalog, config: &MarketConfig) -> NativeRes
     Ok(())
 }
 fn entry_for(catalog: MarketCatalog, id: &str, expected_hash: &str) -> NativeResult<MarketEntry> {
-    catalog
+    let entry = catalog
         .entries
         .into_iter()
         .find(|entry| entry.package.manifest.id == id && entry.package_sha256 == expected_hash)
-        .ok_or_else(|| failure(ErrorCode::MarketChanged))
+        .ok_or_else(|| failure(ErrorCode::MarketChanged))?;
+    // 可识别的未来包可供预览，但下载完整附件前必须先检查真实原生宿主版本。
+    entry.package.manifest.validate()?;
+    Ok(entry)
 }
 fn verify_package(
     bytes: &[u8],
@@ -736,6 +998,8 @@ impl ExtensionMarket {
         match self.latest(force).await {
             Ok(value) => Ok(MarketSnapshot {
                 catalog: value.catalog,
+                incompatible_entries: value.incompatible_entries,
+                host_version: env!("CARGO_PKG_VERSION").into(),
                 fetched_at: value.fetched_at,
                 stale: false,
             }),
@@ -748,6 +1012,8 @@ impl ExtensionMarket {
                 }) {
                     Some(value) => Ok(MarketSnapshot {
                         catalog: value.catalog,
+                        incompatible_entries: value.incompatible_entries,
+                        host_version: env!("CARGO_PKG_VERSION").into(),
                         fetched_at: value.fetched_at,
                         stale: true,
                     }),
@@ -816,6 +1082,12 @@ mod tests {
         include_bytes!("../test-fixtures/extension-market/catalog-schema-1.json");
     const SIGNED_SCHEMA_99: &[u8] =
         include_bytes!("../test-fixtures/extension-market/catalog-schema-99.json");
+    const SIGNED_MIXED: &[u8] =
+        include_bytes!("../test-fixtures/extension-market/catalog-mixed-future.json");
+    const SIGNED_MIXED_CHANGED: &[u8] =
+        include_bytes!("../test-fixtures/extension-market/catalog-mixed-future-changed.json");
+    const SIGNED_MIXED_DUPLICATE: &[u8] =
+        include_bytes!("../test-fixtures/extension-market/catalog-mixed-future-duplicate.json");
     const PACKAGE: &[u8] = include_bytes!("../test-fixtures/extension-market/package.json");
     const TEST_NOW: u64 = 1_800_000_000;
     fn verified() -> VerifiedCatalog {
@@ -830,6 +1102,257 @@ mod tests {
             public_key: include_str!("../test-fixtures/extension-market/public-key.txt")
                 .trim()
                 .into(),
+        }
+    }
+    fn mixed_payload() -> serde_json::Value {
+        let signed: SignedCatalog = serde_json::from_slice(SIGNED_MIXED).unwrap();
+        serde_json::from_slice(&STANDARD.decode(signed.payload).unwrap()).unwrap()
+    }
+    fn decode_value(
+        value: &serde_json::Value,
+    ) -> NativeResult<(MarketCatalog, Vec<MarketIncompatibleEntry>)> {
+        let payload = serde_json::to_vec(value).unwrap();
+        validate_unique_json(&payload)?;
+        decode_catalog(&payload, &config(), TEST_NOW)
+    }
+    #[test]
+    fn signed_future_permissions_are_quarantined_without_hiding_usable_entries() {
+        let catalog = verify_catalog_at(SIGNED_MIXED, &config(), TEST_NOW).unwrap();
+        assert_eq!(catalog.catalog.entries.len(), 2);
+        assert_eq!(catalog.incompatible_entries.len(), 1);
+        let future = &catalog.incompatible_entries[0];
+        assert_eq!(future.id, "market.future-tools");
+        assert_eq!(future.name, "未来工具");
+        assert_eq!(future.version, "1.0.0");
+        assert_eq!(future.min_host_version, "65535.0.0");
+        assert!(matches!(future.category, MarketCategory::Tools));
+        let current = &catalog.catalog.entries[0];
+        assert!(
+            entry_for(
+                catalog.catalog.clone(),
+                &current.package.manifest.id,
+                &current.package_sha256,
+            )
+            .is_ok()
+        );
+        let raw = mixed_payload();
+        let unknown_hash = raw["entries"][1]["packageSha256"].as_str().unwrap();
+        assert_eq!(
+            entry_for(catalog.catalog.clone(), &future.id, unknown_hash)
+                .unwrap_err()
+                .code,
+            ErrorCode::MarketChanged
+        );
+        let mut source = catalog.source(current);
+        source.package_sha256 = unknown_hash.into();
+        assert_eq!(
+            verify_install(
+                &catalog,
+                std::str::from_utf8(PACKAGE).unwrap(),
+                &current.package.sha256,
+                &source,
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::MarketChanged
+        );
+    }
+    #[test]
+    fn recognized_future_entries_remain_visible_but_fail_before_package_download() {
+        let catalog = verify_catalog_at(SIGNED_MIXED, &config(), TEST_NOW).unwrap();
+        let future = catalog
+            .catalog
+            .entries
+            .iter()
+            .find(|entry| entry.package.manifest.id == "market.next-tools")
+            .unwrap();
+        assert_eq!(
+            entry_for(
+                catalog.catalog.clone(),
+                &future.package.manifest.id,
+                &future.package_sha256,
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::ExtensionIncompatible
+        );
+    }
+    #[test]
+    fn unknown_current_permissions_and_recognized_future_structure_errors_remain_invalid() {
+        let mut current = mixed_payload();
+        current["entries"][1]["package"]["manifest"]["minHostVersion"] =
+            env!("CARGO_PKG_VERSION").into();
+        assert_eq!(
+            decode_value(&current).unwrap_err().code,
+            ErrorCode::MarketInvalid
+        );
+        let mut recognized = mixed_payload();
+        recognized["entries"][2]["package"]["manifest"]["network"] =
+            serde_json::json!([{ "origin": "http://unsafe.example", "methods": ["GET"] }]);
+        assert_eq!(
+            decode_value(&recognized).unwrap_err().code,
+            ErrorCode::MarketInvalid
+        );
+        let mut future_api = mixed_payload();
+        future_api["entries"][2]["package"]["manifest"]["apiVersion"] = 99.into();
+        let (catalog, incompatible) = decode_value(&future_api).unwrap();
+        assert_eq!(catalog.entries.len(), 1);
+        assert_eq!(incompatible.len(), 2);
+    }
+    #[test]
+    fn future_headers_and_attachment_metadata_are_never_hidden_by_quarantine() {
+        for change in [
+            "id",
+            "name",
+            "version",
+            "minimum",
+            "asset",
+            "release",
+            "module-hash",
+            "package-hash",
+            "module-size",
+            "package-size",
+            "document-hash",
+            "document-size",
+            "document-id",
+            "document-duplicate",
+            "entry-field",
+            "preview-field",
+            "duplicate-id",
+        ] {
+            let mut value = mixed_payload();
+            let entry = &mut value["entries"][1];
+            let document = serde_json::json!({"id":"main", "sha256":"a".repeat(64), "bytes":1});
+            match change {
+                "id" => entry["package"]["manifest"]["id"] = "../outside".into(),
+                "name" => entry["package"]["manifest"]["name"] = " ".into(),
+                "version" => entry["package"]["manifest"]["version"] = "01.0.0".into(),
+                "minimum" => {
+                    entry["package"]["manifest"]["minHostVersion"] = "65535.future.0".into()
+                }
+                "asset" => entry["asset"] = "../outside.json".into(),
+                "release" => entry["releaseTag"] = "market-2".into(),
+                "module-hash" => entry["package"]["sha256"] = "wrong".into(),
+                "package-hash" => entry["packageSha256"] = "wrong".into(),
+                "module-size" => entry["package"]["bytes"] = 0.into(),
+                "package-size" => entry["packageBytes"] = (PACKAGE_LIMIT + 1).into(),
+                "document-hash" | "document-size" | "document-id" => {
+                    let mut document = document;
+                    match change {
+                        "document-hash" => document["sha256"] = "wrong".into(),
+                        "document-size" => document["bytes"] = (UI_DOCUMENT_LIMIT + 1).into(),
+                        _ => document["id"] = "../outside".into(),
+                    }
+                    entry["package"]["uiDocuments"] = serde_json::json!([document]);
+                }
+                "document-duplicate" => {
+                    entry["package"]["uiDocuments"] =
+                        serde_json::json!([document.clone(), document])
+                }
+                "entry-field" => entry["unrecognized"] = true.into(),
+                "preview-field" => entry["package"]["unrecognized"] = true.into(),
+                "duplicate-id" => {
+                    entry["package"]["manifest"]["id"] = "market.text-tools".into();
+                    entry["asset"] = "market.text-tools-1.0.0.starter-extension.json".into();
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                decode_value(&value).unwrap_err().code,
+                ErrorCode::MarketInvalid,
+                "{change}"
+            );
+        }
+        let mut too_many = mixed_payload();
+        too_many["entries"] = serde_json::Value::Array(vec![too_many["entries"][1].clone(); 101]);
+        assert_eq!(
+            decode_value(&too_many).unwrap_err().code,
+            ErrorCode::MarketInvalid
+        );
+    }
+    #[test]
+    fn signed_duplicate_future_keys_and_deep_json_are_rejected_without_folding() {
+        let signed: SignedCatalog = serde_json::from_slice(SIGNED_MIXED_DUPLICATE).unwrap();
+        let payload = STANDARD.decode(signed.payload).unwrap();
+        PublicKey::from_base64(&config().public_key)
+            .unwrap()
+            .verify(
+                &payload,
+                &Signature::decode(&signed.signature).unwrap(),
+                false,
+            )
+            .unwrap();
+        assert_eq!(
+            verify_catalog_at(SIGNED_MIXED_DUPLICATE, &config(), TEST_NOW)
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::MarketInvalid
+        );
+        for json in [
+            r#"{"id":1,"id":2}"#,
+            r#"{"entry":{"hash":1,"hash":2}}"#,
+            r#"{"future":[{"unknown":1,"unknown":2}]}"#,
+            r#"{"a":1,"\u0061":2}"#,
+        ] {
+            assert!(validate_unique_json(json.as_bytes()).is_err());
+        }
+        let deep = format!(
+            "{}0{}",
+            "[".repeat(JSON_DEPTH_LIMIT + 2),
+            "]".repeat(JSON_DEPTH_LIMIT + 2)
+        );
+        assert!(validate_unique_json(deep.as_bytes()).is_err());
+    }
+    #[test]
+    fn quarantined_content_still_changes_the_full_payload_trust_digest() {
+        let first = verify_catalog_at(SIGNED_MIXED, &config(), TEST_NOW).unwrap();
+        let changed = verify_catalog_at(SIGNED_MIXED_CHANGED, &config(), TEST_NOW).unwrap();
+        assert_eq!(
+            serde_json::to_value(&first.catalog).unwrap(),
+            serde_json::to_value(&changed.catalog).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&first.incompatible_entries).unwrap(),
+            serde_json::to_value(&changed.incompatible_entries).unwrap()
+        );
+        assert_ne!(first.digest, changed.digest);
+        assert!(accept_catalog(Some(&first), &changed).is_err());
+        let directory = tempdir();
+        persist_catalog_trust(directory.path(), &first).unwrap();
+        let original = fs::read(directory.path().join("trust.json")).unwrap();
+        assert!(persist_catalog_trust(directory.path(), &changed).is_err());
+        assert_eq!(
+            fs::read(directory.path().join("trust.json")).unwrap(),
+            original
+        );
+    }
+    #[test]
+    fn future_quarantine_does_not_relax_signature_catalog_identity_or_time() {
+        let mut tampered: serde_json::Value = serde_json::from_slice(SIGNED_MIXED).unwrap();
+        tampered["payload"] = STANDARD.encode(b"{}").into();
+        assert_eq!(
+            verify_catalog_at(&serde_json::to_vec(&tampered).unwrap(), &config(), TEST_NOW)
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::MarketInvalid
+        );
+        assert_eq!(
+            verify_catalog_at(SIGNED_MIXED, &config(), TEST_NOW + 3600)
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::MarketExpired
+        );
+        for field in ["repository", "revision", "expiresAt"] {
+            let mut value = mixed_payload();
+            match field {
+                "repository" => value[field] = "other/repository".into(),
+                "revision" => value[field] = 0.into(),
+                _ => value[field] = TEST_NOW.into(),
+            }
+            assert!(decode_value(&value).is_err(), "{field}");
         }
     }
     #[test]

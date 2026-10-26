@@ -10,6 +10,68 @@ vi.mock("@/providers/i18n", () => ({
 }));
 afterEach(cleanup);
 
+it("keeps field feedback mounted and exposes complete validation text without expanding it", () => {
+  const view: View = {
+    version: 2,
+    state: "",
+    display: "Tool",
+    description: "",
+    fields: [{ id: "name", label: "Name", value: "Draft" }],
+    groups: [],
+  };
+  const props = {
+    view,
+    fields: { name: "Draft" },
+    blocked: false,
+    invalidFields: new Set<string>(),
+    onField: vi.fn(),
+    onAction: vi.fn(),
+  };
+  const mounted = render(<ExtensionView {...props} />);
+  const input = screen.getByRole("textbox", { name: "Name" });
+  const feedback = input.parentElement?.lastElementChild;
+  const message =
+    "This title already exists. Choose a different project name before continuing.";
+  mounted.rerender(
+    <ExtensionView {...props} view={{ ...view, errors: { name: message } }} />,
+  );
+  expect(input.parentElement?.lastElementChild).toBe(feedback);
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(input).toHaveAccessibleDescription(message);
+  expect(screen.getByRole("button", { name: message })).toBeEnabled();
+  mounted.rerender(<ExtensionView {...props} />);
+  expect(input.parentElement?.lastElementChild).toBe(feedback);
+  expect(input).toHaveAttribute("aria-invalid", "false");
+  expect(
+    screen.queryByRole("button", { name: message }),
+  ).not.toBeInTheDocument();
+});
+
+it("describes invalid draft values separately from a field's byte budget", () => {
+  render(
+    <ExtensionView
+      view={{
+        version: 2,
+        state: "",
+        display: "Tool",
+        description: "",
+        fields: [{ id: "amount", label: "Amount", kind: "number", value: "1" }],
+        groups: [],
+      }}
+      fields={{ amount: "1e999" }}
+      blocked={false}
+      invalidFields={new Set(["amount"])}
+      invalidFieldValues={new Set(["amount"])}
+      onField={vi.fn()}
+      onAction={vi.fn()}
+    />,
+  );
+  const input = screen.getByRole("spinbutton", { name: "Amount" });
+  expect(input).toBeInvalid();
+  expect(input).toHaveAccessibleDescription("ext.fieldInvalid");
+  expect(screen.queryByText("ext.fieldLimit")).not.toBeInTheDocument();
+});
+
 it("keeps an action focused while it is running and ignores duplicate activation", () => {
   const onAction = vi.fn();
   const view: View = {

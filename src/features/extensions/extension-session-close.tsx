@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -96,6 +97,9 @@ export function ExtensionSessionClose({
       if (!controller.signal.aborted) {
         setError(reason);
         setOpen(true);
+        toast.error(nativeErrorText(reason, t), {
+          id: "extension-session-close",
+        });
       }
     } finally {
       if (operation.current === controller) operation.current = null;
@@ -135,7 +139,7 @@ export function ExtensionSessionClose({
             </DialogDescription>
           </DialogHeader>
           {error ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="sr-only">
               {nativeErrorText(error, t)}
             </p>
           ) : null}

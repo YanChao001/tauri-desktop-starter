@@ -2,8 +2,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
 import {
+  EXTENSION_SESSION_BYTES,
   extensionSessionIdentity,
   parseExtensionSession,
+  serializeExtensionSession,
 } from "./extension-session";
 
 vi.mock("@/lib/tauri", async (original) => ({
@@ -156,10 +158,7 @@ it("restores the exact package session with native view validation and keeps onl
     "view",
   );
   expect(native.validateExtensionView).toHaveBeenCalledWith(
-    JSON.stringify({
-      ...view,
-      fields: view.fields.map((field) => ({ ...field, value: "edited" })),
-    }),
+    JSON.stringify(view),
   );
   expect(restored).toMatchObject({
     fields: { query: "edited" },
@@ -198,42 +197,8 @@ it("rejects mismatched identities, unexpected data, non-string fields and oversi
   }
   expect(native.validateExtensionView).not.toHaveBeenCalled();
 });
-it("rejects invalid controls and per-field budgets after native schema validation", async () => {
-  await expect(
-    parseExtensionSession(
-      JSON.stringify({ ...session(), fields: { query: "x".repeat(2049) } }),
-      item,
-      "open",
-      "view",
-    ),
-  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-  vi.mocked(native.validateExtensionView).mockResolvedValueOnce({
-    ...view,
-    fields: [
-      { id: "query", label: "Enabled", kind: "checkbox", value: "false" },
-    ],
-  });
-  await expect(
-    parseExtensionSession(JSON.stringify(session()), item, "open", "view"),
-  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-  vi.mocked(native.validateExtensionView).mockResolvedValueOnce({
-    ...view,
-    fields: [
-      {
-        id: "query",
-        label: "Mode",
-        kind: "select",
-        value: "one",
-        options: [{ label: "One", value: "one" }],
-      },
-    ],
-  });
-  await expect(
-    parseExtensionSession(JSON.stringify(session()), item, "open", "view"),
-  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-});
-it("passes edited number and date values through native semantic validation", async () => {
-  for (const kind of ["number", "date"] as const) {
+it("preserves bounded unsubmitted drafts without changing the valid native view", async () => {
+  for (const kind of ["number", "date", "select", "checkbox"] as const) {
     const original = {
       ...view,
       fields: [
@@ -241,40 +206,130 @@ it("passes edited number and date values through native semantic validation", as
           id: "query",
           label: "Value",
           kind,
-          value: kind === "date" ? "2026-10-25" : "1",
+          value:
+            kind === "date"
+              ? "2026-10-25"
+              : kind === "checkbox"
+                ? "false"
+                : "1",
+          ...(kind === "select"
+            ? { options: [{ label: "One", value: "1" }] }
+            : {}),
         },
       ],
     };
-    vi.mocked(native.validateExtensionView).mockRejectedValueOnce({
-      code: "EXTENSION_RUN_FAILED",
-    });
+    vi.mocked(native.validateExtensionView).mockResolvedValueOnce(original);
+    const restored = await parseExtensionSession(
+      serializeExtensionSession({
+        ...session(),
+        view: original,
+        fields: { query: "invalid draft" },
+      }),
+      item,
+      "open",
+      "view",
+    );
+    expect(restored.fields).toEqual({ query: "invalid draft" });
+    expect(restored.view).toEqual(original);
+    expect(native.validateExtensionView).toHaveBeenLastCalledWith(
+      JSON.stringify(original),
+    );
+  }
+  const draft = "x".repeat(2049);
+  await expect(
+    parseExtensionSession(
+      serializeExtensionSession({ ...session(), fields: { query: draft } }),
+      item,
+      "open",
+      "view",
+    ),
+  ).resolves.toMatchObject({ fields: { query: draft }, view });
+});
+it("rejects drafts with missing or unknown field identities", async () => {
+  for (const fields of [
+    {},
+    { other: "draft" },
+    { query: "draft", other: "extra" },
+  ])
     await expect(
       parseExtensionSession(
-        JSON.stringify({
-          ...session(),
-          view: original,
-          fields: { query: "invalid draft" },
-        }),
+        serializeExtensionSession({ ...session(), fields }),
         item,
         "open",
         "view",
       ),
-    ).rejects.toMatchObject({ code: "EXTENSION_RUN_FAILED" });
-    expect(native.validateExtensionView).toHaveBeenLastCalledWith(
-      JSON.stringify({
-        ...original,
-        fields: [{ ...original.fields[0], value: "invalid draft" }],
-      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+});
+it("round trips the largest legal tool strings after worst-case JSON escaping", async () => {
+  const inputText = "\u0001".repeat(1024 * 1024);
+  const resultText = "\u001f".repeat(4 * 1024 * 1024);
+  const content = serializeExtensionSession({
+    ...session("tool"),
+    inputText,
+    result: { format: "text", text: resultText },
+  });
+  const bytes = new TextEncoder().encode(content).length;
+  expect(bytes).toBeGreaterThan(8 * 1024 * 1024);
+  expect(bytes).toBeLessThanOrEqual(EXTENSION_SESSION_BYTES);
+  const restored = await parseExtensionSession(content, item, "run", "tool");
+  expect(restored.inputText === inputText).toBe(true);
+  expect(restored.result?.text === resultText).toBe(true);
+  expect(native.validateExtensionView).not.toHaveBeenCalled();
+});
+it("rejects encoded sessions above 32 MiB before native validation or saving", async () => {
+  const content = " ".repeat(EXTENSION_SESSION_BYTES + 1);
+  expect(() =>
+    serializeExtensionSession({ ...session(), padding: content }),
+  ).toThrowError(expect.objectContaining({ code: "INPUT_TOO_LONG" }));
+  await expect(
+    parseExtensionSession(content, item, "open", "view"),
+  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  expect(native.validateExtensionView).not.toHaveBeenCalled();
+});
+it("uses the same hard draft limits before writing and while restoring", async () => {
+  for (const patch of [
+    { inputText: "x".repeat(1024 * 1024 + 1) },
+    { url: "x".repeat(4097) },
+    { files: ["x".repeat(1025)] },
+    { files: Array.from({ length: 17 }, () => "sample.txt") },
+    { fields: { query: "x".repeat(256 * 1024 + 1) } },
+    {
+      fields: Object.fromEntries(
+        Array.from({ length: 5 }, (_, index) => [
+          `field${index}`,
+          "x".repeat(256 * 1024),
+        ]),
+      ),
+    },
+  ]) {
+    const value = { ...session(), ...patch };
+    expect(() => serializeExtensionSession(value)).toThrowError(
+      expect.objectContaining({ code: "INPUT_TOO_LONG" }),
     );
+    await expect(
+      parseExtensionSession(JSON.stringify(value), item, "open", "view"),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   }
+  expect(native.validateExtensionView).not.toHaveBeenCalled();
 });
 it("retains native validation failures and rejects a mismatched tool output format", async () => {
   vi.mocked(native.validateExtensionView).mockRejectedValueOnce({
     code: "EXTENSION_RUN_FAILED",
   });
   await expect(
-    parseExtensionSession(JSON.stringify(session()), item, "open", "view"),
+    parseExtensionSession(
+      serializeExtensionSession({
+        ...session(),
+        view: { ...view, version: 999 },
+      }),
+      item,
+      "open",
+      "view",
+    ),
   ).rejects.toMatchObject({ code: "EXTENSION_RUN_FAILED" });
+  expect(native.validateExtensionView).toHaveBeenLastCalledWith(
+    JSON.stringify({ ...view, version: 999 }),
+  );
   await expect(
     parseExtensionSession(
       JSON.stringify({

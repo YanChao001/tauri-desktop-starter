@@ -1,4 +1,4 @@
-import { StrictMode, useState, type ReactNode } from "react";
+import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import {
   act,
   cleanup,
@@ -9,10 +9,11 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import * as native from "@/lib/tauri";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import { ExtensionApp } from "./extension-app";
-import { ExtensionsProvider } from "./extensions-provider";
+import { ExtensionsProvider, useExtensions } from "./extensions-provider";
 import {
   ExtensionChromeProvider,
   ExtensionChromeSlot,
@@ -38,7 +39,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
   viewExtension: vi.fn(),
   cancelExtension: vi.fn(),
-  saveTextExport: vi.fn(),
+  saveExtensionSession: vi.fn(),
   pickExtensionFiles: vi.fn(),
   validateExtensionView: vi.fn(),
   saveExtensionArtifact: vi.fn(),
@@ -48,6 +49,9 @@ vi.mock("@/lib/tauri", async (original) => ({
 }));
 vi.mock("next-themes", () => ({
   useTheme: () => ({ resolvedTheme: "light" }),
+}));
+vi.mock("sonner", () => ({
+  toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/providers/settings", () => ({
   useSettings: () => ({ settings: { motion: "full" } }),
@@ -154,7 +158,7 @@ beforeEach(() => {
   lifecycle.work = null;
   vi.mocked(native.viewExtension).mockResolvedValue(first);
   vi.mocked(native.cancelExtension).mockResolvedValue(undefined);
-  vi.mocked(native.saveTextExport).mockResolvedValue("saved.json");
+  vi.mocked(native.saveExtensionSession).mockResolvedValue("saved.json");
   vi.mocked(native.getCurrentWindowLabel).mockResolvedValue("browser");
   vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
 });
@@ -353,7 +357,7 @@ it("opens data in a separate focused dialog and keeps its draft after Escape ret
 });
 
 it("retains progress when session export is cancelled and only ends after a successful export", async () => {
-  vi.mocked(native.saveTextExport)
+  vi.mocked(native.saveExtensionSession)
     .mockResolvedValueOnce(null)
     .mockResolvedValueOnce("session.json");
   render(app());
@@ -374,7 +378,7 @@ it("retains progress when session export is cancelled and only ends after a succ
     within(dialog).getByRole("button", { name: "Export session and end" }),
   );
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
-  expect(native.saveTextExport).toHaveBeenLastCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenLastCalledWith(
     "third-party.form-session.json",
     expect.stringContaining("Export before ending"),
   );
@@ -383,7 +387,7 @@ it("retains progress when session export is cancelled and only ends after a succ
 
 it("cancels a pending export-and-end decision without clearing the session after the file picker returns", async () => {
   const exporting = deferred<string | null>();
-  vi.mocked(native.saveTextExport).mockReturnValueOnce(exporting.promise);
+  vi.mocked(native.saveExtensionSession).mockReturnValueOnce(exporting.promise);
   render(app());
   const input = await screen.findByLabelText("Query");
   fireEvent.change(input, { target: { value: "Keep after abort" } });
@@ -394,7 +398,9 @@ it("cancels a pending export-and-end decision without clearing the session after
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Export session and end" }),
   );
-  await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(native.saveExtensionSession).toHaveBeenCalledOnce(),
+  );
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await act(async () => exporting.resolve("saved.json"));
   expect(input).toHaveValue("Keep after abort");
@@ -444,7 +450,8 @@ it("serializes actions and preserves both input and the previous view after fail
     }),
   );
   fireEvent.click(submit);
-  await screen.findByRole("alert");
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Query")).toHaveValue("Typed");
   expect(screen.getByText("Complete")).toBeVisible();
   expect(lifecycle.work?.dirty).toBe(true);
@@ -533,10 +540,55 @@ it("refreshes the current view locale while retaining field drafts and unsaved s
   expect(lifecycle.work?.dirty).toBe(true);
   await act(async () => lifecycle.work!.save());
   const saved = JSON.parse(
-    vi.mocked(native.saveTextExport).mock.calls.at(-1)![1],
+    vi.mocked(native.saveExtensionSession).mock.calls.at(-1)![1],
   );
   expect(saved.fields.query).toBe("Unsubmitted draft");
-  expect(saved.view.fields[0].value).toBe("Unsubmitted draft");
+  expect(saved.view.fields[0].value).toBe("Canonical value");
+});
+
+it("refreshes the requested locale after a draft changed before the locale effect is corrected", async () => {
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({
+      ...first,
+      fields: [{ id: "query", label: "查询", value: "Canonical value" }],
+    });
+  function DraftPatch({ draft }: { draft?: string }) {
+    const { sessions } = useExtensions();
+    useEffect(() => {
+      if (draft !== undefined)
+        sessions.get(`${item.package.manifest.id}:open`)!.fields = {
+          query: draft,
+        };
+    }, [draft, sessions]);
+    return null;
+  }
+  function workspace(draft?: string) {
+    return (
+      <ExtensionsProvider>
+        <DraftPatch draft={draft} />
+        {app()}
+      </ExtensionsProvider>
+    );
+  }
+  const mounted = render(workspace());
+  await screen.findByLabelText("Query");
+  locale.language = "zh";
+  mounted.rerender(workspace("x".repeat(2049)));
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  fireEvent.change(screen.getByLabelText("Query"), {
+    target: { value: "Corrected draft" },
+  });
+  expect(await screen.findByLabelText("查询")).toHaveValue("Corrected draft");
+  expect(native.viewExtension).toHaveBeenCalledTimes(2);
+  expect(native.viewExtension).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      request: expect.objectContaining({
+        locale: "zh-CN",
+        fields: { query: "Corrected draft" },
+      }),
+    }),
+  );
 });
 
 it("waits for an action before rendering the latest locale and does not retry a failed refresh automatically", async () => {
@@ -554,7 +606,7 @@ it("waits for an action before rendering the latest locale and does not retry a 
   await act(async () =>
     pending.resolve({ ...first, state: "Committed action" }),
   );
-  await screen.findByRole("alert");
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   mounted.rerender(app());
   expect(native.viewExtension).toHaveBeenCalledTimes(3);
   expect(native.viewExtension).toHaveBeenLastCalledWith(
@@ -642,7 +694,7 @@ it("exports a final result after detaching, and an aborted discard preserves sta
     });
     await saving;
   });
-  expect(native.saveTextExport).toHaveBeenCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenCalledWith(
     "third-party.form-session.json",
     expect.stringContaining("completed after detach"),
   );
@@ -652,7 +704,7 @@ it("exports a final result after detaching, and an aborted discard preserves sta
     name: "AbortError",
   });
   await work.save();
-  expect(native.saveTextExport).toHaveBeenLastCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenLastCalledWith(
     "third-party.form-session.json",
     expect.stringContaining("completed after detach"),
   );
@@ -692,7 +744,7 @@ it("restores the same view and edited fields when navigating away and back withi
 
 it("keeps a session locked when returning while its export is still pending", async () => {
   const exporting = deferred<string | null>();
-  vi.mocked(native.saveTextExport).mockReturnValueOnce(exporting.promise);
+  vi.mocked(native.saveExtensionSession).mockReturnValueOnce(exporting.promise);
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
@@ -708,7 +760,9 @@ it("keeps a session locked when returning while its export is still pending", as
     target: { value: "Export this draft" },
   });
   fireEvent.click(sessionButton("Export session"));
-  await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(native.saveExtensionSession).toHaveBeenCalledOnce(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   expect(screen.getByLabelText("Query")).toHaveValue("Export this draft");
@@ -759,9 +813,71 @@ it("reports the UTF-8 field limit before invoking Wasm and allows correcting the
   );
 });
 
+it("exports and restores an over-limit draft separately from its valid view until the user corrects it", async () => {
+  vi.mocked(native.validateExtensionView).mockResolvedValueOnce(first);
+  render(app());
+  const input = await screen.findByLabelText("Query");
+  const draft = "x".repeat(2049);
+  fireEvent.change(input, { target: { value: draft } });
+  expect(input).toBeInvalid();
+  await act(async () => lifecycle.work!.save());
+  const content = String(
+    vi.mocked(native.saveExtensionSession).mock.calls.at(-1)?.[1],
+  );
+  const exported = JSON.parse(content) as {
+    fields: Record<string, string>;
+    view: native.ExtensionView;
+  };
+  expect(exported.fields).toEqual({ query: draft });
+  expect(exported.view).toEqual(first);
+  fireEvent.change(input, { target: { value: "Current edit" } });
+  const file = new File([content], "session.json", {
+    type: "application/json",
+  });
+  file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
+  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+    target: { files: [file] },
+  });
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Replace current session" }),
+  );
+  expect(input).toHaveValue(draft);
+  expect(input).toBeInvalid();
+  expect(native.validateExtensionView).toHaveBeenCalledWith(
+    JSON.stringify(first),
+  );
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  await act(async () => lifecycle.work!.save());
+  expect(native.saveExtensionSession).toHaveBeenLastCalledWith(
+    "third-party.form-session.json",
+    content,
+  );
+  fireEvent.change(input, { target: { value: "Corrected" } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(2));
+});
+
+it("keeps an over-hard-budget draft dirty and rejects saving before opening a native file dialog", async () => {
+  render(app());
+  const input = await screen.findByLabelText("Query");
+  const draft = "x".repeat(256 * 1024 + 1);
+  fireEvent.change(input, { target: { value: draft } });
+  await act(async () => {
+    await expect(lifecycle.work!.save()).rejects.toMatchObject({
+      code: "INPUT_TOO_LONG",
+    });
+  });
+  expect(native.saveExtensionSession).not.toHaveBeenCalled();
+  expect(input).toHaveValue(draft);
+  expect(lifecycle.work?.dirty).toBe(true);
+});
+
 it("preserves the draft and unlocks a remounted session when its export is cancelled", async () => {
   const exporting = deferred<string | null>();
-  vi.mocked(native.saveTextExport).mockReturnValueOnce(exporting.promise);
+  vi.mocked(native.saveExtensionSession).mockReturnValueOnce(exporting.promise);
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
@@ -777,18 +893,22 @@ it("preserves the draft and unlocks a remounted session when its export is cance
     target: { value: "Keep this draft after cancellation" },
   });
   fireEvent.click(sessionButton("Export session"));
-  await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(native.saveExtensionSession).toHaveBeenCalledOnce(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
   await act(async () => exporting.resolve(null));
-  await screen.findByRole("alert");
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   expect(screen.getByLabelText("Query")).toBeEnabled();
   expect(screen.getByLabelText("Query")).toHaveValue(
     "Keep this draft after cancellation",
   );
   expect(lifecycle.work?.dirty).toBe(true);
   fireEvent.click(sessionButton("Export session"));
-  await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(native.saveExtensionSession).toHaveBeenCalledTimes(2),
+  );
   await waitFor(() => expect(lifecycle.work?.dirty).toBe(false));
 });
 
@@ -989,7 +1109,7 @@ it("observes a retained run directly after remount and preserves its failure fee
   );
   expect(lifecycle.work?.dirty).toBe(true);
   await act(async () => pending.reject({ code: "EXTENSION_RUN_FAILED" }));
-  await screen.findByRole("alert");
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   expect(screen.getByLabelText("Query")).toHaveValue("Original");
   expect(native.viewExtension).toHaveBeenCalledTimes(2);
@@ -1041,14 +1161,14 @@ it("preserves file choices on picker cancellation and waits for selection before
   );
   expect(sessionButton("End session")).toHaveAttribute("aria-disabled", "true");
   const saving = lifecycle.work!.save();
-  expect(native.saveTextExport).not.toHaveBeenCalled();
+  expect(native.saveExtensionSession).not.toHaveBeenCalled();
   await act(async () => {
     selecting.resolve([]);
     await saving;
   });
   fireEvent.click(sessionButton("Send data…"));
   expect(screen.getByText("sample.txt")).toBeVisible();
-  expect(native.saveTextExport).toHaveBeenCalledWith(
+  expect(native.saveExtensionSession).toHaveBeenCalledWith(
     "third-party.form-session.json",
     expect.stringContaining('"sample.txt"'),
   );
@@ -1113,7 +1233,7 @@ it("requires confirmation before importing a version-bound session and never res
   expect(native.viewExtension).toHaveBeenCalledOnce();
   await act(async () => lifecycle.work!.save());
   const exported = JSON.parse(
-    String(vi.mocked(native.saveTextExport).mock.calls.at(-1)?.[1]),
+    String(vi.mocked(native.saveExtensionSession).mock.calls.at(-1)?.[1]),
   ) as { files: string[]; fields: Record<string, string> };
   expect(exported.files).toEqual([]);
   expect(exported.fields).toEqual({ query: "Restored input" });
@@ -1207,7 +1327,7 @@ it("recreates the isolated document only after confirming a session import, reta
   expect(native.viewExtension).toHaveBeenCalledOnce();
   await act(async () => lifecycle.work!.save());
   const exported = JSON.parse(
-    String(vi.mocked(native.saveTextExport).mock.calls.at(-1)?.[1]),
+    String(vi.mocked(native.saveExtensionSession).mock.calls.at(-1)?.[1]),
   ) as { ui: { state: string }; fields: Record<string, string> };
   expect(exported.ui.state).toBe(checkpoint);
   expect(exported.fields).toEqual({ query: "Imported field" });

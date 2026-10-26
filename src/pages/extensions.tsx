@@ -1,5 +1,6 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { PackagePlusIcon, RefreshCwIcon } from "lucide-react";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { ExternalLink } from "@/components/external-link";
@@ -23,6 +24,7 @@ import { nativeErrorText } from "@/lib/native-error";
 import { ExtensionDetails } from "@/features/extensions/extension-details";
 import { ExtensionRunner } from "@/features/extensions/extension-runner";
 import { ExtensionRecovery } from "@/features/extensions/extension-recovery";
+import { ExtensionHelp } from "@/features/extensions/extension-help";
 import { ExtensionCard } from "@/features/extensions/extension-card";
 import { availableExtensionCommands } from "@/features/extensions/extension-model";
 import { ExtensionMarket } from "@/features/extensions/extension-market";
@@ -81,6 +83,23 @@ export default function Extensions() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [grants, setGrants] = useState<ExtensionPermission[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (actionError)
+      toast.error(nativeErrorText(actionError, t), { id: "extensions:action" });
+  }, [actionError, t]);
+  useEffect(() => {
+    if (bundledStatus)
+      toast.info(
+        t(
+          bundledStatus === "current"
+            ? "ext.bundledCurrent"
+            : bundledStatus === "newer"
+              ? "ext.bundledNewerInstalled"
+              : "ext.bundledDifferent",
+        ),
+        { id: "extensions:action" },
+      );
+  }, [bundledStatus, t]);
   const tab = search.get("tab") === "discover" ? "discover" : "installed";
   const requestedExtension = search.get("extension") ?? "";
   const [runnerOpened, setRunnerOpened] = useState(!!requestedExtension);
@@ -245,7 +264,6 @@ export default function Extensions() {
         .getElementById("extension-runner")
         ?.scrollIntoView({ behavior: "instant", block: "start" });
   }
-  const dialogOpen = review !== null || decision !== null;
   function restoreDialogFocus(event: Event) {
     event.preventDefault();
     const trigger = dialogTrigger.current;
@@ -254,25 +272,8 @@ export default function Extensions() {
   }
   return (
     <NativePage title={t("ext.title")} description={t("ext.description")}>
-      <details className="rounded-lg border bg-card px-4 py-3 text-sm">
-        <summary className="cursor-pointer rounded-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {t("ext.dataBoundary")}
-        </summary>
-        <p className="mt-3 leading-relaxed text-muted-foreground">
-          {t("ext.boundary")}
-        </p>
-      </details>
       <ResourceError error={error} retry={() => void reload()} />
       <ExtensionRecovery error={error} reload={reload} />
-      {!dialogOpen ? (
-        <ResourceError
-          error={actionError}
-          retry={() => {
-            setActionError(null);
-            void reload();
-          }}
-        />
-      ) : null}
       <Tabs
         value={tab}
         onValueChange={(value) =>
@@ -287,29 +288,34 @@ export default function Extensions() {
           )
         }
       >
-        <TabsList>
-          <TabsTrigger value="installed">{t("ext.installed")}</TabsTrigger>
-          <TabsTrigger value="discover">{t("ext.market.discover")}</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between gap-3">
+          <TabsList>
+            <TabsTrigger value="installed">{t("ext.installed")}</TabsTrigger>
+            <TabsTrigger value="discover">
+              {t("ext.market.discover")}
+            </TabsTrigger>
+          </TabsList>
+          <ExtensionHelp label={t("ext.dataBoundary")}>
+            {t("ext.boundary")}
+          </ExtensionHelp>
+        </div>
         <TabsContent
           value="installed"
           forceMount
           hidden={tab !== "installed"}
           className="space-y-5 pt-4"
         >
-          {data?.runs.length ? (
-            <p role="status" className="text-sm">
-              {t("ext.queueSummary", { count: data.runs.length })}
-            </p>
-          ) : null}
-          <h3 className="font-semibold">{t("ext.installed")}</h3>
-          {data?.items.some(
-            (item) => item.package.manifest.id === "starter.extension-lab",
-          ) ? (
-            <p className="text-sm text-muted-foreground">
-              {t("ext.bundledHint")}
-            </p>
-          ) : null}
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <h3 className="font-semibold">{t("ext.installed")}</h3>
+            <span
+              role="status"
+              className="min-w-0 truncate text-sm text-muted-foreground"
+            >
+              {data?.runs.length
+                ? t("ext.queueSummary", { count: data.runs.length })
+                : ""}
+            </span>
+          </div>
           <div className="grid gap-4 lg:grid-cols-2">
             {data?.items.map((item) => (
               <ExtensionCard
@@ -317,7 +323,11 @@ export default function Extensions() {
                 item={item}
                 busy={busy}
                 update={
-                  marketUpdate(market.data?.catalog.entries ?? [], item) ?? null
+                  marketUpdate(
+                    market.data?.catalog.entries ?? [],
+                    item,
+                    market.data?.hostVersion ?? "0.0.0",
+                  ) ?? null
                 }
                 onOpen={(commandId) => open(item, commandId)}
                 onWindow={(commandId) =>
@@ -338,6 +348,7 @@ export default function Extensions() {
                   const update = marketUpdate(
                     market.data?.catalog.entries ?? [],
                     item,
+                    market.data?.hostVersion ?? "0.0.0",
                   );
                   if (update) void inspectMarket(update);
                 }}
@@ -366,6 +377,9 @@ export default function Extensions() {
               <h3 className="flex items-center gap-2 font-semibold">
                 <PackagePlusIcon className="size-5" />
                 {t("ext.installFile")}
+                <ExtensionHelp label={t("ext.installFile")}>
+                  {t("ext.packageHint")}
+                </ExtensionHelp>
               </h3>
               <Button
                 variant="ghost"
@@ -377,9 +391,6 @@ export default function Extensions() {
                 <RefreshCwIcon className="size-4" />
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {t("ext.packageHint")}
-            </p>
             <Label htmlFor="extension-package">{t("ext.installFile")}</Label>
             <Input
               id="extension-package"
@@ -406,21 +417,6 @@ export default function Extensions() {
                   : "ext.restoreLab",
               )}
             </Button>
-            {bundledStatus ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t(
-                  bundledStatus === "current"
-                    ? "ext.bundledCurrent"
-                    : bundledStatus === "newer"
-                      ? "ext.bundledNewerInstalled"
-                      : "ext.bundledDifferent",
-                )}
-              </p>
-            ) : null}
-            <p className="text-xs text-muted-foreground">
-              {t("ext.host")}:{" "}
-              <code className="break-all">Extism / WebAssembly</code>
-            </p>
             <ExternalLink
               className="text-sm text-primary underline underline-offset-4"
               href={repositoryFileUrl(
@@ -502,7 +498,7 @@ export default function Extensions() {
             </>
           ) : null}
           {actionError ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="sr-only">
               {nativeErrorText(actionError, t)}
             </p>
           ) : null}
@@ -607,7 +603,7 @@ export default function Extensions() {
             </p>
           ) : null}
           {actionError ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="sr-only">
               {nativeErrorText(actionError, t)}
             </p>
           ) : null}

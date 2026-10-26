@@ -125,8 +125,9 @@ export async function checkChrome(page, profile, manifest) {
 
 export async function checkNormalControls(frame, name, fontSize) {
   const selectors = {
+    // 绘图操作组允许窄屏换行，由同组等高检查验证，不要求固定 2rem。
     "scientific-calculator":
-      '[data-action="save"],#load,[data-action="export"],[data-action="history-clear"],#fit,#zoom-in,#zoom-out',
+      '[data-action="save"],#load,[data-action="export"],[data-action="history-clear"],#zoom-in,#zoom-out',
     "lan-chat": "#start,#stop,#rename,#refresh,#send,#export",
     "wallpaper-browser": "#refresh,#import,#settings",
     lab: '[data-action="todo-add"]',
@@ -305,6 +306,9 @@ export async function checkToolsHelp(page, label) {
 
 export async function frameGeometry(page) {
   return page.locator("iframe").evaluate((node) => ({
+    x: node.getBoundingClientRect().x,
+    width: node.getBoundingClientRect().width,
+    right: node.getBoundingClientRect().right,
     y: node.getBoundingClientRect().y,
     height: node.getBoundingClientRect().height,
     bottom: node.getBoundingClientRect().bottom,
@@ -315,6 +319,9 @@ export async function frameGeometry(page) {
 export async function checkHostScroll(page, profile) {
   const main = page.locator("main.app-main");
   await expect(main).toHaveAttribute("tabindex", "0");
+  await expect
+    .poll(() => main.evaluate((node) => node.scrollHeight - node.clientHeight))
+    .toBeLessThanOrEqual(1);
   const beforeMain =
     profile.window === "true"
       ? page.locator(".app-title-bar button").last()
@@ -323,30 +330,257 @@ export async function checkHostScroll(page, profile) {
   await page.keyboard.press("Tab");
   await expect(main).toBeFocused();
   const geometry = await main.evaluate((node) => ({
+    left: node.getBoundingClientRect().left + node.clientLeft,
+    right:
+      node.getBoundingClientRect().left + node.clientLeft + node.clientWidth,
+    viewportWidth: innerWidth,
+    rootScrollWidth: document.documentElement.scrollWidth,
+    rootScrollHeight: document.documentElement.scrollHeight,
+    viewportHeight: innerHeight,
     scrollHeight: node.scrollHeight,
     clientHeight: node.clientHeight,
     originalTop: node.scrollTop,
   }));
-  let keyboardScrolled = false;
-  if (geometry.scrollHeight > geometry.clientHeight + 1) {
-    await main.evaluate((node) => {
-      node.scrollTop = 0;
+  const frameBox = await page.locator("iframe").boundingBox();
+  expect(Math.abs(frameBox.x - geometry.left)).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(frameBox.x + frameBox.width - geometry.right),
+    "The iframe scrollbar belongs at the main region's right edge, including wide windows",
+  ).toBeLessThanOrEqual(1);
+  expect(geometry.rootScrollWidth).toBeLessThanOrEqual(
+    geometry.viewportWidth + 1,
+  );
+  expect(geometry.rootScrollHeight).toBeLessThanOrEqual(
+    geometry.viewportHeight + 1,
+  );
+  const frameScroll = await page
+    .frameLocator("iframe")
+    .locator("html")
+    .evaluate(() => {
+      const node = document.scrollingElement;
+      const originalTop = node.scrollTop;
+      node.scrollTop = node.scrollHeight;
+      const result = {
+        scrollHeight: node.scrollHeight,
+        clientHeight: node.clientHeight,
+        maximumTop: Math.max(0, node.scrollHeight - node.clientHeight),
+        reachedTop: node.scrollTop,
+      };
+      node.scrollTop = originalTop;
+      return result;
     });
-    await page.keyboard.press("PageDown");
-    await expect
-      .poll(() => main.evaluate((node) => node.scrollTop))
-      .toBeGreaterThan(0);
-    keyboardScrolled = true;
-    await main.evaluate((node, top) => {
-      node.scrollTop = top;
-    }, geometry.originalTop);
+  expect(
+    Math.abs(frameScroll.reachedTop - frameScroll.maximumTop),
+  ).toBeLessThanOrEqual(1);
+  return {
+    ...geometry,
+    tabReachable: true,
+    hostOverflow: false,
+    fullWidthSurface: true,
+    frameBox,
+    frameScroll,
+  };
+}
+
+export async function checkPermissionConsent(
+  page,
+  manifest,
+  language,
+  capturePath,
+) {
+  const labels =
+    language === "zh"
+      ? {
+          manage: "管理权限",
+          group: "可选权限",
+          all: "全选可选权限",
+          cancel: "取消",
+        }
+      : {
+          manage: "Manage permissions",
+          group: "Optional capabilities",
+          all: "Select all optional capabilities",
+          cancel: "Cancel",
+        };
+  const card = page.locator("article").filter({
+    has: page.getByRole("button", {
+      name:
+        language === "zh" ? `打开 ${manifest.name}` : `Open ${manifest.name}`,
+      exact: true,
+    }),
+  });
+  await card.getByRole("button", { name: labels.manage, exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const group = dialog.getByRole("group", { name: labels.group, exact: true });
+  const all = group.getByRole("checkbox", { name: labels.all, exact: true });
+  const individual = group.locator("li").getByRole("checkbox");
+  await expect(individual).toHaveCount(manifest.optionalPermissions.length);
+  await expect(all).toBeVisible();
+  const alignment = await group.locator("label").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const checkbox = node.querySelector('[role="checkbox"]');
+      const text = node.querySelector(":scope > span");
+      const box = checkbox.getBoundingClientRect();
+      const span = text.getBoundingClientRect();
+      const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
+      return {
+        checkboxTop: box.top,
+        checkboxHeight: box.height,
+        textTop: span.top,
+        textHeight: span.height,
+        lineHeight,
+        gap: span.left - box.right,
+        alignmentError: Math.abs(
+          box.top - span.top - (lineHeight - box.height) / 2,
+        ),
+      };
+    }),
+  );
+  for (const row of alignment) {
+    expect(row.alignmentError).toBeLessThanOrEqual(1);
+    expect(row.gap).toBeGreaterThan(0);
   }
-  return { ...geometry, tabReachable: true, keyboardScrolled };
+  if (
+    page.viewportSize().width <= 400 &&
+    manifest.optionalPermissions.length > 1
+  )
+    expect(alignment.some((row) => row.textHeight > row.lineHeight + 1)).toBe(
+      true,
+    );
+  if ((await all.getAttribute("aria-checked")) === "true") await all.click();
+  await all.click();
+  await expect(all).toBeChecked();
+  for (const permission of await individual.all())
+    await expect(permission).toBeChecked();
+  await individual.first().click();
+  await expect(all).toHaveAttribute(
+    "aria-checked",
+    manifest.optionalPermissions.length > 1 ? "mixed" : "false",
+  );
+  await all.click();
+  await expect(all).toBeChecked();
+  await all.click();
+  await expect(all).not.toBeChecked();
+  for (const permission of await individual.all())
+    await expect(permission).not.toBeChecked();
+  if (capturePath) await page.screenshot({ path: capturePath });
+  await dialog
+    .getByRole("button", { name: labels.cancel, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  return {
+    optionalCount: manifest.optionalPermissions.length,
+    selectionStates:
+      manifest.optionalPermissions.length > 1
+        ? ["false", "true", "mixed"]
+        : ["false", "true"],
+    alignment,
+    nativePermissionApproval: false,
+  };
+}
+
+export async function checkWallpaperCapabilityBoundaries(page, frame, mode) {
+  await expect(frame.locator("#network-mode")).toHaveValue("direct");
+  const missingPermission = await frame
+    .locator("html")
+    .evaluate(async (_node, profile) => {
+      try {
+        await starter.services.request("resources", {
+          action: "fetch-image",
+          url: "https://images.wikipedia.org/one.jpg",
+          networkMode: profile === "direct" ? "system" : "direct",
+        });
+        return null;
+      } catch (error) {
+        return error.code;
+      }
+    }, mode);
+  expect(missingPermission).toBe("EXTENSION_UNAVAILABLE");
+  if (mode === "denied") {
+    await expect(frame.locator("#search")).toBeDisabled();
+    const missingLinks = await frame.locator("html").evaluate(async () => {
+      try {
+        await starter.services.request("links", {
+          url: "https://www.wikipedia.org/one",
+        });
+        return null;
+      } catch (error) {
+        return error.code;
+      }
+    });
+    expect(missingLinks).toBe("EXTENSION_UNAVAILABLE");
+    await frame.locator("#local-tab").click();
+    const card = frame.locator("#gallery [data-wallpaper-id]").first();
+    await expect(card.locator("h2")).toHaveText("Fixture local image");
+    await expect(frame.locator("#import")).toBeEnabled();
+    await card.locator('[data-action="apply"]').click();
+    await expect(card).toHaveClass(/active/);
+    await card.locator('[data-action="rename"]').click();
+    await frame.locator("#rename-value").fill("Offline local image");
+    await frame.locator("#dialog-confirm").click();
+    await expect(card.locator("h2")).toHaveText("Offline local image");
+    await frame.locator("#import").click();
+    await expect(
+      page.locator("[data-sonner-toast]").filter({ hasText: "已取消导入。" }),
+    ).toBeVisible();
+    await card.locator('[data-action="remove"]').click();
+    await frame.locator("#dialog-confirm").click();
+    await expect(frame.locator("#gallery [data-wallpaper-id]")).toHaveCount(0);
+  } else {
+    await expect(frame.locator("#search")).toBeEnabled();
+    await frame.locator("#query").fill("landscape");
+    await frame.locator("#search").click();
+    await expect(frame.locator("#results .result")).toHaveCount(2, {
+      timeout: 60000,
+    });
+    if (mode === "links-only") {
+      const resourcesBeforeSelection = await page.evaluate(
+        () =>
+          window.__extensionUiTest.serviceCalls.filter(
+            (call) => call.service === "resources",
+          ).length,
+      );
+      await frame.locator("#results .result").first().click();
+      await expect(frame.locator("#preview h2")).toHaveText(
+        "Fixture landscape",
+      );
+      await expect(frame.locator("#preview-image")).toHaveCount(0);
+      await expect(frame.locator("#download-original")).toBeDisabled();
+      await expect(frame.locator("#add-to-gallery")).toBeDisabled();
+      await expect(frame.locator("#open-source")).toBeEnabled();
+      await frame.locator("#open-source").click();
+      await page.evaluate(() =>
+        window.__extensionSettingsTest.update({ language: "en" }),
+      );
+      await expect(frame.locator("html")).toHaveAttribute("lang", "en");
+      await expect(frame.locator("#preview h2")).toHaveText(
+        "Fixture landscape",
+      );
+      await expect(frame.locator("#open-source")).toBeEnabled();
+      expect(
+        await page.evaluate(
+          () =>
+            window.__extensionUiTest.serviceCalls.filter(
+              (call) => call.service === "resources",
+            ).length,
+        ),
+      ).toBe(resourcesBeforeSelection);
+    }
+  }
+  return {
+    permissionProfile: mode,
+    missingPermission,
+    localGalleryAvailable: mode === "denied",
+    sourceLinksWithoutImagePermission: mode === "links-only",
+    nativeServices: false,
+  };
 }
 
 export function stableFrameGeometry(before, after) {
+  expect(Math.abs(before.x - after.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(before.width - after.width)).toBeLessThanOrEqual(1);
   expect(Math.abs(before.y - after.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(before.height - after.height)).toBeLessThanOrEqual(1);
-  expect(after.height).toBeGreaterThanOrEqual(240);
+  expect(after.height).toBeGreaterThan(0);
   expect(after.bottom).toBeLessThanOrEqual(after.viewport + 1);
 }

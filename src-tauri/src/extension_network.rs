@@ -1,4 +1,4 @@
-//! 扩展的显式来源 HTTP broker；DNS 校验结果固定到本次连接，不继承代理或 cookie。
+//! 扩展的显式来源 HTTP broker；直连固定已校验 DNS，系统代理需单独授权。
 use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
@@ -25,9 +25,19 @@ pub const HTTP_BODY_LIMIT: usize = 1024 * 1024;
 pub const HTTP_RESPONSE_LIMIT: usize = 2 * 1024 * 1024;
 pub const HTTP_URL_LIMIT: usize = 4096;
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const IMAGE_RESPONSE_LIMIT: usize = 16 * 1024 * 1024;
+const IMAGE_TIMEOUT: Duration = Duration::from_secs(20);
 const HEADER_LIMIT: usize = 16 * 1024;
 const HEADER_COUNT: usize = 32;
 const MAX_DNS_WORKERS: usize = 4;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtensionNetworkMode {
+    #[default]
+    Direct,
+    System,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -40,6 +50,8 @@ pub struct ExtensionHttpRequest {
     pub body: Option<String>,
     #[serde(default)]
     pub credential: Option<String>,
+    #[serde(default)]
+    pub network_mode: ExtensionNetworkMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -57,6 +69,7 @@ pub(crate) struct ValidatedRequest {
     method: reqwest::Method,
     headers: HeaderMap,
     local: bool,
+    network_mode: ExtensionNetworkMode,
 }
 
 fn invalid(message: &str) -> NativeError {
@@ -126,6 +139,87 @@ pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
     }
 }
 
+pub(crate) fn approved_public_url(source: &str) -> NativeResult<url::Url> {
+    if source.len() > HTTP_URL_LIMIT || source.chars().any(char::is_control) {
+        return Err(invalid("Invalid extension image URL"));
+    }
+    let authority = source
+        .get(8..)
+        .filter(|_| {
+            source
+                .get(..8)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+        })
+        .and_then(|rest| rest.split(['/', '\\', '?', '#']).next())
+        .filter(|authority| !authority.is_empty() && !authority.contains('@'));
+    if authority.is_none() {
+        return Err(invalid(
+            "Extension images require credential-free HTTPS URLs",
+        ));
+    }
+    let url = url::Url::parse(source).map_err(|_| invalid("Invalid extension image URL"))?;
+    if url.scheme() != "https"
+        || url.port().is_some_and(|port| port != 443)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid(
+            "Extension images require credential-free HTTPS on port 443",
+        ));
+    }
+    // IP 字面量会绕过连接的 DNS resolver，图片资源统一使用受检查的公网域名。
+    let Some(url::Host::Domain(host)) = url.host() else {
+        return Err(invalid("Extension images require a public DNS name"));
+    };
+    if !public_hostname(host) {
+        return Err(invalid("Extension images require a public DNS name"));
+    }
+    Ok(url)
+}
+
+fn public_hostname(host: &str) -> bool {
+    let labels = host.split('.').collect::<Vec<_>>();
+    if host.len() > 253
+        || labels.len() < 2
+        || labels.iter().any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+        || labels
+            .last()
+            .is_some_and(|label| label.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return false;
+    }
+    ![
+        "localhost",
+        "local",
+        "internal",
+        "intranet",
+        "lan",
+        "home",
+        "corp",
+        "onion",
+        "test",
+        "invalid",
+        "example",
+        "arpa",
+        "alt",
+        "localdomain",
+    ]
+    .iter()
+    .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
+        && !["example.com", "example.net", "example.org"]
+            .iter()
+            .any(|name| host == *name || host.ends_with(&format!(".{name}")))
+}
+
 fn permitted_header(name: &str) -> bool {
     !matches!(
         name,
@@ -178,6 +272,15 @@ pub(crate) fn validate_request(
     };
     if !manifest.has_permission(permission) || !grants.contains(&permission) {
         return Err(invalid("Network access to this origin was not granted"));
+    }
+    if request.network_mode == ExtensionNetworkMode::System {
+        if local {
+            return Err(invalid("Loopback HTTP requests cannot use a system proxy"));
+        }
+        let permission = ExtensionPermission::NetworkSystemProxy;
+        if !manifest.has_permission(permission) || !grants.contains(&permission) {
+            return Err(invalid("System proxy access was not granted"));
+        }
     }
     if !rule.methods.contains(&request.method) {
         return Err(invalid("The extension did not declare this HTTP method"));
@@ -232,6 +335,7 @@ pub(crate) fn validate_request(
         method,
         headers,
         local,
+        network_mode: request.network_mode,
     })
 }
 
@@ -260,29 +364,118 @@ async fn resolve(url: &url::Url, local: bool) -> NativeResult<Vec<SocketAddr>> {
     let addresses = match url.host().ok_or_else(|| invalid("Missing network host"))? {
         url::Host::Ipv4(ip) => vec![SocketAddr::new(IpAddr::V4(ip), port)],
         url::Host::Ipv6(ip) => vec![SocketAddr::new(IpAddr::V6(ip), port)],
-        url::Host::Domain(host) => {
-            let host = host.to_owned();
-            static WORKERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
-            let workers = WORKERS
-                .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_DNS_WORKERS)))
-                .clone();
-            blocking_dns(workers, move || {
-                (host.as_str(), port)
-                    .to_socket_addrs()
-                    .map(|addresses| {
-                        addresses
-                            .take(33)
-                            .collect::<BTreeSet<_>>()
-                            .into_iter()
-                            .collect::<Vec<_>>()
-                    })
-                    .map_err(|_| failed("Extension network name resolution failed"))
-            })
-            .await?
-        }
+        url::Host::Domain(host) => lookup_addresses(host.to_owned(), port).await?,
     };
     validate_addresses(&addresses, local)?;
     Ok(addresses)
+}
+
+async fn lookup_addresses(host: String, port: u16) -> NativeResult<Vec<SocketAddr>> {
+    static WORKERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    let workers = WORKERS
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_DNS_WORKERS)))
+        .clone();
+    blocking_dns(workers, move || {
+        (host.as_str(), port)
+            .to_socket_addrs()
+            .map(|addresses| {
+                addresses
+                    .take(33)
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            })
+            .map_err(|_| failed("Extension network name resolution failed"))
+    })
+    .await
+}
+
+fn validate_resolution(
+    host: &str,
+    target_host: &str,
+    addresses: &[SocketAddr],
+) -> NativeResult<()> {
+    if host.eq_ignore_ascii_case(target_host) {
+        validate_addresses(addresses, false)
+    } else if !addresses.is_empty() && addresses.len() <= 32 {
+        // 每个 client 只服务一个已校验 URL 且禁止重定向；其他域名仅可能是系统选定的代理。
+        // CONNECT 的远端 DNS 由代理完成，宿主不能据此断言最终目标 IP。
+        Ok(())
+    } else {
+        Err(invalid("Invalid system proxy network addresses"))
+    }
+}
+
+#[derive(Clone)]
+struct SystemResolver {
+    target_host: String,
+    target_addresses: Arc<tokio::sync::OnceCell<Vec<SocketAddr>>>,
+}
+
+impl reqwest::dns::Resolve for SystemResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        let resolver = self.clone();
+        Box::pin(async move {
+            let resolved = async {
+                if host.eq_ignore_ascii_case(&resolver.target_host) {
+                    resolver
+                        .target_addresses
+                        .get_or_try_init(|| async {
+                            let addresses = lookup_addresses(host.clone(), 0).await?;
+                            validate_resolution(&host, &resolver.target_host, &addresses)?;
+                            Ok(addresses)
+                        })
+                        .await
+                        .cloned()
+                } else {
+                    let addresses = lookup_addresses(host.clone(), 0).await?;
+                    validate_resolution(&host, &resolver.target_host, &addresses)?;
+                    Ok(addresses)
+                }
+            }
+            .await
+            .map_err(|error: NativeError| {
+                Box::new(error) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+            Ok(Box::new(resolved.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+async fn transport(
+    url: &url::Url,
+    local: bool,
+    mode: ExtensionNetworkMode,
+    timeout: Duration,
+) -> NativeResult<reqwest::Client> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| invalid("Missing network host"))?;
+    let mut builder = reqwest::Client::builder()
+        .https_only(!local)
+        .redirect(reqwest::redirect::Policy::none())
+        .referer(false)
+        .timeout(timeout)
+        .connect_timeout(Duration::from_secs(5));
+    match mode {
+        ExtensionNetworkMode::Direct => {
+            let addresses = resolve(url, local).await?;
+            builder = builder.no_proxy().resolve_to_addrs(host, &addresses);
+        }
+        ExtensionNetworkMode::System => {
+            if local {
+                return Err(invalid("Loopback HTTP requests cannot use a system proxy"));
+            }
+            builder = builder.dns_resolver(Arc::new(SystemResolver {
+                target_host: host.to_owned(),
+                target_addresses: Arc::new(tokio::sync::OnceCell::new()),
+            }));
+        }
+    }
+    builder
+        .build()
+        .map_err(|_| failed("Cannot prepare extension HTTP transport"))
 }
 
 async fn blocking_dns<T: Send + 'static>(
@@ -326,6 +519,80 @@ pub(crate) async fn cancellable<T>(
     }
 }
 
+async fn response_bytes(
+    response: &mut reqwest::Response,
+    limit: usize,
+    overflow_message: &str,
+) -> NativeResult<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(NativeError::new(ErrorCode::InputTooLong, overflow_message));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| transport_error(error, "Extension HTTP response could not be read"))?
+    {
+        if bytes.len().saturating_add(chunk.len()) > limit {
+            return Err(NativeError::new(ErrorCode::InputTooLong, overflow_message));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+/// 固定公网图片下载；来源与传输边界归此模块，解码和资源租约由调用服务维护。
+pub(crate) async fn fetch_public_image(
+    source: &str,
+    mode: ExtensionNetworkMode,
+) -> NativeResult<(Vec<u8>, String)> {
+    let url = approved_public_url(source)?;
+    let stop = AtomicBool::new(false);
+    cancellable(&stop, Instant::now() + IMAGE_TIMEOUT, async move {
+        let client = transport(&url, false, mode, IMAGE_TIMEOUT).await?;
+        let response = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| transport_error(error, "Extension image connection failed"))?;
+        image_response(response).await
+    })
+    .await
+}
+
+async fn image_response(mut response: reqwest::Response) -> NativeResult<(Vec<u8>, String)> {
+    if !response.status().is_success() {
+        return Err(failed(
+            "Extension image source did not return a successful direct response",
+        ));
+    }
+    let mime = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if !matches!(mime.as_str(), "image/jpeg" | "image/png" | "image/webp") {
+        return Err(invalid(
+            "Extension images require JPEG, PNG or WebP MIME types",
+        ));
+    }
+    let bytes = response_bytes(
+        &mut response,
+        IMAGE_RESPONSE_LIMIT,
+        "Extension image exceeds 16 MiB",
+    )
+    .await?;
+    Ok((bytes, mime))
+}
+
 pub(crate) async fn fetch(
     validated: ValidatedRequest,
     body: Option<String>,
@@ -335,21 +602,13 @@ pub(crate) async fn fetch(
 ) -> NativeResult<ExtensionHttpResponse> {
     let cancellation = stop.clone();
     cancellable(&stop, deadline, async move {
-        let addresses = resolve(&validated.url, validated.local).await?;
-        check_active(&cancellation, deadline)?;
-        let host = validated
-            .url
-            .host_str()
-            .ok_or_else(|| invalid("Missing network host"))?;
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
-            .referer(false)
-            .timeout(HTTP_TIMEOUT)
-            .connect_timeout(Duration::from_secs(5))
-            .resolve_to_addrs(host, &addresses)
-            .build()
-            .map_err(|_| failed("Cannot prepare extension HTTP transport"))?;
+        let client = transport(
+            &validated.url,
+            validated.local,
+            validated.network_mode,
+            HTTP_TIMEOUT,
+        )
+        .await?;
         let mut request = client
             .request(validated.method, validated.url.clone())
             .headers(validated.headers);
@@ -368,15 +627,6 @@ pub(crate) async fn fetch(
         if response.status().is_redirection() {
             return Err(failed(
                 "Extension HTTP redirects require a separate request to a declared origin",
-            ));
-        }
-        if response
-            .content_length()
-            .is_some_and(|length| length > HTTP_RESPONSE_LIMIT as u64)
-        {
-            return Err(NativeError::new(
-                ErrorCode::InputTooLong,
-                "Extension HTTP response exceeds 2 MiB",
             ));
         }
         let status = response.status().as_u16();
@@ -400,20 +650,12 @@ pub(crate) async fn fetch(
                 .map(|value| (name.to_owned(), value.to_owned()))
         })
         .collect();
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| transport_error(error, "Extension HTTP response could not be read"))?
-        {
-            if bytes.len() + chunk.len() > HTTP_RESPONSE_LIMIT {
-                return Err(NativeError::new(
-                    ErrorCode::InputTooLong,
-                    "Extension HTTP response exceeds 2 MiB",
-                ));
-            }
-            bytes.extend_from_slice(&chunk);
-        }
+        let bytes = response_bytes(
+            &mut response,
+            HTTP_RESPONSE_LIMIT,
+            "Extension HTTP response exceeds 2 MiB",
+        )
+        .await?;
         let body = String::from_utf8(bytes)
             .map_err(|_| failed("Extension HTTP response must be UTF-8 text"))?;
         Ok(ExtensionHttpResponse {
@@ -446,7 +688,170 @@ mod tests {
             headers: BTreeMap::new(),
             body: None,
             credential: None,
+            network_mode: ExtensionNetworkMode::Direct,
         }
+    }
+
+    #[test]
+    fn network_modes_default_to_direct_and_system_requires_its_own_grant() {
+        let parsed: ExtensionHttpRequest = serde_json::from_value(serde_json::json!({
+            "url":"https://example.com/items", "method":"GET"
+        }))
+        .unwrap();
+        assert_eq!(parsed.network_mode, ExtensionNetworkMode::Direct);
+        for addition in [
+            serde_json::json!({"networkMode":"insecure"}),
+            serde_json::json!({"proxyUrl":"http://127.0.0.1:8000"}),
+            serde_json::json!({"dangerAcceptInvalidCerts":true}),
+        ] {
+            let mut value = serde_json::to_value(&parsed).unwrap();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(addition.as_object().unwrap().clone());
+            assert!(serde_json::from_value::<ExtensionHttpRequest>(value).is_err());
+        }
+        let mut request = parsed;
+        request.network_mode = ExtensionNetworkMode::System;
+        let mut public = manifest("https://example.com", false);
+        let grants = [
+            ExtensionPermission::NetworkHttps,
+            ExtensionPermission::NetworkSystemProxy,
+        ];
+        assert!(validate_request(&public, &grants, &request).is_err());
+        public
+            .optional_permissions
+            .push(ExtensionPermission::NetworkSystemProxy);
+        assert!(validate_request(&public, &[ExtensionPermission::NetworkHttps], &request).is_err());
+        assert!(
+            validate_request(
+                &public,
+                &[ExtensionPermission::NetworkSystemProxy],
+                &request
+            )
+            .is_err()
+        );
+        assert_eq!(
+            validate_request(&public, &grants, &request)
+                .unwrap()
+                .network_mode,
+            ExtensionNetworkMode::System
+        );
+        let mut local = manifest("http://127.0.0.1:8000", true);
+        local
+            .optional_permissions
+            .push(ExtensionPermission::NetworkSystemProxy);
+        request.url = "http://127.0.0.1:8000/items".into();
+        assert!(
+            validate_request(
+                &local,
+                &[
+                    ExtensionPermission::NetworkLocal,
+                    ExtensionPermission::NetworkSystemProxy
+                ],
+                &request,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn image_urls_require_public_https_names_and_do_not_accept_transport_options() {
+        for source in [
+            "https://images.wikimedia.org/photo@2x.png?size=2",
+            "https://images.wikimedia.org:443/photo.png",
+            "HTTPS://images.wikimedia.org/photo.png",
+        ] {
+            assert!(approved_public_url(source).is_ok(), "{source}");
+        }
+        for source in [
+            "http://images.wikimedia.org/photo.png",
+            "https://images.wikimedia.org:444/photo.png",
+            "https://user:password@images.wikimedia.org/photo.png",
+            "https://@images.wikimedia.org/photo.png",
+            "https:////@images.wikimedia.org/photo.png",
+            "https://images.wikimedia.org/photo.png#fragment",
+            "https://127.0.0.1/photo.png",
+            "https://8.8.8.8/photo.png",
+            "https://[2606:4700:4700::1111]/photo.png",
+            "https://localhost/photo.png",
+            "https://pictures.local/photo.png",
+            "https://pictures.internal/photo.png",
+            "https://example.com/photo.png",
+            "https://sub.example.org/photo.png",
+            "https://pictures.invalid/photo.png",
+            "https://pictures.test/photo.png",
+            "https://pictures.onion/photo.png",
+            "https://images.wikimedia.org./photo.png",
+            "https://images.wikimedia.org/line\nfeed.png",
+            " https://images.wikimedia.org/photo.png",
+        ] {
+            assert!(approved_public_url(source).is_err(), "{source}");
+        }
+        assert!(
+            approved_public_url(&format!(
+                "https://images.wikimedia.org/{}",
+                "x".repeat(HTTP_URL_LIMIT)
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn system_resolver_checks_the_target_but_allows_system_proxy_transport_hosts() {
+        let target = "images.wikimedia.org";
+        for addresses in [
+            vec!["198.19.2.163:0".parse().unwrap()],
+            vec!["127.0.0.1:0".parse().unwrap()],
+            vec!["8.8.8.8:0".parse().unwrap(), "127.0.0.1:0".parse().unwrap()],
+        ] {
+            assert!(validate_resolution(target, target, &addresses).is_err());
+            assert!(validate_addresses(&addresses, false).is_err());
+        }
+        assert!(
+            validate_resolution(
+                "IMAGES.WIKIMEDIA.ORG",
+                target,
+                &["8.8.8.8:0".parse().unwrap()]
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_resolution("proxy.local", target, &["127.0.0.1:0".parse().unwrap()]).is_ok()
+        );
+        assert!(validate_resolution("proxy.local", target, &[]).is_err());
+        assert!(
+            validate_resolution(
+                "proxy.local",
+                target,
+                &vec!["127.0.0.1:0".parse().unwrap(); 33]
+            )
+            .is_err()
+        );
+        tauri::async_runtime::block_on(async {
+            use reqwest::dns::Resolve;
+            let pinned = vec!["8.8.8.8:0".parse().unwrap(), "1.1.1.1:0".parse().unwrap()];
+            let target_addresses = Arc::new(tokio::sync::OnceCell::new());
+            target_addresses.set(pinned.clone()).unwrap();
+            let resolver = SystemResolver {
+                target_host: "never-resolve.invalid".into(),
+                target_addresses,
+            };
+            for _ in 0..2 {
+                let resolved = resolver
+                    .resolve("never-resolve.invalid".parse().unwrap())
+                    .await
+                    .unwrap()
+                    .collect::<Vec<_>>();
+                assert_eq!(resolved, pinned);
+            }
+            let url = url::Url::parse("http://127.0.0.1:8000").unwrap();
+            assert!(
+                transport(&url, true, ExtensionNetworkMode::System, HTTP_TIMEOUT)
+                    .await
+                    .is_err()
+            );
+        });
     }
 
     #[test]
@@ -676,6 +1081,46 @@ mod tests {
             String::from_utf8(bytes).unwrap()
         });
         (origin, server)
+    }
+
+    #[test]
+    fn image_responses_require_success_raster_mime_and_their_own_byte_limit() {
+        for (wire, expected) in [
+            (
+                b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Type: image/PNG; charset=binary\r\nConnection: close\r\n\r\nabc".as_slice(),
+                None,
+            ),
+            (
+                b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: image/svg+xml\r\nConnection: close\r\n\r\n".as_slice(),
+                Some(ErrorCode::InvalidArgument),
+            ),
+            (
+                b"HTTP/1.1 200 OK\r\nContent-Length: 16777217\r\nContent-Type: image/png\r\nConnection: close\r\n\r\n".as_slice(),
+                Some(ErrorCode::InputTooLong),
+            ),
+            (
+                b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice(),
+                Some(ErrorCode::ExtensionRunFailed),
+            ),
+        ] {
+            let (origin, server) = fixture(wire);
+            let response = tauri::async_runtime::block_on(async {
+                let url = url::Url::parse(&format!("{origin}/image")).unwrap();
+                let client = transport(&url, true, ExtensionNetworkMode::Direct, IMAGE_TIMEOUT)
+                    .await
+                    .unwrap();
+                let response = client.get(url).send().await.unwrap();
+                image_response(response).await
+            });
+            if let Some(code) = expected {
+                assert_eq!(response.unwrap_err().code, code);
+            } else {
+                assert_eq!(response.unwrap(), (b"abc".to_vec(), "image/png".into()));
+            }
+            let request = server.join().unwrap().to_ascii_lowercase();
+            assert!(request.starts_with("get /image http/1.1"));
+            assert!(!request.contains("authorization:") && !request.contains("cookie:"));
+        }
     }
 
     #[test]

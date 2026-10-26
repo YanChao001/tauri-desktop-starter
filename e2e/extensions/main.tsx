@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { FixtureTheme } from "./providers";
 import { TooltipProvider } from "../../src/components/ui/tooltip";
+import { Toaster } from "../../src/components/ui/sonner";
 import { ExtensionsProvider } from "../../src/features/extensions/extensions-provider";
 import { AppShell } from "../../src/layouts/app-shell";
 import ExtensionPage from "../../src/pages/extension-app";
@@ -53,6 +54,7 @@ createRoot(document.getElementById("root")!).render(
             </Routes>
           </MemoryRouter>
         </ExtensionsProvider>
+        <Toaster position="bottom-right" />
       </TooltipProvider>
     </FixtureTheme>
   </StrictMode>,

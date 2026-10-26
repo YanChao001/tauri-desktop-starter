@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import {
   DownloadIcon,
@@ -18,7 +20,7 @@ import { nativeErrorText } from "@/lib/native-error";
 import {
   cancelExtension,
   viewExtension,
-  saveTextExport,
+  saveExtensionSession,
   saveExtensionArtifact,
   requestExtensionService,
   type ExtensionSnapshot,
@@ -40,6 +42,7 @@ import {
 } from "./extension-session-close";
 import {
   extensionSessionIdentity,
+  serializeExtensionSession,
   type ExtensionSessionExport,
 } from "./extension-session";
 import { ExtensionData } from "./extension-data";
@@ -50,6 +53,49 @@ import { ExtensionCustomUi } from "./extension-custom-ui";
 import type { ExtensionUiRequest } from "./extension-ui-bridge";
 import { useDelayedBusy } from "./use-delayed-busy";
 import { ExtensionLoading } from "./extension-loading";
+
+function validateFieldDrafts(
+  view: ExtensionView | null,
+  fields: Record<string, string>,
+) {
+  const invalidFields = new Set<string>();
+  const invalidFieldValues = new Set<string>();
+  let bytes = 0;
+  for (const [id, value] of Object.entries(fields)) {
+    const field = view?.fields.find((field) => field.id === id);
+    const size = new TextEncoder().encode(value).length;
+    bytes += size;
+    if (!field || size > extensionFieldBytes(field)) {
+      invalidFields.add(id);
+      continue;
+    }
+    let valid = true;
+    if (field.kind === "checkbox")
+      valid = value === "true" || value === "false";
+    else if (field.kind === "select")
+      valid = (field.options ?? []).some((option) => option.value === value);
+    else if ((field.kind === "number" || field.kind === "date") && value) {
+      const input = document.createElement("input");
+      input.type = field.kind;
+      input.value = value;
+      valid =
+        input.value === value &&
+        (field.kind === "number"
+          ? Number.isFinite(input.valueAsNumber)
+          : value.length === 10);
+    }
+    if (!valid) {
+      invalidFields.add(id);
+      invalidFieldValues.add(id);
+    }
+  }
+  if (bytes > 1024 * 1024)
+    Object.keys(fields).forEach((id) => {
+      invalidFields.add(id);
+      invalidFieldValues.delete(id);
+    });
+  return { invalidFields, invalidFieldValues };
+}
 
 /** The renderer has no calculator/game rules. Every action runs the declared Wasm export. */
 export function ExtensionApp({
@@ -107,26 +153,22 @@ export function ExtensionApp({
   const alive = useRef(false);
   const closing = useRef(false);
   const init = useRef(() => {});
+  const notifiedError = useRef<unknown>(null);
+  useEffect(() => {
+    if (!error) notifiedError.current = null;
+    else if (view && notifiedError.current !== error) {
+      notifiedError.current = error;
+      toast.error(nativeErrorText(error, t), {
+        id: `${workId}:notification`,
+        description: manifest.name,
+      });
+    }
+  }, [error, view, t, workId, manifest.name]);
   const localeRefresh = useRef<string | null>(null);
-  const invalidFields = new Set(
-    Object.entries(fields)
-      .filter(([id, value]) => {
-        const field = view?.fields.find((field) => field.id === id);
-        return (
-          new TextEncoder().encode(value).length >
-          (field ? extensionFieldBytes(field) : 64 * 1024)
-        );
-      })
-      .map(([id]) => id),
+  const { invalidFields, invalidFieldValues } = validateFieldDrafts(
+    view,
+    fields,
   );
-  if (
-    Object.values(fields).reduce(
-      (sum, value) => sum + new TextEncoder().encode(value).length,
-      0,
-    ) >
-    1024 * 1024
-  )
-    Object.keys(fields).forEach((id) => invalidFields.add(id));
   const blocked =
     busy ||
     saving ||
@@ -145,7 +187,6 @@ export function ExtensionApp({
   function run(
     action: string | null,
     data?: ExtensionViewDataInput,
-    validatedUiFields = false,
     refreshLocale = false,
   ) {
     if (
@@ -153,7 +194,8 @@ export function ExtensionApp({
       session.exporting ||
       session.selecting ||
       closing.current ||
-      (!validatedUiFields && invalidFields.size > 0) ||
+      validateFieldDrafts(session.view, session.fields).invalidFields.size >
+        0 ||
       !item.enabled
     )
       return;
@@ -179,17 +221,13 @@ export function ExtensionApp({
       },
     })
       .then((next) => {
-        if (draftFields)
-          next = {
-            ...next,
-            fields: next.fields.map((field) => ({
-              ...field,
-              value: draftFields[field.id] ?? field.value,
-            })),
-          };
         latest.current = next;
+        // 原生视图保持已验证原件，语言刷新只在独立字段草稿中保留未提交输入。
         latestFields.current = Object.fromEntries(
-          next.fields.map((field) => [field.id, field.value]),
+          next.fields.map((field) => [
+            field.id,
+            draftFields?.[field.id] ?? field.value,
+          ]),
         );
         session.view = next;
         session.locale = locale;
@@ -300,7 +338,8 @@ export function ExtensionApp({
       !session.view ||
       session.locale === locale ||
       localeRefresh.current === locale ||
-      invalidFields.size > 0 ||
+      validateFieldDrafts(session.view, session.fields).invalidFields.size >
+        0 ||
       session.pending ||
       session.exporting ||
       session.selecting ||
@@ -311,10 +350,9 @@ export function ExtensionApp({
       closed
     )
       return;
-    localeRefresh.current = locale;
-    // null + existing state only renders the same session in the requested locale.
-    // In-flight actions settle first; a later language change is picked up afterward.
-    void run(null, undefined, false, true);
+    // 无效草稿修正后仍可刷新语言；仅已开始的尝试阻止失败后的自动重试。
+    const pending = run(null, undefined, true);
+    if (pending) localeRefresh.current = locale;
   });
   async function settle(signal?: AbortSignal, waitForExport = false) {
     signal?.throwIfAborted();
@@ -344,31 +382,27 @@ export function ExtensionApp({
       try {
         await settle(signal);
         signal?.throwIfAborted();
-        const saved = await saveTextExport(
+        const saved = await saveExtensionSession(
           `${manifest.id}-session.json`,
-          JSON.stringify(
-            {
-              formatVersion: 1,
-              kind: "view",
-              ...extensionSessionIdentity(item, commandId),
-              result: null,
-              view: session.view,
-              fields: session.fields,
-              ...(documentHash
-                ? {
-                    ui: {
-                      sha256: documentHash,
-                      state: session.uiState ?? null,
-                    },
-                  }
-                : {}),
-              inputText: session.draft.inputText,
-              files: session.draft.files.map((file) => file.name),
-              url: session.draft.url,
-            },
-            null,
-            2,
-          ),
+          serializeExtensionSession({
+            formatVersion: 1,
+            kind: "view",
+            ...extensionSessionIdentity(item, commandId),
+            result: null,
+            view: session.view,
+            fields: session.fields,
+            ...(documentHash
+              ? {
+                  ui: {
+                    sha256: documentHash,
+                    state: session.uiState ?? null,
+                  },
+                }
+              : {}),
+            inputText: session.draft.inputText,
+            files: session.draft.files.map((file) => file.name),
+            url: session.draft.url,
+          }),
         );
         signal?.throwIfAborted();
         if (saved === null)
@@ -516,12 +550,19 @@ export function ExtensionApp({
     return saved;
   }
   async function executeUi(request: ExtensionUiRequest): Promise<unknown> {
-    if (closed || closing.current || !item.enabled)
+    if (!alive.current || closed || closing.current || !item.enabled)
       throw new NativeBridgeError({
         code: "EXTENSION_UNAVAILABLE",
         message: "Session is closed",
         retryable: false,
       });
+    if (request.method === "notify") {
+      toast[request.tone](request.message, {
+        id: `${workId}:notification`,
+        description: manifest.name,
+      });
+      return null;
+    }
     if (request.method === "service")
       return requestExtensionService(
         manifest.id,
@@ -552,7 +593,15 @@ export function ExtensionApp({
     }
     updateUiFields(request.fields);
     if (request.method === "fields") return null;
-    const pending = run(request.action, undefined, true);
+    if (
+      validateFieldDrafts(session.view, session.fields).invalidFields.size > 0
+    )
+      throw new NativeBridgeError({
+        code: "INVALID_ARGUMENT",
+        message: "Correct invalid field drafts before running the extension",
+        retryable: false,
+      });
+    const pending = run(request.action);
     if (!pending)
       throw new NativeBridgeError({
         code: "CONFLICT",
@@ -658,23 +707,28 @@ export function ExtensionApp({
               <div className="min-w-0 space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <output
-                    className="block min-w-0 flex-1 max-h-28 overflow-auto whitespace-pre-wrap break-words text-2xl font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="block h-16 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words text-2xl font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-live="polite"
                     aria-label={t("ext.output")}
                     tabIndex={0}
                   >
                     {view.display}
                   </output>
+                  {view.description ? (
+                    <HelpTooltip
+                      label={t("common.helpFor", { name: t("ext.output") })}
+                    >
+                      {view.description}
+                    </HelpTooltip>
+                  ) : null}
                 </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {view.description}
-                </p>
               </div>
               <ViewRenderer
                 view={view}
                 fields={fields}
                 blocked={blocked}
                 invalidFields={invalidFields}
+                invalidFieldValues={invalidFieldValues}
                 onAction={run}
                 onField={(id, value) => {
                   const next = { ...latestFields.current, [id]: value };
@@ -699,7 +753,7 @@ export function ExtensionApp({
             </>
           )}
         </div>
-        {error ? (
+        {error && !view ? (
           <div className="space-y-3">
             <p role="alert" className="text-sm text-destructive">
               {nativeErrorText(error, t)}

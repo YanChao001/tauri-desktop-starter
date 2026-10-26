@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { toast } from "sonner";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { useI18n } from "@/providers/i18n";
 import { nativeErrorText } from "@/lib/native-error";
+import { isRecord } from "@/lib/settings-model";
 import {
   extensionStorageInfo,
   clearExtensionStorage,
@@ -32,6 +36,7 @@ import {
 /** User-managed secrets never enter extension fields or a session export. */
 export function ExtensionResources({ item }: { item: ExtensionInfo }) {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const id = useId();
   const manifest = item.package.manifest;
   const [storage, setStorage] = useState<Awaited<
@@ -44,7 +49,10 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
   const [alias, setAlias] = useState("");
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [storageError, setStorageError] = useState<unknown>(null);
+  const [credentialsError, setCredentialsError] = useState<unknown>(null);
   const [confirm, setConfirm] = useState(false);
   const alive = useRef(false);
   const lock = useRef(false);
@@ -58,7 +66,9 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
   const expectedSha256 = item.package.sha256;
   const expectedGeneration = item.generation;
   const load = useCallback(async () => {
+    if (!alive.current) return;
     const request = ++generation.current;
+    setLoading(true);
     const [nextStorage, nextSlots] = await Promise.allSettled([
       hasStorage
         ? extensionStorageInfo(extensionId, expectedSha256, expectedGeneration)
@@ -74,23 +84,42 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
     if (!alive.current || generation.current !== request) return;
     if (nextStorage.status === "fulfilled") setStorage(nextStorage.value);
     if (nextSlots.status === "fulfilled") setSlots(nextSlots.value);
-    setError(
+    setStorageError(
+      nextStorage.status === "rejected" ? nextStorage.reason : null,
+    );
+    setCredentialsError(
+      nextSlots.status === "rejected" ? nextSlots.reason : null,
+    );
+    const failure =
       nextStorage.status === "rejected"
         ? nextStorage.reason
         : nextSlots.status === "rejected"
           ? nextSlots.reason
-          : null,
-    );
-  }, [extensionId, expectedSha256, expectedGeneration, hasStorage, hasNetwork]);
+          : null;
+    setLoading(false);
+    if (failure) toast.error(nativeErrorText(failure, latest));
+  }, [
+    extensionId,
+    expectedSha256,
+    expectedGeneration,
+    hasStorage,
+    hasNetwork,
+    latest,
+  ]);
   useEffect(() => {
     alive.current = true;
     void load().catch((reason: unknown) => {
-      if (alive.current) setError(reason);
+      if (alive.current) {
+        setLoading(false);
+        if (hasStorage) setStorageError(reason);
+        if (hasNetwork) setCredentialsError(reason);
+        toast.error(nativeErrorText(reason, latest));
+      }
     });
     return () => {
       alive.current = false;
     };
-  }, [load]);
+  }, [load, latest, hasStorage, hasNetwork]);
   async function act(action: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -100,7 +129,10 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
       await action();
       await load();
     } catch (reason) {
-      if (alive.current) setError(reason);
+      if (alive.current) {
+        setError(reason);
+        toast.error(nativeErrorText(reason, latest));
+      }
     } finally {
       lock.current = false;
       if (alive.current) setBusy(false);
@@ -110,28 +142,38 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
     <div className="space-y-4 border-t pt-4">
       {hasStorage ? (
         <div className="space-y-2">
-          <h4 className="font-medium">{t("ext.storage")}</h4>
-          <p className="text-xs text-muted-foreground">
-            {t("ext.storageHint")}
-          </p>
-          {storage ? (
-            <p className="text-sm">
-              {t("ext.storageUsage", {
-                entries: storage.entries,
-                bytes: storage.bytes,
-              })}
-            </p>
-          ) : (
-            <p role="status">{t("common.loading")}</p>
-          )}
+          <h4 className="flex items-center gap-2 font-medium">
+            {t("ext.storage")}
+            <HelpTooltip label={`${t("ext.storage")} · ${t("title.help")}`}>
+              {t("ext.storageHint")}
+            </HelpTooltip>
+          </h4>
+          <div
+            role="status"
+            aria-label={t("ext.storage")}
+            tabIndex={storageError ? 0 : undefined}
+            className="h-12 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {storage
+              ? t("ext.storageUsage", {
+                  entries: storage.entries,
+                  bytes: storage.bytes,
+                })
+              : loading
+                ? t("common.loading")
+                : storageError
+                  ? null
+                  : t("ext.noOutput")}
+            {storageError ? <ReadFailure error={storageError} /> : null}
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled={busy}
+              disabled={busy || loading}
               onClick={() => void act(async () => {})}
             >
-              {t("ext.refresh")}
+              {t("common.refresh")}
             </Button>
             <Dialog open={confirm} onOpenChange={setConfirm}>
               <DialogTrigger asChild>
@@ -151,7 +193,7 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
                   </DialogDescription>
                 </DialogHeader>
                 {error ? (
-                  <p role="alert" className="text-sm text-destructive">
+                  <p role="alert" className="sr-only">
                     {nativeErrorText(error, t)}
                   </p>
                 ) : null}
@@ -206,22 +248,59 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
             });
           }}
         >
-          <h4 className="font-medium">{t("ext.credentials")}</h4>
-          <p className="text-xs text-muted-foreground">
-            {t("ext.credentialsHint")}
-          </p>
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium">{t("ext.credentials")}</h4>
+            <HelpTooltip label={`${t("ext.credentials")} · ${t("title.help")}`}>
+              {t("ext.credentialsHint")}
+            </HelpTooltip>
+            {!hasStorage ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                disabled={busy || loading}
+                onClick={() => void act(async () => {})}
+              >
+                {t("common.refresh")}
+              </Button>
+            ) : null}
+          </div>
+          <div
+            role="status"
+            aria-label={t("ext.credentials")}
+            tabIndex={credentialsError ? 0 : undefined}
+            className="h-12 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {credentialsError ? (
+              <ReadFailure error={credentialsError} />
+            ) : loading ? (
+              t("common.loading")
+            ) : null}
+          </div>
           {slots.map((slot) => (
             <div
               key={`${slot.origin}:${slot.alias}`}
-              className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              className="flex min-w-0 items-center justify-between gap-2 text-sm"
             >
-              <span className="break-all">
-                <code>{slot.alias}</code> · {slot.origin}
-              </span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate">
+                  {slot.alias} · {slot.origin}
+                </span>
+                <HelpTooltip
+                  label={`${slot.alias} · ${t("title.help")}`}
+                  className="shrink-0"
+                >
+                  <span className="break-all select-text">
+                    {slot.alias} · {slot.origin}
+                  </span>
+                </HelpTooltip>
+              </div>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
+                className="shrink-0"
                 disabled={busy}
                 onClick={() =>
                   void act(() =>
@@ -245,8 +324,8 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
           <div className="space-y-2">
             <Label htmlFor={`${id}-origin`}>{t("ext.credentialOrigin")}</Label>
             <Select value={origin} onValueChange={setOrigin} disabled={busy}>
-              <SelectTrigger id={`${id}-origin`}>
-                <SelectValue />
+              <SelectTrigger id={`${id}-origin`} className="w-full min-w-0">
+                <SelectValue className="min-w-0 truncate" />
               </SelectTrigger>
               <SelectContent>
                 {manifest.network.map((rule) => (
@@ -286,10 +365,30 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
         </form>
       ) : null}
       {error && !confirm ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="sr-only">
           {nativeErrorText(error, t)}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function ReadFailure({ error }: { error: unknown }) {
+  const { t } = useI18n();
+  const text = nativeErrorText(error, t);
+  const detail =
+    isRecord(error) &&
+    typeof error.message === "string" &&
+    !text.includes(error.message)
+      ? error.message
+      : null;
+  return (
+    <div
+      role="alert"
+      className="whitespace-pre-wrap break-words text-destructive"
+    >
+      <p>{text}</p>
+      {detail ? <p>{detail}</p> : null}
     </div>
   );
 }

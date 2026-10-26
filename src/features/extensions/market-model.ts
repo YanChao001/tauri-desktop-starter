@@ -12,10 +12,15 @@ export function compareExtensionVersions(left: string, right: string) {
 export function marketUpdate(
   entries: readonly MarketEntry[],
   installed: ExtensionInfo,
+  hostVersion: string,
 ) {
   return entries.find(
     (entry) =>
       entry.package.manifest.id === installed.package.manifest.id &&
+      compareExtensionVersions(
+        hostVersion,
+        entry.package.manifest.minHostVersion,
+      ) >= 0 &&
       compareExtensionVersions(
         entry.package.manifest.version,
         installed.package.manifest.version,

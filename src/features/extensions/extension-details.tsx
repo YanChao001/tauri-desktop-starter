@@ -12,6 +12,9 @@ export const PERMISSION_LABELS: Record<ExtensionPermission, DictKey> = {
   "files:read": "ext.permission.files:read",
   "network:https": "ext.permission.network:https",
   "network:local": "ext.permission.network:local",
+  "network:images": "ext.permission.network:images",
+  "network:system-proxy": "ext.permission.network:system-proxy",
+  "links:open": "ext.permission.links:open",
   storage: "ext.permission.storage",
   "messaging:lan": "ext.permission.messaging:lan",
   "wallpapers:manage": "ext.permission.wallpapers:manage",
@@ -32,6 +35,9 @@ export function ExtensionDetails({
 }) {
   const { t } = useI18n();
   const manifest = value.manifest;
+  const selectedOptionalCount = manifest.optionalPermissions.filter(
+    (permission) => consent?.grants.includes(permission),
+  ).length;
   return (
     <div className="space-y-4 text-sm">
       <div>
@@ -103,8 +109,44 @@ export function ExtensionDetails({
         )}
       </div>
       {manifest.optionalPermissions.length ? (
-        <div>
-          <h4 className="font-medium">{t("ext.optionalPermissions")}</h4>
+        <fieldset className="min-w-0">
+          <legend className="font-medium">
+            {t("ext.optionalPermissions")}
+          </legend>
+          {consent ? (
+            <Label className="mt-2 items-start leading-6">
+              <Checkbox
+                className="mt-1"
+                checked={
+                  selectedOptionalCount === 0
+                    ? false
+                    : selectedOptionalCount ===
+                        manifest.optionalPermissions.length
+                      ? true
+                      : "indeterminate"
+                }
+                disabled={consent.disabled}
+                onCheckedChange={(checked) =>
+                  consent.onChange(
+                    checked === true
+                      ? [
+                          ...new Set([
+                            ...consent.grants,
+                            ...manifest.optionalPermissions,
+                          ]),
+                        ]
+                      : consent.grants.filter(
+                          (grant) =>
+                            !manifest.optionalPermissions.includes(grant),
+                        ),
+                  )
+                }
+              />
+              <span className="min-w-0">
+                {t("ext.selectAllOptionalPermissions")}
+              </span>
+            </Label>
+          ) : null}
           <ul className="mt-2 list-inside list-disc space-y-1">
             {manifest.optionalPermissions.map((permission) => (
               <li
@@ -112,8 +154,9 @@ export function ExtensionDetails({
                 className={consent ? "list-none" : undefined}
               >
                 {consent ? (
-                  <Label className="items-start leading-relaxed">
+                  <Label className="items-start leading-6">
                     <Checkbox
+                      className="mt-1"
                       checked={consent.grants.includes(permission)}
                       disabled={consent.disabled}
                       onCheckedChange={(checked) =>
@@ -126,7 +169,9 @@ export function ExtensionDetails({
                         )
                       }
                     />
-                    {t(PERMISSION_LABELS[permission])}
+                    <span className="min-w-0">
+                      {t(PERMISSION_LABELS[permission])}
+                    </span>
                   </Label>
                 ) : (
                   t(PERMISSION_LABELS[permission])
@@ -134,7 +179,7 @@ export function ExtensionDetails({
               </li>
             ))}
           </ul>
-        </div>
+        </fieldset>
       ) : null}
       {manifest.network.length ? (
         <div className="space-y-1">

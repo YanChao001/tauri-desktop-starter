@@ -1020,8 +1020,17 @@ pub fn save_text_content(
     content: &str,
     max_bytes: usize,
 ) -> NativeResult<Option<String>> {
-    bounded_text(content, max_bytes.min(DIALOG_LIMIT), "Export")?;
-    let Some(path) = pick_save_path(app, default_name)? else {
+    save_text_content_with_picker(content, max_bytes, || pick_save_path(app, default_name))
+}
+
+pub(crate) fn save_text_content_with_picker(
+    content: &str,
+    max_bytes: usize,
+    pick_path: impl FnOnce() -> NativeResult<Option<PathBuf>>,
+) -> NativeResult<Option<String>> {
+    // 保存额度由调用领域明确提供，不复用文件选择读取的 16 MiB 上限。
+    bounded_text(content, max_bytes, "Export")?;
+    let Some(path) = pick_path()? else {
         return Ok(None);
     };
     atomic_save(&path, content.as_bytes(), None)?;
@@ -1246,6 +1255,19 @@ fn run_directory_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn larger_export_limits_do_not_expand_text_imports_and_cancel_without_writes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("large-session.json");
+        let content = "x".repeat(DIALOG_LIMIT + 1);
+        fs::write(&path, &content).unwrap();
+        assert!(read_bounded(&path, DIALOG_LIMIT).is_err());
+        let saved = save_text_content_with_picker(&content, 32 * 1024 * 1024, || Ok(None)).unwrap();
+        assert_eq!(saved, None);
+        assert_eq!(fs::read_to_string(&path).unwrap(), content);
+    }
+
     fn task(id: &str, status: WorkbenchTaskStatus) -> WorkbenchTask {
         WorkbenchTask {
             id: id.into(),

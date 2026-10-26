@@ -18,6 +18,74 @@ export interface ExtensionUiSnapshot {
     font?: { family: string; dataUrl: string };
   };
 }
+export type ExtensionResourceFetchRequest = {
+  action: "fetch-image";
+  url: string;
+  networkMode?: "direct" | "system";
+};
+export type ExtensionResourcePreviewRequest = {
+  action: "preview";
+  resourceId: string;
+};
+export type ExtensionResourceSaveRequest = {
+  action: "save";
+  resourceId: string;
+  name?: string;
+};
+export type ExtensionResourceReleaseRequest = {
+  action: "release";
+  resourceId: string;
+};
+export type ExtensionResourceRequest =
+  | ExtensionResourceFetchRequest
+  | ExtensionResourcePreviewRequest
+  | ExtensionResourceSaveRequest
+  | ExtensionResourceReleaseRequest;
+export interface ExtensionImageResource {
+  resourceId: string;
+  mime: "image/jpeg" | "image/png" | "image/webp";
+  bytes: number;
+  width: number;
+  height: number;
+  sha256: string;
+}
+export interface ExtensionResourcePreview {
+  dataUrl: string;
+}
+export type ExtensionResourceSaveResult =
+  { cancelled: true } | { cancelled: false; name: string };
+export interface ExtensionUiServices {
+  request(
+    service: "resources",
+    request: ExtensionResourceFetchRequest,
+  ): Promise<ExtensionImageResource>;
+  request(
+    service: "resources",
+    request: ExtensionResourcePreviewRequest,
+  ): Promise<ExtensionResourcePreview>;
+  request(
+    service: "resources",
+    request: ExtensionResourceSaveRequest,
+  ): Promise<ExtensionResourceSaveResult>;
+  request(
+    service: "resources",
+    request: ExtensionResourceReleaseRequest,
+  ): Promise<null>;
+  request(
+    service: "resources",
+    request: ExtensionResourceRequest,
+  ): Promise<
+    | ExtensionImageResource
+    | ExtensionResourcePreview
+    | ExtensionResourceSaveResult
+    | null
+  >;
+  request(service: "links", request: { url: string }): Promise<null>;
+  request(
+    service: "lan" | "wallpaper",
+    request: Record<string, unknown>,
+  ): Promise<unknown>;
+}
 export interface ExtensionUiApi {
   readonly ready: Promise<ExtensionUiSnapshot>;
   onChange(listener: (snapshot: ExtensionUiSnapshot) => void): () => void;
@@ -25,12 +93,11 @@ export interface ExtensionUiApi {
   setFields(fields: Record<string, string>): Promise<void>;
   checkpoint(value: unknown, dirty: boolean): Promise<void>;
   saveArtifact(index: number): Promise<boolean>;
-  readonly services: {
-    request(
-      service: "lan" | "wallpaper",
-      request: Record<string, unknown>,
-    ): Promise<unknown>;
-  };
+  notify(
+    message: string,
+    options?: { tone?: "info" | "success" | "error" },
+  ): Promise<void>;
+  readonly services: ExtensionUiServices;
 }
 declare global {
   interface Window {
