@@ -296,6 +296,7 @@ CI 保留截图产物并通过 `pnpm docs:previews:check` 检查已提交图片�
 
 - `frontend`：冻结安装、品牌资源一致性、README 截图格式与尺寸、版本 / 脚本测试、格式、lint、类型、前端测试，以及桌面前端与浏览器演示的分别构建。
 - `browser-smoke`：构建浏览器产物，运行 Chromium 子路径 / 交互 / 无障碍冒烟，失败上传截图与 trace；Pages 部署另有相同门禁。
+- `bundled-extension`：Linux 独立安装固定工具链并实际重编内置 Wasm，逐字节核对提交资源，提前暴露生成资源差异；失败保留模块、路径规则与编译器信息，三端 Rust job 仍分别执行同一重编检查。
 - `rust`：三端 Clippy / Rust 测试；Windows 另跑格式和生成绑定检查。
 - `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志，Windows 成功时另存 README 截图。
 - `quality-gate`：汇总全部检查，仅所有前置任务成功时通过；分支保护使用此项作为必需检查。
