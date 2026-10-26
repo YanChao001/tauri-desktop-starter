@@ -300,4 +300,6 @@ CI 保留截图产物并通过 `pnpm docs:previews:check` 检查已提交图片�
 - `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志，Windows 成功时另存 README 截图。
 - `quality-gate`：汇总全部检查，仅所有前置任务成功时通过；分支保护使用此项作为必需检查。
 
+Rust / SDK 的 Linux 检查使用 Ubuntu 24.04，以满足固定 `extism-js` 编译器的 glibc 2.39 要求；真实桌面 E2E 与 Linux 分发构建仍保留 Ubuntu 22.04 基线。
+
 CI 配置覆盖的目标平台，不等于当前开发机全部实测过。发布时仍需在目标平台检查安装 / 卸载、签名、自启动、托盘和真实版本升级，尤其不能用测试构建代替正式安装包验收。

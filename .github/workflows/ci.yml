@@ -97,19 +97,19 @@ jobs:
       matrix:
         # 在三端编译验证 cfg 分支、系统库和链接器差异
         # 避免平台问题延迟到发布阶段才暴露
-        platform: [windows-latest, ubuntu-22.04, macos-latest]
+        platform: [windows-latest, ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@v7
 
       - name: 安装 Linux 系统依赖
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         timeout-minutes: 8
         run: |
           # runner 默认先尝试 Azure 镜像；直接使用已验证可用的 Ubuntu 官方 HTTPS 源。
           printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           "${apt[@]}" update
-          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       # tauri::generate_context! 会在编译期读取前端产物，必须先构建 dist
       - uses: pnpm/action-setup@v6
@@ -212,7 +212,7 @@ jobs:
           retention-days: 7
 
       - name: JavaScript / TypeScript SDK 与真实 Wasm 离线冒烟
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
