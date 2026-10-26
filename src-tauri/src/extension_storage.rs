@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn snapshots_are_lazy_namespaced_and_read_disk_changes() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let root = temporary.path().join("missing").join("storage");
         let store = ExtensionStorageStore::new(root.clone(), false);
         assert_eq!(store.snapshot(ID).unwrap().revision, 0);
@@ -337,7 +337,7 @@ mod tests {
 
     #[test]
     fn compare_and_swap_and_clear_preserve_monotonic_revisions() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
         store
             .patch(ID, 0, changes("value", Some(json!(42))))
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn simultaneous_writers_cannot_apply_the_same_revision_twice() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
         let outcomes = std::thread::scope(|scope| {
             let first = scope.spawn(|| store.patch(ID, 0, changes("first", Some(json!(true)))));
@@ -392,7 +392,7 @@ mod tests {
             time::Duration,
         };
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = Arc::new(ExtensionStorageStore::new(
             temporary.path().join("storage"),
             false,
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn guarded_patch_returns_the_committed_revision_and_stopped_work_creates_nothing() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let root = temporary.path().join("storage");
         let store = ExtensionStorageStore::new(root.clone(), false);
         let stop = AtomicBool::new(true);
@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn quotas_and_keys_fail_without_changing_existing_data() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
         let initial: BTreeMap<_, _> = (0..MAX_KEYS)
             .map(|index| (format!("key-{index}"), Some(json!(index))))
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn external_short_exponents_cannot_exceed_the_canonical_storage_quota() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
         let numbers = std::iter::repeat_n("1e15", 80_000)
             .collect::<Vec<_>>()
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn unsupported_corrupt_or_misplaced_storage_is_never_overwritten() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
         for (document, code) in [
             (
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn isolation_reads_but_never_creates_or_changes_storage() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let root = temporary.path().join("storage");
         let isolated = ExtensionStorageStore::new(root.clone(), true);
         assert_eq!(isolated.snapshot(ID).unwrap().revision, 0);
@@ -634,7 +634,7 @@ mod tests {
 
     #[test]
     fn invalid_ids_paths_and_storage_directories_are_rejected() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
         for id in [
             "",
@@ -658,8 +658,20 @@ mod tests {
                 .snapshot(ID)
                 .is_err()
         );
+        // Windows 的 verbatim 根会在 PathBuf::join 中折叠 ..；保留真实待校验入参。
+        let mut traversal = temporary.path().as_os_str().to_os_string();
+        traversal.push(std::path::MAIN_SEPARATOR_STR);
+        traversal.push("..");
+        traversal.push(std::path::MAIN_SEPARATOR_STR);
+        traversal.push("storage");
+        let traversal = PathBuf::from(traversal);
         assert!(
-            ExtensionStorageStore::new(temporary.path().join("../storage"), false)
+            traversal
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        );
+        assert!(
+            ExtensionStorageStore::new(traversal, false)
                 .snapshot(ID)
                 .is_err()
         );
@@ -674,7 +686,7 @@ mod tests {
 
     #[test]
     fn linked_files_and_linked_ancestors_are_rejected() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::extension_paths::temporary_directory();
         let real = temporary.path().join("real");
         let linked_root = temporary.path().join("linked");
         fs::create_dir_all(real.join("nested")).unwrap();

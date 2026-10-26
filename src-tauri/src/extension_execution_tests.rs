@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::fmt::Write;
 
 fn storage_run() -> (tempfile::TempDir, PreparedRun, ExtensionHostStore) {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::extension_paths::temporary_directory();
     let store = ExtensionStore::new(temp.path().join("extensions"), false);
     store.initialize_bundled().unwrap();
     let snapshot = store.snapshot().unwrap();

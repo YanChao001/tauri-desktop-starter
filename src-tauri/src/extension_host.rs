@@ -591,7 +591,7 @@ mod tests {
     }
     #[test]
     fn credentials_are_isolated_and_only_metadata_is_written_to_disk() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::extension_paths::temporary_directory();
         let backend = Arc::new(MemoryCredentials::default());
         let host = ExtensionHostStore::with_credentials(
             temp.path().to_owned(),
@@ -646,7 +646,7 @@ mod tests {
     }
     #[test]
     fn removed_origins_allow_cleanup_but_never_credential_reuse() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::extension_paths::temporary_directory();
         let host = ExtensionHostStore::with_credentials(
             temp.path().to_owned(),
             false,
@@ -666,7 +666,7 @@ mod tests {
     }
     #[test]
     fn recovery_isolation_denies_credentials_before_accessing_system_store() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::extension_paths::temporary_directory();
         let host = ExtensionHostStore::new(temp.path().to_owned(), true, "test.service".to_owned());
         assert_eq!(
             host.set_credential(
@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn storage_effects_require_grants_and_report_conflicts_with_the_effect_id() {
         tauri::async_runtime::block_on(async {
-            let temp = tempfile::tempdir().unwrap();
+            let temp = crate::extension_paths::temporary_directory();
             let host =
                 ExtensionHostStore::new(temp.path().to_owned(), false, "test.service".to_owned());
             let manifest = manifest("tests.first");
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn stopped_effects_do_not_commit_storage() {
         tauri::async_runtime::block_on(async {
-            let temp = tempfile::tempdir().unwrap();
+            let temp = crate::extension_paths::temporary_directory();
             let host =
                 ExtensionHostStore::new(temp.path().to_owned(), false, "test.service".to_owned());
             let manifest = manifest("tests.first");
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn uninstall_cleanup_clears_all_credential_origins_before_forgetting_metadata() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::extension_paths::temporary_directory();
         let backend = Arc::new(MemoryCredentials::default());
         let host = ExtensionHostStore::with_credentials(
             temp.path().to_owned(),
@@ -806,7 +806,7 @@ mod tests {
                 Err(credential_error("System credential deletion failed"))
             }
         }
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::extension_paths::temporary_directory();
         let host = ExtensionHostStore::with_credentials(
             temp.path().to_owned(),
             false,
@@ -837,7 +837,7 @@ mod tests {
                 Ok(())
             }
         }
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::extension_paths::temporary_directory();
         let host = ExtensionHostStore::with_credentials(
             temp.path().to_owned(),
             false,

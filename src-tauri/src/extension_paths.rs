@@ -6,6 +6,12 @@ use std::{
 
 use crate::error::{ErrorCode, NativeError, NativeResult};
 
+/// 测试也使用真实根目录，避免 macOS 的 /var 临时目录别名触发链接拒绝。
+#[cfg(test)]
+pub(crate) fn temporary_directory() -> tempfile::TempDir {
+    tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+}
+
 fn invalid(message: &str) -> NativeError {
     NativeError::new(ErrorCode::InvalidArgument, message)
 }

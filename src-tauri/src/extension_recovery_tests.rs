@@ -34,7 +34,7 @@ fn legacy(schema: u32) -> Value {
 }
 
 fn fixture(value: &Value) -> (tempfile::TempDir, ExtensionStore, Vec<u8>) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::extension_paths::temporary_directory();
     let store = ExtensionStore::new(directory.path().join("extensions"), false);
     fs::create_dir(&store.0.root).unwrap();
     let bytes = serde_json::to_vec_pretty(value).unwrap();
@@ -283,7 +283,7 @@ fn execution_pause_shutdown_and_startup_isolation_prevent_archive_mutation() {
 
 #[test]
 fn missing_registry_is_current_and_does_not_create_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::extension_paths::temporary_directory();
     let store = ExtensionStore::new(directory.path().join("missing/extensions"), false);
     assert_eq!(
         store.preview_archive().unwrap().status,

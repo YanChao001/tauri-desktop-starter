@@ -400,7 +400,7 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
 mod tests {
     use super::*;
     fn fixture() -> (tempfile::TempDir, ExtensionStore, ExtensionInfo, String) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::extension_paths::temporary_directory();
         let store = ExtensionStore::new(dir.path().join("extensions"), false);
         let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
         content["manifest"]["commands"] = serde_json::json!([{

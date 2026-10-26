@@ -67,23 +67,25 @@ describe("Real Tauri desktop", () => {
     await $("#name").setValue("桌面测试");
     await $("form button[type=submit]").click();
     await browser.waitUntil(async () =>
-      (await $("[role=status]").getText()).includes("你好，桌面测试"),
+      (await $("main [role=status]").getText()).includes("你好，桌面测试"),
     );
     await language("en");
     assert.match(await $("h2").getText(), /Rust|Bridge|IPC/);
     await $("#name").setValue("E2E");
     await $("form button[type=submit]").click();
     await browser.waitUntil(async () =>
-      (await $("[role=status]").getText()).includes("Hello, E2E!"),
+      (await $("main [role=status]").getText()).includes("Hello, E2E!"),
     );
+    const previousResult = await $("main [role=status]").getText();
     await $("#name").setValue("   ");
     await $("form button[type=submit]").click();
-    await browser.waitUntil(async () =>
-      (await $("[role=status]").getText()).includes("Call failed:"),
-    );
-    const rejected = await $("[role=status]").getText();
+    const errorToast = await $('[data-sonner-toast][data-type="error"]');
+    await errorToast.waitForDisplayed();
+    const rejected = await errorToast.getText();
+    assert.match(rejected, /Call failed:/);
     assert.match(rejected, /check the input|Name cannot be empty/);
     assert.doesNotMatch(rejected, /\[object Object\]/);
+    assert.equal(await $("main [role=status]").getText(), previousResult);
   });
 
   desktopUiChecks();

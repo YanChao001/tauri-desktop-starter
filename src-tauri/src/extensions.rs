@@ -1856,7 +1856,7 @@ impl ExtensionStore {
 mod tests {
     use super::*;
     fn store() -> (tempfile::TempDir, ExtensionStore) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::extension_paths::temporary_directory();
         let store = ExtensionStore::new(dir.path().join("extensions"), false);
         (dir, store)
     }

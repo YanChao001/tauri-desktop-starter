@@ -1637,42 +1637,43 @@ mod tests {
         let mut sender = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (_receiver, _) = listener.accept().unwrap();
         sender.set_nonblocking(true).unwrap();
-        let fill = [0_u8; 64 * 1024];
-        for pass in 0..2 {
-            let mut full = false;
-            for _ in 0..1024 {
-                match sender.write(&fill) {
-                    Ok(_) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        full = true;
-                        break;
-                    }
-                    Err(error) => panic!("Cannot fill loopback send buffer: {error}"),
-                }
-            }
-            assert!(full, "Loopback send buffer never reached backpressure");
-            if pass == 0 {
-                thread::sleep(Duration::from_millis(30));
-            }
-        }
-        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (progress_tx, progress_rx) = std::sync::mpsc::channel();
         let (done_tx, done_rx) = std::sync::mpsc::channel();
         let worker = thread::spawn(move || {
-            started_tx.send(()).unwrap();
-            let result = write_frame_permitted(
-                &mut sender,
-                &Frame::Message {
-                    id: token().unwrap(),
-                    text: "x".repeat(MAX_TEXT),
-                },
-                Some(&permit),
-                Instant::now() + Duration::from_secs(2),
-            );
-            done_tx.send(result).unwrap();
+            let frame = Frame::Message {
+                id: token().unwrap(),
+                text: "x".repeat(MAX_TEXT),
+            };
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                match write_frame_permitted(&mut sender, &frame, Some(&permit), deadline) {
+                    Ok(()) => progress_tx.send(()).unwrap(),
+                    Err(error) => {
+                        done_tx.send(error).unwrap();
+                        break;
+                    }
+                }
+            }
         });
-        started_rx.recv().unwrap();
+        progress_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        // WouldBlock 只反映瞬时容量；接收端内核仍可能 ACK 并腾出空间。
+        // 持续发送真实帧，直到完成进度停滞，避免把稍晚成功的一帧误当失败。
+        let saturating = Instant::now();
+        loop {
+            match progress_rx.recv_timeout(Duration::from_millis(30)) {
+                Ok(()) => assert!(
+                    saturating.elapsed() < Duration::from_secs(2),
+                    "Loopback send buffer never reached backpressure"
+                ),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                Err(error) => panic!("TCP writer stopped before window close: {error}"),
+            }
+        }
         assert!(
-            done_rx.recv_timeout(Duration::from_millis(30)).is_err(),
+            matches!(
+                done_rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ),
             "A saturated TCP writer should be waiting outside commit"
         );
         let closing = Instant::now();
@@ -1682,11 +1683,7 @@ mod tests {
             "TCP backpressure blocked the window lifecycle mutex"
         );
         assert_eq!(
-            done_rx
-                .recv_timeout(Duration::from_secs(1))
-                .unwrap()
-                .unwrap_err()
-                .code,
+            done_rx.recv_timeout(Duration::from_secs(1)).unwrap().code,
             ErrorCode::ExtensionUnavailable
         );
         worker.join().unwrap();
