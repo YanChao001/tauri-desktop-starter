@@ -88,44 +88,6 @@ jobs:
           path: artifacts/browser
           if-no-files-found: ignore
 
-  bundled-extension:
-    name: 内置 Wasm 快速重建
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - name: 安装固定依赖与 Wasm 工具链
-        run: |
-          pnpm install --frozen-lockfile
-          rustup toolchain install
-          rustup target add wasm32-unknown-unknown
-      - name: 重建并逐字节核对内置 Wasm
-        id: bundled-rebuild
-        run: pnpm extension:demos:check --rebuild
-      - name: 记录重建失败的编译器信息
-        if: failure() && steps.bundled-rebuild.outcome == 'failure'
-        run: |
-          rustc -vV > src-tauri/target/extension-apps/rustc-version.txt
-          rustc --print sysroot >> src-tauri/target/extension-apps/rustc-version.txt
-      - name: 保留快速重建差异证据
-        if: failure() && steps.bundled-rebuild.outcome == 'failure'
-        uses: actions/upload-artifact@v6
-        with:
-          name: bundled-extension-rebuild-ubuntu-fast
-          path: |
-            resources/extensions/demo-apps.wasm
-            resources/extensions/demo-apps.json
-            src-tauri/target/extension-apps/wasm32-unknown-unknown/release/starter_extism_apps.wasm
-            src-tauri/target/extension-apps/rustc-flags-*.txt
-            src-tauri/target/extension-apps/rustc-version.txt
-          if-no-files-found: ignore
-          retention-days: 7
-
   rust:
     name: Rust 校验（${{ matrix.platform }}）
     runs-on: ${{ matrix.platform }}
@@ -198,8 +160,15 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           rustup target add wasm32-unknown-unknown
           cargo fmt --manifest-path examples/extensions/apps/Cargo.toml -- --check
-          pnpm extension:demos:check --rebuild
-          pnpm extension:validate --manifest examples/extensions/apps/extension.json --wasm resources/extensions/demo-apps.wasm --ui-dir examples/extensions/apps/ui
+          if ($IsWindows) {
+            pnpm extension:demos:check --rebuild
+          } else {
+            pnpm extension:demos:check --compile
+          }
+          foreach ($extensionDemoModule in @('resources/extensions/demo-apps.wasm', 'src-tauri/target/extension-apps/wasm32-unknown-unknown/release/starter_extism_apps.wasm')) {
+            pnpm extension:validate --manifest examples/extensions/apps/extension.json --wasm $extensionDemoModule --ui-dir examples/extensions/apps/ui
+            pnpm extension:test --manifest examples/extensions/apps/extension.json --wasm $extensionDemoModule --ui-dir examples/extensions/apps/ui --fixture examples/extensions/apps/smoke.json
+          }
           cargo test --manifest-path src-tauri/Cargo.toml --locked extension_view
           cargo fmt --manifest-path examples/extensions/rust/Cargo.toml -- --check
           cargo build --manifest-path examples/extensions/rust/Cargo.toml --release --locked --target wasm32-unknown-unknown --target-dir src-tauri/target/extension-example
@@ -339,7 +308,7 @@ jobs:
   quality-gate:
     name: 质量门禁
     if: always()
-    needs: [frontend, browser-smoke, bundled-extension, rust, desktop-e2e]
+    needs: [frontend, browser-smoke, rust, desktop-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: 确认所有检查通过

@@ -60,6 +60,7 @@ async function fixture(t, modules = { "src/lib.rs": "fn main() {}\n" }) {
   await writeFile(
     join(resources, "demo-apps.json"),
     JSON.stringify({
+      referenceHost: "x86_64-pc-windows-msvc",
       sources: Object.fromEntries(Object.entries(sources).reverse()),
       sha256: digest(wasm),
     }),
@@ -190,6 +191,50 @@ test("源码子目录和祖先目录中的链接均被拒绝，不读取树外 R
 test("重建验证必须显式选择检查模式", async (t) => {
   const root = await fixture(t);
   await assert.rejects(buildExtensionApps(root, { rebuild: true }), /--check/);
+  await assert.rejects(
+    buildExtensionApps(root, { compileCheck: true }),
+    /--check/,
+  );
+  await assert.rejects(
+    buildExtensionApps(root, {
+      check: true,
+      rebuild: true,
+      compileCheck: true,
+    }),
+    /不能同时/,
+  );
+});
+
+test("显式跨平台编译保留参考资源，严格重建仍拒绝字节差异", async (t) => {
+  const root = await fixture(t),
+    output = join(root, "resources/extensions/demo-apps.wasm"),
+    receipt = join(root, "resources/extensions/demo-apps.json");
+  const committed = await readFile(output),
+    originalReceipt = await readFile(receipt);
+  const calls = [];
+  const compile = async (_root, options) => {
+    calls.push(options);
+    return Buffer.from("different host output");
+  };
+  assert.match(
+    await buildExtensionApps(
+      root,
+      { check: true, compileCheck: true },
+      { compile },
+    ),
+    /不作跨构建平台逐字节一致断言/,
+  );
+  await assert.rejects(
+    buildExtensionApps(root, { check: true, rebuild: true }, { compile }),
+    /Wasm 不一致/,
+  );
+  assert.deepEqual(calls, [{ referenceOnly: false }, { referenceOnly: true }]);
+  assert.deepEqual(await readFile(output), committed);
+  assert.deepEqual(await readFile(receipt), originalReceipt);
+  const changed = JSON.parse(originalReceipt);
+  changed.referenceHost = "different-host";
+  await writeFile(receipt, JSON.stringify(changed));
+  await assert.rejects(buildExtensionApps(root, { check: true }), /参考平台/);
 });
 
 test("编译环境只使用生成的路径规则，清除大小写变体的自定义 flags 与 wrapper", () => {

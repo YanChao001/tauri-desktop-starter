@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { parse as parseToml } from "smol-toml";
 
 const source = "examples/extensions/apps/";
+const referenceHost = "x86_64-pc-windows-msvc";
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function inside(root, path) {
@@ -168,7 +169,7 @@ export async function extensionAppsRemapRules(packages, sysroot, rustcCommit) {
     .map(([from, to]) => `--remap-path-prefix=${from}=${to}`);
 }
 
-async function compileDemo(root) {
+async function compileDemo(root, { referenceOnly = false } = {}) {
   const { toolchain } = parseToml(
     await readFile(join(root, "rust-toolchain.toml"), "utf8"),
   );
@@ -188,9 +189,15 @@ async function compileDemo(root) {
   }
   const tool = `+${toolchain.channel}`;
   const sysroot = inspect("rustc", [tool, "--print", "sysroot"]).trim();
-  const commit = inspect("rustc", [tool, "-vV"]).match(
-    /^commit-hash: ([a-f0-9]{40})$/m,
-  )?.[1];
+  const version = inspect("rustc", [tool, "-vV"]);
+  if (
+    referenceOnly &&
+    version.match(/^host: (.+)$/m)?.[1].trim() !== referenceHost
+  )
+    throw new Error(
+      `内置分发资源与逐字节重建需要参考构建平台 ${referenceHost}；其他平台使用 --check --compile`,
+    );
+  const commit = version.match(/^commit-hash: ([a-f0-9]{40})$/m)?.[1];
   const metadata = JSON.parse(
     inspect("cargo", [
       tool,
@@ -250,10 +257,13 @@ async function compileDemo(root) {
 
 export async function buildExtensionApps(
   root,
-  { check = false, rebuild = false } = {},
+  { check = false, rebuild = false, compileCheck = false } = {},
   { compile = compileDemo } = {},
 ) {
-  if (rebuild && !check) throw new Error("--rebuild 需要与 --check 一起使用");
+  if ((rebuild || compileCheck) && !check)
+    throw new Error("--rebuild / --compile 需要与 --check 一起使用");
+  if (rebuild && compileCheck)
+    throw new Error("--rebuild 与 --compile 不能同时使用");
   const sources = await sourceHashes(root);
   const output = join(root, "resources/extensions/demo-apps.wasm");
   const receipt = join(root, "resources/extensions/demo-apps.json");
@@ -262,23 +272,25 @@ export async function buildExtensionApps(
     const committed = await readFile(output);
     if (
       !sameSources(expected.sources, sources) ||
+      expected.referenceHost !== referenceHost ||
       expected.sha256 !== hash(committed)
     )
       throw new Error(
-        "内置插件源码、工具链或模块变化，请运行 pnpm extension:demos:build 并提交资源",
+        "内置插件源码、工具链、参考平台或模块变化，请运行 pnpm extension:demos:build 并提交资源",
       );
-    if (rebuild) {
-      const rebuilt = await compile(root);
+    if (rebuild || compileCheck) {
+      const rebuilt = await compile(root, { referenceOnly: rebuild });
       if (!sameSources(sources, await sourceHashes(root)))
         throw new Error("构建期间内置插件源码发生变化，请重新构建");
-      if (!committed.equals(rebuilt))
+      if (rebuild && !committed.equals(rebuilt))
         throw new Error("重建的内置插件与提交的 Wasm 不一致，请重建并提交资源");
     }
-    return rebuild
-      ? "内置插件重建结果与提交资源一致。"
+    if (rebuild) return "内置插件在参考构建平台重建，与提交资源逐字节一致。";
+    return compileCheck
+      ? "内置插件已真实编译并核对源码回执；此模式不作跨构建平台逐字节一致断言。"
       : "内置插件源码与分发资源一致。";
   }
-  const wasm = await compile(root);
+  const wasm = await compile(root, { referenceOnly: true });
   // Do not associate a successful build with sources edited while Cargo was running.
   if (!sameSources(sources, await sourceHashes(root)))
     throw new Error("构建期间内置插件源码发生变化，请重新构建");
@@ -286,7 +298,8 @@ export async function buildExtensionApps(
   await writeFile(output, wasm);
   await writeFile(
     receipt,
-    JSON.stringify({ sources, sha256: hash(wasm) }, null, 2) + "\n",
+    JSON.stringify({ referenceHost, sources, sha256: hash(wasm) }, null, 2) +
+      "\n",
   );
   return `已生成内置插件：${wasm.length} 字节。`;
 }
@@ -297,16 +310,17 @@ if (
 ) {
   const args = process.argv.slice(2);
   if (
-    args.some((arg) => !["--check", "--rebuild"].includes(arg)) ||
+    args.some((arg) => !["--check", "--rebuild", "--compile"].includes(arg)) ||
     new Set(args).size !== args.length
   )
     throw new Error(
-      "Usage: node scripts/build-extension-apps.mjs [--check [--rebuild]]",
+      "Usage: node scripts/build-extension-apps.mjs [--check [--rebuild | --compile]]",
     );
   console.log(
     await buildExtensionApps(resolve(import.meta.dirname, ".."), {
       check: args.includes("--check"),
       rebuild: args.includes("--rebuild"),
+      compileCheck: args.includes("--compile"),
     }),
   );
 }

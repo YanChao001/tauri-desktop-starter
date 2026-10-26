@@ -282,7 +282,9 @@ pnpm extension:pack --manifest examples/extensions/typescript/extension.json --w
 
 TS 经 esbuild 输出 CommonJS，再由官方编译器生成包含 JavaScript 引擎的 Wasm。用户运行插件无需安装 Node、Rust 或开发工具；纯计算依赖可随构建打包，Node 内置模块、DOM、常驻异步任务需要适配。
 
-内置本地工作台使用提交的预编译 [demo-apps.wasm](../resources/extensions/demo-apps.wasm)，普通应用构建无需交叉编译目标。修改源码、清单、依赖、HTML 或工具链后重建并提交模块与回执：
+## 内置应用资源
+
+内置本地工作台使用提交的预编译 [demo-apps.wasm](../resources/extensions/demo-apps.wasm)，普通应用构建无需交叉编译目标。修改源码、清单、依赖、HTML 或工具链后在参考构建平台重建并提交模块与回执：
 
 ```powershell
 cargo fmt --manifest-path examples/extensions/apps/Cargo.toml
@@ -290,9 +292,11 @@ pnpm extension:demos:build
 pnpm extension:demos:check --rebuild
 ```
 
-不带 `--rebuild` 只核对源码、清单、锁文件、工具链、构建脚本及模块哈希回执，已纳入 `pnpm verify`；完整模式在锁定工具链下实际编译，比较提交的 Wasm，不覆盖分发资源。CI 在三个平台使用完整模式，快速回执不代替源码编译比对。
+不带编译选项只核对源码、清单、锁文件、工具链、构建脚本、参考构建平台及模块哈希回执，已纳入 `pnpm verify`。分发资源的参考构建平台固定为 `x86_64-pc-windows-msvc`（Windows x64），只有该平台可以执行 `extension:demos:build` 更新资源或用 `extension:demos:check --rebuild` 逐字节验证重建结果。Linux / macOS 使用 `pnpm extension:demos:check --compile` 真实编译并核对源码回执，不覆盖分发资源，也不作跨构建平台字节一致断言。
 
-构建入口通过 Cargo 锁定的依赖元数据，将项目、每个依赖源码目录及 Rust 标准库的源码位置映射到稳定路径，统一路径分隔符并移除 checkout、Cargo 缓存和工具链的本机前缀。规则通过 rustc 响应文件传递，避免 Windows 命令行长度限制；不需要额外安装 `rust-src`。构建环境清除自定义 Rust flags、编译器 wrapper 和 release profile 覆盖，修改构建规则同样需要重新生成资源与回执。仅在原 checkout 复编不能证明异机可重复；目录、缓存位置或平台差异应由独立构建及 CI 的逐字节比较验证，不能忽略不一致。
+三端 Rust CI 均对提交模块和本次重编模块分别执行 ABI / UI 校验与同套手写 fixture。即使目标都是 Wasm、Rust 版本相同且路径已经规范化，不同构建平台仍可能产生不同函数排列、类型标识和代码。当前 [Cargo 元数据计算](https://github.com/rust-lang/cargo/blob/5f94df4789f005f9a352888e8355ffc645b7ed0e/src/compiler/build_runner/compilation_files.rs#L687) 包含依赖的编译元数据，原生构建依赖仍区分构建平台；[路径重映射](https://doc.rust-lang.org/rustc/remap-source-paths.html) 只处理源码路径，不能替代参考构建环境与实际功能验证。
+
+构建入口通过 Cargo 锁定的依赖元数据，将项目、每个依赖源码目录及 Rust 标准库的源码位置映射到稳定路径，统一路径分隔符并移除 checkout、Cargo 缓存和工具链的本机前缀。规则通过 rustc 响应文件传递，避免 Windows 命令行长度限制；不需要额外安装 `rust-src`。构建环境清除自定义 Rust flags、编译器 wrapper 和 release profile 覆盖，修改构建规则同样需要在参考平台重新生成资源与回执。仅在原 checkout 复编不能证明异机可重复；参考平台内的目录与缓存差异由独立构建和 Windows CI 逐字节验证，其他平台保留真实编译与功能验证。
 
 ## 执行、存储与生命周期
 

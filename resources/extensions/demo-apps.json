@@ -1,8 +1,9 @@
 {
+  "referenceHost": "x86_64-pc-windows-msvc",
   "sources": {
     "Cargo.lock": "53db3bc26dd4c95689d62aa37c254298c44d0cc6a22f9647b282be7e77bd0258",
     "Cargo.toml": "b6afb1899f542b8421a228bc791b7580ce9083440b732143d5b931d3b8f0330b",
-    "build-extension-apps.mjs": "e4d41cf260c4a005d8c2bf4430636404d7a0cda02335f0e8f811b985b1190c48",
+    "build-extension-apps.mjs": "959db4fd89e49dafeb0609a577087a4df2a13d7db90874b83f7afd5d7e4cc469",
     "extension.json": "39e9075c8172231f7cf81e410e321ce32feef8c9fb0cf19381d8cb88cbf05139",
     "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
     "src/app.rs": "bc8750f4cf7fa336c68460c207ad4ba4f0ae7ee0b409ed965f4d31aad6afa5ef",

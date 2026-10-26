@@ -167,7 +167,7 @@ pnpm test src/features/extensions/extension-app-service.test.tsx src/features/ex
 
 真实网络、系统代理、系统另存及取消、图库导入 / 多窗口同步、多机 LAN / 防火墙、真实窗口关闭和后台接收、目标 WebView 与正式安装版均须在隔离设备或已安排的前台时段单列实际结果。离线图片 fixture、浏览器服务替身与 CI 配置只说明各自边界，不能预言这些平台行为已通过。
 
-`pnpm extension:demos:check` 快速核对源码、清单、锁文件、工具链与模块哈希回执；CI 使用 `pnpm extension:demos:check --rebuild` 实际编译并比较提交 Wasm。开发 CLI `extension:validate` 不实例化，`extension:test` 在真实 worker 中执行离线 fixture；可用 1–32 项顺序 fixture 验证取消后下一项仍成功。`pnpm extension:test:worker` 检查真实子进程协议、超限、环境清理、实例隔离与停止回收。普通 `cargo test` 的进程内运行时测试不能代替 worker 边界，离线 fixture 不代替网络 / KV 效果端到端检查。CI 中的 Rust / 上游与 JS / TS 编译任务不代表本机或其他平台已经实测。
+`pnpm extension:demos:check` 快速核对源码、清单、锁文件、工具链、构建脚本、参考构建平台与模块哈希回执；Windows x64 参考平台用 `--rebuild` 实际编译并逐字节比较提交 Wasm，Linux / macOS 用显式 `--compile` 真实编译并保留参考资源。三端 Rust CI 都对提交模块与本次重编模块分别执行 ABI / UI 校验及同套手写 fixture；构建契约见 [内置应用资源](./extensions.md#内置应用资源)。开发 CLI `extension:validate` 不实例化，`extension:test` 在真实 worker 中执行离线 fixture；可用 1–32 项顺序 fixture 验证取消后下一项仍成功。`pnpm extension:test:worker` 检查真实子进程协议、超限、环境清理、实例隔离与停止回收。普通 `cargo test` 的进程内运行时测试不能代替 worker 边界，离线 fixture 不代替网络 / KV 效果端到端检查。CI 中的 Rust / 上游与 JS / TS 编译任务不代表本机或其他平台已经实测。
 
 官方市场检查目录 schema 2 签名与有效期、跨重启最高 revision、同 revision 内容替换、换仓库 / 公钥、来源收据、包篡改、清单不符、下架与重定向边界，使用临时信任存档保留损坏 / 未来版本原件。线上联通验收需使用已发布的配套目录，核对实际 latest、签名有效期与公开附件；旧 schema 1 或其他不兼容目录被拒绝时不能当作新版目录验收。维护者在市场仓库发布后，分别检查发现、下载、审阅和来源安装；不以离线 fixture 或本地导入代替。市场仓库构建、签名与发布检查独立运行，普通宿主 CI 不要求拉取子模块。
 
@@ -296,8 +296,7 @@ CI 保留截图产物并通过 `pnpm docs:previews:check` 检查已提交图片�
 
 - `frontend`：冻结安装、品牌资源一致性、README 截图格式与尺寸、版本 / 脚本测试、格式、lint、类型、前端测试，以及桌面前端与浏览器演示的分别构建。
 - `browser-smoke`：构建浏览器产物，运行 Chromium 子路径 / 交互 / 无障碍冒烟，失败上传截图与 trace；Pages 部署另有相同门禁。
-- `bundled-extension`：Linux 独立安装固定工具链并实际重编内置 Wasm，逐字节核对提交资源，提前暴露生成资源差异；失败保留模块、路径规则与编译器信息，三端 Rust job 仍分别执行同一重编检查。
-- `rust`：三端 Clippy / Rust 测试；Windows 另跑格式和生成绑定检查。
+- `rust`：三端 Clippy / Rust 测试、内置 Wasm 真编译与双模块 ABI / UI 和 fixture 验证；Windows 参考平台另做模块逐字节比对、格式和生成绑定检查，失败保留必要模块与编译器证据。
 - `desktop-e2e`：Windows、Ubuntu、macOS 独立构建测试应用并运行三个阶段的 E2E；失败上传截图 / 日志，Windows 成功时另存 README 截图。
 - `quality-gate`：汇总全部检查，仅所有前置任务成功时通过；分支保护使用此项作为必需检查。
 
