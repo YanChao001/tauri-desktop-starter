@@ -90,6 +90,7 @@ export const zhExtensions = {
   "ext.appClose": "结束会话",
   "ext.sessionTools": "扩展工具",
   "ext.tools.interface": "窗口与界面",
+  "ext.tools.help": "关于{name}",
   "ext.tools.session": "会话文件",
   "ext.tools.lifecycle": "会话管理",
   "ext.reloadUi": "重新加载界面",

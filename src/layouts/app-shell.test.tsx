@@ -144,7 +144,7 @@ describe("应用内容导航", () => {
     expect(screen.getByRole("textbox", { name: "Page input" })).toHaveFocus();
   });
 
-  it("目标页模块未就绪时保留当前内容，加载后再切换", async () => {
+  it("目标页模块未就绪时显示预布局骨架，加载后立即切换", async () => {
     let finish!: (value: { default: typeof Page }) => void;
     const load = vi.fn(
       () =>
@@ -167,11 +167,18 @@ describe("应用内容导航", () => {
       fireEvent.click(screen.getByRole("link", { name: "/settings" }));
     });
     expect(load).toHaveBeenCalledOnce();
-    expect(screen.getByRole("heading", { name: "Page content" })).toBeVisible();
-    expect(screen.queryByRole("status", { name: "common.loading" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Page content" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "common.loading" }),
+    ).toBeVisible();
     await act(async () => {
       finish({ default: Page });
     });
+    expect(
+      screen.queryByRole("status", { name: "common.loading" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("navigation", { name: "navContext.location" }),
     ).toHaveTextContent("nav.settings");

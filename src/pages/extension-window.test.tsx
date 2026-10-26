@@ -10,6 +10,9 @@ const state = vi.hoisted(() => ({
 vi.mock("@/providers/commands", () => ({
   useCommands: () => ({ execute: state.execute }),
 }));
+vi.mock("@/features/extensions/extensions-provider", () => ({
+  useExtensions: () => ({ data: null }),
+}));
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");

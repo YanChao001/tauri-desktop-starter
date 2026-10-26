@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { createPortal } from "react-dom";
 import {
   act,
   cleanup,
@@ -22,6 +23,10 @@ import {
   toggleMaximizeWindow,
 } from "@/lib/tauri";
 import { TitleBar } from "./title-bar";
+import {
+  ExtensionChromeProvider,
+  useExtensionChromeTarget,
+} from "@/features/extensions/extension-chrome-slot";
 
 vi.mock("@/routes", () => ({ APP_ROUTES: [] }));
 vi.mock("@/hooks/use-fullscreen", () => ({
@@ -52,7 +57,16 @@ vi.mock("@/hooks/use-theme-switch", () => ({
   }),
 }));
 
-function renderTitleBar(standalone = false) {
+function TestTools() {
+  const target = useExtensionChromeTarget();
+  return target
+    ? createPortal(<button>Extension tools</button>, target.node)
+    : null;
+}
+function renderTitleBar(
+  standalone = false,
+  extension?: { name: string; icon: "calculator" },
+) {
   return render(
     <StrictMode>
       <MemoryRouter
@@ -60,7 +74,12 @@ function renderTitleBar(standalone = false) {
       >
         <TooltipProvider>
           <CommandsProvider>
-            <TitleBar standalone={standalone} />
+            <ExtensionChromeProvider
+              scope={standalone ? "/extension-window/test/open" : "/"}
+            >
+              <TitleBar standalone={standalone} extension={extension} />
+              {extension ? <TestTools /> : null}
+            </ExtensionChromeProvider>
           </CommandsProvider>
         </TooltipProvider>
       </MemoryRouter>
@@ -182,5 +201,28 @@ describe("TitleBar 窗口订阅", () => {
     expect(toggleMaximizeWindow).toHaveBeenCalledOnce();
     expect(closeWindow).toHaveBeenCalledOnce();
     expect(quitApp).not.toHaveBeenCalled();
+  });
+
+  it("uses the extension identity and places its tools between theme and native window controls", () => {
+    vi.mocked(onWindowResized).mockResolvedValue(vi.fn());
+    renderTitleBar(true, { name: "Scientific calculator", icon: "calculator" });
+    const icon = screen.getByRole("img", { name: "Scientific calculator" });
+    expect(icon.querySelector("svg")).toHaveClass("lucide-calculator");
+    expect(
+      screen.queryByRole("img", { name: APP_CONFIG.name }),
+    ).not.toBeInTheDocument();
+    const buttons = screen.getAllByRole("button");
+    const themeIndex = buttons.indexOf(
+      screen.getByRole("button", { name: "title.toggleTheme" }),
+    );
+    const toolsIndex = buttons.indexOf(
+      screen.getByRole("button", { name: "Extension tools" }),
+    );
+    const minimizeIndex = buttons.indexOf(
+      screen.getByRole("button", { name: "title.minimize" }),
+    );
+    expect(themeIndex).toBeLessThan(toolsIndex);
+    expect(toolsIndex).toBeLessThan(minimizeIndex);
+    expect(screen.queryByText("Scientific calculator")).not.toBeInTheDocument();
   });
 });

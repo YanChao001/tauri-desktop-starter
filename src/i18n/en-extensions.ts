@@ -88,6 +88,7 @@ export const enExtensions = {
   "ext.appClose": "End session",
   "ext.sessionTools": "Extension tools",
   "ext.tools.interface": "Window and interface",
+  "ext.tools.help": "About {name}",
   "ext.tools.session": "Session files",
   "ext.tools.lifecycle": "Session lifecycle",
   "ext.reloadUi": "Reload interface",

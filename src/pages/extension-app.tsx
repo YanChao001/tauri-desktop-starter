@@ -10,6 +10,7 @@ import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { canRunExtensionCommand } from "@/features/extensions/extension-model";
 import { closeWindow, openExtensionWindow } from "@/lib/tauri";
+import { ExtensionLoading } from "@/features/extensions/extension-loading";
 
 export function ExtensionPage({
   standalone = false,
@@ -50,7 +51,7 @@ export function ExtensionPage({
         }}
       />
       {loading ? (
-        <p role="status">{t("common.loading")}</p>
+        <ExtensionLoading />
       ) : item && command ? (
         <>
           <ExtensionApp

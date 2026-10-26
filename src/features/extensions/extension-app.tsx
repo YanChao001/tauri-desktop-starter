@@ -34,6 +34,7 @@ import { ExtensionFrame, ExtensionToolGroup } from "./extension-frame";
 import { ExtensionCustomUi } from "./extension-custom-ui";
 import type { ExtensionUiRequest } from "./extension-ui-bridge";
 import { useDelayedBusy } from "./use-delayed-busy";
+import { ExtensionLoading } from "./extension-loading";
 
 /** The renderer has no calculator/game rules. Every action runs the declared Wasm export. */
 export function ExtensionApp({
@@ -539,7 +540,7 @@ export function ExtensionApp({
     return session.view;
   }
   const feedback = (
-    <div className="grid h-7 w-[min(15rem,42vw)] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+    <div className="grid h-8 w-[min(15rem,42vw)] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
       <p
         role="status"
         aria-label={t("ext.appStatus")}
@@ -552,7 +553,6 @@ export function ExtensionApp({
       </p>
       <Button
         variant="outline"
-        size="sm"
         aria-hidden={!showProgress}
         tabIndex={showProgress ? 0 : -1}
         disabled={!showProgress || !busy || stopping}
@@ -577,6 +577,7 @@ export function ExtensionApp({
       <ExtensionFrame
         item={item}
         feedback={feedback}
+        announcement={status}
         tools={
           <>
             {tools || documentId ? (
@@ -685,6 +686,8 @@ export function ExtensionApp({
               dirty={dirty}
               execute={executeUi}
             />
+          ) : !view && busy ? (
+            <ExtensionLoading />
           ) : view ? (
             <>
               <div className="min-w-0 space-y-2">
@@ -732,9 +735,20 @@ export function ExtensionApp({
           )}
         </div>
         {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {nativeErrorText(error, t)}
-          </p>
+          <div className="space-y-3">
+            <p role="alert" className="text-sm text-destructive">
+              {nativeErrorText(error, t)}
+            </p>
+            {documentId && !view ? (
+              <Button
+                variant="outline"
+                disabled={blocked}
+                onClick={() => run(null)}
+              >
+                {t("common.retry")}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {!documentId && view?.artifacts?.length ? (
           <div className="space-y-2">

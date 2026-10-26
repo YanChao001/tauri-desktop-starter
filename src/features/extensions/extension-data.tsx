@@ -13,6 +13,7 @@ import {
 import { extensionNetworkOrigins } from "./extension-model";
 import type { ExtensionSession } from "./extensions-provider";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
+import { ExtensionHelp } from "./extension-help";
 
 export function ExtensionData({
   item,
@@ -72,15 +73,19 @@ export function ExtensionData({
     onDirty();
   }
   return (
-    <details className="min-w-0 rounded-xl border bg-card p-4">
+    <details className="min-w-0 rounded-lg border bg-card p-3">
       <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t("ext.hostData")}
       </summary>
-      <div className="mt-4 space-y-4">
-        <p className="text-sm text-muted-foreground">{t("ext.hostDataHint")}</p>
+      <div className="mt-3 space-y-3">
         {hasText ? (
           <div className="space-y-2">
-            <Label htmlFor={`${id}-text`}>{t("ext.input")}</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor={`${id}-text`}>{t("ext.input")}</Label>
+              <ExtensionHelp
+                label={t("ext.input")}
+              >{`${t("ext.hostDataHint")} ${t("ext.inputHint")}`}</ExtensionHelp>
+            </div>
             <Textarea
               id={`${id}-text`}
               value={inputText}
@@ -92,10 +97,8 @@ export function ExtensionData({
               }}
 
               aria-invalid={tooLong}
+              aria-description={t("ext.inputHint")}
             />
-            <p className="text-xs text-muted-foreground">
-              {t("ext.inputHint")}
-            </p>
           </div>
         ) : null}
         {hasFiles ? (
@@ -106,6 +109,7 @@ export function ExtensionData({
                 disabled={blocked || picking}
                 data-operation-locked={blocked || picking}
                 className={LOCKED_CONTROL_CLASS}
+                aria-description={t("ext.filesHint")}
                 onClick={() => {
                   if (blocked || session.selecting) return;
                   const request = ++generation.current;
@@ -147,6 +151,9 @@ export function ExtensionData({
               >
                 {t("ext.files")}
               </Button>
+              <ExtensionHelp
+                label={t("ext.files")}
+              >{`${t("ext.hostDataHint")} ${t("ext.filesHint")}`}</ExtensionHelp>
               <Button
                 variant="ghost"
                 disabled={blocked || !files.length}
@@ -159,9 +166,6 @@ export function ExtensionData({
                 {t("ext.clearFiles")}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t("ext.filesHint")}
-            </p>
             {files.length ? (
               <ul className="space-y-1 text-sm">
                 {files.map((file) => (
@@ -175,7 +179,12 @@ export function ExtensionData({
         ) : null}
         {hasNetwork ? (
           <div className="space-y-2">
-            <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
+              <ExtensionHelp
+                label={t("ext.url")}
+              >{`${t("ext.allowedHosts")}: ${extensionNetworkOrigins(item).join(", ")}. ${t("ext.urlHint")}`}</ExtensionHelp>
+            </div>
             <Input
               id={`${id}-url`}
               type="url"
@@ -184,15 +193,12 @@ export function ExtensionData({
               data-operation-locked={blocked}
               className={LOCKED_INPUT_CLASS}
               maxLength={4096}
+              aria-description={`${t("ext.allowedHosts")}: ${extensionNetworkOrigins(item).join(", ")}. ${t("ext.urlHint")}`}
               onChange={(e) => {
                 draft({ url: e.target.value });
               }}
               placeholder={`${extensionNetworkOrigins(item)[0] ?? "https://example.com"}/`}
             />
-            <p className="break-words text-xs text-muted-foreground">
-              {t("ext.allowedHosts")}:{" "}
-              {extensionNetworkOrigins(item).join(", ")}. {t("ext.urlHint")}
-            </p>
           </div>
         ) : null}
         {error ? (

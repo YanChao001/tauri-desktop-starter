@@ -49,7 +49,14 @@ import { isMacOS } from "@/lib/platform";
 import { useSettings } from "@/providers/settings";
 import { useCommands } from "@/providers/commands";
 import { formatShortcut } from "@/commands/shortcuts";
-import { isTauri, isWindowMaximized, onWindowResized } from "@/lib/tauri";
+import {
+  isTauri,
+  isWindowMaximized,
+  onWindowResized,
+  type ExtensionInfo,
+} from "@/lib/tauri";
+import { ExtensionIcon } from "@/features/extensions/extension-icon";
+import { ExtensionChromeSlot } from "@/features/extensions/extension-chrome-slot";
 import { cn } from "@/lib/utils";
 
 /**
@@ -58,7 +65,13 @@ import { cn } from "@/lib/utils";
  * Windows / Linux 用右侧的自绘按钮；macOS 由平台配置保留系统红绿灯，
  * 这里只负责给红绿灯让出位置（见 src-tauri/tauri.macos.conf.json）。
  */
-export function TitleBar({ standalone = false }: { standalone?: boolean }) {
+export function TitleBar({
+  standalone = false,
+  extension,
+}: {
+  standalone?: boolean;
+  extension?: Pick<ExtensionInfo["package"]["manifest"], "name" | "icon">;
+}) {
   const { t } = useI18n();
   const { settings } = useSettings();
   const { theme } = useThemeSwitch();
@@ -112,6 +125,7 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
   return (
     <div
       data-tauri-drag-region
+      data-standalone={standalone}
       className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b bg-background/80 backdrop-blur"
     >
       <div
@@ -130,7 +144,17 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
             data-tauri-drag-region
             className="size-6 shrink-0"
           />
-        ) : null}
+        ) : (
+          <span
+            role="img"
+            aria-label={extension?.name ?? t("ext.title")}
+            title={extension?.name}
+            data-tauri-drag-region
+            className="flex size-6 shrink-0 items-center justify-center"
+          >
+            <ExtensionIcon name={extension?.icon} className="size-5" />
+          </span>
+        )}
 
         {settings.menuBar && !standalone ? (
           <nav
@@ -253,6 +277,7 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
               size="icon"
               className="size-10 rounded-none"
               aria-label={t("title.toggleTheme")}
+              data-theme-control
               onClick={(event) =>
                 void execute("toggle-theme", {
                   point: { clientX: event.clientX, clientY: event.clientY },
@@ -268,6 +293,13 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
           </TooltipContent>
         </Tooltip>
 
+        {standalone ? (
+          <ExtensionChromeSlot
+            placement="titlebar"
+            className="flex items-stretch"
+          />
+        ) : null}
+
         {native && !mac ? (
           <>
             <Tooltip disableHoverableContent>
@@ -275,6 +307,7 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
                 <button
                   type="button"
                   aria-label={t("title.minimize")}
+                  data-window-control
                   onClick={() => void execute("minimize-window")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -292,6 +325,7 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
                   aria-label={
                     maximized ? t("title.restore") : t("title.maximize")
                   }
+                  data-window-control
                   onClick={() => void execute("toggle-maximize")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -307,6 +341,7 @@ export function TitleBar({ standalone = false }: { standalone?: boolean }) {
                 <button
                   type="button"
                   aria-label={t("title.close")}
+                  data-window-control
                   onClick={() => void execute("close-window")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
                 >

@@ -1,9 +1,9 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useState, type ReactNode } from "react";
 import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderUi,
   screen,
   waitFor,
   within,
@@ -13,6 +13,26 @@ import * as native from "@/lib/tauri";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import { ExtensionApp } from "./extension-app";
 import { ExtensionsProvider } from "./extensions-provider";
+import {
+  ExtensionChromeProvider,
+  ExtensionChromeSlot,
+} from "./extension-chrome-slot";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+function render(ui: ReactNode) {
+  return renderUi(ui, {
+    wrapper: ({ children }) => (
+      <TooltipProvider>
+        <ExtensionChromeProvider scope="test-session">
+          <nav aria-label="Session navigation">
+            <ExtensionChromeSlot placement="navigation" />
+          </nav>
+          {children}
+        </ExtensionChromeProvider>
+      </TooltipProvider>
+    ),
+  });
+}
 
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
@@ -170,6 +190,61 @@ it("renders third-party controls as text and sends one initialized request in St
   expect(result).toHaveFocus();
 });
 
+it("shows a prelayout skeleton only while the first Wasm view is pending", async () => {
+  const pending = deferred<native.ExtensionView>();
+  vi.mocked(native.viewExtension).mockReturnValueOnce(pending.promise);
+  render(app());
+  expect(await screen.findByRole("status", { name: "Loading…" })).toBeVisible();
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  expect(
+    screen.queryByRole("heading", { name: item.package.manifest.name }),
+  ).not.toBeInTheDocument();
+  await act(async () => pending.resolve(first));
+  expect(await screen.findByLabelText("Query")).toBeVisible();
+  expect(
+    screen.queryByRole("status", { name: "Loading…" }),
+  ).not.toBeInTheDocument();
+});
+
+it("offers a native retry after an HTML document's first Wasm initialization fails", async () => {
+  vi.mocked(native.viewExtension)
+    .mockRejectedValueOnce({ code: "EXTENSION_RUN_FAILED" })
+    .mockResolvedValueOnce(first);
+  vi.mocked(native.openExtensionUi).mockResolvedValueOnce({
+    url: "extension-ui://surface/retry",
+    token: "retry",
+  });
+  const documentItem = {
+    ...item,
+    package: {
+      ...item.package,
+      manifest: {
+        ...item.package.manifest,
+        commands: item.package.manifest.commands.map((command) => ({
+          ...command,
+          ui: { sidebar: true, window: true, document: "main" },
+        })),
+      },
+    },
+  };
+  render(
+    <ExtensionApp
+      item={documentItem}
+      commandId="open"
+      runs={[]}
+      onClose={onClose}
+      onSettled={onSettled}
+    />,
+  );
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+  );
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
+});
+
 it("keeps session tools out of the main workflow and preserves a draft when ending is cancelled", async () => {
   render(app());
   const input = await screen.findByLabelText("Query");
@@ -194,6 +269,31 @@ it("keeps session tools out of the main workflow and preserves a draft when endi
   expect(lifecycle.work?.dirty).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   expect(native.cancelExtension).not.toHaveBeenCalled();
+});
+
+it("labels the collected tools after a hover delay and dismisses the hint throughout the popover interaction", async () => {
+  render(app());
+  await screen.findByLabelText("Query");
+  const trigger = screen.getByRole("button", {
+    name: "Extension tools",
+  });
+  vi.useFakeTimers();
+  fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  await act(async () => vi.advanceTimersByTimeAsync(50));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Extension tools");
+  fireEvent.click(trigger);
+  expect(screen.getByRole("region", { name: "Extension tools" })).toBeVisible();
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  expect(
+    screen.queryByRole("region", { name: "Extension tools" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
 });
 
 it("retains progress when session export is cancelled and only ends after a successful export", async () => {
@@ -885,10 +985,14 @@ it("preserves file choices on picker cancellation and waits for selection before
 });
 
 it("requires confirmation before importing a version-bound session and never restores native file IDs", async () => {
-  vi.mocked(native.validateExtensionView).mockResolvedValue({
+  const validation = deferred<native.ExtensionView>();
+  vi.mocked(native.validateExtensionView).mockReturnValueOnce(
+    validation.promise,
+  );
+  const importedView = {
     ...first,
     state: "restored state",
-  });
+  };
   render(app());
   await screen.findByLabelText("Query");
   fireEvent.change(screen.getByLabelText("Query"), {
@@ -916,6 +1020,12 @@ it("requires confirmation before importing a version-bound session and never res
   fireEvent.change(screen.getByLabelText("Import session JSON"), {
     target: { files: [file] },
   });
+  await waitFor(() =>
+    expect(native.validateExtensionView).toHaveBeenCalledOnce(),
+  );
+  expect(screen.getByRole("region", { name: "Extension tools" })).toBeVisible();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await act(async () => validation.resolve(importedView));
   const dialog = await screen.findByRole("dialog");
   expect(screen.getByLabelText("Query")).toHaveValue("Current unsaved input");
   expect(native.viewExtension).toHaveBeenCalledOnce();

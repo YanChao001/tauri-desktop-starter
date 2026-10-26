@@ -7,13 +7,23 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
+import {
+  MemoryRouter,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import * as native from "@/lib/tauri";
 import { ExtensionsProvider } from "@/features/extensions/extensions-provider";
 import { AppShell } from "@/layouts/app-shell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UnsavedWorkProvider } from "@/providers/unsaved-work";
 import ExtensionPage from "./extension-app";
+import {
+  ExtensionChromeProvider,
+  ExtensionChromeSlot,
+} from "@/features/extensions/extension-chrome-slot";
 
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
@@ -118,6 +128,15 @@ beforeEach(() => {
   vi.mocked(native.onLifecycleExecuting).mockResolvedValue(vi.fn());
 });
 afterEach(cleanup);
+function StandaloneLayout() {
+  const { pathname } = useLocation();
+  return (
+    <ExtensionChromeProvider scope={pathname}>
+      <ExtensionChromeSlot placement="titlebar" />
+      <Outlet />
+    </ExtensionChromeProvider>
+  );
+}
 function workspace(standalone = false) {
   return render(
     <TooltipProvider>
@@ -125,7 +144,7 @@ function workspace(standalone = false) {
         <ExtensionsProvider>
           <MemoryRouter initialEntries={["/extensions/app/example.lab/open"]}>
             <Routes>
-              <Route element={standalone ? <Outlet /> : <AppShell />}>
+              <Route element={standalone ? <StandaloneLayout /> : <AppShell />}>
                 <Route
                   path="/extensions/app/:extensionId/:commandId"
                   element={<ExtensionPage standalone={standalone} />}
@@ -153,7 +172,10 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   fireEvent.click(link);
   expect(await screen.findByLabelText("Draft")).toHaveValue("Keep this edit");
   expect(native.viewExtension).toHaveBeenCalledOnce();
-  expect(document.querySelector(".app-route-context")).toBeNull();
+  expect(document.querySelector(".app-route-context")).toHaveTextContent(
+    "Lab app",
+  );
+  expect(document.querySelector("[data-extension-surface] header")).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Open in separate window" }),
   ).not.toBeInTheDocument();
