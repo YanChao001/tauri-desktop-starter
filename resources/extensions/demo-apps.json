@@ -1,16 +1,15 @@
 {
   "sources": {
-    "Cargo.lock": "260d9bf0b793db27c0f91ad1d083e0bb9b3221aaf87e9d54ea0ba89978f9c921",
-    "Cargo.toml": "fb261d6d90fa138a2a95ad68b7df5ad5ccf6d749112e839d2f03fc8cf28bdfb4",
-    "extension.json": "3466160d3e43b76cb13805a8a08f98c11a7bbe9fda9267513145cb6897d5e079",
+    "Cargo.lock": "160ffbb3382b5a4559daadcdb8632f444d249e0f22ea8927cc7a8ae1c5fcf526",
+    "Cargo.toml": "ba5af5eb285902c968c7d99d08e31371068d351457a1ca1aae3fd63dcddba768",
+    "extension.json": "3a56acb13ae2858850a8759d0ff0c92632281d3d1e7a044036da93a3b393c292",
     "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
-    "src/app.rs": "ccbb079bffd724d1a3aa51880115b8bfcbbd201acd714aec9f656376e0d0a59a",
-    "src/data.rs": "aab9c1089d1c32221fd957113a0cba1c0533bb45db4f93510d8e39b04df1600b",
-    "src/lib.rs": "4ea5c53460abac6ab828818952eeef13672819aa1122628e3deaa2881e9972cc",
-    "src/puzzle.rs": "72f2590f9b47cb4d1ab784f73ee4bef3f130fe115bdc42553213199859eea5e6",
-    "src/tasks.rs": "5fc78b8d8735449d8f5c14edd1d8def7531aa2f5f55a1c8f5fdf563607ffdf59",
-    "src/text.rs": "87bd725497228247e2192445e649eeb57b4ab9f87caa17900f0a632b2af1d04f",
+    "src/app.rs": "bc8750f4cf7fa336c68460c207ad4ba4f0ae7ee0b409ed965f4d31aad6afa5ef",
+    "src/data.rs": "b0a169d6b8241c44840ef09145168ea812f984728f6644a2af35f963596bf5da",
+    "src/lib.rs": "c8ed3f00cf2f1839702ca28e6d83342220dc9f5739ca5b6f3a2e2fe509baf721",
+    "src/tasks.rs": "a89149781805d1570afa290512f023f25807ebf5652fb216b575aa18456396d4",
+    "src/text.rs": "3c7be98e41b8e87b149359e8329e1ccae2539d7c39e3917fcc6fabad8095d3ea",
     "src/view.rs": "8d09d0adff23b24a5f53c38b72a1dfa115db5877ca719f6d74978121dab2ae2e"
   },
-  "sha256": "f809786f5e5bc493226b91e9323d6921d302a0d280b6eca549b004a2d25e37bd"
+  "sha256": "bda89fd703aa876e075648e83f98a6ecd3d73c124c5444f304c4eef19f2374df"
 }

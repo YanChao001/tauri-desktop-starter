@@ -10,7 +10,6 @@ use crate::view::{View, artifact, button, markdown, permission, tr, truncate, va
 pub(crate) struct Tasks {
     input: String,
     due: String,
-    nickname: String,
     status: String,
     clear_confirm: bool,
     pending: Option<String>,
@@ -26,28 +25,19 @@ struct Task {
 }
 
 impl Tasks {
-    pub fn new(request: &Value) -> Self {
-        Self {
-            nickname: truncate(
-                request["host"]["storage"]["values"]["nickname"]
-                    .as_str()
-                    .unwrap_or(""),
-                120,
-            ),
-            ..Self::default()
-        }
+    pub fn new(_request: &Value) -> Self {
+        Self::default()
     }
 
     pub fn validate(&self) -> Result<(), String> {
         if self.view_revision.is_some_and(|revision| revision < 0)
             || !valid_text(&self.input, 1000)
-            || !valid_text(&self.nickname, 120)
             || !valid_text(&self.status, 1000)
             || !valid_date(&self.due)
             || self
                 .pending
                 .as_deref()
-                .is_some_and(|id| !["add-task", "save-todos", "save-preference"].contains(&id))
+                .is_some_and(|id| !["add-task", "save-todos"].contains(&id))
         {
             return Err("Invalid tasks session".into());
         }
@@ -55,11 +45,7 @@ impl Tasks {
     }
 
     pub fn fields(&mut self, fields: &Value) -> Result<(), String> {
-        for (id, limit, target) in [
-            ("todo", 1000, &mut self.input),
-            ("nickname", 120, &mut self.nickname),
-            ("due", 10, &mut self.due),
-        ] {
+        for (id, limit, target) in [("todo", 1000, &mut self.input), ("due", 10, &mut self.due)] {
             if let Some(value) = fields[id].as_str() {
                 if !valid_text(value, limit) {
                     return Err("Task field exceeds its limit".into());
@@ -124,7 +110,7 @@ impl Tasks {
             self.clear_confirm = false;
             return;
         }
-        if !action.starts_with("todo-") && action != "preference-save" {
+        if !action.starts_with("todo-") {
             return;
         }
         if !permission(request, "storage") {
@@ -207,7 +193,6 @@ impl Tasks {
                 });
                 ("add-task", json!({"todos":updated}))
             }
-            "preference-save" => ("save-preference", json!({"nickname":self.nickname.trim()})),
             "todo-clear-confirm" if self.clear_confirm => ("save-todos", json!({"todos":[]})),
             "todo-clear-completed" => {
                 updated.retain(|task| !task.completed);
@@ -248,23 +233,24 @@ impl Tasks {
             .filter(|revision| (0..=i32::MAX as i64).contains(revision))
             .map(|revision| revision as i32);
         let mut view = View {
-            display: tr(zh, "有记忆的扩展", "An extension with memory"),
+            display: tr(zh, "轻量待办", "Tasks"),
             description: tr(
                 zh,
-                "待办、日期和昵称保存在插件私有存储；草稿留在当前会话。",
-                "Tasks, due dates and nickname live in private plugin storage; drafts stay in this session.",
+                "记下要做的事，可选截止日期。允许存储后可跨会话保存。",
+                "Keep a short list with optional due dates. Grant storage to retain it across sessions.",
             ),
             ..View::default()
         };
         view.fields = vec![
             json!({"id":"todo","label":tr(zh,"待办内容","Task"),"value":self.input,"kind":"text","maxBytes":1000}),
             json!({"id":"due","label":tr(zh,"截止日期（可选）","Due date (optional)"),"value":self.due,"kind":"date","maxBytes":10}),
-            json!({"id":"nickname","label":tr(zh,"昵称偏好","Preferred nickname"),"value":self.nickname,"kind":"text","maxBytes":120}),
         ];
         view.groups = vec![
-            json!({"columns":3,"actions":[button("todo-add",&tr(zh,"添加并保存","Add & save"),true),button("preference-save",&tr(zh,"保存偏好","Save preference"),false),button("todo-export",&tr(zh,"生成待办备份","Generate tasks backup"),false)]}),
-            json!({"columns":2,"actions":[button("todo-clear-completed",&tr(zh,"移除已完成","Remove completed"),false),button("todo-clear",&tr(zh,"清空待办…","Clear tasks…"),false)]}),
+            json!({"columns":1,"actions":[button("todo-add",&tr(zh,"添加并保存","Add & save"),true)]}),
         ];
+        if snapshot(request).is_ok_and(|tasks| !tasks.is_empty()) {
+            view.groups.push(json!({"columns":3,"actions":[button("todo-export",&tr(zh,"导出备份","Export backup"),false),button("todo-clear-completed",&tr(zh,"移除已完成","Remove completed"),false),button("todo-clear",&tr(zh,"清空待办…","Clear tasks…"),false)]}));
+        }
         if self.clear_confirm {
             view.blocks.push(markdown(tr(zh,"**确认清空全部待办？** 此操作会保存空列表，无法通过会话撤销；可先生成待办备份。","**Clear every task?** This saves an empty list and cannot be undone through the session. Generate a tasks backup first if needed.")));
             view.groups.push(json!({"columns":2,"actions":[button("todo-clear-confirm",&tr(zh,"确认清空","Confirm clear"),false),button("todo-clear-cancel",&tr(zh,"保留待办","Keep tasks"),true)]}));
@@ -284,14 +270,26 @@ impl Tasks {
                     }
                     view.groups.push(json!({"columns":2,"actions":actions}));
                 }
-                view.blocks.push(json!({"kind":"progress","label":tr(zh,"完成进度","Tasks completed"),"value":todos.iter().filter(|task|task.completed).count(),"max":todos.len().max(1)}));
+                if !todos.is_empty() {
+                    view.blocks.push(json!({"kind":"progress","label":tr(zh,"完成进度","Tasks completed"),"value":todos.iter().filter(|task|task.completed).count(),"max":todos.len()}));
+                } else if permission(request,"storage") {
+                    view.blocks.push(markdown(tr(zh,"暂无待办。添加一项开始。","No tasks yet. Add one to begin.")));
+                }
             }
             Err(_)=>view.blocks.push(markdown(tr(zh,"私有待办格式无效，原数据已保留。请到扩展详情检查存储，写入已停止。","Stored tasks have an invalid format. The original data is preserved. Inspect storage in extension details; writes are stopped."))),
         }
         if !permission(request, "storage") {
-            view.blocks.push(markdown(tr(zh,"尚未授予私有存储。你仍可体验文本、数据和谜题；要保存待办，请在扩展权限中单独授权存储。","Private storage has not been granted. Text, data and puzzles still work. Grant Storage in extension permissions to save tasks.")));
+            view.blocks.push(markdown(tr(zh,"保存待办需要私有存储权限，可在扩展权限中单独允许。未授权时草稿仍留在当前会话。","Saving tasks needs private storage permission. Grant it in extension permissions; ungranted drafts remain in this session.")));
         }
-        view.blocks.push(markdown(tr(zh,"每次写入检查当前 revision。另一个窗口修改后会显示冲突，并保留你的草稿，不会自动重试。清空待办需要再次确认。卸载保留业务数据；在扩展详情中可显式清空存储。","Each write checks the current revision. If another window changes the data, a conflict preserves your draft without automatic retries. Clearing tasks requires confirmation. Uninstalling retains business data; extension details offers explicit storage clearing.")));
+        if !permission(request, "storage") || snapshot(request).is_err() {
+            for group in &mut view.groups {
+                for action in group["actions"].as_array_mut().into_iter().flatten() {
+                    if action["id"] != "todo-clear-cancel" {
+                        action["disabled"] = json!(true);
+                    }
+                }
+            }
+        }
         view
     }
 }

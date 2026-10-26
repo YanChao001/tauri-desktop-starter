@@ -10,7 +10,7 @@
     },
     "expectJsonSubset": {
       "version": 2,
-      "display": "扩展实验室",
+      "display": "文本工具",
       "effects": [],
       "errors": {}
     }
@@ -22,10 +22,10 @@
       "state": "",
       "fields": {},
       "locale": "en",
-      "action": "tab-game"
+      "action": "tab-todo"
     },
     "expectJsonSubset": {
-      "display": "Let the lights go quiet",
+      "display": "Tasks",
       "effects": [],
       "errors": {}
     }
@@ -35,12 +35,30 @@
     "input": {
       "version": 2,
       "state": "",
-      "fields": { "text": "Hello 世界", "mode": "upper" },
+      "fields": {},
+      "locale": "en",
+      "action": "tab-connections"
+    },
+    "expectJsonSubset": {
+      "display": "Files & network",
+      "effects": [],
+      "errors": {}
+    }
+  },
+  {
+    "command": "open",
+    "input": {
+      "version": 2,
+      "state": "",
+      "fields": {
+        "text": "Hello 世界",
+        "mode": "upper"
+      },
       "locale": "en",
       "action": "export-text"
     },
     "expectJsonSubset": {
-      "display": "Make sense of text",
+      "display": "Text tools",
       "artifacts": [
         {
           "name": "transformed.txt",
@@ -65,7 +83,7 @@
       "action": "data-export-json"
     },
     "expectJsonSubset": {
-      "display": "Files & HTTPS",
+      "display": "CSV / JSON",
       "artifacts": [
         {
           "name": "dataset.json",
@@ -82,12 +100,20 @@
     "input": {
       "version": 2,
       "state": "",
-      "fields": { "todo": "Ship the lab", "due": "2026-10-25" },
+      "fields": {
+        "todo": "Ship the lab",
+        "due": "2026-10-25"
+      },
       "locale": "en",
       "action": "todo-add",
       "host": {
         "permissions": ["storage"],
-        "storage": { "revision": 7, "values": { "todos": [] } }
+        "storage": {
+          "revision": 7,
+          "values": {
+            "todos": []
+          }
+        }
       }
     },
     "expectJsonSubset": {
@@ -118,10 +144,13 @@
       "fields": {},
       "locale": "en",
       "action": "fetch-todo",
-      "host": { "permissions": [], "storage": null }
+      "host": {
+        "permissions": [],
+        "storage": null
+      }
     },
     "expectJsonSubset": {
-      "display": "Files & HTTPS",
+      "display": "Files & network",
       "effects": [],
       "errors": {}
     }
@@ -134,7 +163,10 @@
       "fields": {},
       "locale": "en",
       "action": "fetch-todo",
-      "host": { "permissions": ["network:https"], "storage": null }
+      "host": {
+        "permissions": ["network:https"],
+        "storage": null
+      }
     },
     "expectJsonSubset": {
       "effects": [

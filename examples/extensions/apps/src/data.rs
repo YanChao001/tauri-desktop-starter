@@ -16,6 +16,10 @@ pub(crate) struct DataStudio {
     files: Vec<Vec<String>>,
     network: Vec<Vec<String>>,
     status: String,
+    received: String,
+    response: String,
+    received_truncated: bool,
+    source_notice: String,
 }
 
 struct Dataset {
@@ -35,6 +39,9 @@ impl DataStudio {
         if !valid_text(&self.source, MAX_SOURCE)
             || !["auto", "json", "csv"].contains(&self.format.as_str())
             || !valid_text(&self.status, 1000)
+            || !valid_text(&self.received, MAX_SOURCE)
+            || !valid_text(&self.response, MAX_SOURCE)
+            || !valid_text(&self.source_notice, 1000)
             || self.files.len() > 16
             || self.network.len() > 12
             || self
@@ -56,6 +63,9 @@ impl DataStudio {
             if !valid_text(source, MAX_SOURCE) {
                 return Err("Dataset exceeds the 64 KiB input limit".into());
             }
+            if source != self.source {
+                self.source_notice.clear();
+            }
             self.source = source.into();
         }
         if let Some(format) = fields["data-format"].as_str() {
@@ -67,8 +77,7 @@ impl DataStudio {
         Ok(())
     }
 
-    pub fn import(&mut self, data: &Value, zh: bool) -> String {
-        let mut text = data["inputText"].as_str().unwrap_or("").to_owned();
+    pub fn receive(&mut self, data: &Value, zh: bool) -> String {
         self.files.clear();
         let mut first_text_file = None;
         for file in data["files"].as_array().into_iter().flatten().take(16) {
@@ -97,10 +106,6 @@ impl DataStudio {
             ]);
             if utf8 {
                 first_text_file.get_or_insert(content);
-                if !text.is_empty() {
-                    text.push('\n');
-                }
-                text.push_str(content);
             }
         }
         let source = if !data["inputText"].as_str().unwrap_or("").trim().is_empty() {
@@ -108,22 +113,45 @@ impl DataStudio {
         } else {
             first_text_file.unwrap_or("")
         };
-        self.source = truncate(source, MAX_SOURCE);
-        self.analyzed = false;
+        self.received = truncate(source, MAX_SOURCE);
+        self.received_truncated = source.len() > MAX_SOURCE;
         self.status = if source.len() > MAX_SOURCE {
             tr(
                 zh,
-                "数据输入仅载入前 64 KiB；文件元数据仍显示完整文件大小。",
-                "Only the first 64 KiB were loaded into the dataset editor; file metadata still shows the full size.",
+                "仅接收前 64 KiB 文本；文件大小仍显示原始值。",
+                "Only the first 64 KiB of text were received; file sizes show the original values.",
             )
         } else {
             tr(
                 zh,
-                "已接收你发送的数据；可预览首个文本文件或继续查看文本工坊。",
-                "Received the data you sent. Preview the first text file here or inspect all text in Text studio.",
+                "已接收所选内容。可将文本载入工具；其他草稿保持不变。",
+                "Selected content received. Load its text into a tool when needed; other drafts stay unchanged.",
             )
         };
-        text
+        source.to_owned()
+    }
+
+    pub fn received_text(&self) -> &str {
+        &self.received
+    }
+
+    pub fn received_was_truncated(&self) -> bool {
+        self.received_truncated
+    }
+
+    pub fn use_received(&mut self, zh: bool) {
+        self.source = self.received.clone();
+        self.format = "auto".into();
+        self.analyzed = false;
+        self.source_notice = if self.received_truncated {
+            tr(
+                zh,
+                "仅载入前 64 KiB 文本；预览和导出均针对已载入内容。原文件未修改。",
+                "Only the first 64 KiB were loaded. Preview and export use this loaded content; the original file is unchanged.",
+            )
+        } else {
+            String::new()
+        };
     }
 
     pub fn receipt(&mut self, result: &Value, zh: bool) {
@@ -142,6 +170,7 @@ impl DataStudio {
                 truncate(code, 80)
             );
             self.network.clear();
+            self.response.clear();
             return;
         }
         let value = &result["value"];
@@ -160,9 +189,9 @@ impl DataStudio {
             _ => vec![vec!["body".into(), truncate(body, 480)]],
         };
         if (200..300).contains(&status) && body.len() <= MAX_SOURCE {
-            self.source = body.into();
-            self.format = "json".into();
-            self.analyzed = false;
+            self.response = body.into();
+        } else {
+            self.response.clear();
         }
     }
 
@@ -176,6 +205,13 @@ impl DataStudio {
         artifacts: &mut Vec<Value>,
     ) {
         match action {
+            "data-use-received" => self.use_received(zh),
+            "data-use-response" => {
+                self.source = self.response.clone();
+                self.format = "json".into();
+                self.analyzed = false;
+                self.source_notice.clear();
+            }
             "fetch-todo" => {
                 if permission(request, "network:https") {
                     self.status = tr(zh, "请求已提交", "Request submitted");
@@ -189,12 +225,14 @@ impl DataStudio {
                 }
             }
             "data-sample-csv" => {
+                self.source_notice.clear();
                 self.source = "项目,得分,备注\n星舰,84,\"可离线游玩, 支持撤销\"\n灯塔,96,\"你好\n第二行\"\n纸飞机,72,轻装出发".into();
                 self.format = "csv".into();
                 self.analyzed = true;
                 self.status.clear();
             }
             "data-sample-json" => {
+                self.source_notice.clear();
                 self.source = "[{\"project\":\"Orbit\",\"score\":84},{\"project\":\"Beacon\",\"score\":96},{\"project\":\"Paper plane\",\"score\":72}]".into();
                 self.format = "json".into();
                 self.analyzed = true;
@@ -255,11 +293,11 @@ impl DataStudio {
 
     pub fn render(&self, zh: bool) -> View {
         let mut view = View {
-            display: tr(zh, "文件与 HTTPS", "Files & HTTPS"),
+            display: tr(zh, "CSV / JSON", "CSV / JSON"),
             description: tr(
                 zh,
-                "本地 CSV / JSON 预览、数值图表和可保存的转换结果。网络只在点击请求时发起。",
-                "Local CSV / JSON previews, numeric charts and savable results. Network requests start only when you click Fetch.",
+                "粘贴数据，预览表格，再按需要导出。全部在本地完成。",
+                "Paste data, preview a table, then export what you need. Everything runs locally.",
             ),
             ..View::default()
         };
@@ -269,10 +307,10 @@ impl DataStudio {
         ];
         view.groups = vec![
             json!({"columns":3,"actions":[button("data-preview",&tr(zh,"预览与绘图","Preview & chart"),true),button("data-sample-csv",&tr(zh,"CSV 样例","CSV sample"),false),button("data-sample-json",&tr(zh,"JSON 样例","JSON sample"),false)]}),
-            json!({"columns":3,"actions":[button("data-export-json",&tr(zh,"生成 JSON 表格","Generate JSON table"),false),button("data-export-csv",&tr(zh,"生成 CSV","Generate CSV"),false),button("fetch-todo",&tr(zh,"请求真实 HTTPS 数据","Fetch live HTTPS data"),false)]}),
+            json!({"columns":2,"actions":[button("data-export-json",&tr(zh,"导出 JSON","Export JSON"),false),button("data-export-csv",&tr(zh,"导出 CSV","Export CSV"),false)]}),
         ];
-        if !self.status.is_empty() {
-            view.blocks.push(markdown(&self.status));
+        if !self.source_notice.is_empty() {
+            view.blocks.push(markdown(&self.source_notice));
         }
         if self.analyzed {
             match self.dataset(zh) {
@@ -315,13 +353,46 @@ impl DataStudio {
                 Err(message) => view.blocks.push(markdown(message)),
             }
         }
+        if !self.analyzed {
+            view.blocks.push(markdown(tr(
+                zh,
+                "粘贴 CSV / JSON，或载入一个样例开始。",
+                "Paste CSV / JSON, or load a sample to begin.",
+            )));
+        }
+        view
+    }
+
+    pub fn render_connections(&self, request: &Value, zh: bool) -> View {
+        let mut view = View {
+            display: tr(zh, "文件与网络", "Files & network"),
+            description: tr(
+                zh,
+                "按需接收文件或请求公开样例，不会自动联网。",
+                "Receive selected files or fetch a public sample on demand. No automatic network access.",
+            ),
+            ..View::default()
+        };
+        view.blocks.push(markdown(tr(zh,"通过宿主的“扩展工具”选择并发送文本或文件。这里只能读取你主动发送的内容。","Select and send text or files through the host's Extension tools. Only explicitly sent content is available here.")));
+        if !self.status.is_empty() {
+            view.blocks.push(markdown(&self.status));
+        }
         if !self.files.is_empty() {
-            view.blocks.push(json!({"kind":"table","columns":[tr(zh,"已发送文件","Sent file"),"MIME","Bytes",tr(zh,"文本行数","Text lines")],"rows":self.files}));
+            view.blocks.push(json!({"kind":"table","columns":[tr(zh,"已发送文件","Sent file"),tr(zh,"类型提示","Type hint"),tr(zh,"字节","Bytes"),tr(zh,"文本行数","Text lines")],"rows":self.files}));
+        }
+        if !self.received.is_empty() {
+            view.groups.push(json!({"columns":2,"actions":[button("text-use-received",&tr(zh,"载入文本工具","Load in Text"),false),button("data-use-received",&tr(zh,"载入 CSV / JSON","Load in CSV / JSON"),false)]}));
+        }
+        view.groups.push(json!({"columns":1,"actions":[button("fetch-todo",&tr(zh,"请求 HTTPS 样例","Fetch HTTPS sample"),true)]}));
+        if !permission(request, "network:https") {
+            view.blocks.push(markdown(tr(zh,"HTTPS 尚未授权。可在扩展权限中单独允许；本地工具不受影响。","HTTPS is not granted. Allow it in extension permissions when needed; local tools remain available.")));
         }
         if !self.network.is_empty() {
-            view.blocks.push(json!({"kind":"table","columns":[tr(zh,"JSON 字段","JSON field"),tr(zh,"值","Value")],"rows":self.network}));
+            view.blocks.push(json!({"kind":"table","columns":[tr(zh,"响应字段","Response field"),tr(zh,"值","Value")],"rows":self.network}));
         }
-        view.blocks.push(markdown(tr(zh,"CSV 支持引号、逗号与多行单元格。JSON 支持对象、对象数组或标量数组；JSON 表格导出使用 `columns` / `rows`，单元格均为文本。CSV 导出会为可能触发表格公式的单元格添加单引号。\n\nHTTPS 样例仅访问清单声明的 `jsonplaceholder.typicode.com/todos/1`；拒绝网络权限仍可使用全部本地工具。二进制文件只展示名称、类型提示和大小。","CSV supports quoted commas and multiline cells. JSON accepts objects, arrays of objects or scalar arrays. JSON table exports use `columns` / `rows` with text cells. CSV exports prefix cells that could trigger spreadsheet formulas with an apostrophe.\n\nThe HTTPS sample only calls the declared `jsonplaceholder.typicode.com/todos/1`. All local tools work without network permission. Binary files show only their names, type hints and sizes.")));
+        if !self.response.is_empty() {
+            view.groups.push(json!({"columns":1,"actions":[button("data-use-response",&tr(zh,"将响应载入 CSV / JSON","Load response in CSV / JSON"),false)]}));
+        }
         view
     }
 }
@@ -491,5 +562,38 @@ mod tests {
     fn csv_exports_neutralize_formulas() {
         assert_eq!(csv_cell("=SUM(A1)"), "\"'=SUM(A1)\"");
         assert_eq!(csv_cell("a,b"), "\"a,b\"");
+    }
+
+    #[test]
+    fn https_receipt_does_not_replace_a_local_dataset_until_requested() {
+        let mut studio = DataStudio::new();
+        studio.source = "name,score\nAda,9".into();
+        studio.receipt(&json!({"id":"fetch-todo","error":null,"value":{"status":200,"url":"https://jsonplaceholder.typicode.com/todos/1","body":"{\"id\":1}"}}),false);
+        assert_eq!(studio.source, "name,score\nAda,9");
+        assert_eq!(studio.response, "{\"id\":1}");
+        studio.act(
+            "data-use-response",
+            &json!({}),
+            false,
+            &mut BTreeMap::new(),
+            &mut vec![],
+            &mut vec![],
+        );
+        assert_eq!(studio.source, "{\"id\":1}");
+        assert_eq!(studio.format, "json");
+    }
+
+    #[test]
+    fn received_text_truncation_remains_visible_when_loaded_later() {
+        let mut studio = DataStudio::new();
+        studio.receive(
+            &json!({"inputText":"界".repeat(MAX_SOURCE),"files":[]}),
+            true,
+        );
+        assert!(studio.received.len() <= MAX_SOURCE);
+        assert!(studio.received_was_truncated());
+        studio.use_received(true);
+        assert!(!studio.source_notice.is_empty());
+        assert_eq!(studio.source, studio.received);
     }
 }

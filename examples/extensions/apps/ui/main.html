@@ -3,83 +3,77 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>扩展实验室</title>
+    <title>本地工作台</title>
     <style>
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: var(--background);
-        color: var(--foreground);
-        font:
-          var(--host-font-size, 15px)/1.6 system-ui,
-          sans-serif;
-      }
       main {
-        max-width: 1120px;
+        max-width: 1080px;
         margin: auto;
-        padding: 12px;
+        padding: 20px;
+      }
+      .app-header {
+        margin-bottom: 24px;
+      }
+      #app-name {
+        margin: 0 0 12px;
+        color: var(--muted-foreground);
+        font-size: 0.85em;
       }
       nav {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 6px;
-        flex-wrap: wrap;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 14px;
       }
-      h1 {
-        font-size: 26px;
-        line-height: 1.3;
-        margin: 18px 0 7px;
+      nav button {
+        white-space: normal;
       }
-      h2 {
-        font-size: 18px;
-      }
-      h3 {
-        font-size: 16px;
-      }
-      .muted {
-        color: var(--muted-foreground);
-      }
-      button,
-      input,
-      select,
-      textarea {
-        font: inherit;
-        color: var(--foreground);
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 9px;
-        padding: 8px 11px;
-        min-width: 0;
-      }
-      button {
-        cursor: pointer;
-        min-height: 40px;
-      }
-      button:hover {
-        background: var(--muted);
-      }
-      button.primary,
-      button[aria-selected="true"] {
+      nav [aria-selected="true"] {
         background: var(--primary);
         color: var(--primary-foreground);
       }
-      button[aria-disabled="true"] {
-        opacity: 0.5;
-        cursor: default;
+      h1 {
+        margin: 0;
+        font-size: 1.55em;
+        line-height: 1.3;
       }
-      button:focus-visible,
-      input:focus-visible,
-      select:focus-visible,
-      textarea:focus-visible,
-      summary:focus-visible {
-        outline: 2px solid var(--ring);
-        outline-offset: 3px;
+      h2 {
+        font-size: 1.1em;
+        margin: 0 0 10px;
       }
-      button {
-        overflow-wrap: anywhere;
+      h3 {
+        font-size: 1em;
+      }
+      #description {
+        margin: 8px 0 0;
+        color: var(--muted-foreground);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        gap: 24px;
+        margin-top: 22px;
+        align-items: start;
+      }
+      .layout.single {
+        grid-template-columns: 1fr;
+      }
+      .fields,
+      .blocks {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
+      .field > span:first-child {
+        font-size: 0.9em;
+      }
+      .check {
+        display: flex;
+        gap: 8px;
+        align-items: center;
       }
       input:not([type="checkbox"]),
       select,
@@ -88,47 +82,23 @@
       }
       textarea {
         min-height: 240px;
-        line-height: 1.7;
         resize: vertical;
         font-family: ui-monospace, monospace;
+        line-height: 1.65;
       }
-      input[type="checkbox"] {
-        accent-color: var(--primary);
-      }
-      .layout {
-        display: grid;
-        grid-template-columns: minmax(250px, 0.95fr) minmax(0, 1.1fr);
-        gap: 22px;
-        margin-top: 18px;
-      }
-      .layout.single {
-        grid-template-columns: 1fr;
-      }
-      .fields {
-        display: grid;
-        gap: 12px;
-        align-content: start;
-      }
-      .field {
-        display: grid;
-        gap: 5px;
-      }
-      .check {
+      .actions,
+      #artifacts {
         display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-      .actions {
-        display: flex;
-        gap: 7px;
         flex-wrap: wrap;
-        margin-top: 12px;
+        gap: 8px;
+        margin-top: 14px;
       }
-      .blocks {
-        display: grid;
-        gap: 16px;
-        min-width: 0;
-        align-content: start;
+      .actions button {
+        flex: 0 1 auto;
+      }
+      .primary {
+        background: var(--primary);
+        color: var(--primary-foreground);
       }
       .block {
         min-width: 0;
@@ -136,56 +106,67 @@
       .block p {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
+        margin: 0 0 10px;
       }
       .block pre {
         background: var(--muted);
         padding: 14px;
-        border-radius: 10px;
+        border-radius: var(--radius, 8px);
         white-space: pre-wrap;
         overflow-wrap: anywhere;
-        max-height: 45vh;
+        max-height: 48vh;
         overflow: auto;
+        margin: 0;
       }
       .block code {
         font-family: ui-monospace, monospace;
-        font-size: 0.9em;
       }
       .metrics {
         display: flex;
-        gap: 9px;
         flex-wrap: wrap;
+        gap: 14px;
       }
       .metric {
-        background: var(--muted);
-        padding: 10px 14px;
-        border-radius: 12px;
-        flex: 1;
-        min-width: 110px;
+        min-width: 80px;
       }
       .metric small {
         display: block;
         color: var(--muted-foreground);
       }
       .metric strong {
-        font-size: 22px;
+        font-size: 1.15em;
+        font-weight: 600;
+      }
+      details {
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+      }
+      details > summary {
+        cursor: pointer;
+        font-size: 0.9em;
+      }
+      details > div {
+        margin-top: 12px;
       }
       .table-scroll {
         overflow: auto;
         max-width: 100%;
+        border: 1px solid var(--border);
+        border-radius: var(--radius, 8px);
       }
       table {
-        border-collapse: collapse;
         width: 100%;
-        font-size: 12px;
+        border-collapse: collapse;
+        font-size: 0.85em;
       }
       caption {
         text-align: left;
-        font-weight: 650;
-        margin-bottom: 6px;
+        padding: 10px;
+        font-weight: 600;
       }
       th,
       td {
-        padding: 7px 9px;
+        padding: 9px 10px;
         border-bottom: 1px solid var(--border);
         text-align: left;
         max-width: 260px;
@@ -196,84 +177,73 @@
       }
       .pager {
         display: flex;
-        gap: 12px;
+        gap: 10px;
         align-items: center;
         margin-top: 8px;
-        font-size: 12px;
+        font-size: 0.85em;
       }
       .chart {
-        max-width: 100%;
         width: 100%;
         height: 170px;
       }
-      .board {
+      .task-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
         display: grid;
-        gap: 7px;
-        max-width: 430px;
-        margin: 10px auto;
+        gap: 8px;
       }
-      .cell {
-        aspect-ratio: 1;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 650;
-        min-width: 0;
-        font-size: 17px;
-        background: var(--muted);
-        padding: 3px;
+      .task-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
+        padding: 10px 0;
       }
-      .cell.primary {
-        background: var(--primary);
-        color: var(--primary-foreground);
+      .task-row p {
+        margin: 0;
+        overflow-wrap: anywhere;
       }
-      .game-actions {
-        justify-content: center;
+      .task-row small {
+        color: var(--muted-foreground);
+      }
+      .task-row .done {
+        text-decoration: line-through;
+        color: var(--muted-foreground);
       }
       progress {
         width: 100%;
         accent-color: var(--primary);
       }
-      img {
-        display: block;
-        max-width: 100%;
-        max-height: 400px;
-        object-fit: contain;
-      }
       .error {
         color: var(--destructive);
-        font-size: 12px;
+        font-size: 0.85em;
       }
-      .field-error {
-        min-height: 1em;
+      .field-error:empty,
+      #error:empty,
+      #operation-status:empty,
+      #artifacts:empty {
+        display: none;
       }
-      #description {
-        margin: 0;
-        font-size: 13px;
+      #operation-status {
+        color: var(--muted-foreground);
+        font-size: 0.85em;
+        margin: 10px 0 0;
       }
       #error {
         margin-top: 14px;
       }
-      #artifacts {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 18px;
-      }
       @media (max-width: 680px) {
         main {
-          padding: 8px;
+          padding: 14px;
+        }
+        nav {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .layout {
           grid-template-columns: 1fr;
-          gap: 16px;
-        }
-        h1 {
-          font-size: 23px;
-        }
-        nav button {
-          padding: 7px 10px;
+          gap: 24px;
         }
         textarea {
           min-height: 210px;
@@ -283,12 +253,14 @@
   </head>
   <body>
     <main>
-      <nav id="tabs" role="tablist" aria-label="实验室功能"></nav>
+      <header class="app-header">
+        <p id="app-name">本地工作台</p>
+        <nav id="tabs" role="tablist" aria-label="工具"></nav>
+      </header>
       <section id="panel" role="tabpanel">
-        <h1 id="heading">扩展实验室</h1>
+        <h1 id="heading">文本工具</h1>
         <p id="description" class="muted"></p>
-        <div id="board"></div>
-        <div id="game-actions" class="actions game-actions"></div>
+        <p id="operation-status" role="status"></p>
         <div id="layout" class="layout">
           <section id="form-pane">
             <div id="fields" class="fields"></div>
@@ -312,6 +284,7 @@
           working = false,
           signature = "",
           force = false,
+          localFields = {},
           pages = {};
         const tr = (zh, en) => (current?.locale === "en" ? en : zh);
         const values = () =>
@@ -321,6 +294,17 @@
               input.type === "checkbox" ? String(input.checked) : input.value,
             ]),
           );
+        const fieldValue = (field) => {
+          const retained = force
+            ? undefined
+            : current.checkpoint?.fields?.[field.id];
+          return (
+            localFields[field.id] ??
+            (typeof retained === "string"
+              ? retained
+              : (current.fields[field.id] ?? field.value))
+          );
+        };
         function retain(dirty = true) {
           return starter.checkpoint({ fields: values(), pages }, dirty);
         }
@@ -385,6 +369,12 @@
             header = create("tr"),
             body = create("tbody");
           scroll.className = "table-scroll";
+          scroll.tabIndex = 0;
+          scroll.setAttribute("role", "region");
+          scroll.setAttribute(
+            "aria-label",
+            label ?? tr("数据表", "Data table"),
+          );
           node.append(create("caption", label ?? tr("数据表", "Data table")));
           columns.forEach((column) => {
             const cell = create("th", column);
@@ -534,8 +524,18 @@
           return wrap;
         }
         function blocks(view) {
+          const activeTab = view.tabs?.find((tab) => tab.active)?.id;
+          const ordered = [...(view.blocks ?? [])].filter(
+            (block) => !(activeTab === "tab-text" && block.kind === "table"),
+          );
+          if (activeTab === "tab-text")
+            ordered.sort(
+              (a, b) =>
+                Number(b.kind === "markdown" && b.text.startsWith("###")) -
+                Number(a.kind === "markdown" && a.text.startsWith("###")),
+            );
           $("results").replaceChildren(
-            ...(view.blocks ?? []).map((block, index) => {
+            ...ordered.map((block, index) => {
               let node;
               if (block.kind === "markdown") node = markdown(block.text);
               else if (block.kind === "metrics") {
@@ -550,11 +550,50 @@
                   );
                   node.append(card);
                 });
-              } else if (block.kind === "table")
-                node = table(block.columns, block.rows, `table-${index}`);
-              else if (block.kind === "chart")
-                node = chart(block, `chart-${index}`);
-              else if (block.kind === "image") {
+              } else if (block.kind === "table") {
+                if (activeTab === "tab-todo") {
+                  node = create("ul");
+                  node.className = "task-list";
+                  const actions = view.groups.flatMap((group) => group.actions);
+                  block.rows.forEach((row, index) => {
+                    const item = create("li"),
+                      content = create("div"),
+                      title = create("p", row[0]);
+                    item.className = "task-row";
+                    const toggle = actions.find(
+                      (action) => action.id === `todo-toggle-${index}`,
+                    );
+                    const remove = actions.find(
+                      (action) => action.id === `todo-remove-${index}`,
+                    );
+                    const completed = row[2] === tr("已完成", "Done");
+                    title.classList.toggle("done", completed);
+                    content.append(title);
+                    if (row[1]) content.append(create("small", row[1]));
+                    if (toggle) {
+                      const button = actionButton(toggle);
+                      button.textContent = completed
+                        ? tr("恢复", "Reopen")
+                        : tr("完成", "Done");
+                      item.append(button);
+                    }
+                    item.append(content);
+                    if (remove) {
+                      const button = actionButton(remove);
+                      button.textContent = tr("删除", "Remove");
+                      item.append(button);
+                    }
+                    node.append(item);
+                  });
+                } else
+                  node = table(block.columns, block.rows, `table-${index}`);
+              } else if (block.kind === "chart") {
+                node = create("details");
+                node.append(
+                  create("summary", block.label),
+                  chart(block, `chart-${index}`),
+                );
+              } else if (block.kind === "image") {
                 node = create("img");
                 node.alt = block.alt;
                 if (block.src.startsWith("data:image/")) node.src = block.src;
@@ -634,6 +673,9 @@
                   (field.options ?? []).forEach((option) =>
                     input.append(new Option(option.label, option.value)),
                   );
+                if (input.type === "checkbox")
+                  input.checked = fieldValue(field) === "true";
+                else input.value = fieldValue(field);
                 input.addEventListener(
                   field.kind === "checkbox" || field.kind === "select"
                     ? "change"
@@ -644,53 +686,54 @@
                       render();
                       return;
                     }
+                    localFields[field.id] =
+                      input.type === "checkbox"
+                        ? String(input.checked)
+                        : input.value;
+                    if (
+                      current.view.tabs?.some(
+                        (tab) =>
+                          tab.active &&
+                          ["tab-text", "tab-data"].includes(tab.id),
+                      )
+                    )
+                      $("operation-status").textContent = tr(
+                        "输入已修改，处理后更新结果。",
+                        "Input changed. Apply to update the result.",
+                      );
                     void retain(true).catch(report);
                   },
                 );
+                if (field.kind === "textarea")
+                  input.onkeydown = (event) => {
+                    if (
+                      (event.ctrlKey || event.metaKey) &&
+                      event.key === "Enter"
+                    ) {
+                      event.preventDefault();
+                      void act(
+                        field.id === "data-source" ? "data-preview" : "analyze",
+                      );
+                    }
+                  };
                 label.append(caption, input, error);
                 return label;
               }),
           );
           $("actions").replaceChildren();
-          $("board").replaceChildren();
-          $("game-actions").replaceChildren();
-          view.groups.forEach((group) => {
-            if (group.board) {
-              const grid = create("div");
-              grid.className = "board";
-              grid.setAttribute("role", "group");
-              grid.setAttribute("aria-label", view.display);
-              grid.style.gridTemplateColumns = `repeat(${group.columns},minmax(0,1fr))`;
-              group.actions.forEach((action) => {
-                const cell = action.disabled
-                  ? create("span", action.label)
-                  : actionButton(action);
-                cell.classList.add("cell");
-                cell.classList.toggle("primary", action.primary);
-                if (action.disabled) {
-                  cell.setAttribute("role", "img");
-                  cell.setAttribute(
-                    "aria-label",
-                    action.ariaLabel ?? action.label,
-                  );
-                }
-                grid.append(cell);
-              });
-              $("board").append(grid);
-            } else
-              group.actions.forEach((action) =>
-                $(
-                  view.groups.some((group) => group.board)
-                    ? "game-actions"
-                    : "actions",
-                ).append(actionButton(action)),
-              );
-          });
-          const hasBoard = view.groups.some((group) => group.board);
+          const activeTab = view.tabs?.find((tab) => tab.active)?.id;
+          view.groups.forEach((group) =>
+            group.actions.forEach((action) => {
+              if (
+                activeTab === "tab-todo" &&
+                /^todo-(toggle|remove)-/.test(action.id)
+              )
+                return;
+              $("actions").append(actionButton(action));
+            }),
+          );
           $("form-pane").hidden =
-            view.fields.length === 0 && (hasBoard || view.groups.length === 0);
-          $("game-actions").hidden = !hasBoard;
-          $("board").hidden = !hasBoard;
+            view.fields.length === 0 && view.groups.length === 0;
           $("layout").classList.toggle("single", view.fields.length === 0);
           blocks(view);
           $("artifacts").replaceChildren(
@@ -746,17 +789,13 @@
           }
           $("heading").textContent = view.display;
           $("description").textContent = view.description;
-          $("tabs").setAttribute("aria-label", tr("实验室功能", "Lab tools"));
+          $("tabs").setAttribute("aria-label", tr("工具", "Tools"));
+          $("app-name").textContent = tr("本地工作台", "Local workspace");
+          document.title = tr("本地工作台", "Local workspace");
           for (const field of view.fields) {
             const input = document.querySelector(`[data-field="${field.id}"]`);
             if (!input) continue;
-            const retained = force
-                ? undefined
-                : current.checkpoint?.fields?.[field.id],
-              value =
-                typeof retained === "string"
-                  ? retained
-                  : (current.fields[field.id] ?? field.value);
+            const value = fieldValue(field);
             if (!working && (force || document.activeElement !== input)) {
               if (input.type === "checkbox") input.checked = value === "true";
               else input.value = value;
@@ -815,6 +854,9 @@
           const submitted = values(),
             previousDirty = current.dirty;
           working = true;
+          $("operation-status").textContent = tab
+            ? tr("正在打开工具…", "Opening tool…")
+            : tr("正在处理…", "Working…");
           render();
           try {
             $("error").textContent = "";
@@ -828,23 +870,30 @@
               ),
               checkpoint: null,
             };
+            localFields = {};
             force = true;
           } catch {
             report();
           } finally {
             working = false;
+            $("operation-status").textContent = "";
             render();
           }
         }
         $("tabs").onkeydown = (event) => {
-          if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+            return;
           const tabs = [...$("tabs").children],
             index = tabs.indexOf(document.activeElement);
           event.preventDefault();
-          tabs[
-            (index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
-              tabs.length
-          ]?.focus();
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? tabs.length - 1
+                : (index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
+                  tabs.length;
+          tabs[next]?.focus();
         };
         starter.onChange((snapshot) => {
           current = snapshot;

@@ -23,21 +23,15 @@ const MODES: [&str; 9] = [
 pub(crate) struct TextStudio {
     pub input: String,
     mode: String,
-    compact: bool,
     analyzed: bool,
     pub notice: String,
 }
 
 impl TextStudio {
-    pub fn new(zh: bool) -> Self {
+    pub fn new(_zh: bool) -> Self {
         Self {
-            input: tr(
-                zh,
-                "Hello Extism!\n用 Rust、JavaScript 或 TypeScript 编写同一种扩展。\nHello reusable plugins.",
-                "Hello Extism!\nBuild the same plugin with Rust, JavaScript or TypeScript.\nHello reusable plugins.",
-            ),
-            mode: "upper".into(),
-            compact: false,
+            input: String::new(),
+            mode: "original".into(),
             analyzed: false,
             notice: String::new(),
         }
@@ -68,12 +62,6 @@ impl TextStudio {
                 return Err("Unknown text transformation".into());
             }
             self.mode = mode.into();
-        }
-        if let Some(compact) = fields["compact"].as_str() {
-            if !["true", "false"].contains(&compact) {
-                return Err("Invalid compact checkbox value".into());
-            }
-            self.compact = compact == "true";
         }
         Ok(())
     }
@@ -189,11 +177,11 @@ impl TextStudio {
 
     pub fn render(&self, zh: bool) -> View {
         let mut view = View {
-            display: tr(zh, "让文本成为数据", "Make sense of text"),
+            display: tr(zh, "文本工具", "Text tools"),
             description: tr(
                 zh,
-                "Unicode 统计、九种转换和真实文件导出。文字不会被自动发送到网络。",
-                "Unicode statistics, nine transformations and real file exports. Text is never automatically sent to the network.",
+                "粘贴文本，选择处理方式，查看或保存结果。",
+                "Paste text, choose an operation, then inspect or save the result.",
             ),
             ..View::default()
         };
@@ -211,9 +199,8 @@ impl TextStudio {
         view.fields = vec![
             json!({"id":"text","label":tr(zh,"编辑文本（最多 64 KiB）","Edit text (up to 64 KiB)"),"value":self.input,"kind":"textarea","maxBytes":MAX_TEXT}),
             json!({"id":"mode","label":tr(zh,"转换方式","Transform"),"value":self.mode,"kind":"select","options":modes.into_iter().map(|(value,cn,en)|json!({"value":value,"label":tr(zh,cn,en)})).collect::<Vec<_>>()}),
-            json!({"id":"compact","label":tr(zh,"只显示统计，收起转换预览","Statistics only, hide transformed preview"),"value":self.compact.to_string(),"kind":"checkbox"}),
         ];
-        view.groups.push(json!({"columns":2,"actions":[button("analyze",&tr(zh,"分析文本","Analyze"),true),button("sample",&tr(zh,"载入样例","Load sample"),false),button("clear",&tr(zh,"清空","Clear"),false),button("export-text",&tr(zh,"生成结果文件","Generate result file"),false)]}));
+        view.groups.push(json!({"columns":2,"actions":[button("analyze",&tr(zh,"处理文本","Apply"),true),button("export-text",&tr(zh,"导出 TXT","Export TXT"),false),button("sample",&tr(zh,"载入样例","Load sample"),false),button("clear",&tr(zh,"清空","Clear"),false)]}));
         if !self.notice.is_empty() {
             view.blocks.push(markdown(&self.notice));
         }
@@ -240,7 +227,7 @@ impl TextStudio {
                 view.blocks.push(json!({"kind":"chart","chartType":"bar","label":tr(zh,"词频（空白分词）","Word frequency (whitespace tokens)"),"labels":top.iter().map(|(word,_)|word).collect::<Vec<_>>(),"series":[{"label":tr(zh,"次数","Count"),"values":top.iter().map(|(_,count)|count).collect::<Vec<_>>()}]}));
                 view.blocks.push(json!({"kind":"table","columns":[tr(zh,"高频词","Top words"),tr(zh,"出现次数","Count")],"rows":top.iter().map(|(word,count)|vec![word.clone(),count.to_string()]).collect::<Vec<_>>()}));
             }
-            if !self.compact {
+            {
                 match self.transform(zh) {
                     Ok(result) => view.blocks.push(markdown(format!(
                         "### {}\n\n{}",
@@ -254,6 +241,12 @@ impl TextStudio {
                     Err(message) => view.blocks.push(markdown(message)),
                 }
             }
+        } else {
+            view.blocks.push(markdown(tr(
+                zh,
+                "处理后的结果会显示在这里。",
+                "Your processed result will appear here.",
+            )));
         }
         view
     }

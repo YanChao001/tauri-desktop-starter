@@ -711,14 +711,14 @@ mod tests {
     #[test]
     fn lab_analyzes_unicode_transforms_and_reports_host_data_in_real_wasm() {
         let view = step("", None, serde_json::json!({}), None);
-        assert_eq!(view.tabs.len(), 6);
-        assert_eq!(view.display, "扩展实验室");
+        assert_eq!(view.tabs.len(), 4);
+        assert_eq!(view.display, "文本工具");
         let view = step(&view.state, Some("tab-text"), serde_json::json!({}), None);
-        assert_eq!(view.fields.len(), 3);
+        assert_eq!(view.fields.len(), 2);
         let view = step(
             &view.state,
             Some("analyze"),
-            serde_json::json!({"text":"Hello hello 中文","mode":"upper","compact":"false"}),
+            serde_json::json!({"text":"Hello hello 中文","mode":"upper"}),
             None,
         );
         assert!(
@@ -739,85 +739,26 @@ mod tests {
                 serde_json::json!({"inputText":"explicit text", "files":[{"name":"note.txt","content":"saved content","encoding":"utf8","mediaType":"text/plain"}], "network":[]}),
             ),
         );
-        assert_eq!(view.display, "文件与 HTTPS");
-        let blocks = serde_json::to_string(&view.blocks).unwrap();
-        assert!(blocks.contains("note.txt") && blocks.contains("text/plain"));
-        // No data in a regular action: old response is retained, never fetched by the plugin.
-        let next = step(
+        assert_eq!(view.display, "文本工具");
+        assert_eq!(view.fields[0].value, "explicit text");
+        let connections = step(
             &view.state,
-            Some("tab-overview"),
+            Some("tab-connections"),
             serde_json::json!({}),
             None,
         );
-        assert_eq!(next.display, "扩展实验室");
-    }
-    #[test]
-    fn lab_puzzles_have_real_undo_hints_win_detection_and_multiple_levels() {
-        let mut view = step("", None, serde_json::json!({}), None);
-        view = step(&view.state, Some("tab-game"), serde_json::json!({}), None);
-        assert_eq!(view.groups[0].actions.len(), 25);
-        assert!(view.groups[0].board);
-        let initial: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        view = step(&view.state, Some("cell-0"), serde_json::json!({}), None);
-        let changed: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        assert_ne!(initial["puzzle"]["board"], changed["puzzle"]["board"]);
-        view = step(&view.state, Some("undo"), serde_json::json!({}), None);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&view.state).unwrap()["puzzle"]["board"],
-            initial["puzzle"]["board"]
+        let blocks = serde_json::to_string(&connections.blocks).unwrap();
+        assert!(blocks.contains("note.txt") && blocks.contains("text/plain"));
+        // No data in a regular action: old response is retained, never fetched by the plugin.
+        let next = step(
+            &connections.state,
+            Some("tab-text"),
+            serde_json::json!({}),
+            None,
         );
-        for level in 0..3 {
-            for _ in 0..25 {
-                if view.groups[0].actions.iter().all(|action| action.disabled) {
-                    break;
-                }
-                view = step(&view.state, Some("hint"), serde_json::json!({}), None);
-            }
-            assert_eq!(view.display, "全部熄灭，挑战成功！", "level {level}");
-            view = step(&view.state, Some("next"), serde_json::json!({}), None);
-            assert_eq!(view.display, "让星光安静下来");
-        }
+        assert_eq!(next.display, "文本工具");
+        assert_eq!(next.fields[0].value, "explicit text");
     }
-
-    #[test]
-    fn lab_hint_respects_the_full_history_and_undo_restores_its_last_move() {
-        let view = step("", None, serde_json::json!({}), None);
-        let mut view = step(&view.state, Some("tab-game"), serde_json::json!({}), None);
-        // 成对切换同一格回到原棋盘，不会在途中解开当前关卡。
-        for _ in 0..100 {
-            view = step(&view.state, Some("cell-0"), serde_json::json!({}), None);
-        }
-        let hint_disabled = |view: &ExtensionView| {
-            view.groups
-                .iter()
-                .flat_map(|group| &group.actions)
-                .find(|action| action.id == "hint")
-                .unwrap()
-                .disabled
-        };
-        assert!(hint_disabled(&view));
-        let full = view.state.clone();
-        view = step(&view.state, Some("hint"), serde_json::json!({}), None);
-        assert_eq!(view.state, full);
-
-        view = step(&view.state, Some("undo"), serde_json::json!({}), None);
-        assert!(!hint_disabled(&view));
-        let before_hint: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        view = step(&view.state, Some("hint"), serde_json::json!({}), None);
-        assert!(hint_disabled(&view));
-        let after_hint: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        assert_ne!(
-            before_hint["puzzle"]["board"],
-            after_hint["puzzle"]["board"]
-        );
-        view = step(&view.state, Some("undo"), serde_json::json!({}), None);
-        let after_undo: serde_json::Value = serde_json::from_str(&view.state).unwrap();
-        assert_eq!(
-            before_hint["puzzle"]["board"],
-            after_undo["puzzle"]["board"]
-        );
-    }
-
     #[test]
     fn bundled_lab_renders_all_tabs_in_both_languages() {
         let mut fixtures = serde_json::Map::new();
@@ -828,9 +769,8 @@ mod tests {
                 Some("tab-text"),
                 Some("analyze"),
                 Some("tab-data"),
-                Some("tab-game"),
-                Some("hint"),
-                Some("tab-about"),
+                Some("tab-todo"),
+                Some("tab-connections"),
             ] {
                 let request = serde_json::json!({"version":2,"action":action,"state":state,"fields":{},"locale":locale});
                 let output = crate::extension_runtime::run(
@@ -922,18 +862,9 @@ mod tests {
     }
     #[test]
     fn lab_private_tasks_survive_a_new_session_and_roundtrip_host_effects() {
-        let host = serde_json::json!({"permissions":["storage"],"storage":{"revision":7,"values":{"nickname":"Ada","todos":[]}}});
+        let host = serde_json::json!({"permissions":["storage"],"storage":{"revision":7,"values":{"todos":[]}}});
         let initial = wasm_request(
             serde_json::json!({"version":2,"state":"","fields":{},"locale":"en","action":"tab-todo","host":host}),
-        );
-        assert_eq!(
-            initial
-                .fields
-                .iter()
-                .find(|field| field.id == "nickname")
-                .unwrap()
-                .value,
-            "Ada"
         );
         let invalid = wasm_request(
             serde_json::json!({"version":2,"state":initial.state,"fields":{"todo":"   "},"locale":"en","action":"todo-add","host":host}),
@@ -946,7 +877,7 @@ mod tests {
         let effect = serde_json::to_value(&added.effects[0]).unwrap();
         assert_eq!(effect["expectedRevision"], 7);
         assert_eq!(effect["changes"]["todos"][0]["text"], "Ship plugin");
-        let host = serde_json::json!({"permissions":["storage"],"storage":{"revision":8,"values":{"nickname":"Ada","todos":effect["changes"]["todos"]}}});
+        let host = serde_json::json!({"permissions":["storage"],"storage":{"revision":8,"values":{"todos":effect["changes"]["todos"]}}});
         let saved = wasm_request(
             serde_json::json!({"version":2,"state":added.state,"fields":{},"locale":"en","action":"host-result","host":host,"results":[{"id":"add-task","value":host["storage"],"error":null}]}),
         );

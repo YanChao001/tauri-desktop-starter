@@ -3,7 +3,6 @@
 
 mod app;
 mod data;
-mod puzzle;
 mod tasks;
 mod text;
 mod view;
