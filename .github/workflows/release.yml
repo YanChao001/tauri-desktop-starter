@@ -1,7 +1,7 @@
 name: 版本发布
 
 # 打 tag 触发（v1.2.0），也可在 Actions 页面手动触发。
-# 产物默认作为 draft Release 上传，人工确认后再发布。
+# 产物先上传到草稿；构建、必要签名和更新清单全部成功后自动公开。
 on:
   push:
     tags: ["v*"]
@@ -443,3 +443,18 @@ jobs:
           $env:RELEASE_ASSET_DIR = $uploadDir
           node scripts/release-lib.mjs upload
           if ($LASTEXITCODE -ne 0) { throw "上传签名后的安装包失败" }
+
+  publish-release:
+    name: 公开完整的 Release
+    needs: [validate, build, publish-updater, sign-windows]
+    if: >-
+      ${{ !cancelled() && needs.validate.result == 'success' && needs.build.result == 'success'
+          && (needs.publish-updater.result == 'success' || needs.publish-updater.result == 'skipped')
+          && (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发布并按版本确定 Latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.validate.outputs.release-id }}
+        run: gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false -f make_latest=legacy

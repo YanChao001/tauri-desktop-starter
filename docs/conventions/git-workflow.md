@@ -222,7 +222,7 @@ GitHub 路径：Settings → Branches → Add branch protection rule。
 | ----------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [持续集成](../../.github/workflows/ci.yml)      | 向 `main` / `develop` 提交 PR、推送或手动运行 | 前端、浏览器、三端 Rust 和桌面 E2E 全部成功后，`质量门禁` 才通过；校验已提交的 README 图片并保留原生截图产物，图片按 [截图流程](../testing.md#readme-原生截图更新) 随功能 PR 提交 |
 | [在线演示](../../.github/workflows/pages.yml)   | `develop` 的相关源码推送，或在该分支手动运行  | 构建并验证浏览器产物，通过 GitHub Actions 部署 Pages，无需产物分支                                                                                                                |
-| [版本发布](../../.github/workflows/release.yml) | 推送 `v*` 标签，或手动运行                    | 验证代码已进入 `main` 及版本一致，构建各平台安装包并创建草稿 Release                                                                                                              |
+| [版本发布](../../.github/workflows/release.yml) | 推送 `v*` 标签，或手动运行                    | 验证代码已进入 `main` 及版本一致，构建各平台安装包，必要任务全部成功后自动公开 Release                                                                                            |
 | [依赖更新](../../.github/dependabot.yml)        | 配置的更新周期                                | 向 `develop` 提交依赖更新 PR，沿用相同检查和评审                                                                                                                                  |
 | [依赖审计](../../.github/workflows/audit.yml)   | 每周一或手动运行                              | 检查 npm 与 Rust 锁文件中的已知漏洞                                                                                                                                               |
 
@@ -239,6 +239,8 @@ GitHub 路径：Settings → Branches → Add branch protection rule。
 ## 发布流程
 
 以下以发布 `1.2.0` 为例，分支、版本与 tag 均替换为本次实际值；上一个版本的 tag 必须已存在，首次发布直接审查 `git log HEAD --oneline`。
+
+推送发布 tag 即决定公开该版本；适用的正式安装、签名与升级验收、未验证范围和发布说明须在打 tag 前确认。草稿只用于构建暂存，发布工作流的全部必要任务成功后会自动公开，不再另等人工发布。任务失败或取消时保留草稿；无需修改源码时重跑失败任务，具体规则见 [CI 多平台构建](../build-release.md#ci-多平台构建)。
 
 ```bash
 # 1. 从 develop 切发布分支
@@ -257,7 +259,7 @@ git log v1.1.1..HEAD --oneline
 # 5. 推送发布分支，向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
 git push -u origin release/1.2.0
 
-# 6. 在 main 的正式发布提交上打标签
+# 6. 确认适用验收与发布说明后，在 main 的正式发布提交上打标签，触发自动发布
 git switch main
 git pull --ff-only
 git tag -a v1.2.0 -m "v1.2.0"
@@ -285,7 +287,7 @@ pnpm version:set 1.1.1
 git push -u origin hotfix/1.1.1
 # 先向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
 
-# main PR 合并后，在对应合并提交打标签
+# main PR 合并且适用验收与发布说明确认后，在对应合并提交打标签，触发自动发布
 git switch main
 git pull --ff-only
 git tag -a v1.1.1 -m "v1.1.1"

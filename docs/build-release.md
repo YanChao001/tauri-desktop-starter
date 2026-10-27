@@ -219,7 +219,7 @@ Windows Authenticode 签名标识发布者并验证文件完整性，不能保�
 **发版**：打 tag 后，`release.yml` 的 `build` job 产出 draft Release，并将未签名的 NSIS 包直接上传为本次运行的 artifact；随后 `sign-windows` job 使用该 artifact 的 ID
 提交签名请求（到 SignPath 门户点批准）→ 校验签名 → 覆盖 draft 资产。这样签名来源直接关联到本次构建。SignPath 与 PFX 签名应二选一。
 上传签名文件前会再次核对目标 Release 的 tag 与 draft 状态，拒绝覆盖已公开版本。
-未配置 `SIGNPATH_ORGANIZATION_ID` 时该 job 直接跳过，现有发布流程不受影响。
+未配置 `SIGNPATH_ORGANIZATION_ID` 时该 job 直接跳过；启用后必须完成门户审批与签名验证，才能进入最后的自动公开步骤，见 [CI 多平台构建](#ci-多平台构建)。
 
 **限制**：
 
@@ -322,7 +322,7 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 
 4. 正常打 tag 发布。工作流用临时配置启用 `bundle.createUpdaterArtifacts: true`，生成 Tauri v2 更新产物；本地默认构建仍不额外产出更新签名。每个平台收集后，用独立 Rust 验证器核对最终文件字节、公钥、`.sig` 与签名绑定的版本，随后上传平台元数据。
 
-5. 构建完成后由单独 job 合并四个目标的元数据，按名称或上传标签核对 draft Release 中的实际资产，用 GitHub 返回的真实文件名生成正式 tag 的下载 URL，再上传唯一的 `latest.json`，避免矩阵任务互相覆盖。不能用草稿的临时下载 URL 判断正式地址是否存在，也不预猜空格等字符的重命名结果。清单使用 Release 正文作为版本说明（最多 8000 字符）；正文过长时优先保留变更摘要、升级限制及完整说明链接。检查并发布正式版 draft 后，客户端才能通过 GitHub latest 入口获取新版本。
+5. 构建完成后由单独 job 合并四个目标的元数据，按名称或上传标签核对 draft Release 中的实际资产，用 GitHub 返回的真实文件名生成正式 tag 的下载 URL，再上传唯一的 `latest.json`，避免矩阵任务互相覆盖。不能用草稿的临时下载 URL 判断正式地址是否存在，也不预猜空格等字符的重命名结果。清单使用 Release 正文作为版本说明（最多 8000 字符）；正文过长时优先保留变更摘要、升级限制及完整说明链接。所有必要任务成功后，工作流自动公开同一 Release；符合 GitHub Latest 规则的正式版随后可通过默认更新入口获取。
 
 早期未配置公钥的客户端不会访问更新源，常规交付需先手动安装带公钥的版本作为后续升级起点；受控部署也可通过可信配置文件迁移。首轮正式验收用两个不同版本验证发现、下载、验签及安装，不用同版本安装或仅生成清单代替升级验证。Windows 便携版应用内安装更新会转为 NSIS 安装版；保留便携形态时从发行页手动下载并替换 EXE。
 
@@ -357,11 +357,13 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 `.github/workflows/ci.yml` 执行格式、lint、类型、单元测试、Rust 编译与独立的三端真实桌面 E2E job。
 出正式包由 `.github/workflows/release.yml` 负责，推送 `v*` tag 或手动触发均可运行。tag 触发会核对 tag 与项目版本；手动触发按所选 ref 构建，并以项目版本关联 `v<version>` Release。正式发布应选择已合入 `main` 的发布提交及对应 tag，不能以手动触发绕过分支评审。
 
+推送发布 tag 就是公开该版本的决定，适用验收、未验证范围与发布说明须在打 tag 前确认；手动触发同样按正式发版处理。草稿只用于构建和签名期间暂存资产，流程成功后自动公开，不再等待人工点击发布。自动公开不代替目标平台的正式安装、签名与升级验收，实际范围仍须如实记录。
+
 发布流程先由 `validate` job 执行冻结安装和 `pnpm verify`，通过后创建或复用唯一的同版本草稿，将 Release ID 传给全部平台、更新清单与可选的签名上传步骤。后续步骤按 ID 上传，矩阵任务不再各自查找和创建草稿；已有同标签的多个 Release、已公开版本或草稿源码提交不匹配时，在构建前失败。PFX 签名验证按配置检查实际启用的 NSIS / MSI 产物，缺失或签名无效会失败。
 
 新草稿的正文包含变更摘要、升级与限制、GitHub 自动生成的 PR 清单及下载入口。摘要与限制来自本次合入 `main` 的 `release/x.y.z` 或 `hotfix/x.y.z` PR：优先读取“变更摘要”“升级与限制”小节，否则读取模板的“变更内容”“影响范围”；仅有模板注释会阻止创建草稿。摘要应覆盖上一公开正式版以来的实际变化，不能只写版本号。PR 清单以最近公开正式版为基线，忽略草稿和预发布版，并过滤纯升版 / 回流的 `chore(release)` 条目；`fix(release)` 等实际修复仍保留。首次发布尚无公开版及发布 PR 时，生成如实说明没有历史升级路径的首发正文。
 
-发布 PR 合入后、打 tag 前，可在对应 `main` 提交执行 `GITHUB_REPOSITORY=owner/repo pnpm release:notes`（PowerShell 先设置 `$env:GITHUB_REPOSITORY`；需已登录 `gh`），预览写入 `artifacts/<version>/release-notes.md`，不修改远端。构建重跑会保留已有草稿的人工编辑。需修正文案时应在更新清单汇总前完成；正文会进入 `latest.json`，清单生成后再改草稿正文不会同步其中的说明，公开后不替换既有更新清单。
+发布 PR 合入后、打 tag 前，可在对应 `main` 提交执行 `GITHUB_REPOSITORY=owner/repo pnpm release:notes`（PowerShell 先设置 `$env:GITHUB_REPOSITORY`；需已登录 `gh`），预览写入 `artifacts/<version>/release-notes.md`，不修改远端。构建重跑会保留已有草稿的人工编辑；失败后需修正文案时，应在重跑更新清单汇总前完成。正文会进入 `latest.json`，清单生成后再改草稿正文不会同步其中的说明，公开后不替换既有更新清单。
 
 构建矩阵覆盖：
 
@@ -371,9 +373,9 @@ pnpm tauri signer generate -w ~/.tauri/my-app.key
 | macOS arm64+x64 | dmg / app            |
 | Linux x64       | deb / rpm / appimage |
 
-产物以 **draft Release** 上传，人工确认后再发布。
+产物先上传到唯一的 **draft Release**。`validate` 和整个 `build` 矩阵必须成功，`publish-updater` 与 `sign-windows` 必须成功或因未启用对应配置而跳过，最后的发布任务才会按同一个 Release ID 将草稿公开。任一必要任务失败、取消或意外跳过都不会公开。正式版按 GitHub 的版本规则参与 Latest 选择，预发布版保持预发布标记，不抢占 Latest。
 
-某个平台或后续验证失败时，其他平台可能已把资产上传到 draft；此时不能发布部分成功的草稿。先确认失败原因与该 tag 的源码：无需改代码时可重跑失败任务，完成后重新核对全部目标、签名和更新元数据；需要改代码时使用新版本和新 tag。若旧工作流已生成同标签的多个草稿，先备份元数据与待迁移文件，按资产 ID 下载、校验哈希，归并到一个草稿并保留原始上传标签；核对完整后再删除重复草稿、重跑汇总。已公开版本不得通过重跑工作流替换资产。
+某个平台或后续验证失败、取消时，其他平台可能已把资产上传到 draft；工作流保留草稿，不公开部分成功的版本。先确认失败原因与该 tag 的源码：无需改代码时重跑失败任务，全部必要任务通过后自动公开；需要改代码时使用新版本和新 tag。若旧工作流已生成同标签的多个草稿，先备份元数据与待迁移文件，按资产 ID 下载、校验哈希，归并到一个草稿并保留原始上传标签；核对完整后再删除重复草稿、重跑汇总。已公开版本不得通过重跑工作流替换资产。
 
 工作流另将 `tauri-action` 本次返回的产物收集到同一套 `artifacts/<version>/<target>/installers/` 结构，生成清单并上传为 `build-installers-<target>`。这是 build 阶段的归档，尚未经过可选的 SignPath 后签名；启用 SignPath 后，签名 job 会重新生成签名文件的清单，上传 `signed-installers-x86_64-pc-windows-msvc` 并覆盖 draft Release 的 NSIS 资产。需要 SignPath 签名包时，使用签名 job 的归档或完成签名后的 Release。
 
@@ -402,7 +404,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 
 ## 发布检查清单
 
-由发布负责人在 Release 或发布 issue 留下实际版本、commit、平台、产物哈希和检查证据，并指定发布后的支持与恢复责任人。下列检查按适用目标执行，不适用的项目说明理由；阻断项失败或目标平台未验收时，不把该目标标记为可交付。
+发布负责人在打 tag 前确认适用验收与发布说明，在 Release 或发布 issue 留下实际版本、commit、平台、产物哈希和检查证据，并指定发布后的支持与恢复责任人。下列检查按适用目标执行，不适用的项目说明理由；阻断项失败或目标平台未验收时，不把该目标标记为可交付。
 
 - [ ] 已从 `develop` 创建 `release/x.y.z`，检查本次提交范围
 - [ ] `pnpm version:set x.y.z` 已执行，四处版本号一致
@@ -415,9 +417,9 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 - [ ] 系统集成使用派生项目自己的 scheme / 扩展名，验证安装版深链、文件关联冷 / 热启动及通知、快捷键、凭据权限；未测平台明确记录
 - [ ] 涉及数据格式变更时，按 [数据与恢复验证](./testing.md#数据与恢复验证) 记录支持升级的历史版本、迁移失败状态及恢复演练结果
 - [ ] 卸载后残留检查（用户数据是否按预期保留或清理）
-- [ ] `release/*` 已通过 PR 合入 `main`，在对应发布提交打 tag `vX.Y.Z`；再通过 `main` → `develop` 的回流 PR 同步发布历史，见 [Git 发布流程](./conventions/git-workflow.md#发布流程)
 - [ ] 发布 PR 的摘要覆盖上一公开正式版以来的变更，升级与限制明确；已预览自动生成的 PR 清单，未将 CI 通过写成完整安装升级验收
-- [ ] 等待发布 workflow 和可选签名 job 全部成功，检查 draft 中版本、平台资产、签名与更新元数据后人工发布
+- [ ] `release/*` 已通过 PR 合入 `main`，确认上述验收与说明后，在对应发布提交打 tag `vX.Y.Z`；再通过 `main` → `develop` 的回流 PR 同步发布历史，见 [Git 发布流程](./conventions/git-workflow.md#发布流程)
+- [ ] 发布 workflow 的全部必要任务成功并自动公开后，核对公开版本、平台资产、签名、更新元数据与 Latest 状态
 - [ ] 发布公告与更新说明同步给使用方
 
 ## 发布后观察
