@@ -101,7 +101,7 @@ test("artifact publishing rejects junction redirects before writing", (t) => {
         kind: "portable",
         entries: [{ source, path: "app.exe" }],
       }),
-    /目录链接/,
+    /directory links/,
   );
   assert.equal(existsSync(join(outside, "1.0.0")), false);
 });
@@ -122,7 +122,7 @@ test("publication normalizes separators and refuses sources containing its desti
         ...plan,
         entries: [{ source: root, path: "everything" }],
       }),
-    /包含发布目录/,
+    /contain the publication directory/,
   );
   assert.equal(
     readFileSync(join(output, "nsis/app.exe"), "utf8"),

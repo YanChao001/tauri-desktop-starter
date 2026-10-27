@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { mediaKind, safeMarkdownUrl, validWorkerInput } from "./model";
+import {
+  mediaKind,
+  safeMarkdownUrl,
+  validWorkerInput,
+  workerTextResult,
+} from "./model";
 
 describe("media and process input boundaries", () => {
   it("allows explicit HTTPS/mail links and rejects executable URL schemes", () => {
@@ -27,5 +32,23 @@ describe("media and process input boundaries", () => {
     expect(validWorkerInput(" ")).toBe(false);
     expect(validWorkerInput("中".repeat(334))).toBe(false);
     expect(validWorkerInput("中".repeat(333))).toBe(true);
+  });
+  it("recognizes text conversion results and leaves other output uninterpreted", () => {
+    expect(
+      workerTextResult('{"input":"a中","uppercase":"A中","characters":2}'),
+    ).toEqual({
+      original: "a中",
+      transformed: "A中",
+      characterCount: 2,
+    });
+    for (const value of [
+      "plain output",
+      "null",
+      "[]",
+      '{"input":"a","uppercase":"A","characters":-1}',
+      '{"input":"a","uppercase":"A","characters":"1"}',
+      '{"input":"a","characters":1}',
+    ])
+      expect(workerTextResult(value)).toBeNull();
   });
 });

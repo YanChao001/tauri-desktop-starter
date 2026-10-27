@@ -140,4 +140,31 @@ for (const width of [880, 1440]) {
     await expect(form.getByRole("status")).toHaveCount(0);
     sameBounds(await bounds(form), normal, "success toast");
   });
+
+  test(`form error summary closes before focusing the selected field at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await seed(page);
+    await page.goto("./#/data-studio");
+    await page
+      .getByRole("tab", { name: "Conditional form", exact: true })
+      .click();
+    const field = page.getByRole("textbox", { name: "Applicant", exact: true });
+    await page.evaluate(() => document.fonts.ready);
+    const before = await bounds(field);
+    await page.getByRole("button", { name: "Submit demo request" }).click();
+    const summary = page.getByRole("button", { name: /Check these fields/ });
+    await expect(summary).toBeVisible();
+    sameBounds(await bounds(field), before, "validation summary");
+    await summary.click();
+    const errorLink = page.getByRole("link", { name: /Applicant:/ });
+    await errorLink.click();
+    await expect(errorLink).toHaveCount(0);
+    await expect(field).toBeFocused();
+    await summary.click();
+    await expect(page.getByRole("link", { name: /Applicant:/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(summary).toBeFocused();
+  });
 }

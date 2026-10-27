@@ -1,5 +1,4 @@
 import { lazy, Suspense, useState } from "react";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MarkdownPanel, MediaPreview } from "@/features/media/content-panels";
 import { SidecarPanel, WebSocketPanel } from "@/features/media/realtime-panels";
@@ -19,15 +18,10 @@ export default function Media() {
     () => new Set(["content"]),
   );
   return (
-    <div className="studio-page space-y-5">
+    <div className="studio-page">
       <div className="studio-intro">
-        <span className="studio-eyebrow">{t("labs.eyebrow")}</span>
-        <h2 className="flex items-center gap-2">
-          {t("labs.media.title")}
-          <HelpTooltip label={`${t("labs.media.title")} · ${t("title.help")}`}>
-            {t("labs.media.description")}
-          </HelpTooltip>
-        </h2>
+        <h2>{t("labs.media.title")}</h2>
+        <p>{t("labs.media.description")}</p>
       </div>
       <Tabs
         value={view}
@@ -37,20 +31,13 @@ export default function Media() {
         }}
         className="demo-page-tabs"
       >
-        <div className="flex items-center gap-2">
-          <TabsList aria-label={t("experience.media.tabs")}>
-            {(["content", "charts", "connections"] as const).map((id) => (
-              <TabsTrigger key={id} value={id}>
-                {t(`experience.media.${id}`)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <HelpTooltip
-            label={`${t("experience.media.connections")} · ${t("title.help")}`}
-          >
-            {t("experience.media.connectionHint")}
-          </HelpTooltip>
-        </div>
+        <TabsList aria-label={t("experience.media.tabs")}>
+          {(["content", "charts", "connections"] as const).map((id) => (
+            <TabsTrigger key={id} value={id}>
+              {t(`experience.media.${id}`)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
         <TabsContent
           value="content"
           forceMount
@@ -58,7 +45,7 @@ export default function Media() {
           className="demo-tab-panel space-y-5"
         >
           <MarkdownPanel />
-          <MediaPreview />
+          <MediaPreview active={view === "content"} />
         </TabsContent>
         <TabsContent
           value="charts"

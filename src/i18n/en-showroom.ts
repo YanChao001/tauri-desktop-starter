@@ -4,7 +4,7 @@ export const enShowroom = {
   "showroom.title": "One idea.",
   "showroom.titleAccent": "A whole desktop experience.",
   "showroom.description":
-    "Files, data, background work, and system integration. Explore expressive interfaces and real desktop capabilities in one workspace.",
+    "Edit files, organize notes and manage tasks in one workspace, with an appearance that feels like yours.",
   "showroom.start": "Start exploring",
   "showroom.shortcut": "Find your next destination",
   "showroom.commands": "Open quick actions",
@@ -28,24 +28,24 @@ export const enShowroom = {
   "showroom.appliedToast": "Your window has a new look",
   "showroom.undo": "Undo the change",
   "showroom.undoToast": "Your previous appearance is restored",
-  "showroom.nativeLive": "Desktop capabilities connected",
+  "showroom.nativeLive": "Desktop tools are ready",
   "showroom.browserLive":
-    "Explore interactions here. Unlock system capabilities in the desktop app.",
+    "Try the interactions here. Open the desktop app for files and system tools.",
   "showroom.next": "Keep exploring",
   "showroom.workspace": "Your workspace",
   "showroom.workspaceHint":
     "Windows, local notes and preferences, always within reach.",
   "studio.nativeTitle": "More possibilities on the desktop",
   "studio.nativeDescription":
-    "This page connects to real windows, system services and local data. Open it in the desktop application to use these capabilities.",
+    "Open this page in the desktop app to use windows, system tools and data saved on your device.",
   "studio.nativeCta": "Try the playground",
   "studio.nativeMotion": "Explore the motion lab",
   "studio.nativeNote": "Browser preview · No system actions performed",
-  "studio.nativeWindow": "Native windows",
+  "studio.nativeWindow": "Desktop windows",
   "studio.nativeData": "Local data",
   "studio.nativeSystem": "System integration",
   "studio.settingsEyebrow": "Make it yours",
-  "studio.bridgeEyebrow": "Interface meets native",
+  "studio.bridgeEyebrow": "Try a desktop response",
   "studio.settingsWorkspace": "Window & workspace",
   "studio.settingsAbout": "About & resources",
 } satisfies Record<keyof typeof zhShowroom, string>;

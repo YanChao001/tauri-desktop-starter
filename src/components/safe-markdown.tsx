@@ -9,12 +9,22 @@ import { useI18n } from "@/providers/i18n";
 export function SafeMarkdown({ content }: { content: string }) {
   const { t } = useI18n();
   return (
-    <div className="space-y-3 break-words text-sm [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_a]:text-primary [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2">
+    <div className="min-w-0 space-y-3 break-words text-sm [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_a]:text-primary [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2">
       <Markdown
         remarkPlugins={[remarkGfm]}
         skipHtml
         urlTransform={safeMarkdownUrl}
         components={{
+          table: ({ children }) => (
+            <div
+              role="region"
+              aria-label={t("labs.media.table")}
+              tabIndex={0}
+              className="max-w-full overflow-x-auto rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <table>{children}</table>
+            </div>
+          ),
           pre: ({ node }) => {
             const code = node?.children.find(
               (child) => child.type === "element" && child.tagName === "code",

@@ -29,7 +29,8 @@ import { pathToFileURL } from "node:url";
 import { checkVersions } from "./version.mjs";
 
 const require = createRequire(import.meta.url);
-const ADVANCED = "高级构建请使用 pnpm tauri build；该命令不自动归档分发文件。";
+const ADVANCED =
+  "For advanced builds, use pnpm tauri build; it does not archive distribution files automatically.";
 const BUNDLE_DIRECTORIES = new Set([
   "nsis",
   "msi",
@@ -74,8 +75,9 @@ export function parseBuildArgs(args) {
     bundles: [],
     common: [],
     noBundle: false,
+    optimize: "size",
   };
-  const singles = new Set(["--target", "-t", "--config", "-c"]);
+  const singles = new Set(["--target", "-t", "--config", "-c", "--optimize"]);
   const lists = new Set(["--bundles", "-b", "--features", "-f"]);
   const flags = new Set([
     "--ci",
@@ -84,6 +86,7 @@ export function parseBuildArgs(args) {
     "--no-binary-patching",
     "--verbose",
   ]);
+  let hasOptimize = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const equal = arg.indexOf("=");
@@ -97,7 +100,7 @@ export function parseBuildArgs(args) {
       continue;
     }
     if (!singles.has(key) && !lists.has(key))
-      optionError(`app:build 不支持参数：${arg}`);
+      optionError(`app:build does not support this argument: ${arg}`);
     const values = [];
     if (equal !== -1) {
       values.push(arg.slice(equal + 1));
@@ -108,16 +111,26 @@ export function parseBuildArgs(args) {
       }
     }
     if (!values.length || values.some((value) => !value.trim()))
-      optionError(`${key} 缺少参数值`);
+      optionError(`${key} requires a value`);
+    if (key === "--optimize") {
+      if (hasOptimize) optionError("--optimize can only be specified once");
+      if (!["speed", "size"].includes(values[0]))
+        optionError(
+          "--optimize only supports speed (build speed) or size (binary size)",
+        );
+      options.optimize = values[0];
+      hasOptimize = true;
+      continue;
+    }
     if (key === "--target" || key === "-t") {
-      if (options.target) optionError("--target 只能指定一次");
+      if (options.target) optionError("--target can only be specified once");
       options.target = values[0];
       if (
         !/^[a-zA-Z0-9_-]+$/.test(options.target) ||
         options.target === "universal-apple-darwin"
       ) {
         optionError(
-          "app:build 不支持自定义 JSON target 或 universal-apple-darwin",
+          "app:build does not support custom JSON targets or universal-apple-darwin",
         );
       }
     }
@@ -127,6 +140,23 @@ export function parseBuildArgs(args) {
     options.common.push(key, ...values);
   }
   return options;
+}
+
+/** 保持 Tauri 的 release 输出布局，通过 Cargo 覆盖选择编译速度策略。 */
+export function cargoBuildArgs(options) {
+  const args = ["--message-format=json"];
+  if (options.optimize === "speed") {
+    for (const setting of [
+      "codegen-units=256",
+      'lto="off"',
+      "opt-level=0",
+      "incremental=true",
+      "strip=false",
+    ]) {
+      args.push("--config", `profile.release.${setting}`);
+    }
+  }
+  return args;
 }
 
 function object(value) {
@@ -155,7 +185,8 @@ export function mergeConfig(base, patch) {
 
 function readJsonConfig(path) {
   const config = JSON.parse(readFileSync(path, "utf8"));
-  if (!object(config)) optionError(`配置必须是 JSON 对象：${path}`);
+  if (!object(config))
+    optionError(`Configuration must be a JSON object: ${path}`);
   return config;
 }
 
@@ -163,7 +194,7 @@ function platformForTarget(target) {
   if (target.includes("-windows-")) return "windows";
   if (target.endsWith("-apple-darwin")) return "macos";
   if (target.includes("-linux-") && !target.includes("android")) return "linux";
-  optionError(`app:build 仅支持桌面目标平台：${target}`);
+  optionError(`app:build only supports desktop targets: ${target}`);
 }
 
 export function safeBinaryName(name) {
@@ -174,7 +205,7 @@ export function safeBinaryName(name) {
     name === ".." ||
     /[/\\\0]/.test(name)
   ) {
-    throw new Error("主程序名称必须是单个文件名");
+    throw new Error("The main binary name must be a single file name");
   }
   return name;
 }
@@ -187,7 +218,9 @@ export function mainCargoBinary(pkg) {
     : (binaries.find((entry) => entry.name === pkg.name) ??
       (binaries.length === 1 ? binaries[0] : undefined));
   if (!binary)
-    throw new Error("无法确定主程序，请在 Cargo.toml 设置 default-run");
+    throw new Error(
+      "Cannot determine the main binary; set default-run in Cargo.toml",
+    );
   return binary;
 }
 
@@ -199,6 +232,8 @@ export function prepareBuild(
 ) {
   root = resolve(root);
   const options = parseBuildArgs(args);
+  // CARGO_INCREMENTAL 的优先级高于 profile，避免继承的全局设置反转所选策略。
+  env = { ...env, CARGO_INCREMENTAL: options.optimize === "size" ? "0" : "1" };
   const host = execFileSync("rustc", ["-vV"], {
     cwd: root,
     env,
@@ -206,7 +241,7 @@ export function prepareBuild(
   })
     .match(/^host: (.+)$/m)?.[1]
     ?.trim();
-  if (!host) throw new Error("无法读取 rustc 的 host target");
+  if (!host) throw new Error("Cannot read the rustc host target");
   const target = options.target ?? host;
   const platform = platformForTarget(target);
   const version = checkVersions(root);
@@ -227,7 +262,7 @@ export function prepareBuild(
   const pkg = metadata.packages.find(
     (entry) => realpathSync(entry.manifest_path) === manifest,
   );
-  if (!pkg) throw new Error("cargo metadata 中没有找到应用 package");
+  if (!pkg) throw new Error("Application package not found in cargo metadata");
   const binary = mainCargoBinary(pkg);
   safeBinaryName(config.mainBinaryName ?? binary.name);
   const targets = options.bundles.length
@@ -249,12 +284,13 @@ export function prepareBuild(
     target,
     platform,
     noBundle,
+    optimize: options.optimize,
     explicitTarget: options.target,
     buildArgs: [
       ...options.common,
       "--no-bundle",
       "--",
-      "--message-format=json",
+      ...cargoBuildArgs(options),
     ],
     bundleArgs: options.common,
   };
@@ -271,24 +307,24 @@ export function effectiveConfig(root, options, version, platform) {
     existsSync(join(tauriDir, `Tauri.${platform}.toml`))
   ) {
     optionError(
-      "app:build 仅支持 JSON 格式的平台配置，不能忽略 JSON5/TOML 配置",
+      "app:build only supports JSON platform configuration; JSON5/TOML configuration cannot be ignored",
     );
   }
   for (const value of options.configs) {
     let patch;
     if (value.trimStart().startsWith("{")) {
       patch = JSON.parse(value);
-      if (!object(patch)) optionError("--config 必须是 JSON 对象");
+      if (!object(patch)) optionError("--config must be a JSON object");
     } else {
       if (extname(value).toLowerCase() !== ".json")
-        optionError("--config 仅支持 JSON 文件或 JSON 对象字符串");
+        optionError("--config only supports JSON files or JSON object strings");
       patch = readJsonConfig(resolve(root, value));
     }
     config = mergeConfig(config, patch);
   }
   if (config.version !== version) {
     optionError(
-      `生效配置版本 ${config.version} 与项目版本 ${version} 不一致，请使用 pnpm version:set 同步版本`,
+      `Effective configuration version ${config.version} does not match project version ${version}; use pnpm version:set to synchronize versions`,
     );
   }
   return config;
@@ -374,7 +410,7 @@ function runTauri(plan, command, args, collect = false) {
       else {
         signal = interrupted ?? signal;
         const error = new Error(
-          `tauri ${command} 失败${signal ? `（${signal}）` : `（退出码 ${code}）`}`,
+          `tauri ${command} failed (${signal ?? `exit code ${code}`})`,
         );
         error.exitCode = interrupted
           ? interrupted === "SIGINT"
@@ -391,23 +427,25 @@ export function locateBuildOutput(plan, executables) {
   const paths = [...new Set(executables)];
   if (paths.length !== 1)
     throw new Error(
-      `Cargo 必须恰好返回一个主程序路径，实际为 ${paths.length} 个`,
+      `Cargo must return exactly one main binary path; received ${paths.length}`,
     );
   const outputDir = realpathSync(dirname(paths[0]));
   const targetDirectory = realpathSync(plan.metadata.target_directory);
   if (!contained(targetDirectory, outputDir) || outputDir === targetDirectory) {
-    throw new Error("Cargo 主程序输出路径超出 target_directory");
+    throw new Error(
+      "Cargo main binary output path is outside target_directory",
+    );
   }
   const parts = relative(targetDirectory, outputDir).split(sep);
   if (parts.at(-1) !== "release" || parts.length > 2)
-    optionError("无法确认 release 构建输出目录");
+    optionError("Cannot determine the release build output directory");
   const target = parts.length === 2 ? parts[0] : plan.host;
   const platform = platformForTarget(target);
   if (plan.explicitTarget && target !== plan.explicitTarget)
-    throw new Error("Cargo 输出的 target 与请求不一致");
+    throw new Error("Cargo output target does not match the requested target");
   if (platform !== plan.platform) {
     optionError(
-      "Cargo 隐式 target 改变了目标操作系统，请使用 --target 明确指定，确保平台配置一致",
+      "Cargo's implicit target changes the target operating system; specify --target explicitly to keep platform configuration consistent",
     );
   }
   const executable = join(
@@ -415,11 +453,12 @@ export function locateBuildOutput(plan, executables) {
     `${safeBinaryName(plan.config.mainBinaryName ?? plan.binary.name)}${platform === "windows" ? ".exe" : ""}`,
   );
   if (!statSync(executable).isFile())
-    throw new Error(`主程序不存在：${executable}`);
+    throw new Error(`Main binary does not exist: ${executable}`);
   return { executable, outputDir, target };
 }
 
 export async function buildApplication(plan) {
+  console.log(`Build optimization: ${plan.optimize} (release)`);
   const executables = await runTauri(plan, "build", plan.buildArgs, true);
   return locateBuildOutput(plan, executables);
 }
@@ -437,7 +476,7 @@ function verifyBundleParent(plan, built) {
   const outputDir = realpathSync(built.outputDir);
   const targetDirectory = realpathSync(plan.metadata.target_directory);
   if (outputDir === targetDirectory || !contained(targetDirectory, outputDir))
-    throw new Error("拒绝操作 target_directory 以外的 bundle");
+    throw new Error("Refusing to modify a bundle outside target_directory");
   return outputDir;
 }
 
@@ -447,13 +486,15 @@ function installerEntries(bundleDir) {
   for (const directory of readdirSync(bundleDir, { withFileTypes: true })) {
     if (!BUNDLE_DIRECTORIES.has(directory.name)) continue;
     if (directory.isSymbolicLink() || !directory.isDirectory())
-      throw new Error(`bundle 类型目录无效：${directory.name}`);
+      throw new Error(`Invalid bundle type directory: ${directory.name}`);
     for (const entry of readdirSync(join(bundleDir, directory.name), {
       withFileTypes: true,
     })) {
       const path = join(directory.name, entry.name);
       if (entry.isSymbolicLink())
-        throw new Error(`分发文件不能是目录链接：${path}`);
+        throw new Error(
+          `Distribution files must not be symbolic links: ${path}`,
+        );
       if (
         (entry.isDirectory() &&
           directory.name === "macos" &&
@@ -468,7 +509,9 @@ function installerEntries(bundleDir) {
     }
   }
   if (!entries.length)
-    throw new Error("本次 Tauri bundle 没有生成受支持的分发文件");
+    throw new Error(
+      "This Tauri bundle did not produce any supported distribution files",
+    );
   return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -488,7 +531,9 @@ export async function withFreshBundle(plan, built, create, consume) {
   const bundleDir = join(outputDir, "bundle");
   const original = bundleExists(bundleDir);
   if (original && (original.isSymbolicLink() || !original.isDirectory()))
-    throw new Error("bundle 必须是普通目录，不能通过链接覆盖其他位置");
+    throw new Error(
+      "bundle must be a regular directory; links must not redirect writes to another location",
+    );
   const staging = join(outputDir, `.starter-bundle-${randomUUID()}`);
   mkdirSync(staging);
   const previous = join(staging, "previous");
@@ -499,7 +544,9 @@ export async function withFreshBundle(plan, built, create, consume) {
     if (built.executable) {
       const executable = realpathSync(built.executable);
       if (dirname(executable) !== outputDir)
-        throw new Error("主程序不在本次 Cargo 输出目录内");
+        throw new Error(
+          "The main binary is not in the current Cargo output directory",
+        );
       copyFileSync(executable, binaryBackup);
     }
     if (original) renameSync(bundleDir, previous);
@@ -507,7 +554,7 @@ export async function withFreshBundle(plan, built, create, consume) {
     await create();
     const current = bundleExists(bundleDir);
     if (!current?.isDirectory() || current.isSymbolicLink())
-      throw new Error("本次打包没有生成有效的 bundle 目录");
+      throw new Error("Bundling did not produce a valid bundle directory");
     result = await consume(installerEntries(bundleDir));
   } catch (error) {
     try {
@@ -520,16 +567,19 @@ export async function withFreshBundle(plan, built, create, consume) {
       // Tauri 成功时会还原 binary patch；中途失败也必须还原，避免污染便携版缓存
       if (existsSync(binaryBackup)) {
         if (bundleExists(built.executable)?.isSymbolicLink())
-          throw new Error("主程序被替换为链接，拒绝覆盖链接目标", {
-            cause: error,
-          });
+          throw new Error(
+            "The main binary was replaced with a link; refusing to overwrite the link target",
+            {
+              cause: error,
+            },
+          );
         copyFileSync(binaryBackup, built.executable);
       }
       // staging 是本次创建的固定直接子目录，且其父目录已重新校验
       rmSync(staging, { recursive: true, force: true });
     } catch (restoreError) {
       throw new Error(
-        `${error.message}\n恢复旧安装包失败：${restoreError.message}；备份保留在 ${staging}`,
+        `${error.message}\nFailed to restore previous installers: ${restoreError.message}; backups remain at ${staging}`,
         { cause: restoreError },
       );
     }
@@ -540,7 +590,7 @@ export async function withFreshBundle(plan, built, create, consume) {
     rmSync(staging, { recursive: true, force: true });
   } catch (error) {
     console.warn(
-      `分发文件已归档，旧 bundle 备份未能清理：${staging}（${error.message}）`,
+      `Distribution files were archived, but the previous bundle backup could not be removed: ${staging} (${error.message})`,
     );
   }
   return result;
@@ -557,7 +607,9 @@ if (
       process.argv.length !== 3 ||
       !["windows", "macos", "linux"].includes(platform)
     )
-      throw new Error("用法: node scripts/build-lib.mjs <windows|macos|linux>");
+      throw new Error(
+        "Usage: node scripts/build-lib.mjs <windows|macos|linux>",
+      );
     const root = resolve(import.meta.dirname, "..");
     console.log(
       JSON.stringify(

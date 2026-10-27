@@ -1,11 +1,17 @@
 //! 固定自身可执行文件的无界面 worker；取消和总超时均回收本次拥有的进程。
 use crate::{
     error::NativeResult,
-    extension_runtime::{self, CompilationCache, Failure, IO_LIMIT, MODULE_LIMIT, TIMEOUT},
+    extension_runtime::{
+        self, CACHE_ENTRIES, CACHE_SOURCE_BYTES, CompilationCache, Failure, IO_LIMIT, MODULE_LIMIT,
+        TIMEOUT,
+    },
+    extensions::ExtensionExecutionBudget,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use sha2::{Digest, Sha256};
 use std::{
+    collections::VecDeque,
     io::{self, Read, Write},
     process::{Child, Command, Stdio},
     sync::{
@@ -34,8 +40,40 @@ struct Request {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Operation {
-    Run { function: String, input: String },
-    Validate { exports: Vec<String> },
+    Run {
+        function: String,
+        input: String,
+        #[serde(default, rename = "executionBudget")]
+        execution_budget: ExtensionExecutionBudget,
+    },
+    Validate {
+        exports: Vec<String>,
+    },
+    Prepare {
+        #[serde(default, rename = "executionBudget")]
+        execution_budget: ExtensionExecutionBudget,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CompilationKey {
+    hash: [u8; 32],
+    budget: ExtensionExecutionBudget,
+}
+
+impl Operation {
+    fn compilation_key(&self, hash: [u8; 32]) -> Option<CompilationKey> {
+        match self {
+            Self::Run {
+                execution_budget, ..
+            }
+            | Self::Prepare { execution_budget } => Some(CompilationKey {
+                hash,
+                budget: *execution_budget,
+            }),
+            Self::Validate { .. } => None,
+        }
+    }
 }
 
 type Reply = Result<String, Failure>;
@@ -45,6 +83,7 @@ struct Worker {
     requests: Option<mpsc::SyncSender<Request>>,
     replies: mpsc::Receiver<io::Result<Reply>>,
     io_thread: Option<JoinHandle<()>>,
+    compiled: VecDeque<(CompilationKey, usize)>,
 }
 
 impl Worker {
@@ -100,6 +139,7 @@ impl Worker {
             requests: Some(requests),
             replies,
             io_thread: Some(io_thread),
+            compiled: VecDeque::new(),
         })
     }
 
@@ -171,6 +211,12 @@ fn dispatch(
     started: Instant,
     timeout: Duration,
 ) -> NativeResult<String> {
+    let source = STANDARD
+        .decode(&request.module)
+        .map_err(|_| Failure::failed("input", "module encoding is invalid").native())?;
+    let hash: [u8; 32] = Sha256::digest(&source).into();
+    let source_bytes = source.len();
+    let compilation = request.operation.compilation_key(hash);
     loop {
         if stop.load(Ordering::Relaxed) || CLOSING.load(Ordering::Acquire) {
             return Err(Failure::cancelled().native());
@@ -178,40 +224,103 @@ fn dispatch(
         if started.elapsed() >= timeout {
             return Err(Failure::timeout().native());
         }
-        for slot in WORKERS.iter() {
-            let mut slot = match slot.try_lock() {
-                Ok(slot) => slot,
-                Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-                Err(std::sync::TryLockError::WouldBlock) => continue,
-            };
-            if slot
-                .as_mut()
-                .is_some_and(|worker| !matches!(worker.child.try_wait(), Ok(None)))
-            {
-                // 空闲期间崩溃的 worker 在接收新请求前替换，不使新调用白白失败。
-                slot.take();
-            }
-            if slot.is_none() {
-                *slot =
-                    Some(Worker::spawn().map_err(|_| {
+        // Fuel changes the compiled code configuration, so affinity must match
+        // the same module and budget variant as the worker's bounded cache.
+        // Busy cached workers never pin normal calls to one slot.
+        for cached_only in [true, false] {
+            for slot in WORKERS.iter() {
+                let mut slot = match slot.try_lock() {
+                    Ok(slot) => slot,
+                    Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                    Err(std::sync::TryLockError::WouldBlock) => continue,
+                };
+                if slot
+                    .as_mut()
+                    .is_some_and(|worker| !matches!(worker.child.try_wait(), Ok(None)))
+                {
+                    // 空闲期间崩溃的 worker 在接收新请求前替换，不使新调用白白失败。
+                    slot.take();
+                }
+                if cached_only
+                    && !slot.as_ref().is_some_and(|worker| {
+                        compilation.is_some_and(|key| has_compilation(&worker.compiled, key))
+                    })
+                {
+                    continue;
+                }
+                if slot.is_none() {
+                    *slot = Some(Worker::spawn().map_err(|_| {
                         Failure::failed("worker", "worker could not start").native()
                     })?);
-            }
-            let result = slot
-                .as_mut()
-                .expect("initialized worker")
-                .call(request, &stop, started, timeout);
-            return match result {
-                Ok(reply) => reply.map_err(Failure::native),
-                Err(failure) => {
-                    // 协议断连、总超时或取消后不再复用进程 / 编译缓存。
-                    slot.take();
-                    Err(failure.native())
                 }
-            };
+                let result = slot
+                    .as_mut()
+                    .expect("initialized worker")
+                    .call(request, &stop, started, timeout);
+                return match result {
+                    Ok(reply) => {
+                        let worker = slot.as_mut().expect("initialized worker");
+                        if let Some(key) = compilation {
+                            if reply.is_ok() {
+                                remember_compilation(&mut worker.compiled, key, source_bytes);
+                            } else {
+                                // A trap can follow a successful compile and evict older code.
+                                // Forget hints rather than infer the guest's compilation stage.
+                                worker.compiled.clear();
+                            }
+                        }
+                        reply.map_err(Failure::native)
+                    }
+                    Err(failure) => {
+                        // 协议断连、总超时或取消后不再复用进程 / 编译缓存。
+                        slot.take();
+                        Err(failure.native())
+                    }
+                };
+            }
         }
         thread::sleep(POLL);
     }
+}
+
+fn has_compilation(cache: &VecDeque<(CompilationKey, usize)>, key: CompilationKey) -> bool {
+    cache.iter().any(|(cached, _)| *cached == key)
+}
+
+fn remember_compilation(
+    cache: &mut VecDeque<(CompilationKey, usize)>,
+    key: CompilationKey,
+    bytes: usize,
+) {
+    cache.retain(|(cached, _)| *cached != key);
+    while !cache.is_empty()
+        && (cache.len() >= CACHE_ENTRIES
+            || cache.iter().map(|(_, bytes)| bytes).sum::<usize>() + bytes > CACHE_SOURCE_BYTES)
+    {
+        cache.pop_front();
+    }
+    cache.push_back((key, bytes));
+}
+
+pub(crate) fn prepare(
+    module: &[u8],
+    budget: ExtensionExecutionBudget,
+    stop: Arc<AtomicBool>,
+    started: Instant,
+) -> NativeResult<()> {
+    extension_runtime::check_request(module, "prepare", &[]).map_err(Failure::native)?;
+    dispatch(
+        Request {
+            module: STANDARD.encode(module),
+            operation: Operation::Prepare {
+                execution_budget: budget,
+            },
+        },
+        stop,
+        started,
+        TIMEOUT,
+    )
+    .map(|_| ())
 }
 
 pub(crate) fn run(
@@ -219,6 +328,7 @@ pub(crate) fn run(
     function: &str,
     input: &[u8],
     stop: Arc<AtomicBool>,
+    budget: ExtensionExecutionBudget,
 ) -> NativeResult<String> {
     let started = Instant::now();
     extension_runtime::check_request(module, function, input).map_err(Failure::native)?;
@@ -228,6 +338,7 @@ pub(crate) fn run(
             operation: Operation::Run {
                 function: function.into(),
                 input: STANDARD.encode(input),
+                execution_budget: budget,
             },
         },
         stop,
@@ -300,19 +411,26 @@ fn process_request(request: Request, cache: &mut CompilationCache) -> Reply {
         .decode(request.module)
         .map_err(|_| Failure::failed("input", "module encoding is invalid"))?;
     match request.operation {
-        Operation::Run { function, input } => {
+        Operation::Run {
+            function,
+            input,
+            execution_budget,
+        } => {
             if input.len() > IO_LIMIT.div_ceil(3) * 4 {
                 return Err(Failure::failed("input", "input exceeds the size budget"));
             }
             let input = STANDARD
                 .decode(input)
                 .map_err(|_| Failure::failed("input", "input encoding is invalid"))?;
-            extension_runtime::execute_worker(cache, &module, &function, &input)
+            extension_runtime::execute_worker(cache, &module, &function, &input, execution_budget)
         }
         Operation::Validate { exports } => {
             let names = exports.iter().map(String::as_str).collect::<Vec<_>>();
             extension_runtime::validate_in_process(&module, &names).map(|()| String::new())
         }
+        Operation::Prepare { execution_budget } => cache
+            .prepare(&module, execution_budget)
+            .map(|()| String::new()),
     }
 }
 
@@ -354,6 +472,113 @@ pub(crate) fn worker_main() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn key(value: u8, budget: ExtensionExecutionBudget) -> CompilationKey {
+        CompilationKey {
+            hash: [value; 32],
+            budget,
+        }
+    }
+
+    #[test]
+    fn affinity_hints_follow_the_compilation_entry_and_source_budgets() {
+        let mut cache = VecDeque::new();
+        for n in 0..CACHE_ENTRIES + 1 {
+            remember_compilation(
+                &mut cache,
+                key(n as u8, ExtensionExecutionBudget::Standard),
+                10,
+            );
+        }
+        assert_eq!(cache.len(), CACHE_ENTRIES);
+        assert!(!has_compilation(
+            &cache,
+            key(0, ExtensionExecutionBudget::Standard)
+        ));
+        remember_compilation(&mut cache, key(1, ExtensionExecutionBudget::Standard), 10);
+        assert_eq!(
+            cache.back().unwrap().0,
+            key(1, ExtensionExecutionBudget::Standard)
+        );
+        remember_compilation(
+            &mut cache,
+            key(9, ExtensionExecutionBudget::Standard),
+            CACHE_SOURCE_BYTES,
+        );
+        assert_eq!(cache.len(), 1);
+        assert_eq!(
+            cache.front().unwrap().0,
+            key(9, ExtensionExecutionBudget::Standard)
+        );
+    }
+
+    #[test]
+    fn affinity_requires_the_requested_budget_and_counts_each_variant_for_lru() {
+        let standard = key(1, ExtensionExecutionBudget::Standard);
+        let compute = key(1, ExtensionExecutionBudget::Compute);
+        let mut cache = VecDeque::new();
+        remember_compilation(&mut cache, standard, 10);
+        assert!(has_compilation(&cache, standard));
+        assert!(!has_compilation(&cache, compute));
+        remember_compilation(&mut cache, compute, 10);
+        assert_eq!(cache.len(), 2);
+        for n in 2..=CACHE_ENTRIES {
+            remember_compilation(
+                &mut cache,
+                key(n as u8, ExtensionExecutionBudget::Standard),
+                10,
+            );
+        }
+        assert_eq!(cache.len(), CACHE_ENTRIES);
+        assert!(!has_compilation(&cache, standard));
+        assert!(has_compilation(&cache, compute));
+        remember_compilation(&mut cache, compute, 10);
+        assert_eq!(cache.back().unwrap().0, compute);
+    }
+
+    #[test]
+    fn budget_variants_each_consume_the_module_source_byte_budget() {
+        let standard = key(1, ExtensionExecutionBudget::Standard);
+        let compute = key(1, ExtensionExecutionBudget::Compute);
+        let mut cache = VecDeque::new();
+        remember_compilation(&mut cache, standard, CACHE_SOURCE_BYTES / 2);
+        remember_compilation(&mut cache, compute, CACHE_SOURCE_BYTES / 2);
+        assert_eq!(cache.len(), 2);
+        assert_eq!(
+            cache.iter().map(|(_, bytes)| bytes).sum::<usize>(),
+            CACHE_SOURCE_BYTES
+        );
+        remember_compilation(&mut cache, key(2, ExtensionExecutionBudget::Standard), 1);
+        assert!(!has_compilation(&cache, standard));
+        assert!(has_compilation(&cache, compute));
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn affinity_keys_follow_compile_operations_and_leave_validation_neutral() {
+        let hash = [3; 32];
+        for budget in [
+            ExtensionExecutionBudget::Standard,
+            ExtensionExecutionBudget::Compute,
+        ] {
+            let prepare = Operation::Prepare {
+                execution_budget: budget,
+            };
+            let run = Operation::Run {
+                function: "run".into(),
+                input: String::new(),
+                execution_budget: budget,
+            };
+            assert_eq!(prepare.compilation_key(hash), Some(key(3, budget)));
+            assert_eq!(run.compilation_key(hash), prepare.compilation_key(hash));
+        }
+        assert_eq!(
+            Operation::Validate {
+                exports: vec!["run".into()]
+            }
+            .compilation_key(hash),
+            None
+        );
+    }
     #[test]
     fn frames_are_length_delimited_and_reject_invalid_or_oversized_input() {
         let mut frames = Vec::new();
@@ -374,7 +599,25 @@ mod tests {
     #[test]
     fn protocol_uses_only_fixed_operations_and_validates_decoded_payloads() {
         // 同时检查父进程边界；无效入参在创建任何进程之前返回。
-        assert!(run(b"", "run", b"", Arc::new(AtomicBool::new(false))).is_err());
+        assert!(
+            run(
+                b"",
+                "run",
+                b"",
+                Arc::new(AtomicBool::new(false)),
+                ExtensionExecutionBudget::Standard
+            )
+            .is_err()
+        );
+        assert!(
+            prepare(
+                b"",
+                ExtensionExecutionBudget::Standard,
+                Arc::new(AtomicBool::new(false)),
+                Instant::now()
+            )
+            .is_err()
+        );
         assert!(validate(b"", &["run"]).is_err());
         assert!(
             serde_json::from_str::<Request>(
@@ -382,6 +625,12 @@ mod tests {
             )
             .is_err()
         );
+        for budget in ["null", "123", "\"unlimited\""] {
+            let request = format!(
+                r#"{{"module":"AA==","operation":{{"action":"run","function":"run","input":"","executionBudget":{budget}}}}}"#
+            );
+            assert!(serde_json::from_str::<Request>(&request).is_err());
+        }
         let request = Request {
             module: "!".into(),
             operation: Operation::Validate { exports: vec![] },
@@ -392,6 +641,7 @@ mod tests {
             operation: Operation::Run {
                 function: "run".into(),
                 input: "!".into(),
+                execution_budget: ExtensionExecutionBudget::Standard,
             },
         };
         assert!(process_request(request, &mut CompilationCache::default()).is_err());

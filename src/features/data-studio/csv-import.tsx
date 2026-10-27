@@ -7,6 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -116,6 +122,11 @@ export function CsvImport({
     }
   }
   const busy = pending || disabled;
+  const errorText = error
+    ? error instanceof CsvError
+      ? t(`csv.error.${error.code}`)
+      : nativeErrorText(error, t)
+    : null;
   return (
     <details className="rounded-lg border bg-muted/20 p-4">
       <summary className="cursor-pointer font-medium">{t("csv.title")}</summary>
@@ -154,9 +165,34 @@ export function CsvImport({
           />
         </div>
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="csv-source">{t("csv.source")}</Label>
+          <div className="flex h-6 min-w-0 items-center gap-2">
+            <Label htmlFor="csv-source" className="shrink-0">
+              {t("csv.source")}
+            </Label>
             <HelpTooltip label={t("csv.hint")}>{t("csv.hint")}</HelpTooltip>
+            {errorText ? (
+              <div role="alert" className="min-w-0 flex-1">
+                <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        id="csv-source-error"
+                        type="button"
+                        className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {errorText}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-72 leading-relaxed"
+                    >
+                      {errorText}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            ) : null}
           </div>
           <Textarea
             id="csv-source"
@@ -176,17 +212,6 @@ export function CsvImport({
             {t("csv.check")}
           </Button>
         </div>
-        <p
-          id="csv-source-error"
-          role={error ? "alert" : undefined}
-          className="h-10 overflow-auto text-sm text-destructive"
-        >
-          {error
-            ? error instanceof CsvError
-              ? t(`csv.error.${error.code}`)
-              : nativeErrorText(error, t)
-            : null}
-        </p>
         {table ? (
           <>
             <fieldset className="space-y-3">
@@ -220,7 +245,7 @@ export function CsvImport({
                       <SelectTrigger id={`csv-map-${field}`} className="w-full">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" align="start">
                         <SelectItem value="none">{t("csv.none")}</SelectItem>
                         {table.headers.map((header, index) => (
                           <SelectItem key={header} value={String(index)}>

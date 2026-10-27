@@ -2,6 +2,8 @@ import { useRef, useState, type CSSProperties } from "react";
 import {
   ArrowUpRightIcon,
   Code2Icon,
+  PauseIcon,
+  PlayIcon,
   RotateCcwIcon,
   ShuffleIcon,
   SparklesIcon,
@@ -68,7 +70,11 @@ const INITIAL = {
 export function ProjectStudio({ active }: { active: boolean }) {
   const { t } = useI18n();
   const artwork = useRef<HTMLDivElement>(null);
-  const { active: artworkActive } = useDemoMotion(artwork, active);
+  const [paused, setPaused] = useState(false);
+  const { active: artworkActive, reduced } = useDemoMotion(
+    artwork,
+    active && !paused,
+  );
   const [project, setProject] = useState(INITIAL);
   const update = (patch: Partial<typeof INITIAL>) =>
     setProject((current) => ({ ...current, ...patch }));
@@ -133,7 +139,7 @@ export function ProjectStudio({ active }: { active: boolean }) {
             <SelectTrigger id="studio-kind" className="w-full">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {KINDS.map((item) => (
                 <SelectItem key={item.value} value={item.value}>
                   {t(item.label)}
@@ -251,27 +257,56 @@ export function ProjectStudio({ active }: { active: boolean }) {
         <div className="studio-canvas-top">
           <span className="studio-live-dot" />
           {t("playground.livePreview")}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t("playground.inspect")}
-              >
-                <Code2Icon />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72">
-              <PopoverHeader>
-                <PopoverTitle>{t("playground.configuration")}</PopoverTitle>
-              </PopoverHeader>
-              <CodeBlock
-                code={JSON.stringify({ ...project, name }, null, 2)}
-                language="json"
-                className="mt-3 max-h-72"
-              />
-            </PopoverContent>
-          </Popover>
+          <div className="ml-auto flex items-center gap-1">
+            <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={reduced}
+                    aria-pressed={paused}
+                    aria-label={t(
+                      paused
+                        ? "playground.resumeMotion"
+                        : "playground.pauseMotion",
+                    )}
+                    onClick={() => setPaused((value) => !value)}
+                  >
+                    {paused || reduced ? <PlayIcon /> : <PauseIcon />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {t(
+                    paused
+                      ? "playground.resumeMotion"
+                      : "playground.pauseMotion",
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t("playground.inspect")}
+                >
+                  <Code2Icon />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72">
+                <PopoverHeader>
+                  <PopoverTitle>{t("playground.configuration")}</PopoverTitle>
+                </PopoverHeader>
+                <CodeBlock
+                  code={JSON.stringify({ ...project, name }, null, 2)}
+                  language="json"
+                  className="mt-3 max-h-72"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
         <article
           className="studio-preview"

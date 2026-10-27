@@ -90,15 +90,14 @@ export default function MotionLab() {
       data-reduced={reduced}
       data-paused={paused || !visible}
     >
-      <header className="lab-heading">
+      <header className="studio-intro lab-heading">
         <div className="lab-brand-mark" aria-hidden="true">
           <i />
           <i />
           <i />
         </div>
-        <p>{t("lab.eyebrow")}</p>
         <h2>{t("lab.title")}</h2>
-        <span>{t("lab.subtitle")}</span>
+        <p>{t("lab.subtitle")}</p>
       </header>
       <div
         className="lab-scene-tabs"

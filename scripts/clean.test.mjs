@@ -155,14 +155,14 @@ test("cleanup rejects the project root, traversal and ancestor junction escapes"
   const outside = join(base, "outside");
   mkdirSync(join(outside, "target"), { recursive: true });
   writeFileSync(join(outside, "target/keep"), "outside data");
-  assert.throws(() => removeProjectPath(root, "."), /拒绝/);
-  assert.throws(() => removeProjectPath(root, "../outside"), /拒绝/);
+  assert.throws(() => removeProjectPath(root, "."), /Refusing/);
+  assert.throws(() => removeProjectPath(root, "../outside"), /Refusing/);
   symlinkSync(
     outside,
     join(root, "linked"),
     process.platform === "win32" ? "junction" : "dir",
   );
-  assert.throws(() => removeProjectPath(root, "linked/target"), /拒绝/);
+  assert.throws(() => removeProjectPath(root, "linked/target"), /Refusing/);
   assert.equal(existsSync(join(outside, "target/keep")), true);
   assert.equal(removeProjectPath(root, "linked"), true);
   assert.equal(existsSync(join(outside, "target/keep")), true);

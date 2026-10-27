@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
 import { markdownExample, mediaKind } from "./model";
 
@@ -13,7 +14,7 @@ export function MarkdownPanel() {
   const { t, language } = useI18n();
   const [content, setContent] = useState(() => markdownExample(language));
   return (
-    <Card>
+    <Card className="@container/markdown">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.markdown")}
@@ -24,8 +25,8 @@ export function MarkdownPanel() {
           </HelpTooltip>
         </CardTitle>
       </CardHeader>
-      <CardContent className="grid items-start gap-4 lg:grid-cols-2">
-        <div className="space-y-2">
+      <CardContent className="grid items-start gap-4 @min-[46rem]/markdown:grid-cols-2">
+        <div className="min-w-0 space-y-2">
           <Label htmlFor="markdown-source">{t("labs.media.source")}</Label>
           <Textarea
             id="markdown-source"
@@ -56,7 +57,7 @@ export function MarkdownPanel() {
   );
 }
 
-export function MediaPreview() {
+export function MediaPreview({ active = true }: { active?: boolean }) {
   const { t } = useI18n();
   const [preview, setPreview] = useState<{
     name: string;
@@ -64,6 +65,10 @@ export function MediaPreview() {
     kind: "image" | "audio" | "video";
   } | null>(null);
   const player = useRef<HTMLMediaElement | null>(null);
+  const { visible } = useDemoMotion(player);
+  useEffect(() => {
+    if (!active || !visible) player.current?.pause();
+  }, [active, visible, preview]);
   useEffect(() => {
     const current = player.current;
     return () => {
@@ -71,13 +76,17 @@ export function MediaPreview() {
       if (preview) URL.revokeObjectURL(preview.url);
     };
   }, [preview]);
+  const handlePlay = () => {
+    if (!active || !visible) player.current?.pause();
+  };
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.file")}
           <HelpTooltip label={`${t("labs.media.file")} · ${t("title.help")}`}>
-            {t("labs.media.fileHint")}
+            <p>{t("labs.media.fileHint")}</p>
+            <p>{t("experience.media.connectionHint")}</p>
           </HelpTooltip>
         </CardTitle>
       </CardHeader>
@@ -126,6 +135,7 @@ export function MediaPreview() {
                 src={preview.url}
                 className="w-full"
                 aria-label={preview.name}
+                onPlay={handlePlay}
                 onError={() => toast.error(t("labs.media.decodeError"))}
               />
             ) : (
@@ -138,6 +148,7 @@ export function MediaPreview() {
                 src={preview.url}
                 className="max-h-80 w-full rounded-md"
                 aria-label={preview.name}
+                onPlay={handlePlay}
                 onError={() => toast.error(t("labs.media.decodeError"))}
               />
             )}

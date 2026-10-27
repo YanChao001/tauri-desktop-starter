@@ -1,62 +1,63 @@
 import type { zhCatalog } from "./zh-catalog";
 export const enCatalog = {
-  "nav.catalog": "Capabilities & start",
-  "catalog.title": "From exploration to your desktop app",
+  "nav.catalog": "Feature guide",
+  "catalog.title": "Explore app features",
   "catalog.description":
-    "Explore capabilities, runtime boundaries and source through real routes. Choose a journey, then make one small change across a page, facade and Rust command.",
+    "Find a feature, check what it needs and open it to try. Demos, desktop features and features that connect online are clearly marked.",
   "catalog.runtimeBrowser":
     "Browser preview. Open the desktop app to use system features.",
-  "catalog.native": "Real native capability",
-  "catalog.local": "Local UI / fixture",
-  "catalog.external": "External service or configuration",
-  "catalog.inspect": "See module details",
+  "catalog.native": "Includes desktop-only features",
+  "catalog.local": "Try in the browser",
+  "catalog.external": "Connection or extra setup required",
+  "catalog.inspect": "Check requirements",
   "catalog.statusHint":
-    "Local includes browser UI and explicitly labelled fixtures; it does not imply real accounts or system operations. External demo requests require an explicit choice.",
-  "catalog.search": "Search capabilities, pages or descriptions",
-  "catalog.filter": "Capability type",
-  "catalog.all": "All capabilities",
+    "Browser experiences include interface interactions and clearly marked demos, without real accounts or system operations. Connecting to external services requires your choice; demo requests are not sent by default.",
+  "catalog.search": "Search features or descriptions",
+  "catalog.filter": "Requirements",
+  "catalog.all": "All features",
   "catalog.open": "Open demo",
   "catalog.source": "Page source",
   "catalog.docs": "Related documentation",
   "catalog.hidden": "Demo entry hidden in minimal mode",
-  "catalog.empty": "No matching capabilities.",
-  "catalog.modules": "Modules & capability boundaries",
+  "catalog.empty": "No matching features.",
+  "catalog.modules": "Features & requirements",
   "catalog.overview":
-    "Pick one of four journeys. Preview, apply and undo a window style.",
+    "Choose a journey, then preview, apply or undo a window style.",
   "catalog.components":
-    "Try forms, feedback, favorites and a workspace with a resource tree, context menus, drag ordering, type filters and split panels. Data stays on this page.",
+    "Try forms, messages, favorites, a file tree, drag ordering and split panels. Sample content stays on the current page.",
   "catalog.motion":
-    "Drag a spring orb, reshape layouts, flip a tilt card and follow orbital trails, with reduced-motion and pause support.",
+    "Drag, flip and rearrange interactive cards to explore animation. Pause it or reduce motion at any time.",
   "catalog.bridge":
-    "Invoke real Rust commands and inspect successful results and structured errors.",
+    "Send a greeting and see the app's response or error message. Requires the desktop app.",
   "catalog.desktop":
-    "Try windows, tray, background operation and cross-window settings sync.",
+    "Adjust windows, the tray and background operation, and keep settings in sync across windows.",
   "catalog.database":
-    "Native note queries, revision conflicts, drafts, bulk operations and backup recovery.",
+    "Save, search and edit notes on this device, keep unsaved drafts, and back up or restore your notes when needed.",
   "catalog.diagnostics":
-    "Read runtime state and redacted logs. Review the data scope before exporting.",
+    "Check app and storage status, copy a problem report, and inspect backups to recover from startup problems. Original files are preserved.",
   "catalog.recovery":
     "Isolate startup faults, preview backups and recover native data while preserving original files for diagnosis.",
   "catalog.updates":
-    "Signed update flow. Maintainers must configure a public key, endpoint and usable release assets.",
+    "Check for and install updates verified by a digital signature. An available update service is required.",
   "catalog.settings":
-    "Browser-local preferences and native desktop snapshots, with immediate language, theme and layout feedback.",
+    "Adjust language, appearance, layout and window size. Manage startup, background operation, multiple windows and signature-verified updates in the desktop app. Preferences stay in the current browser or desktop app.",
   "catalog.workbench":
-    "Use native pickers for bounded files and directories, edit content and handle save conflicts.",
+    "Choose files or folders on this device to preview, edit and save. Get a warning if another app changes the file.",
   "catalog.tasks":
-    "Run controlled background tasks and observe progress, cancellation, failure and retry.",
+    "Scan or verify files in a selected folder, follow progress, and stop or retry when needed.",
   "catalog.system":
     "Explicitly try the system clipboard, notifications, global shortcuts and desktop integrations.",
   "catalog.network":
-    "Local request-failure scenarios, cache and sessions, with optional HTTPS and system credential storage.",
+    "Try requests, cached responses and sessions using local demos by default. Connecting online or saving credentials requires your choice.",
   "catalog.dataStudio":
-    "Filter and virtualize 10,000 records, hide and resize columns, open details, inspect partial bulk failures and try a conditional form.",
+    "Practice filtering 10,000 sample records, adjusting columns, viewing details, importing, exporting and filling out forms. Records are only used for this demo.",
   "catalog.media":
-    "Explore content, charts and live connections in separate tabs: safe Markdown, local media, optional WSS and a controlled worker.",
+    "Edit or preview documents, pictures and charts. Live connections use a local demo by default; choose the relevant feature to connect online or run background processing.",
   "catalog.catalog":
-    "Discover capabilities from current routes, inspect source and follow the page-to-IPC exercise.",
-  "catalog.generic":
-    "Inspect the page and architecture documentation for its runtime boundaries.",
+    "Browse what each feature does and what it needs, then choose a page to try.",
+  "catalog.generic": "Open the page to read its description and requirements.",
+  "catalog.developerResources": "Developer resources",
+  "catalog.moduleResources": "Source and documentation by feature",
   "catalog.tutorial": "Getting started: a new page → Rust call",
   "catalog.rustExample": "Rust command",
   "catalog.typescriptExample": "TypeScript facade and page call",

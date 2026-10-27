@@ -1,10 +1,14 @@
 import { flushSync } from "react-dom";
 import { useTheme } from "next-themes";
 import { useSettings } from "@/providers/settings";
-import { useCallback } from "react";
-import { THEMES, type AppTheme } from "@/lib/settings-model";
+import { useCallback, useEffect, useRef } from "react";
+import { THEMES, THEME_STORAGE_KEY, type AppTheme } from "@/lib/settings-model";
+import { isTauri } from "@/lib/tauri";
 
-type ViewTransitionHandle = { ready: Promise<void> };
+type ViewTransitionHandle = {
+  ready: Promise<void>;
+  skipTransition?: () => void;
+};
 type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => ViewTransitionHandle;
 };
@@ -19,6 +23,19 @@ export type ThemeReveal = {
   startedAt: number;
 };
 let revealSequence = 0;
+let cancelActiveReveal: (() => void) | undefined;
+
+function themeControlPoint() {
+  const rectangle = document
+    .querySelector("[data-theme-control]")
+    ?.getBoundingClientRect();
+  return rectangle?.width && rectangle.height
+    ? {
+        clientX: rectangle.left + rectangle.width / 2,
+        clientY: rectangle.top + rectangle.height / 2,
+      }
+    : { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 };
+}
 
 /**
  * 从鼠标位置扩散切换主题。
@@ -30,11 +47,14 @@ function switchThemeWithReveal(
   point: { clientX: number; clientY: number },
   applyTheme: () => void,
   animated: boolean,
+  onCancel?: () => void,
 ) {
+  cancelActiveReveal?.();
   const doc = document as ViewTransitionDocument;
 
   if (
     !animated ||
+    document.visibilityState === "hidden" ||
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
     typeof doc.startViewTransition !== "function" ||
     typeof document.documentElement.animate !== "function"
@@ -60,14 +80,42 @@ function switchThemeWithReveal(
   // Opaque frames capture their own old document before the host changes its palette.
   window.dispatchEvent(new CustomEvent(THEME_REVEAL_EVENT, { detail: reveal }));
 
-  const transition = doc.startViewTransition(() => {
-    // 主题属于 React 状态，必须同步提交，View Transition 才能捕获新帧
-    flushSync(applyTheme);
-  });
+  let cancelled = false;
+  let committed = false;
+  let animation: Animation | undefined;
+  const commit = () => {
+    // 主题属于 React 状态，必须同步提交，View Transition 才能捕获新帧。
+    if (!cancelled && !committed) {
+      committed = true;
+      flushSync(applyTheme);
+    }
+  };
+  const transition = doc.startViewTransition(commit);
+  const release = () => {
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    if (cancelActiveReveal === cancel) cancelActiveReveal = undefined;
+  };
+  const cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    transition.skipTransition?.();
+    animation?.cancel();
+    release();
+    onCancel?.();
+  };
+  const onVisibilityChange = () => {
+    if (document.visibilityState !== "hidden") return;
+    // 隐藏时仍提交已选择的主题，只终止视觉过渡。
+    commit();
+    cancel();
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  cancelActiveReveal = cancel;
 
   void transition.ready
     .then(() => {
-      const animation = document.documentElement.animate(
+      if (cancelled || document.visibilityState === "hidden") return;
+      animation = document.documentElement.animate(
         {
           clipPath: [
             `circle(0px at ${x}px ${y}px)`,
@@ -85,10 +133,73 @@ function switchThemeWithReveal(
           0,
           performance.timeOrigin + performance.now() - reveal.startedAt,
         );
+      void animation?.finished?.then(release, release);
     })
     .catch(() => {
       // 连续切换或窗口隐藏会跳过过渡并拒绝 ready，主题本身已经提交
+      release();
     });
+  return cancel;
+}
+
+/** 主窗口和独立插件窗口共享同步入口，不向原生回写远端设置。 */
+export function useSynchronizedTheme() {
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const { settings, persistence } = useSettings();
+  const native = isTauri();
+  const hydrated = useRef(false);
+  const pending = useRef<(() => void) | undefined>(undefined);
+  const pendingTheme = useRef<AppTheme | undefined>(undefined);
+  useEffect(() => {
+    if (!native) return;
+    // next-themes 的跨文档缓存监听会早于原生 revision 快照改色。
+    // 原生偏好由 SettingsSync 校验合并，主题缓存只用于下次窗口首屏。
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === THEME_STORAGE_KEY) event.stopImmediatePropagation();
+    };
+    window.addEventListener("storage", onStorage, true);
+    return () => window.removeEventListener("storage", onStorage, true);
+  }, [native]);
+  useEffect(() => {
+    const ready = !native || persistence !== "loading";
+    if (pendingTheme.current && pendingTheme.current !== settings.theme) {
+      pending.current?.();
+      pending.current = undefined;
+      pendingTheme.current = undefined;
+    }
+    if (theme !== settings.theme) {
+      pendingTheme.current = settings.theme;
+      const nextResolved =
+        settings.theme === "system"
+          ? window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light"
+          : settings.theme;
+      pending.current = switchThemeWithReveal(
+        themeControlPoint(),
+        () => setTheme(settings.theme),
+        hydrated.current &&
+          ready &&
+          settings.motion === "full" &&
+          nextResolved !== resolvedTheme,
+      );
+    }
+    hydrated.current = ready;
+  }, [
+    theme,
+    resolvedTheme,
+    settings.theme,
+    settings.motion,
+    persistence,
+    setTheme,
+    native,
+  ]);
+  useEffect(
+    () => () => {
+      pending.current?.();
+    },
+    [],
+  );
 }
 
 /**
@@ -97,6 +208,9 @@ function switchThemeWithReveal(
 export function useThemeSwitch() {
   const { setTheme: applyTheme, resolvedTheme } = useTheme();
   const { settings, update } = useSettings();
+  const pending = useRef<(() => void) | undefined>(undefined);
+  const pendingTheme = useRef<"light" | "dark" | undefined>(undefined);
+  useEffect(() => () => pending.current?.(), []);
   const setTheme = useCallback(
     (value: string) => {
       if (!THEMES.includes(value as AppTheme)) return;
@@ -107,11 +221,19 @@ export function useThemeSwitch() {
   );
 
   function toggle(event: { clientX: number; clientY: number }) {
-    const next = resolvedTheme === "dark" ? "light" : "dark";
-    switchThemeWithReveal(
+    const next =
+      (pendingTheme.current ?? resolvedTheme) === "dark" ? "light" : "dark";
+    pendingTheme.current = next;
+    pending.current = switchThemeWithReveal(
       event,
-      () => setTheme(next),
+      () => {
+        setTheme(next);
+        if (pendingTheme.current === next) pendingTheme.current = undefined;
+      },
       settings.motion === "full",
+      () => {
+        if (pendingTheme.current === next) pendingTheme.current = undefined;
+      },
     );
   }
 

@@ -85,6 +85,6 @@ describe("interactive showroom", () => {
     expect(screen.queryByTestId("showroom")).not.toBeInTheDocument();
     expect(
       screen.getAllByRole("link").map((link) => link.getAttribute("href")),
-    ).toEqual(["/desktop", "/database", "/settings"]);
+    ).toEqual(["/settings?section=desktop", "/database", "/settings"]);
   });
 });

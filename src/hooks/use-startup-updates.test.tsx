@@ -147,7 +147,7 @@ describe("startup update checks", () => {
     if (!action || typeof action !== "object" || !("onClick" in action))
       throw new Error("Missing update action");
     action.onClick?.({} as React.MouseEvent<HTMLButtonElement>);
-    expect(state.navigate).toHaveBeenCalledWith("/updates");
+    expect(state.navigate).toHaveBeenCalledWith("/settings?section=updates");
   });
 
   it("drops a late window lookup after cleanup", async () => {

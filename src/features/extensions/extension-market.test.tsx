@@ -76,12 +76,22 @@ function Market({
   data = null,
   error = null,
   loading = false,
+  busy = false,
+  downloadingId = null,
+  downloadProgress = null,
+  installingId = null,
+  installed = [],
   onRefresh = vi.fn(),
   onDownload = vi.fn(),
 }: {
   data?: native.MarketSnapshot | null;
   error?: unknown;
   loading?: boolean;
+  busy?: boolean;
+  downloadingId?: string | null;
+  downloadProgress?: native.MarketDownloadProgress | null;
+  installingId?: string | null;
+  installed?: readonly native.ExtensionInfo[];
   onRefresh?: () => void;
   onDownload?: (entry: native.MarketEntry) => void;
 }) {
@@ -90,9 +100,11 @@ function Market({
       snapshot={data}
       error={error}
       loading={loading}
-      busy={false}
-      downloadingId={null}
-      installed={[]}
+      busy={busy}
+      downloadingId={downloadingId}
+      downloadProgress={downloadProgress}
+      installingId={installingId}
+      installed={installed}
       onRefresh={onRefresh}
       onDownload={onDownload}
     />
@@ -108,6 +120,8 @@ function LiveMarket() {
       loading={market.loading}
       busy={false}
       downloadingId={null}
+      downloadProgress={null}
+      installingId={null}
       installed={[]}
       onRefresh={() => void market.reload()}
       onDownload={vi.fn()}
@@ -119,6 +133,189 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 afterEach(cleanup);
+
+it("shows received download percentages on the active button, then verifies and restores the download action", () => {
+  const onDownload = vi.fn();
+  const downloading = {
+    data: snapshot,
+    busy: true,
+    downloadingId: entry.package.manifest.id,
+    onDownload,
+  };
+  const view = render(<Market {...downloading} />);
+  const preparing = screen.getByRole("button", {
+    name: en["ext.market.preparing"],
+  });
+  expect(preparing).toBeDisabled();
+  expect(preparing).toHaveAttribute("aria-busy", "true");
+  expect(
+    screen.getByRole("progressbar", { name: "Word Lab" }),
+  ).not.toHaveAttribute("aria-valuenow");
+
+  view.rerender(
+    <Market
+      {...downloading}
+      downloadProgress={{
+        phase: "downloading",
+        receivedBytes: 50,
+        totalBytes: 200,
+      }}
+    />,
+  );
+  const button = screen.getByRole("button", { name: "Downloading 25%" });
+  expect(button).toBeDisabled();
+  expect(button).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("progressbar", { name: "Word Lab" })).toHaveAttribute(
+    "aria-valuenow",
+    "25",
+  );
+  fireEvent.click(button);
+  expect(onDownload).not.toHaveBeenCalled();
+
+  view.rerender(
+    <Market
+      {...downloading}
+      downloadProgress={{
+        phase: "downloading",
+        receivedBytes: 149,
+        totalBytes: 200,
+      }}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Downloading 74%" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("progressbar", { name: "Word Lab" })).toHaveAttribute(
+    "aria-valuenow",
+    "74",
+  );
+
+  view.rerender(
+    <Market {...downloading} downloadProgress={{ phase: "verifying" }} />,
+  );
+  expect(
+    screen.getByRole("button", { name: en["ext.market.verifying"] }),
+  ).toBeDisabled();
+  expect(screen.getByRole("progressbar", { name: "Word Lab" })).toHaveAttribute(
+    "aria-valuetext",
+    en["ext.market.verifying"],
+  );
+  expect(
+    screen.getByRole("progressbar", { name: "Word Lab" }),
+  ).not.toHaveAttribute("aria-valuenow");
+
+  view.rerender(<Market data={snapshot} onDownload={onDownload} />);
+  const ready = screen.getByRole("button", { name: en["ext.market.download"] });
+  expect(ready).toBeEnabled();
+  expect(ready).toHaveAttribute("aria-busy", "false");
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  fireEvent.click(ready);
+  expect(onDownload).toHaveBeenCalledExactlyOnceWith(entry);
+});
+
+it("keeps the preparation state indeterminate until a download total is available", () => {
+  render(
+    <Market
+      data={snapshot}
+      downloadingId={entry.package.manifest.id}
+      downloadProgress={{
+        phase: "downloading",
+        receivedBytes: 0,
+        totalBytes: 0,
+      }}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: en["ext.market.preparing"] }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole("progressbar", { name: "Word Lab" }),
+  ).not.toHaveAttribute("aria-valuenow");
+  expect(
+    screen.queryByRole("button", { name: /Downloading \d+%/ }),
+  ).not.toBeInTheDocument();
+});
+
+it("limits progress to the active plugin while other download buttons remain disabled", () => {
+  const otherEntry: native.MarketEntry = {
+    ...entry,
+    package: {
+      ...entry.package,
+      manifest: {
+        ...entry.package.manifest,
+        id: "example.other",
+        name: "Another plugin",
+      },
+    },
+  };
+  render(
+    <Market
+      data={{
+        ...snapshot,
+        catalog: { ...snapshot.catalog, entries: [entry, otherEntry] },
+      }}
+      busy
+      downloadingId={entry.package.manifest.id}
+      downloadProgress={{
+        phase: "downloading",
+        receivedBytes: 50,
+        totalBytes: 200,
+      }}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Downloading 25%" }),
+  ).toBeDisabled();
+  const otherButton = screen.getByRole("button", {
+    name: en["ext.market.download"],
+  });
+  expect(otherButton).toBeDisabled();
+  expect(otherButton).toHaveAttribute("aria-busy", "false");
+  expect(screen.getAllByRole("progressbar")).toHaveLength(1);
+  expect(
+    screen.queryByRole("progressbar", { name: "Another plugin" }),
+  ).not.toBeInTheDocument();
+});
+
+it("shows the installation phase without a fabricated percentage and restores the installed state", () => {
+  const view = render(
+    <Market data={snapshot} busy installingId={entry.package.manifest.id} />,
+  );
+  const button = screen.getByRole("button", {
+    name: en["ext.market.installing"],
+  });
+  expect(button).toBeDisabled();
+  expect(button).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("progressbar", { name: "Word Lab" })).toHaveAttribute(
+    "aria-valuetext",
+    en["ext.market.installing"],
+  );
+  expect(
+    screen.getByRole("progressbar", { name: "Word Lab" }),
+  ).not.toHaveAttribute("aria-valuenow");
+  view.rerender(
+    <Market
+      data={snapshot}
+      installed={[
+        {
+          package: entry.package,
+          generation: 1,
+          enabled: true,
+          grantedPermissions: [],
+          origin: { kind: "local" },
+          previousPackage: null,
+          previousOrigin: null,
+        },
+      ]}
+    />,
+  );
+  const installed = screen.getByRole("button", {
+    name: en["ext.market.installed"],
+  });
+  expect(installed).toBeDisabled();
+  expect(installed).toHaveAttribute("aria-busy", "false");
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+});
 
 it.each([
   ["MARKET_INCOMPATIBLE", "ext.market.incompatible"],

@@ -9,6 +9,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { copyText } from "@/lib/clipboard";
 import * as native from "@/lib/tauri";
 import Recovery from "./recovery";
@@ -41,7 +48,7 @@ vi.mock("@/providers/i18n", async () => {
   };
 });
 
-let status = {
+let status: native.RecoveryStatus = {
   active: true,
   reason: "Cannot open original storage",
   restored: false,
@@ -49,6 +56,19 @@ let status = {
   notes: 0,
   archiveId: null as string | null,
 };
+function Destination() {
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output>
+        {pathname}
+        {search}
+      </output>
+      <button onClick={() => navigate(-1)}>Back</button>
+    </>
+  );
+}
 const info = {
   id: "notes-backup-test.json",
   createdAt: "2026-01-01T00:00:00Z",
@@ -94,6 +114,72 @@ describe("isolated startup recovery", () => {
   });
   afterEach(cleanup);
 
+  it("keeps local backup loading distinct from a successfully loaded empty list", async () => {
+    let resolve!: (value: native.BackupInfo[]) => void;
+    vi.mocked(native.listRecoveryBackups).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(<Recovery />);
+    const region = await screen.findByRole("region", {
+      name: "Local recovery backups",
+    });
+    expect(region).toHaveAttribute("aria-busy", "true");
+    expect(within(region).getByRole("status")).toHaveTextContent(
+      "Loading local backups…",
+    );
+    expect(
+      within(region).queryByText(/No local backups/),
+    ).not.toBeInTheDocument();
+    await act(async () => resolve([]));
+    expect(region).toHaveAttribute("aria-busy", "false");
+    expect(
+      within(region).getByText(
+        "No local backups were found. Import a previously exported backup file.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Import backup file" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps backup listing failures inline and retries only the list without changing recovery evidence", async () => {
+    status = {
+      ...status,
+      restored: true,
+      notes: 252,
+      archiveId: "original-archive",
+    };
+    vi.mocked(native.listRecoveryBackups)
+      .mockRejectedValueOnce({ code: "STORAGE_IO" })
+      .mockResolvedValueOnce([info]);
+    render(<Recovery />);
+    const region = await screen.findByRole("region", {
+      name: "Local recovery backups",
+    });
+    expect(await within(region).findByRole("alert")).toBeVisible();
+    expect(
+      within(region).queryByText(/No local backups/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Cannot open original storage")).toBeVisible();
+    expect(
+      screen.getByText("252 records recovered in the trial restore"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Original files from the last recovery: original-archive",
+      ),
+    ).toBeVisible();
+    expect(toast.error).not.toHaveBeenCalled();
+    fireEvent.click(within(region).getByRole("button", { name: "Retry" }));
+    expect(await within(region).findByText(info.id)).toBeVisible();
+    expect(within(region).queryByRole("alert")).not.toBeInTheDocument();
+    expect(native.recoveryStatus).toHaveBeenCalledOnce();
+    expect(native.restoreRecoveryBackup).not.toHaveBeenCalled();
+    expect(native.stageRecovery).not.toHaveBeenCalled();
+  });
+
   it("keeps replacement unavailable until an isolated restore succeeds", async () => {
     render(<Recovery />);
     expect(
@@ -129,7 +215,7 @@ describe("isolated startup recovery", () => {
     expect(await screen.findByText("Recovered note")).toBeVisible();
     expect(native.restoreRecoveryBackup).not.toHaveBeenCalled();
     fireEvent.click(
-      screen.getByRole("button", { name: "Test restore in isolation" }),
+      screen.getByRole("button", { name: "Try restoring in a separate space" }),
     );
     await waitFor(() =>
       expect(native.restoreRecoveryBackup).toHaveBeenCalledExactlyOnceWith(
@@ -168,9 +254,9 @@ describe("isolated startup recovery", () => {
     );
     await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(2));
     expect(
-      within(screen.getByLabelText("Isolated recovery mode")).getByText(
-        "Unsupported notes backup format or schema version",
-      ),
+      within(
+        screen.getByLabelText("Working in a separate recovery space"),
+      ).getByText("Unsupported notes backup format or schema version"),
     ).toBeVisible();
     expect(toast.error).toHaveBeenCalledOnce();
     expect(native.restoreRecoveryBackup).not.toHaveBeenCalled();
@@ -212,7 +298,7 @@ describe("isolated startup recovery", () => {
       "A newer database must not be downgraded; use the newer application",
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Copy redacted diagnostics" }),
+      screen.getByRole("button", { name: "Copy problem report" }),
     );
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
     expect(details).toBeVisible();
@@ -229,7 +315,7 @@ describe("isolated startup recovery", () => {
     vi.mocked(copyText).mockResolvedValueOnce(undefined);
     render(<Recovery />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Copy redacted diagnostics" }),
+      await screen.findByRole("button", { name: "Copy problem report" }),
     );
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
@@ -264,10 +350,10 @@ describe("isolated startup recovery", () => {
     expect(within(dialog).getByRole("alert")).toHaveClass("sr-only");
     expect(confirmButton).toBeEnabled();
     expect(dialog).toHaveAccessibleDescription(
-      "Replace the original database with the verified isolated database. The original database and sidecar files are archived first.",
+      "Replace your current notes data with the checked recovery data. Original data and related files are saved in the recovery archive first.",
     );
     expect(
-      screen.getByText("252 records restored in the isolated workspace"),
+      screen.getByText("252 records recovered in the trial restore"),
     ).toBeInTheDocument();
   });
 
@@ -300,7 +386,7 @@ describe("isolated startup recovery", () => {
       await screen.findByRole("button", { name: "Import backup file" }),
     );
     const restore = await screen.findByRole("button", {
-      name: "Test restore in isolation",
+      name: "Try restoring in a separate space",
     });
     vi.mocked(native.recoveryStatus).mockRejectedValueOnce({
       code: "STORAGE_IO",
@@ -323,7 +409,29 @@ describe("isolated startup recovery", () => {
     await act(async () => fireEvent.click(picker));
     expect(native.restoreRecoveryBackup).not.toHaveBeenCalled();
     expect(
-      screen.queryByRole("button", { name: "Test restore in isolation" }),
+      screen.queryByRole("button", {
+        name: "Try restoring in a separate space",
+      }),
     ).not.toBeInTheDocument();
+  });
+  it("replaces a healthy legacy recovery link with the combined page while preserving other query parameters", async () => {
+    status = { ...status, active: false, reason: null };
+    render(
+      <MemoryRouter
+        initialEntries={["/settings", "/recovery?keep=1&section=old"]}
+      >
+        <Routes>
+          <Route path="/recovery" element={<Recovery />} />
+          <Route path="/diagnostics" element={<Destination />} />
+          <Route path="/settings" element={<Destination />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText("/diagnostics?keep=1&section=recovery"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("/settings")).toBeInTheDocument();
+    expect(native.listRecoveryBackups).not.toHaveBeenCalled();
   });
 });

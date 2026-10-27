@@ -1,5 +1,6 @@
 //! Extism ABI 与实例隔离；桌面调用在固定的无界面宿主子进程中完成。
 use crate::error::{ErrorCode, NativeError, NativeResult};
+use crate::extensions::ExtensionExecutionBudget;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -16,13 +17,14 @@ pub const DEMO_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/text-tool
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const IO_LIMIT: usize = 4 * 1024 * 1024;
 pub(crate) const MODULE_LIMIT: usize = 16 * 1024 * 1024;
-const FUEL: u64 = 100_000_000;
+#[cfg(test)]
+const FUEL: u64 = ExtensionExecutionBudget::Standard.fuel();
 const MEMORY_PAGES: u32 = 4096;
 const MAX_MEMORIES_PER_MODULE: u32 = 1;
 const MAX_TABLES_PER_MODULE: u32 = 1;
-const CACHE_ENTRIES: usize = 4;
+pub(crate) const CACHE_ENTRIES: usize = 4;
 // SDK 不公开 JIT 实际占用；此额度针对源模块字节，条目数另设硬上限。
-const CACHE_SOURCE_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const CACHE_SOURCE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -82,6 +84,15 @@ struct Compilation {
 pub(crate) struct CompilationCache(VecDeque<Compilation>);
 
 impl CompilationCache {
+    pub(crate) fn prepare(
+        &mut self,
+        module: &[u8],
+        budget: ExtensionExecutionBudget,
+    ) -> RuntimeResult<()> {
+        check_request(module, "prepare", &[])?;
+        self.compile(module, TIMEOUT, budget.fuel()).map(|_| ())
+    }
+
     fn compile(
         &mut self,
         module: &[u8],
@@ -164,13 +175,54 @@ pub fn run(
     input: &[u8],
     stop: Arc<AtomicBool>,
 ) -> NativeResult<String> {
+    run_with_budget(
+        module,
+        function,
+        input,
+        stop,
+        ExtensionExecutionBudget::Standard,
+    )
+}
+
+pub fn run_with_budget(
+    module: &[u8],
+    function: &str,
+    input: &[u8],
+    stop: Arc<AtomicBool>,
+    budget: ExtensionExecutionBudget,
+) -> NativeResult<String> {
     #[cfg(not(test))]
     {
-        crate::extension_worker::run(module, function, input, stop)
+        crate::extension_worker::run(module, function, input, stop, budget)
     }
     #[cfg(test)]
     {
-        run_in_process(module, function, input, stop, TIMEOUT, FUEL)
+        run_in_process(module, function, input, stop, TIMEOUT, budget.fuel())
+    }
+}
+
+/// Compile only: never creates a guest instance or executes its start / exports.
+pub(crate) fn prepare(
+    module: &[u8],
+    budget: ExtensionExecutionBudget,
+    stop: Arc<AtomicBool>,
+    started: Instant,
+) -> NativeResult<()> {
+    #[cfg(not(test))]
+    {
+        crate::extension_worker::prepare(module, budget, stop, started)
+    }
+    #[cfg(test)]
+    {
+        if stop.load(Ordering::Acquire) {
+            return Err(Failure::cancelled().native());
+        }
+        if started.elapsed() >= TIMEOUT {
+            return Err(Failure::timeout().native());
+        }
+        CompilationCache::default()
+            .prepare(module, budget)
+            .map_err(Failure::native)
     }
 }
 
@@ -488,6 +540,7 @@ pub(crate) fn execute_worker(
     module: &[u8],
     function: &str,
     input: &[u8],
+    budget: ExtensionExecutionBudget,
 ) -> RuntimeResult<String> {
     execute(
         cache,
@@ -496,7 +549,7 @@ pub(crate) fn execute_worker(
         input,
         Arc::new(AtomicBool::new(false)),
         TIMEOUT,
-        FUEL,
+        budget.fuel(),
     )
 }
 #[cfg(test)]
@@ -544,6 +597,97 @@ mod tests {
         assert!(run_in_process(module, "run", b"", stop(), TIMEOUT, 1).is_err());
         assert_eq!(run(module, "run", b"", stop()).unwrap(), "0");
     }
+    #[test]
+    fn preparation_compiles_without_instantiating_and_reuses_the_runtime_cache() {
+        let module = br#"(module (func $start unreachable) (start $start) (func (export "run") (result i32) (i32.const 0)))"#;
+        let mut cache = CompilationCache::default();
+        cache
+            .prepare(module, ExtensionExecutionBudget::Standard)
+            .unwrap();
+        assert_eq!(cache.0.len(), 1);
+        let compiled = cache.0[0].plugin.clone();
+        cache
+            .prepare(module, ExtensionExecutionBudget::Standard)
+            .unwrap();
+        assert_eq!(cache.0.len(), 1);
+        assert!(extism::Plugin::new_from_compiled(&compiled).is_err());
+        assert!(
+            execute_worker(
+                &mut cache,
+                module,
+                "run",
+                b"",
+                ExtensionExecutionBudget::Standard
+            )
+            .is_err()
+        );
+        assert_eq!(cache.0.len(), 1);
+    }
+    #[test]
+    fn compute_budget_runs_bounded_work_without_leaking_into_standard_calls() {
+        let module = br#"(module
+          (func (export "run") (result i32) (local $remaining i32)
+            (local.set $remaining (i32.const 20000000))
+            (loop $work
+              (local.set $remaining (i32.sub (local.get $remaining) (i32.const 1)))
+              (br_if $work (local.get $remaining)))
+            (i32.const 0)))"#;
+        let mut cache = CompilationCache::default();
+        for budget in [
+            ExtensionExecutionBudget::Standard,
+            ExtensionExecutionBudget::Compute,
+        ] {
+            cache.prepare(module, budget).unwrap();
+        }
+        assert_eq!(cache.0.len(), 2);
+        let standard = execute_worker(
+            &mut cache,
+            module,
+            "run",
+            b"",
+            ExtensionExecutionBudget::Standard,
+        )
+        .unwrap_err();
+        assert!(standard.message.contains("fuel budget exhausted"));
+        assert_eq!(
+            execute_worker(
+                &mut cache,
+                module,
+                "run",
+                b"",
+                ExtensionExecutionBudget::Compute
+            )
+            .unwrap(),
+            ""
+        );
+        assert!(
+            execute_worker(
+                &mut cache,
+                module,
+                "run",
+                b"",
+                ExtensionExecutionBudget::Standard
+            )
+            .unwrap_err()
+            .message
+            .contains("fuel budget exhausted")
+        );
+        assert_eq!(cache.0.len(), 2);
+        let cancelled = Arc::new(AtomicBool::new(true));
+        assert_eq!(
+            run_with_budget(
+                module,
+                "run",
+                b"",
+                cancelled,
+                ExtensionExecutionBudget::Compute
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::UserCancelled
+        );
+    }
+
     #[test]
     fn cancellation_and_time_budget_interrupt_infinite_wasm() {
         let module =

@@ -14,8 +14,13 @@
 .studio-page {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.25rem;
   min-width: 0;
+}
+.extension-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 1rem;
 }
 .studio-page :where([data-slot="card"]) {
   border-color: var(--studio-edge);
@@ -44,7 +49,7 @@
 }
 .settings-about-content {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: 1rem;
   padding: 0 1rem 1rem;
 }
@@ -57,11 +62,6 @@
 }
 .settings-about-content [data-slot="card-content"] {
   padding-inline: 0.25rem;
-}
-@media (max-width: 800px) {
-  .settings-about-content {
-    grid-template-columns: 1fr;
-  }
 }
 .studio-intro {
   display: flex;
@@ -80,18 +80,9 @@
   line-height: 1.8;
   color: var(--muted-foreground);
 }
-.studio-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.075em;
-  color: var(--muted-foreground);
-}
 .studio-panel {
   border: 1px solid var(--studio-edge);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-xl);
   background: var(--studio-surface);
 }
 .studio-section-heading {
@@ -178,8 +169,8 @@
 }
 .studio-native-tags span {
   border: 1px solid var(--border);
-  border-radius: 1rem;
-  font-size: 0.7rem;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
   padding: 0.25rem 0.65rem;
   color: var(--muted-foreground);
 }
@@ -195,7 +186,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   padding-top: 0.5rem;
 }

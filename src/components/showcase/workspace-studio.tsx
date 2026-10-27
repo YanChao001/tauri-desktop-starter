@@ -13,6 +13,7 @@ import {
   FileTextIcon,
   FileCodeIcon,
   FolderIcon,
+  FolderInputIcon,
   CopyIcon,
   PencilIcon,
   Trash2Icon,
@@ -46,6 +47,12 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ResizeHandle } from "@/components/resize-handle";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { useI18n } from "@/providers/i18n";
@@ -219,13 +226,18 @@ export function WorkspaceStudio() {
   function drop(id: string, folder?: SampleAsset["folder"]) {
     const moving = state.assets.find((asset) => asset.id === dragging.current);
     if (!moving) return;
-    if (folder)
-      change([
-        ...state.assets.filter((asset) => asset.id !== moving.id),
-        { ...moving, folder },
-      ]);
+    if (folder) moveToFolder(moving.id, folder);
     else change(reorderAssets(state.assets, moving.id, id));
     dragging.current = null;
+  }
+  function moveToFolder(id: string, folder: SampleAsset["folder"]) {
+    const moving = state.assets.find((asset) => asset.id === id);
+    if (!moving || moving.folder === folder) return;
+    change([
+      ...state.assets.filter((asset) => asset.id !== id),
+      { ...moving, folder },
+    ]);
+    setOpened((current) => new Set([...current, folder]));
   }
   return (
     <section className="workspace-showcase" aria-labelledby="workspace-heading">
@@ -233,7 +245,12 @@ export function WorkspaceStudio() {
         <span className="playground-kicker">
           04 / {t("experience.workspace")}
         </span>
-        <h3 id="workspace-heading">{t("experience.workspaceTitle")}</h3>
+        <h3 id="workspace-heading" className="flex items-center gap-1.5">
+          {t("experience.workspaceTitle")}
+          <HelpTooltip label={t("experience.workspace.reorderHint")}>
+            {t("experience.workspace.reorderHint")}
+          </HelpTooltip>
+        </h3>
         <p>{t("experience.workspaceHint")}</p>
       </div>
       <div className="workspace-toolbar">
@@ -308,9 +325,6 @@ export function WorkspaceStudio() {
           >
             <RotateCcwIcon />
           </Button>
-          <HelpTooltip label={t("experience.workspace.reorderHint")}>
-            {t("experience.workspace.reorderHint")}
-          </HelpTooltip>
         </div>
       </div>
       <div
@@ -445,7 +459,29 @@ export function WorkspaceStudio() {
             <>
               <div className="workspace-editor-bar">
                 <span>{selectedAsset.name}</span>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap items-center gap-1">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="ghost">
+                        <FolderInputIcon />
+                        {t("experience.workspace.moveTo")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {FOLDERS.map((folder) => (
+                        <DropdownMenuItem
+                          key={folder}
+                          disabled={selectedAsset.folder === folder}
+                          onSelect={() =>
+                            moveToFolder(selectedAsset.id, folder)
+                          }
+                        >
+                          <FolderIcon />
+                          {t(`experience.workspace.${folder}`)}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Button
                     size="icon-sm"
                     variant="ghost"

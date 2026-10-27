@@ -27,6 +27,11 @@ async function fixture(t, modules = { "src/lib.rs": "fn main() {}\n" }) {
   for (const [name, path, content] of [
     ["Cargo.toml", "examples/extensions/apps/Cargo.toml", "[package]\n"],
     ["Cargo.lock", "examples/extensions/apps/Cargo.lock", "version = 4\n"],
+    [
+      "ui/main.html",
+      "examples/extensions/apps/ui/main.html",
+      "<!doctype html>\n<title>Local workspace</title>\n",
+    ],
     ...Object.entries(modules).map(([name, content]) => [
       name,
       `examples/extensions/apps/${name}`,
@@ -38,8 +43,8 @@ async function fixture(t, modules = { "src/lib.rs": "fn main() {}\n" }) {
       '{"formatVersion":3}\n',
     ],
     [
-      "build-extension-apps.mjs",
-      "scripts/build-extension-apps.mjs",
+      "extension-apps-recipe.mjs",
+      "scripts/extension-apps-recipe.mjs",
       "// Fixed build rules fixture\n",
     ],
     [
@@ -52,6 +57,10 @@ async function fixture(t, modules = { "src/lib.rs": "fn main() {}\n" }) {
     await writeFile(join(root, path), content.replaceAll("\n", "\r\n"));
     sources[name] = digest(content);
   }
+  await writeFile(
+    join(root, "scripts/build-extension-apps.mjs"),
+    "// CLI and reporting fixture\n",
+  );
   const resources = join(root, "resources/extensions");
   await mkdir(resources, { recursive: true });
   const wasm = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
@@ -68,16 +77,17 @@ async function fixture(t, modules = { "src/lib.rs": "fn main() {}\n" }) {
   return root;
 }
 
-test("快速检查接受等效换行和收据顺序，但拒绝源码、工具链与模块漂移", async (t) => {
+test("快速检查接受等效换行和收据顺序，但拒绝源码、编译规则、工具链与模块漂移", async (t) => {
   const root = await fixture(t);
   await buildExtensionApps(root, { check: true });
   for (const path of [
     "examples/extensions/apps/Cargo.toml",
     "examples/extensions/apps/Cargo.lock",
     "examples/extensions/apps/src/lib.rs",
+    "examples/extensions/apps/ui/main.html",
     "examples/extensions/apps/extension.json",
     "rust-toolchain.toml",
-    "scripts/build-extension-apps.mjs",
+    "scripts/extension-apps-recipe.mjs",
     "resources/extensions/demo-apps.wasm",
   ]) {
     const absolute = join(root, path);
@@ -93,6 +103,15 @@ test("快速检查接受等效换行和收据顺序，但拒绝源码、工具�
     );
     await writeFile(absolute, original);
   }
+});
+
+test("入口脚本的 CLI、检查与报告文案变更不要求重建模块", async (t) => {
+  const root = await fixture(t);
+  await writeFile(
+    join(root, "scripts/build-extension-apps.mjs"),
+    '// Updated CLI help and reporting logic\nconsole.log("Updated check output");\n',
+  );
+  await buildExtensionApps(root, { check: true });
 });
 
 test("递归跟踪 Rust 子模块，新增、删除或修改模块都使分发资源过期", async (t) => {
@@ -116,6 +135,46 @@ test("递归跟踪 Rust 子模块，新增、删除或修改模块都使分发�
   await assert.rejects(buildExtensionApps(root, { check: true }), /请运行/);
   await rename(`${module}.removed`, module);
   await buildExtensionApps(root, { check: true });
+});
+
+test("构建或重建期间界面文档变化时保留原分发资源与回执", async (t) => {
+  const root = await fixture(t),
+    ui = join(root, "examples/extensions/apps/ui/main.html"),
+    output = join(root, "resources/extensions/demo-apps.wasm"),
+    receipt = join(root, "resources/extensions/demo-apps.json");
+  const original = await readFile(ui),
+    wasm = await readFile(output),
+    committed = await readFile(receipt);
+  for (const options of [{}, { check: true, rebuild: true }]) {
+    await assert.rejects(
+      buildExtensionApps(root, options, {
+        compile: async () => {
+          await writeFile(ui, "<!doctype html><title>Changed UI</title>\n");
+          return wasm;
+        },
+      }),
+      /构建期间/,
+    );
+    assert.deepEqual(await readFile(output), wasm);
+    assert.deepEqual(await readFile(receipt), committed);
+    await writeFile(ui, original);
+  }
+});
+
+test("界面文档须是普通文件，界面目录不能经过链接", async (t) => {
+  const root = await fixture(t),
+    ui = join(root, "examples/extensions/apps/ui"),
+    document = join(ui, "main.html");
+  await rename(document, `${document}.saved`);
+  await mkdir(document);
+  await assert.rejects(buildExtensionApps(root, { check: true }), /普通文件/);
+  await rm(document, { recursive: true });
+  await rename(`${document}.saved`, document);
+
+  const real = `${ui}-real`;
+  await rename(ui, real);
+  await symlink(real, ui, process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(buildExtensionApps(root, { check: true }), /链接/);
 });
 
 test("构建回执按路径稳定排序，重建检查比较实际编译结果且不改写资源", async (t) => {

@@ -93,6 +93,23 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
   fireEvent.click(
     await screen.findByRole("button", { name: "Delete credential api" }),
   );
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Delete credential",
+  });
+  expect(confirmation).toHaveAccessibleDescription(
+    expect.stringContaining("https://service.example"),
+  );
+  expect(native.deleteExtensionCredential).not.toHaveBeenCalled();
+  fireEvent.click(within(confirmation).getByRole("button", { name: "Cancel" }));
+  expect(native.deleteExtensionCredential).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Delete credential api" }),
+  );
+  fireEvent.click(
+    within(await screen.findByRole("dialog")).getByRole("button", {
+      name: "Delete credential",
+    }),
+  );
   await waitFor(() =>
     expect(native.deleteExtensionCredential).toHaveBeenCalledWith(
       "example.resources",
@@ -102,6 +119,42 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
       "api",
     ),
   );
+});
+
+it("keeps failed credential deletion open for retry and focuses the origin when the slot disappears", async () => {
+  vi.mocked(native.extensionCredentialSlots).mockResolvedValue([
+    { origin: "https://service.example", alias: "api" },
+  ]);
+  vi.mocked(native.deleteExtensionCredential).mockRejectedValueOnce({
+    code: "KEYRING_ERROR",
+  });
+  render(<ExtensionResources item={item} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Delete credential api" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete credential",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Delete credential" }),
+  );
+  await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+  expect(within(dialog).getByRole("alert")).toBeVisible();
+  expect(dialog).toBeVisible();
+  vi.mocked(native.extensionCredentialSlots).mockResolvedValue([]);
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Delete credential" }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Service origin")).toHaveFocus(),
+  );
+  expect(native.deleteExtensionCredential).toHaveBeenCalledTimes(2);
+  expect(
+    screen.queryByRole("button", { name: "Delete credential api" }),
+  ).not.toBeInTheDocument();
 });
 it("requires confirmation and the displayed storage revision to clear private data", async () => {
   render(<ExtensionResources item={item} />);
@@ -165,13 +218,31 @@ it("settles an initial storage failure and keeps refresh available without repor
   expect(within(storageStatus).getByRole("alert")).toHaveTextContent(
     "Private storage uses a newer schema version.",
   );
+  const details = within(storageStatus).getByRole("button", {
+    name: "View details",
+  });
+  fireEvent.click(details);
+  const errorDetails = await screen.findByRole("dialog", {
+    name: "View details",
+  });
+  expect(errorDetails).toHaveFocus();
+  expect(errorDetails).toHaveTextContent(
+    "Private storage uses a newer schema version.",
+  );
+  fireEvent.keyDown(errorDetails, { key: "Escape" });
+  await waitFor(() => expect(details).toHaveFocus());
   expect(screen.queryByText("No result yet")).not.toBeInTheDocument();
   expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   const refresh = screen.getByRole("button", { name: "Refresh" });
   expect(refresh).toBeEnabled();
   fireEvent.click(refresh);
-  await screen.findByText("2 entries · 100 bytes");
+  const usage = await screen.findByText("2 entries · 100 bytes");
   expect(within(storageStatus).queryByRole("alert")).not.toBeInTheDocument();
+  expect(usage).toHaveAttribute("tabindex", "0");
+  fireEvent.focus(usage);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    "2 entries · 100 bytes",
+  );
   expect(native.extensionStorageInfo).toHaveBeenCalledTimes(2);
 });
 

@@ -15,6 +15,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: 判断文档改动范围
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 仅纯文档改动跳过原生验证
+        id: scope
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { appendFileSync, readFileSync } from "node:fs";
+
+          let docsOnly = false;
+          try {
+            const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+            const base = event.pull_request?.base.sha ?? event.before;
+            const head = event.pull_request?.head.sha ?? event.after;
+            if (base && head && !/^0+$/.test(base)) {
+              const revisions = event.pull_request ? [`${base}...${head}`] : [base, head];
+              // 禁用重命名检测，避免把源码移到文档目录后漏掉删除的一端。
+              const paths = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", ...revisions, "--"], { encoding: "utf8" }).split("\0").filter(Boolean);
+              const isDocumentation = (path) =>
+                /^(?:README(?:\.en)?|AGENTS|CONTRIBUTING|SECURITY)\.md$/.test(path) ||
+                path === "LICENSE" ||
+                /^docs\/.+\.md$/.test(path) ||
+                /^docs\/assets\/.+\.(?:png|jpe?g|svg|webp)$/.test(path);
+              docsOnly = paths.length > 0 && paths.every(isDocumentation);
+            }
+          } catch (error) {
+            console.warn("无法确认纯文档改动，执行完整验证：", error.message);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `docs_only=${docsOnly}\n`);
+          console.log(docsOnly ? "仅文档改动，保留前端与浏览器检查。" : "执行全部检查。");
+          NODE
+
   frontend:
     name: 前端校验
     runs-on: ubuntu-latest
@@ -32,38 +71,18 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
-      - name: 验证应用配置与派生元数据一致
-        run: pnpm config:check
+      - name: 前端与工程综合检查
+        run: pnpm verify
 
-      - name: 验证品牌资源与 SVG 源一致
-        run: pnpm branding:check
-
-      - name: 验证 README 截图格式与尺寸
-        run: pnpm docs:previews:check
-
-      - name: 版本一致性与发布脚本回归
-        run: |
-          node scripts/version.mjs check
-          node --test scripts/*.test.mjs e2e/*.test.mjs
-
-      - name: 格式检查
-        run: pnpm format:check
-
-      - name: ESLint 静态检查
-        run: pnpm lint
-
-      - name: 类型检查
-        run: pnpm typecheck
-
-      - name: 单元测试
-        run: pnpm test
-
-      - name: 构建前端
-        # 类型已单独检查，构建阶段不重复执行 tsc。
-        run: pnpm exec vite build
-
-      - name: 构建浏览器演示
-        run: pnpm exec vite build --mode web-demo
+      - name: 保留综合检查失败日志
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-verification-logs
+          path: .cache/verify
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   browser-smoke:
     name: 浏览器生产构建冒烟与无障碍
@@ -77,7 +96,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:web
+      - name: 构建本次浏览器演示
+        run: pnpm build:web
       - run: |
           printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           pnpm exec playwright install --with-deps --only-shell chromium
@@ -92,6 +112,8 @@ jobs:
 
   rust:
     name: Rust 校验（${{ matrix.platform }}）
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ matrix.platform }}
     strategy:
       # 保留其他平台的执行结果，分别定位平台问题
@@ -172,7 +194,6 @@ jobs:
             pnpm extension:validate --manifest examples/extensions/apps/extension.json --wasm $extensionDemoModule --ui-dir examples/extensions/apps/ui
             pnpm extension:test --manifest examples/extensions/apps/extension.json --wasm $extensionDemoModule --ui-dir examples/extensions/apps/ui --fixture examples/extensions/apps/smoke.json
           }
-          cargo test --manifest-path src-tauri/Cargo.toml --locked extension_view
           cargo fmt --manifest-path examples/extensions/rust/Cargo.toml -- --check
           cargo build --manifest-path examples/extensions/rust/Cargo.toml --release --locked --target wasm32-unknown-unknown --target-dir src-tauri/target/extension-example
           pnpm extension:test --manifest examples/extensions/rust/extension.json --wasm src-tauri/target/extension-example/wasm32-unknown-unknown/release/starter_extism_text.wasm --fixture examples/extensions/rust/smoke.json
@@ -239,6 +260,8 @@ jobs:
 
   desktop-e2e:
     name: 真实桌面 E2E（${{ matrix.platform }}）
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 45
     strategy:
@@ -255,7 +278,7 @@ jobs:
           printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           "${apt[@]}" update
-          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
+          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox gdb
 
       - uses: pnpm/action-setup@v6
 
@@ -287,8 +310,40 @@ jobs:
       - name: 桌面 E2E（Linux）
         if: runner.os == 'Linux'
         env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-        run: dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --interactive --skip-build'
+          WEBKIT_DMABUF_RENDERER_FORCE_SHM: "1"
+        run: |
+          mkdir -p artifacts/e2e/crash
+          sudo sysctl -w "kernel.core_pattern=$GITHUB_WORKSPACE/artifacts/e2e/crash/core.%p"
+          ulimit -c unlimited
+          dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --interactive --skip-build'
+
+      - name: 保存 Linux 应用崩溃的原生线程栈
+        if: failure() && runner.os == 'Linux'
+        run: |
+          if [[ ! -f src-tauri/target/e2e/build.json ]]; then
+            echo "本次测试程序尚未构建，没有可读取的应用崩溃栈。"
+            exit 0
+          fi
+          binary="$(node --input-type=module -e 'import { readE2EBuild } from "./e2e/build.mjs"; process.stdout.write(readE2EBuild());')"
+          shopt -s nullglob
+          found=0
+          for native_log in artifacts/e2e/*/native.log; do
+            pid="$(sed -n 's/.*owned-process-exit .* pid=\([0-9][0-9]*\)$/\1/p' "$native_log" | tail -n 1)"
+            [[ "$pid" =~ ^[0-9]+$ ]] || continue
+            core="artifacts/e2e/crash/core.$pid"
+            [[ -f "$core" ]] || continue
+            found=1
+            backtrace="artifacts/e2e/crash/app-$pid.backtrace.txt"
+            if ! timeout --kill-after=5s 60s gdb --batch --quiet "$binary" "$core" \
+              -ex 'set pagination off' -ex 'info threads' -ex 'thread apply all bt' > "$backtrace" 2>&1; then
+              echo "gdb 未完整结束，已保留可取得的线程栈：$backtrace"
+            fi
+            # 只保留文本栈；core 属于本次隔离应用且可能包含大块进程内存。
+            rm -f -- "$core"
+          done
+          if (( found == 0 )); then
+            echo "没有发现本次主程序的 core dump；保留原有进程退出记录。"
+          fi
 
       - name: 保留 Windows README 原生截图
         if: success() && runner.os == 'Windows'
@@ -307,23 +362,35 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: desktop-e2e-${{ runner.os }}
-          path: artifacts/e2e
+          path: |
+            artifacts/e2e
+            !artifacts/e2e/crash/core.*
           if-no-files-found: ignore
 
   quality-gate:
     name: 质量门禁
     if: always()
-    needs: [frontend, browser-smoke, rust, desktop-e2e]
+    needs: [changes, frontend, browser-smoke, rust, desktop-e2e]
     runs-on: ubuntu-latest
     steps:
       - name: 确认所有检查通过
         env:
-          JOB_RESULTS: ${{ join(needs.*.result, ',') }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BROWSER_RESULT: ${{ needs.browser-smoke.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          DESKTOP_RESULT: ${{ needs.desktop-e2e.result }}
         run: |
-          IFS=',' read -r -a results <<< "$JOB_RESULTS"
-          for result in "${results[@]}"; do
+          for result in "$CHANGES_RESULT" "$FRONTEND_RESULT" "$BROWSER_RESULT"; do
             if [[ "$result" != "success" ]]; then
-              echo "存在失败、取消或跳过的检查：$JOB_RESULTS"
+              echo "必需检查未通过：$result"
+              exit 1
+            fi
+          done
+          for result in "$RUST_RESULT" "$DESKTOP_RESULT"; do
+            if [[ "$result" != "success" && !( "$DOCS_ONLY" == "true" && "$result" == "skipped" ) ]]; then
+              echo "原生检查未通过，且不是纯文档改动的预期跳过：$result"
               exit 1
             fi
           done

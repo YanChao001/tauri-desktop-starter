@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { CopyIcon, RefreshCwIcon } from "lucide-react";
 import { NativePage, ResourceError } from "@/components/native-page";
@@ -12,8 +13,11 @@ import { getDiagnosticsReport } from "@/lib/tauri";
 import { copyText } from "@/lib/clipboard";
 import { nativeErrorText } from "@/lib/native-error";
 import { CodeBlock } from "@/components/code-block";
+import { RecoveryContent } from "./recovery";
 export default function Diagnostics() {
   const { t } = useI18n();
+  const { search } = useLocation();
+  const recovery = useRef<HTMLElement>(null);
   const latest = useLatestTranslator();
   const { data, error, loading, reload } =
     useNativeResource(getDiagnosticsReport);
@@ -21,6 +25,11 @@ export default function Diagnostics() {
   const running = useRef(false);
   const mounted = useRef(false);
   const notifiedError = useRef<unknown>(null);
+  useEffect(() => {
+    if (new URLSearchParams(search).get("section") !== "recovery") return;
+    recovery.current?.scrollIntoView({ block: "start" });
+    recovery.current?.focus({ preventScroll: true });
+  }, [search]);
   useEffect(() => {
     if (!error) notifiedError.current = null;
     else if (data && notifiedError.current !== error) {
@@ -53,26 +62,18 @@ export default function Diagnostics() {
       title={t("diagnostics.title")}
       description={t("diagnostics.description")}
     >
+      <section
+        id="diagnostics-recovery"
+        ref={recovery}
+        tabIndex={-1}
+        aria-label={t("recovery.title")}
+        className="space-y-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <RecoveryContent />
+      </section>
       <ResourceError error={data ? null : error} retry={() => void reload()} />
-      <div className="flex gap-2">
-        <Button
-          disabled={loading || copying || !data}
-          onClick={() => void copy()}
-        >
-          <CopyIcon />
-          {t("diagnostics.copy")}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={loading}
-          onClick={() => void reload()}
-        >
-          <RefreshCwIcon />
-          {t("diagnostics.refresh")}
-        </Button>
-      </div>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             {t("diagnostics.preview")}
             <HelpTooltip
@@ -81,15 +82,37 @@ export default function Diagnostics() {
               {t("diagnostics.logs")}
             </HelpTooltip>
           </CardTitle>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={loading || copying || !data}
+              onClick={() => void copy()}
+            >
+              <CopyIcon />
+              {t("diagnostics.copy")}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={loading}
+              onClick={() => void reload()}
+            >
+              <RefreshCwIcon />
+              {t("diagnostics.refresh")}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <CodeBlock
-            data-testid="diagnostics-report"
-            aria-label={t("diagnostics.preview")}
-            className="h-96 max-h-[60dvh] whitespace-pre-wrap break-words"
-            code={data ? JSON.stringify(data, null, 2) : t("common.loading")}
-            language={data ? "json" : "text"}
-          />
+          <details>
+            <summary className="cursor-pointer rounded-sm text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t("diagnostics.details")}
+            </summary>
+            <CodeBlock
+              data-testid="diagnostics-report"
+              aria-label={t("diagnostics.preview")}
+              className="mt-3 h-96 max-h-[60dvh] whitespace-pre-wrap break-words"
+              code={data ? JSON.stringify(data, null, 2) : t("common.loading")}
+              language={data ? "json" : "text"}
+            />
+          </details>
         </CardContent>
       </Card>
     </NativePage>

@@ -5,12 +5,17 @@ import {
   render,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
 import { THEME_REVEAL_EVENT } from "@/hooks/use-theme-switch";
 import { ExtensionCustomUi } from "./extension-custom-ui";
+import { ExtensionActivityProvider } from "./extension-activity";
 
-const environment = vi.hoisted(() => ({ language: "en" as "en" | "zh" }));
+const environment = vi.hoisted(() => ({
+  language: "en" as "en" | "zh",
+  inputWide: true,
+  inputListeners: new Set<() => void>(),
+}));
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key, language: environment.language }),
 }));
@@ -25,6 +30,18 @@ vi.mock("@/lib/tauri", async (original) => ({
   openExtensionUi: vi.fn(),
   closeExtensionUi: vi.fn(),
 }));
+beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: environment.inputWide,
+      addEventListener: (_type: string, listener: () => void) =>
+        environment.inputListeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) =>
+        environment.inputListeners.delete(listener),
+    })),
+  );
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -34,6 +51,8 @@ afterEach(() => {
   document.documentElement.style.removeProperty("font-size");
   document.documentElement.removeAttribute("data-font-size");
   environment.language = "en";
+  environment.inputWide = true;
+  environment.inputListeners.clear();
 });
 
 it("limits missing paint acknowledgements only after a visible first view, resetting for background and offscreen pauses", async () => {
@@ -222,6 +241,185 @@ const item: native.ExtensionInfo = {
   },
 };
 
+it("keeps one shared page placeholder through lease, first-view and SDK-paint waits", async () => {
+  vi.stubGlobal(
+    "MessageChannel",
+    class {
+      port1 = {
+        postMessage() {},
+        start() {},
+        close() {},
+        onmessage: null,
+        onmessageerror: null,
+      };
+      port2 = {};
+    },
+  );
+  let leaseReady!: (lease: { url: string; token: string }) => void;
+  vi.mocked(native.openExtensionUi).mockReturnValueOnce(
+    new Promise((resolve) => {
+      leaseReady = resolve;
+    }),
+  );
+  const props = {
+    item,
+    commandId: "open",
+    view: null,
+    fields: {},
+    checkpoint: null,
+    busy: true,
+    dirty: false,
+    execute: vi.fn(),
+  };
+  const result = render(<ExtensionCustomUi {...props} />);
+  const loading = result.getByRole("status", { name: "common.loading" });
+  expect(loading).toBeVisible();
+  expect(loading).toHaveAttribute("data-page-loading");
+  expect(result.container.querySelector("iframe")).toBeNull();
+  await act(async () =>
+    leaseReady({ url: "about:blank", token: "loading-stages" }),
+  );
+  const frame = result.container.querySelector("iframe")!;
+  vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+  const notify = (type: "starter:ready" | "starter:painted") =>
+    act(() =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: frame.contentWindow,
+          origin: "null",
+          data: { type, version: 1 },
+        }),
+      ),
+    );
+  notify("starter:ready");
+  notify("starter:painted");
+  // 没有首个业务视图时，提前到达的绘制通知不能暴露空白内容框。
+  expect(result.getByRole("status", { name: "common.loading" })).toBe(loading);
+  expect(frame.style.opacity).toBe("0");
+  const view: native.ExtensionView = {
+    version: 2,
+    state: "{}",
+    display: "Ready",
+    description: "",
+    fields: [],
+    groups: [],
+  };
+  result.rerender(<ExtensionCustomUi {...props} view={view} busy={false} />);
+  expect(result.getByRole("status", { name: "common.loading" })).toBe(loading);
+  expect(frame).toHaveAttribute("aria-hidden", "true");
+  expect(frame).toHaveAttribute("tabindex", "-1");
+  notify("starter:painted");
+  expect(result.queryByRole("status", { name: "common.loading" })).toBeNull();
+  expect(frame.style.opacity).toBe("1");
+  expect(frame).toHaveAttribute("aria-hidden", "false");
+  expect(frame).not.toHaveAttribute("tabindex");
+});
+
+it("retains the same isolated document across activity changes and gives a resumed document a fresh initialization budget", async () => {
+  vi.useFakeTimers();
+  const sent: unknown[] = [];
+  vi.stubGlobal(
+    "MessageChannel",
+    class {
+      port1 = {
+        postMessage: (message: unknown) => sent.push(message),
+        start() {},
+        close() {},
+        onmessage: null,
+        onmessageerror: null,
+      };
+      port2 = {};
+    },
+  );
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(
+    HTMLIFrameElement.prototype,
+    "getBoundingClientRect",
+  ).mockReturnValue({ top: 0, left: 0, right: 640, bottom: 400 } as DOMRect);
+  vi.mocked(native.openExtensionUi).mockResolvedValue({
+    url: "about:blank",
+    token: "retained-document",
+  });
+  vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
+  const content = (active: boolean) => (
+    <ExtensionActivityProvider active={active}>
+      <ExtensionCustomUi
+        item={item}
+        commandId="open"
+        view={{
+          version: 2,
+          state: "{}",
+          display: "Ready",
+          description: "",
+          fields: [],
+          groups: [],
+        }}
+        fields={{}}
+        checkpoint={null}
+        busy={false}
+        dirty={false}
+        execute={vi.fn()}
+      />
+    </ExtensionActivityProvider>
+  );
+  const mounted = render(content(true));
+  await act(async () => {});
+  const frame = mounted.container.querySelector("iframe")!;
+  vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+  act(() => vi.advanceTimersByTime(9000));
+  mounted.rerender(content(false));
+  act(() => vi.advanceTimersByTime(60000));
+  expect(mounted.queryByRole("alert")).toBeNull();
+  mounted.rerender(content(true));
+  act(() => vi.advanceTimersByTime(9000));
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frame.contentWindow,
+        origin: "null",
+        data: { type: "starter:ready", version: 1 },
+      }),
+    ),
+  );
+  await act(async () => {});
+  mounted.rerender(content(false));
+  await act(async () => {});
+  expect(sent).toContainEqual(
+    expect.objectContaining({
+      type: "state",
+      value: expect.objectContaining({ active: false }),
+    }),
+  );
+  act(() => vi.advanceTimersByTime(60000));
+  mounted.rerender(content(true));
+  await act(async () => {});
+  expect(sent).toContainEqual(
+    expect.objectContaining({
+      type: "state",
+      value: expect.objectContaining({ active: true }),
+    }),
+  );
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frame.contentWindow,
+        origin: "null",
+        data: { type: "starter:painted", version: 1 },
+      }),
+    ),
+  );
+  expect(mounted.container.querySelector("iframe")).toBe(frame);
+  expect(frame.style.opacity).toBe("1");
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
+  expect(native.closeExtensionUi).not.toHaveBeenCalled();
+});
+
 it.each([
   { name: "standalone large text", top: 80, trailing: 30, height: 710 },
   { name: "embedded page", top: 70, trailing: 50, height: 560 },
@@ -336,6 +534,17 @@ it("updates environment and drafts without rereading the palette or reloading th
   });
   vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
   document.documentElement.style.fontSize = "17px";
+  const readProperty = CSSStyleDeclaration.prototype.getPropertyValue;
+  vi.spyOn(
+    CSSStyleDeclaration.prototype,
+    "getPropertyValue",
+  ).mockImplementation(function (this: CSSStyleDeclaration, property: string) {
+    if (property === "--control-input-font-size")
+      return environment.inputWide ? "0.875rem" : "1rem";
+    if (property === "--control-input-line-height")
+      return environment.inputWide ? "1.25rem" : "1.5rem";
+    return readProperty.call(this, property);
+  });
   const styles = vi.spyOn(window, "getComputedStyle");
   const execute = vi.fn().mockResolvedValue(null);
   const props = {
@@ -348,7 +557,9 @@ it("updates environment and drafts without rereading the palette or reloading th
     dirty: true,
     execute,
   };
-  const { container, rerender } = render(<ExtensionCustomUi {...props} />);
+  const { container, rerender, unmount } = render(
+    <ExtensionCustomUi {...props} />,
+  );
   await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
   const frame = container.querySelector("iframe")!;
   expect(frame.style.opacity).toBe("0");
@@ -398,7 +609,8 @@ it("updates environment and drafts without rereading the palette or reloading th
           "type" in value &&
           value.type === "state",
       )
-      .at(-1)!.value;
+      .map((message) => message.value)
+      .reduce((previous, patch) => ({ ...previous, ...patch }));
   rerender(
     <ExtensionCustomUi
       {...props}
@@ -410,6 +622,30 @@ it("updates environment and drafts without rereading the palette or reloading th
   expect(state().grantedPermissions).toEqual(["storage"]);
   expect(paletteReads()).toBe(before);
   expect(native.openExtensionUi).toHaveBeenCalledOnce();
+  expect(state().theme.tokens["--control-input-font-size"]).toBe("0.875rem");
+  const priorResize = paletteReads();
+  await act(async () => {
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(paletteReads()).toBe(priorResize);
+  act(() => {
+    environment.inputWide = false;
+    for (const listener of environment.inputListeners) listener();
+  });
+  await waitFor(() =>
+    expect(state().theme.tokens["--control-input-font-size"]).toBe("1rem"),
+  );
+  expect(state().theme.tokens["--control-input-line-height"]).toBe("1.5rem");
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
+  act(() => {
+    environment.inputWide = true;
+    for (const listener of environment.inputListeners) listener();
+  });
+  await waitFor(() =>
+    expect(state().theme.tokens["--control-input-font-size"]).toBe("0.875rem"),
+  );
   environment.language = "zh";
   document.documentElement.classList.add("dark");
   document.documentElement.dataset.fontSize = "sm";
@@ -477,4 +713,6 @@ it("updates environment and drafts without rereading the palette or reloading th
   rerender(<ExtensionCustomUi {...props} view={view} busy />);
   expect(frame.style.opacity).toBe("1");
   expect(container.querySelector('[role="status"]')).toBeNull();
+  unmount();
+  expect(environment.inputListeners.size).toBe(0);
 });

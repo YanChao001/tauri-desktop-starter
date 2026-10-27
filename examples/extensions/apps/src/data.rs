@@ -526,10 +526,9 @@ fn csv_dataset(source: &str) -> Result<Dataset, String> {
     validate_dataset(Dataset { columns, rows })
 }
 
-fn csv_cell(value: &str) -> String {
-    let safe = if value
-        .trim_start()
-        .starts_with(['=', '+', '-', '@', '\t', '\r'])
+pub(crate) fn csv_cell(value: &str) -> String {
+    let safe = if value.starts_with(['\t', '\r', '\n'])
+        || value.trim_start().starts_with(['=', '+', '-', '@'])
     {
         format!("'{value}")
     } else {
@@ -561,6 +560,10 @@ mod tests {
     #[test]
     fn csv_exports_neutralize_formulas() {
         assert_eq!(csv_cell("=SUM(A1)"), "\"'=SUM(A1)\"");
+        assert_eq!(csv_cell(" \t@SUM(A1)"), "\"' \t@SUM(A1)\"");
+        assert_eq!(csv_cell("\tplain text"), "\"'\tplain text\"");
+        assert_eq!(csv_cell("\rplain text"), "\"'\rplain text\"");
+        assert_eq!(csv_cell("\nplain text"), "\"'\nplain text\"");
         assert_eq!(csv_cell("a,b"), "\"a,b\"");
     }
 

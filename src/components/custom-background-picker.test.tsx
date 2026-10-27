@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -195,7 +196,7 @@ describe("多图壁纸图库", () => {
         expect(library.addLibraryWallpaper).not.toHaveBeenCalled();
     },
   );
-  it("删除失败保留图片与当前背景，成功删除当前图才清除选择", async () => {
+  it("删除须确认，失败保留图片与当前背景，成功后清除选择并恢复可用焦点", async () => {
     state.settings = { background: "custom", customBackground: image };
     library.listWallpaperLibrary.mockResolvedValue([wallpaper]);
     library.removeLibraryWallpaper
@@ -208,24 +209,49 @@ describe("多图壁纸图库", () => {
         name: "settings.deleteWallpaper: sky.webp",
       }),
     );
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("settings.libraryError"),
+    expect(library.removeLibraryWallpaper).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+      "settings.deleteWallpaperDescription: sky.webp",
     );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("radio")).toBeChecked();
-    expect(state.update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(library.removeLibraryWallpaper).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByRole("button", {
         name: "settings.deleteWallpaper: sky.webp",
       }),
     );
-    await waitFor(() =>
-      expect(screen.queryByRole("radio")).not.toBeInTheDocument(),
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "settings.removeWallpaper",
+      }),
     );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("settings.libraryError"),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { hidden: true })).toBeChecked();
+    expect(state.update).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "settings.removeWallpaper",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(state.update).toHaveBeenCalledWith({
       background: "plain",
       customBackground: null,
     });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "settings.importBackground" }),
+      ).toHaveFocus(),
+    );
   });
   it("删除过程中用户改选另一张图片时保留新选择", async () => {
     state.settings = { background: "custom", customBackground: image };
@@ -242,6 +268,11 @@ describe("多图壁纸图库", () => {
     fireEvent.click(
       screen.getByRole("button", {
         name: "settings.deleteWallpaper: sky.webp",
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "settings.removeWallpaper",
       }),
     );
     state.settings.customBackground = {

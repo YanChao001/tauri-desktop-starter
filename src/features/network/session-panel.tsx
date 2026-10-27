@@ -5,6 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/providers/i18n";
 import {
   deleteDemoCredential,
@@ -71,15 +86,49 @@ export function SessionPanel() {
           </div>
           <Button disabled={!name.trim()}>{t("labs.session.signIn")}</Button>
         </form>
-        <p
-          role="status"
-          className="h-12 truncate rounded-md bg-muted p-3 text-sm"
-        >
+        <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-sm">
+          {session ? (
+            <>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      className="min-w-0 flex-1 basis-32 truncate rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {session.name}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    className="max-w-72 break-words"
+                  >
+                    {session.name}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <span
+                role="timer"
+                aria-live="off"
+                className="shrink-0 tabular-nums"
+              >
+                {t("labs.session.remaining", {
+                  seconds: Math.max(
+                    0,
+                    Math.ceil((session.expires - now) / 1000),
+                  ),
+                })}
+              </span>
+            </>
+          ) : (
+            <span aria-hidden="true">
+              {t(expired ? "labs.session.expired" : "labs.session.guest")}
+            </span>
+          )}
+        </div>
+        <p role="status" className="sr-only">
           {session
-            ? t("labs.session.active", {
-                name: session.name,
-                seconds: Math.max(0, Math.ceil((session.expires - now) / 1000)),
-              })
+            ? t("labs.session.signedIn", { name: session.name })
             : t(expired ? "labs.session.expired" : "labs.session.guest")}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -114,6 +163,7 @@ export function CredentialPanel() {
   const native = isTauri();
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const mounted = useRef(false);
   const busy = useRef(false);
   useEffect(() => {
@@ -139,6 +189,7 @@ export function CredentialPanel() {
       }
       if (mounted.current) {
         setValue("");
+        if (action === "delete") setConfirmingDelete(false);
         toast.success(t(`labs.credential.${result}`));
       }
     } catch (reason) {
@@ -166,16 +217,18 @@ export function CredentialPanel() {
             {t("labs.desktopRequired")}
           </p>
         ) : null}
-        <Label htmlFor="demo-credential">{t("labs.credential.value")}</Label>
-        <Input
-          id="demo-credential"
-          type="password"
-          autoComplete="off"
-          maxLength={1000}
-          disabled={!native || pending}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-        />
+        <div className="space-y-1.5">
+          <Label htmlFor="demo-credential">{t("labs.credential.value")}</Label>
+          <Input
+            id="demo-credential"
+            type="password"
+            autoComplete="off"
+            maxLength={1000}
+            disabled={!native || pending}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button
             disabled={!native || pending || !value.trim()}
@@ -190,13 +243,42 @@ export function CredentialPanel() {
           >
             {t("labs.credential.read")}
           </Button>
-          <Button
-            variant="outline"
-            disabled={!native || pending}
-            onClick={() => void run("delete")}
+          <Dialog
+            open={confirmingDelete}
+            onOpenChange={(open) => {
+              if (!busy.current) setConfirmingDelete(open);
+            }}
           >
-            {t("labs.credential.delete")}
-          </Button>
+            <DialogTrigger asChild>
+              <Button variant="destructive" disabled={!native || pending}>
+                {t("labs.credential.delete")}
+              </Button>
+            </DialogTrigger>
+            <DialogContent closeLabel={t("common.close")} aria-busy={pending}>
+              <DialogHeader>
+                <DialogTitle>{t("labs.credential.deleteTitle")}</DialogTitle>
+                <DialogDescription>
+                  {t("labs.credential.deleteHint")}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={pending}
+                  onClick={() => void run("delete")}
+                >
+                  {t("labs.credential.delete")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </CardContent>
     </Card>

@@ -38,6 +38,26 @@ function connect(
   });
   return { channel, bridge, failed, execute, received };
 }
+function exchange(channel: MessageChannel, value: unknown): Promise<unknown> {
+  return new Promise((resolve) => {
+    channel.port2.addEventListener(
+      "message",
+      (event: MessageEvent<unknown>) => resolve(event.data),
+      { once: true },
+    );
+    channel.port2.postMessage(value);
+  });
+}
+function busyReceipt(id: number) {
+  return {
+    id,
+    error: {
+      code: "EXTENSION_BUSY",
+      message: "Extension bridge is busy",
+      retryable: true,
+    },
+  };
+}
 it("routes a typed action over its own port and sends the bounded result", async () => {
   const { channel, execute, received } = connect();
   channel.port2.postMessage(message());
@@ -49,6 +69,44 @@ it("routes a typed action over its own port and sends the bounded result", async
     action: "move:left",
     fields: { seed: "42" },
   });
+});
+it.each(["run", "fields"])(
+  "accepts 32 fields and rejects 33 in a %s request",
+  (method) => {
+    const fields = Object.fromEntries(
+      Array.from({ length: 32 }, (_, index) => [`field${index}`, ""]),
+    );
+    const request = {
+      version: 1,
+      id: 1,
+      method,
+      params: { ...(method === "run" ? { action: "calculate" } : {}), fields },
+    };
+    expect(parseUiRequest(request).request).toMatchObject({ method, fields });
+    expect(() =>
+      parseUiRequest({
+        ...request,
+        params: { ...request.params, fields: { ...fields, field32: "" } },
+      }),
+    ).toThrow("Invalid extension UI request");
+  },
+);
+it("keeps the 1 MiB aggregate field budget when all 32 fields are used", () => {
+  const fields = Object.fromEntries(
+    Array.from({ length: 32 }, (_, index) => [
+      `field${index}`,
+      "x".repeat((1024 * 1024) / 32),
+    ]),
+  );
+  const request = {
+    version: 1,
+    id: 1,
+    method: "fields",
+    params: { fields },
+  };
+  expect(parseUiRequest(request).request).toMatchObject({ fields });
+  fields.field0 += "x";
+  expect(() => parseUiRequest(request)).toThrow("Invalid extension UI request");
 });
 it("forwards registered service requests without accepting a native identity", async () => {
   const { channel, execute, received } = connect();
@@ -108,6 +166,18 @@ it.each([
     service: "links" as const,
     request: { url: "https://source.example.com/article" },
   },
+  {
+    service: "window" as const,
+    request: { action: "get-state" },
+  },
+  {
+    service: "window" as const,
+    request: { action: "set-always-on-top", enabled: true },
+  },
+  {
+    service: "window" as const,
+    request: { action: "set-always-on-top", enabled: false },
+  },
 ])(
   "forwards the $service service through the same authenticated port",
   async ({ service, request }) => {
@@ -137,6 +207,27 @@ it.each([
   { service: "resources", request: {}, expectedSha256: "forged" },
   { service: "links", request: {}, generation: 99 },
   { service: "links", request: {}, url: "https://example.com" },
+  { service: "window", request: [] },
+  { service: "window", request: {} },
+  { service: "window", request: { action: "close" } },
+  { service: "window", request: { action: "get-state", enabled: true } },
+  { service: "window", request: { action: "get-state", label: "main" } },
+  { service: "window", request: { action: "get-state", path: "C:/file" } },
+  { service: "window", request: { action: "get-state", id: "forged" } },
+  {
+    service: "window",
+    request: { action: "get-state", expectedGeneration: 2 },
+  },
+  { service: "window", request: { action: "set-always-on-top" } },
+  {
+    service: "window",
+    request: { action: "set-always-on-top", enabled: "true" },
+  },
+  {
+    service: "window",
+    request: { action: "set-always-on-top", enabled: true, label: "main" },
+  },
+  { service: "window", request: { action: "get-state" }, id: "forged" },
 ])(
   "rejects an invalid service envelope without granting a new transport",
   (params) => {
@@ -219,6 +310,31 @@ it("can return a complete native view larger than the incoming request budget", 
   await vi.waitFor(() => expect(received).toContainEqual({ id: 1, result }));
   expect(failed).not.toHaveBeenCalled();
 });
+it("sends unchanged views and themes once while field patches precede their receipts", async () => {
+  const { bridge, received } = connect();
+  const state = {
+    view: { state: "x".repeat(1024 * 1024) },
+    theme: { mode: "light" },
+    fields: { query: "initial" },
+  };
+  bridge.send({ type: "state", value: state });
+  await vi.waitFor(() => expect(received).toHaveLength(1));
+  bridge.send({
+    type: "state",
+    value: { ...state, fields: { query: "first" } },
+  });
+  bridge.send({
+    type: "state",
+    value: { ...state, fields: { query: "latest" } },
+  });
+  bridge.send({ id: 1, result: null });
+  await vi.waitFor(() => expect(received).toHaveLength(3));
+  expect(received[1]).toEqual({
+    type: "state",
+    value: { fields: { query: "latest" } },
+  });
+  expect(received[2]).toEqual({ id: 1, result: null });
+});
 it.each([
   { ...message(), method: "invoke" },
   { ...message(), expectedGeneration: 9 },
@@ -264,11 +380,15 @@ it("revokes a replayed sequence and cannot deliver late results after disposal",
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(received).not.toContainEqual({ id: 1, result: "late" });
 });
-it.each(["run", "resources", "links"] as const)(
-  "caps in-flight %s operations and rejects a flooding peer",
+it.each(["run", "resources", "links", "window"] as const)(
+  "returns recoverable busy for a fifth in-flight %s operation",
   async (service) => {
-    const execute = vi.fn(() => new Promise(() => {}));
-    const { channel, failed } = connect(execute);
+    let finish!: (result: unknown) => void;
+    const operation = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const execute = vi.fn(() => operation);
+    const { channel, failed, received } = connect(execute);
     for (let id = 1; id <= 5; id++)
       channel.port2.postMessage(
         service === "run"
@@ -282,24 +402,129 @@ it.each(["run", "resources", "links"] as const)(
                 request:
                   service === "resources"
                     ? { action: "preview", resourceId: "resource" }
-                    : { url: "https://example.com" },
+                    : service === "window"
+                      ? { action: "get-state" }
+                      : { url: "https://example.com" },
               },
             },
       );
-    await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(received).toContainEqual(busyReceipt(5)));
     expect(execute).toHaveBeenCalledTimes(4);
+    expect(failed).not.toHaveBeenCalled();
+    finish("done");
+    await vi.waitFor(() => expect(received).toHaveLength(5));
+    expect(await exchange(channel, message(6))).toEqual({
+      id: 6,
+      result: "done",
+    });
+    expect(execute).toHaveBeenCalledTimes(5);
+    expect(failed).not.toHaveBeenCalled();
   },
 );
-it("caps message frequency even when every operation completes immediately", async () => {
-  const { channel, failed } = connect();
-  for (let id = 1; id <= 61; id++) {
-    channel.port2.postMessage({
-      version: 1,
-      id,
-      method: "fields",
-      params: { fields: { seed: "42" } },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+it("admits a complete 24-image fetch / preview / release burst without artificial delays", async () => {
+  const { channel, execute, failed } = connect();
+  const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+  try {
+    let id = 0;
+    for (let image = 0; image < 24; image++) {
+      for (const action of ["fetch-image", "preview", "release"]) {
+        id++;
+        expect(
+          await exchange(channel, {
+            version: 1,
+            id,
+            method: "service",
+            params: {
+              service: "resources",
+              request:
+                action === "fetch-image"
+                  ? { action, url: `https://example.com/${image}.jpg` }
+                  : { action, resourceId: `image-${image}` },
+            },
+          }),
+        ).toEqual({ id, result: { state: "next" } });
+      }
+    }
+    expect(execute).toHaveBeenCalledTimes(72);
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    clock.mockRestore();
   }
+});
+it("limits sustained throughput and refills without a fixed-window reset", async () => {
+  const { channel, failed, execute } = connect();
+  const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+  try {
+    for (let id = 1; id <= 96; id++) {
+      expect(await exchange(channel, message(id))).toEqual({
+        id,
+        result: { state: "next" },
+      });
+    }
+    expect(await exchange(channel, message(97))).toEqual(busyReceipt(97));
+    expect(execute).toHaveBeenCalledTimes(96);
+    clock.mockReturnValue(600);
+    // Half a second restores exactly 30 permits, rather than another burst.
+    for (let id = 98; id <= 127; id++) {
+      expect(await exchange(channel, message(id))).toEqual({
+        id,
+        result: { state: "next" },
+      });
+    }
+    expect(await exchange(channel, message(128))).toEqual(busyReceipt(128));
+    expect(execute).toHaveBeenCalledTimes(126);
+    expect(failed).not.toHaveBeenCalled();
+    clock.mockReturnValue(10600);
+    for (let id = 129; id <= 224; id++) {
+      await exchange(channel, message(id));
+    }
+    expect(await exchange(channel, message(225))).toEqual(busyReceipt(225));
+    expect(execute).toHaveBeenCalledTimes(222);
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    clock.mockRestore();
+  }
+});
+it("still revokes a peer that ignores repeated busy receipts", async () => {
+  const execute = vi.fn(() => new Promise(() => {}));
+  const { channel, failed, received } = connect(execute);
+  for (let id = 1; id <= 21; id++) channel.port2.postMessage(message(id));
   await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(received).toHaveLength(17));
+  expect(execute).toHaveBeenCalledTimes(4);
+  expect(received).toEqual([
+    ...Array.from({ length: 16 }, (_, index) => busyReceipt(index + 5)),
+    { type: "closed" },
+  ]);
+});
+it("consumes rejected request IDs so they cannot be replayed", async () => {
+  const execute = vi.fn(() => new Promise(() => {}));
+  const { channel, failed, received } = connect(execute);
+  for (let id = 1; id <= 5; id++) channel.port2.postMessage(message(id));
+  await vi.waitFor(() => expect(received).toContainEqual(busyReceipt(5)));
+  channel.port2.postMessage(message(5));
+  await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
+  expect(execute).toHaveBeenCalledTimes(4);
+});
+it("resets overload strikes after an admitted request", async () => {
+  const { channel, failed, execute } = connect();
+  const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+  try {
+    for (let id = 1; id <= 96; id++) await exchange(channel, message(id));
+    for (let id = 97; id <= 112; id++) {
+      expect(await exchange(channel, message(id))).toEqual(busyReceipt(id));
+    }
+    clock.mockReturnValue(117);
+    expect(await exchange(channel, message(113))).toEqual({
+      id: 113,
+      result: { state: "next" },
+    });
+    for (let id = 114; id <= 129; id++) {
+      expect(await exchange(channel, message(id))).toEqual(busyReceipt(id));
+    }
+    expect(execute).toHaveBeenCalledTimes(97);
+    expect(failed).not.toHaveBeenCalled();
+  } finally {
+    clock.mockRestore();
+  }
 });

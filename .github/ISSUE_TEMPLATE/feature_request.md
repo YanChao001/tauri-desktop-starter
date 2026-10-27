@@ -5,6 +5,8 @@ title: "feat: "
 labels: ["enhancement"]
 ---
 
+<!-- 按需填写问题与建议，影响项仅勾选相关内容。达到 docs/engineering-at-scale.md 的设计门槛后，再使用 docs/design-template.md 补齐方案和验收。 -->
+
 ## 问题与场景
 
 <!-- 说明触发场景、当前限制及预期结果 -->
@@ -15,7 +17,7 @@ labels: ["enhancement"]
 
 ## 建议的方案
 
-<!-- 说明建议行为、适用范围和约束 -->
+<!-- 说明建议行为、适用范围和可验证结果 -->
 
 ## 备选方案
 

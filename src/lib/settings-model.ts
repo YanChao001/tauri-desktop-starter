@@ -39,6 +39,7 @@ export const MOTIONS = ["full", "reduced"] as const;
 export const THEMES = ["light", "dark", "system"] as const;
 export const APP_MODES = ["demo", "minimal"] as const;
 export const WINDOW_POSITIONS = ["remember", "center"] as const;
+export const NETWORK_MODES = ["system", "direct"] as const;
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 360;
 export const SIDEBAR_DEFAULT_WIDTH = 224;
@@ -52,6 +53,7 @@ export type FontSize = (typeof FONT_SIZES)[number];
 export type Motion = (typeof MOTIONS)[number];
 export type AppTheme = (typeof THEMES)[number];
 export type WindowPosition = (typeof WINDOW_POSITIONS)[number];
+export type NetworkMode = (typeof NETWORK_MODES)[number];
 export type AppSettings = {
   language: Language;
   accent: Accent;
@@ -69,6 +71,7 @@ export type AppSettings = {
   runInBackground: boolean;
   autoCheckUpdates: boolean;
   windowPosition: WindowPosition;
+  networkMode: NetworkMode;
   theme: AppTheme;
 };
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -88,6 +91,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   runInBackground: false,
   autoCheckUpdates: true,
   windowPosition: "remember",
+  networkMode: "system",
   theme: "system",
 };
 const LEGACY_BACKGROUNDS: Record<string, string> = {
@@ -171,6 +175,11 @@ export function migrateSettings(raw: unknown): AppSettings {
       source.windowPosition,
       DEFAULT_SETTINGS.windowPosition,
     ),
+    networkMode: pick(
+      NETWORK_MODES,
+      source.networkMode,
+      DEFAULT_SETTINGS.networkMode,
+    ),
     sidebarWidth:
       typeof source.sidebarWidth === "number" &&
       Number.isFinite(source.sidebarWidth)
@@ -238,15 +247,21 @@ export function readInitialSettings(): {
 export function loadSettings(): AppSettings {
   return readInitialSettings().settings;
 }
-export function applySettings(settings: AppSettings) {
+export function applySettings(
+  settings: AppSettings,
+  { includeTheme = true }: { includeTheme?: boolean } = {},
+) {
   const root = document.documentElement;
-  const dark =
-    settings.theme === "dark" ||
-    (settings.theme === "system" &&
-      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false));
-  root.classList.toggle("dark", dark);
-  root.classList.toggle("light", !dark);
-  root.style.colorScheme = dark ? "dark" : "light";
+  // 首屏在 React 挂载前应用主题；运行时由 next-themes 统一提交，保留过渡旧帧。
+  if (includeTheme) {
+    const dark =
+      settings.theme === "dark" ||
+      (settings.theme === "system" &&
+        (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false));
+    root.classList.toggle("dark", dark);
+    root.classList.toggle("light", !dark);
+    root.style.colorScheme = dark ? "dark" : "light";
+  }
   for (const [name, value] of Object.entries({
     accent: settings.accent,
     radius: settings.radius,

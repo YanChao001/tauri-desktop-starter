@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useExternalLinks } from "@/hooks/use-external-links";
 import { useRevealWindow } from "@/hooks/use-reveal-window";
+import { useDesktopContextMenu } from "@/hooks/use-desktop-context-menu";
 import { AppShell } from "@/layouts/app-shell";
 import { I18nProvider } from "@/providers/i18n";
 import { SettingsProvider } from "@/providers/settings";
@@ -25,10 +26,12 @@ import { UnsavedWorkProvider } from "@/providers/unsaved-work";
 import { RecoveryGate } from "@/components/recovery-gate";
 import { THEME_STORAGE_KEY } from "@/lib/settings-model";
 import { SettingsPersistence } from "@/components/settings-persistence";
+import { ThemeEffects } from "@/components/theme-effects";
 
 function AppEffects() {
   useExternalLinks();
   useRevealWindow();
+  useDesktopContextMenu();
   return null;
 }
 function WorkspaceIntegration() {
@@ -63,6 +66,7 @@ export default function App() {
             // main.tsx 在挂载前应用主题；当前客户端渲染不需要服务端主题脚本
             scriptProps={{ type: "text/plain" }}
           >
+            <ThemeEffects />
             <DemoMotion>
               <TooltipProvider delayDuration={200}>
                 {/* HashRouter：生产构建下用的是自定义协议，hash 路由不会出现刷新 404 */}

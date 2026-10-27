@@ -9,9 +9,9 @@ use crate::{
     extension_runtime,
     extension_view::{ExtensionView, ExtensionViewInput, MAX_VIEW_BYTES},
     extensions::{
-        ExtensionCommand, ExtensionFile, ExtensionFileEncoding, ExtensionInputFormat,
-        ExtensionNetworkResponse, ExtensionPermission, ExtensionRequest, ExtensionResultFormat,
-        ExtensionRunInput, ExtensionStore, PreparedRun, TEXT_LIMIT,
+        ExtensionCommand, ExtensionExecutionBudget, ExtensionFile, ExtensionFileEncoding,
+        ExtensionInputFormat, ExtensionNetworkResponse, ExtensionPermission, ExtensionRequest,
+        ExtensionResultFormat, ExtensionRunInput, ExtensionStore, PreparedRun, TEXT_LIMIT,
     },
     workbench::WorkbenchState,
 };
@@ -199,6 +199,7 @@ async fn collect_data(
         let result = app
             .state::<ExtensionHostStore>()
             .execute_effect(
+                &app.state::<crate::storage::SettingsStore>(),
                 &prepared.package.manifest,
                 &prepared.grants,
                 ExtensionEffect::Http {
@@ -209,7 +210,7 @@ async fn collect_data(
                         headers: BTreeMap::new(),
                         body: None,
                         credential: None,
-                        network_mode: crate::extension_network::ExtensionNetworkMode::Direct,
+                        network_mode: None,
                     },
                 },
                 prepared.stop.clone(),
@@ -265,9 +266,11 @@ pub async fn execute(
         let module = prepared.module.clone();
         let stop = prepared.stop.clone();
         let function = command.function.clone();
-        let output =
-            blocking::run(move || extension_runtime::run(&module, &function, &payload, stop))
-                .await?;
+        let budget = command.execution_budget;
+        let output = blocking::run(move || {
+            extension_runtime::run_with_budget(&module, &function, &payload, stop, budget)
+        })
+        .await?;
         if command.result_format == ExtensionResultFormat::Json {
             serde_json::from_str::<serde_json::Value>(&output).map_err(|_| {
                 NativeError::new(
@@ -337,8 +340,10 @@ pub async fn execute_view(
         }
         drive_view(
             &host,
+            &app.state::<crate::storage::SettingsStore>(),
             &prepared,
             &command.function,
+            command.execution_budget,
             request,
             &input.request.locale,
         )
@@ -404,8 +409,10 @@ fn bounded_receipt(mut result: ExtensionEffectResult, budget: usize) -> Extensio
 
 async fn drive_view(
     host: &ExtensionHostStore,
+    settings: &crate::storage::SettingsStore,
     prepared: &PreparedRun,
     function: &str,
+    budget: ExtensionExecutionBudget,
     mut request: serde_json::Value,
     locale: &str,
 ) -> NativeResult<ExtensionView> {
@@ -422,9 +429,10 @@ async fn drive_view(
         let module = prepared.module.clone();
         let function = function.to_owned();
         let stop = prepared.stop.clone();
-        let output =
-            blocking::run(move || extension_runtime::run(&module, &function, &payload, stop))
-                .await?;
+        let output = blocking::run(move || {
+            extension_runtime::run_with_budget(&module, &function, &payload, stop, budget)
+        })
+        .await?;
         let view = ExtensionView::parse(&output)?;
         if view.effects.is_empty() {
             return Ok(view);
@@ -444,6 +452,7 @@ async fn drive_view(
             cancelled(prepared)?;
             let result = host
                 .execute_effect(
+                    settings,
                     &prepared.package.manifest,
                     &prepared.grants,
                     effect,

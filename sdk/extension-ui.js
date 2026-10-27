@@ -2,6 +2,60 @@
 (() => {
   "use strict";
   if (window === window.top) return;
+  // Replaced only by the native all-frame initializer. It controls document UI
+  // policy, never bridge access; browser fixtures keep the unreplaced source.
+  const nativeContextMenu = "__STARTER_NATIVE_CONTEXT_MENU__" === "true";
+  function installDesktopContextMenu() {
+    const packagedDocument =
+      location.protocol === "extension-ui:" ||
+      location.hostname === "extension-ui.localhost";
+    if (!nativeContextMenu && !packagedDocument) return;
+    const textInputTypes = new Set([
+      "text",
+      "search",
+      "email",
+      "url",
+      "tel",
+      "password",
+      "number",
+    ]);
+    const contextMenu = (event) => {
+      if (event.defaultPrevented) return;
+      const selection = window.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        selection.toString() &&
+        event.target instanceof Node &&
+        Array.from({ length: selection.rangeCount }, (_, index) =>
+          selection.getRangeAt(index),
+        ).some((range) => range.intersectsNode(event.target))
+      )
+        return;
+      for (const node of event.composedPath()) {
+        if (!(node instanceof Element)) continue;
+        if (node.matches("input,textarea")) {
+          // Keep WebView editing, including password paste, without exposing
+          // clipboard access through the extension capability bridge.
+          if (
+            !node.matches(":disabled") &&
+            (node.localName === "textarea" || textInputTypes.has(node.type))
+          )
+            return;
+          break;
+        }
+        const editable = node.getAttribute("contenteditable")?.toLowerCase();
+        if (["", "true", "plaintext-only"].includes(editable)) return;
+        if (editable === "false") break;
+      }
+      event.preventDefault();
+    };
+    // Bubble after author controls so their existing business menus still work.
+    // This policy belongs to the document, including initial about:blank/srcdoc
+    // descendants, and remains in place when its business channel closes.
+    window.addEventListener("contextmenu", contextMenu);
+  }
+  installDesktopContextMenu();
   // WebRTC transports are outside connect-src. This UI surface has no RTC capability.
   // Lock their globals before author code; descendants also inherit opaque sandbox origins.
   for (const name of [
@@ -45,30 +99,75 @@
     return;
   const defaults = document.createElement("style");
   defaults.dataset.starterDefaults = "";
+  const initialPaint = document.createElement("style");
+  initialPaint.dataset.starterInitialPaint = "";
+  // Before the first host theme arrives, controls may have computed UA colors.
+  // Commit the real theme while the host still hides the frame, without fading
+  // from those fallback colors. Normal author and hover transitions resume below.
+  initialPaint.textContent =
+    "*,*::before,*::after{transition:none !important;}";
+  const buttons =
+    'button,input[type="button"],input[type="submit"],input[type="reset"]';
+  const fields =
+    'input:not([type="checkbox"],[type="radio"],[type="range"],[type="button"],[type="submit"],[type="reset"]),select,textarea';
+  const controls = `${buttons},${fields},input[type="checkbox"],input[type="radio"],input[type="range"]`;
   defaults.textContent = `
 @layer starter-defaults {
   :where(*,*::before,*::after) { box-sizing:border-box; border-color:var(--border,currentColor); }
-  :where(html) { box-sizing:border-box; font-family:var(--host-font-family,system-ui,sans-serif); font-size:var(--host-font-size,16px); line-height:1.5; color:var(--foreground,CanvasText); background:var(--background,Canvas); scrollbar-gutter:stable; }
+  :where(html) { --starter-outline-background:var(--background,Canvas); --starter-outline-hover:var(--muted,ButtonFace); --starter-outline-border:var(--border); --starter-ghost-hover:var(--muted,ButtonFace); --starter-destructive-background:color-mix(in oklab,var(--destructive,Mark) 5%,transparent); --starter-destructive-hover:color-mix(in oklab,var(--destructive,Mark) 10%,transparent); --starter-check-background:transparent; --starter-invalid-border:var(--destructive,Mark); --starter-invalid-ring:color-mix(in oklab,var(--destructive,Mark) 20%,transparent); box-sizing:border-box; font-family:var(--host-font-family,system-ui,sans-serif); font-size:var(--host-font-size,16px); line-height:1.5; color:var(--foreground,CanvasText); background:var(--background,Canvas); scrollbar-gutter:stable; }
+  :where(html.dark) { --starter-outline-background:color-mix(in oklab,var(--input) 30%,transparent); --starter-outline-hover:color-mix(in oklab,var(--input) 50%,transparent); --starter-outline-border:var(--input); --starter-ghost-hover:color-mix(in oklab,var(--muted,ButtonFace) 50%,transparent); --starter-destructive-background:color-mix(in oklab,var(--destructive,Mark) 10%,transparent); --starter-destructive-hover:color-mix(in oklab,var(--destructive,Mark) 20%,transparent); --starter-check-background:color-mix(in oklab,var(--input) 30%,transparent); --starter-invalid-border:color-mix(in oklab,var(--destructive,Mark) 50%,transparent); --starter-invalid-ring:color-mix(in oklab,var(--destructive,Mark) 40%,transparent); }
+  :host { font-family:var(--host-font-family,system-ui,sans-serif); font-size:var(--host-font-size,16px); line-height:1.5; color:var(--foreground,CanvasText); }
   :where(body) { margin:0; min-width:0; padding:1rem; font:inherit; color:inherit; background:var(--background,Canvas); }
-  :where(button,input,select,textarea) { font:inherit; font-size:.875rem; line-height:1.25rem; color:inherit; }
-  :where(button) { display:inline-flex; align-items:center; justify-content:center; gap:.375rem; min-height:2rem; flex-shrink:0; white-space:nowrap; padding:.25rem .625rem; border:1px solid transparent; border-radius:var(--radius,.625rem); background:var(--primary,ButtonFace); color:var(--primary-foreground,ButtonText); font-weight:500; cursor:pointer; transition:background-color 140ms,color 140ms,border-color 140ms; }
-  :where(button):hover { background:color-mix(in oklab,var(--primary,ButtonFace) 90%,var(--foreground,CanvasText)); }
-  :where(button[data-variant="outline"],button[data-variant="secondary"]) { border-color:var(--border); background:var(--background,Canvas); color:var(--foreground,CanvasText); }
-  :where(button[data-variant="outline"],button[data-variant="secondary"]):hover { background:var(--muted,ButtonFace); }
-  :where(input:not([type="checkbox"],[type="radio"],[type="range"],[type="button"],[type="submit"],[type="reset"]),select,textarea) { width:100%; max-width:100%; min-width:0; min-height:2rem; padding:.25rem .625rem; border:1px solid var(--input,var(--border)); border-radius:var(--radius,.625rem); background:var(--background,Canvas); }
-  :where(textarea) { min-height:5rem; resize:vertical; }
+  :where(${controls}) { font:inherit; font-size:.875rem; line-height:1.25rem; color:inherit; outline:none; transition:color 150ms,background-color 150ms,border-color 150ms,box-shadow 150ms,transform 150ms; }
+  :where(${buttons}) { appearance:none; display:inline-flex; align-items:center; justify-content:center; gap:.375rem; height:2rem; flex-shrink:0; white-space:nowrap; padding:.25rem .625rem; border:1px solid transparent; border-radius:var(--radius,.625rem); background:var(--primary,ButtonFace); color:var(--primary-foreground,ButtonText); font-weight:500; user-select:none; }
+  :where(${buttons}):hover { background:color-mix(in oklab,var(--primary,ButtonFace) 90%,var(--foreground,CanvasText)); }
+  :where(${buttons}):active:not([aria-haspopup]) { transform:translateY(1px); }
+  :where(${buttons}):where([data-variant="outline"]) { border-color:var(--starter-outline-border,var(--border)); background:var(--starter-outline-background,var(--background,Canvas)); color:var(--foreground,CanvasText); }
+  :where(${buttons}):where([data-variant="outline"]):hover,:where(${buttons}):where([data-variant="outline"][aria-expanded="true"]) { background:var(--starter-outline-hover,var(--muted,ButtonFace)); }
+  :where(${buttons}):where([data-variant="secondary"]) { background:var(--secondary,ButtonFace); color:var(--secondary-foreground,ButtonText); }
+  :where(${buttons}):where([data-variant="secondary"]):hover { background:color-mix(in oklch,var(--secondary,ButtonFace),var(--foreground,CanvasText) 5%); }
+  :where(${buttons}):where([data-variant="secondary"][aria-expanded="true"]) { background:var(--secondary,ButtonFace); }
+  :where(${buttons}):where([data-variant="ghost"],[data-variant="link"]) { background:transparent; color:var(--foreground,CanvasText); }
+  :where(${buttons}):where([data-variant="ghost"]):hover,:where(${buttons}):where([data-variant="ghost"][aria-expanded="true"]) { background:var(--starter-ghost-hover,var(--muted,ButtonFace)); }
+  :where(${buttons}):where([data-variant="destructive"]) { background:var(--starter-destructive-background); color:var(--destructive,Mark); }
+  :where(${buttons}):where([data-variant="destructive"]):hover { background:var(--starter-destructive-hover); }
+  :where(${buttons}):where([data-variant="link"]) { color:var(--primary,LinkText); text-underline-offset:4px; }
+  :where(${buttons}):where([data-variant="link"]):hover { background:transparent; text-decoration-line:underline; }
+  :where(${fields}) { width:100%; max-width:100%; min-width:0; height:2rem; padding:.25rem .625rem; border:1px solid var(--input,var(--border)); border-radius:var(--radius,.625rem); background:var(--background,Canvas); }
+  :where(input:not([type="checkbox"],[type="radio"],[type="range"],[type="button"],[type="submit"],[type="reset"]),textarea) { font-size:var(--control-input-font-size,.875rem); line-height:var(--control-input-line-height,1.25rem); }
+  :where(textarea) { height:auto; min-height:5rem; padding:.5rem .75rem; resize:vertical; }
+  :where(input[type="file"])::file-selector-button { margin-inline-end:.5rem; padding:0 .25rem; height:1.5rem; border:0; background:transparent; color:var(--foreground,CanvasText); font:inherit; font-size:.875rem; line-height:1.25rem; font-weight:500; }
   :where([data-starter-listbox]) { position:fixed; inset:auto; margin:0; z-index:2147483647; overflow:auto; padding:.25rem; border:1px solid var(--border); border-radius:var(--radius,.625rem); background:var(--popover,var(--background,Canvas)); color:var(--popover-foreground,var(--foreground,CanvasText)); font:inherit; font-size:.875rem; line-height:1.25rem; box-shadow:0 4px 12px #0002; overscroll-behavior:contain; }
   :where([data-starter-option]) { display:flex; align-items:center; min-height:2rem; padding:.375rem .5rem; border-radius:calc(var(--radius,.625rem) * .6); cursor:default; white-space:nowrap; }
   :where([data-starter-option][data-active]) { background:var(--accent,Highlight); color:var(--accent-foreground,HighlightText); }
   :where([data-starter-option][aria-disabled="true"]) { opacity:.5; }
   :where([data-starter-option][aria-selected="true"])::after { content:"✓"; margin-inline-start:auto; padding-inline-start:1rem; }
   :where([data-starter-option-group]) { padding:.375rem .5rem; font-size:.75rem; color:var(--muted-foreground,GrayText); font-weight:500; }
-  @media (max-width:767px) { :where(input:not([type="checkbox"],[type="radio"],[type="range"],[type="button"],[type="submit"],[type="reset"]),textarea) { font-size:1rem; } }
   :where(input[type="checkbox"],input[type="radio"],input[type="range"]) { accent-color:var(--primary,Highlight); }
+  :where(input[type="checkbox"],input[type="radio"]) { appearance:none; display:inline-grid; place-content:center; vertical-align:middle; flex-shrink:0; width:1rem; height:1rem; margin:0; padding:0; border:1px solid var(--input,var(--border)); border-radius:4px; background:var(--starter-check-background,transparent); }
+  :where(input[type="radio"]) { border-radius:50%; }
+  :where(input[type="checkbox"]):checked,:where(input[type="checkbox"]):indeterminate,:where(input[type="radio"]):checked { border-color:var(--primary,Highlight); background:var(--primary,Highlight); color:var(--primary-foreground,HighlightText); }
+  :where(input[type="checkbox"],input[type="radio"])::before { content:""; display:none; }
+  :where(input[type="checkbox"]):checked::before { display:block; width:.25rem; height:.5rem; border:solid currentColor; border-width:0 2px 2px 0; transform:translateY(-1px) rotate(45deg); }
+  :where(input[type="checkbox"]):indeterminate::before { display:block; width:.5rem; height:0; border:0; border-bottom:2px solid currentColor; transform:none; }
+  :where(input[type="radio"]):checked::before { display:block; width:.5rem; height:.5rem; border-radius:50%; background:currentColor; }
+  :where(input[type="range"]) { appearance:none; width:100%; height:.75rem; margin:0; padding:0; border:0; border-radius:999px; background:transparent; }
+  :where(input[type="range"])::-webkit-slider-runnable-track { height:.25rem; border-radius:999px; background:var(--muted,ButtonFace); }
+  :where(input[type="range"])::-moz-range-track { height:.25rem; border-radius:999px; background:var(--muted,ButtonFace); }
+  :where(input[type="range"])::-moz-range-progress { height:.25rem; border-radius:999px; background:var(--primary,Highlight); }
+  :where(input[type="range"])::-webkit-slider-thumb { appearance:none; width:.75rem; height:.75rem; margin-top:-.25rem; border:1px solid var(--primary,Highlight); border-radius:50%; background:var(--background,Canvas); }
+  :where(input[type="range"])::-moz-range-thumb { box-sizing:border-box; width:.75rem; height:.75rem; border:1px solid var(--primary,Highlight); border-radius:50%; background:var(--background,Canvas); }
+  :where(input[type="range"]):is(:hover,:focus-visible,:active)::-webkit-slider-thumb { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring,Highlight) 50%,transparent); }
+  :where(input[type="range"]):is(:hover,:focus-visible,:active)::-moz-range-thumb { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring,Highlight) 50%,transparent); }
   :where(input,textarea)::placeholder { color:var(--muted-foreground,GrayText); }
-  :where(button,input,select,textarea,a,[tabindex]):focus-visible { outline:2px solid var(--ring,Highlight); outline-offset:2px; }
-  :where(button,input,select,textarea):disabled,:where([aria-disabled="true"]) { opacity:.5; cursor:not-allowed; }
-  :where([aria-invalid="true"]) { border-color:var(--destructive,Mark); }
+  :where(${controls}):focus-visible { border-color:var(--ring,Highlight); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring,Highlight) 50%,transparent); }
+  :where(${buttons}):where([data-variant="destructive"]):focus-visible { border-color:color-mix(in oklab,var(--destructive,Mark) 40%,transparent); box-shadow:0 0 0 3px var(--starter-invalid-ring); }
+  :where(input[type="range"]):focus-visible { box-shadow:none; }
+  :where(a,[tabindex]):not(:where(${controls})):focus-visible { outline:2px solid var(--ring,Highlight); outline-offset:2px; }
+  :where(${controls}):disabled,:where([aria-disabled="true"]) { opacity:.5; cursor:not-allowed; }
+  :where(${buttons},input):disabled { pointer-events:none; }
+  [aria-invalid="true"] { border-color:var(--starter-invalid-border,var(--destructive,Mark)); box-shadow:0 0 0 3px var(--starter-invalid-ring,color-mix(in oklab,var(--destructive,Mark) 20%,transparent)); }
+  :where(input[type="checkbox"],input[type="radio"]):checked[aria-invalid="true"] { border-color:var(--primary,Highlight); }
   :where(label) { display:block; font-size:.875rem; font-weight:500; }
   :where(a) { color:var(--primary,LinkText); text-underline-offset:.2em; }
   :where(h1,h2,h3,p) { overflow-wrap:anywhere; }
@@ -88,14 +187,15 @@
   ::view-transition-old(root),::view-transition-new(root) { animation:none; mix-blend-mode:normal; }
   ::view-transition-old(root) { z-index:1; }
   ::view-transition-new(root) { z-index:2; }
+  :where(html[data-active="false"]) *,:where(html[data-active="false"]) *::before,:where(html[data-active="false"]) *::after { animation-play-state:paused !important; }
   :where(html[data-motion="reduced"]) *,:where(html[data-motion="reduced"]) *::before,:where(html[data-motion="reduced"]) *::after { animation-duration:1ms !important; animation-delay:0ms !important; animation-iteration-count:1 !important; transition-duration:1ms !important; }
   @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:1ms !important; animation-delay:0ms !important; animation-iteration-count:1 !important; transition-duration:1ms !important; } }
-  @media (forced-colors:active) { * { scrollbar-color:auto; } }
+  @media (forced-colors:active) { * { scrollbar-color:auto; } :where(input[type="checkbox"],input[type="radio"],input[type="range"]) { appearance:auto; background:revert; border:revert; color:revert; forced-color-adjust:auto; } :where(input[type="checkbox"],input[type="radio"])::before { display:none; } :where(input[type="range"])::-webkit-slider-runnable-track { all:revert; } :where(input[type="range"])::-webkit-slider-thumb { all:revert; } :where(input[type="range"])::-moz-range-track { all:revert; } :where(input[type="range"])::-moz-range-thumb { all:revert; } :where(input[type="range"])::-moz-range-progress { all:revert; } :where(${controls}):focus-visible { outline:2px solid Highlight; outline-offset:2px; } }
 }`;
   function mountDefaults() {
     const root = document.head || document.documentElement;
     if (!root) return false;
-    root.prepend(defaults);
+    root.prepend(defaults, initialPaint);
     return true;
   }
   if (!mountDefaults()) {
@@ -107,9 +207,64 @@
     });
     observer.observe(document, { childList: true, subtree: true });
   }
-  let port, current, closedError;
+  let port, current, received, closedError;
   let sequence = 0;
   let reveal, fontSource;
+  const shadowStyles = new Map(),
+    selectPickers = new Set();
+  function shadowCss() {
+    // Application motion preferences must also reach explicitly registered shadow trees.
+    return (
+      defaults.textContent +
+      (current?.theme.motion === "reduced"
+        ? "\n@layer starter-defaults { *,*::before,*::after { animation-duration:1ms !important; animation-delay:0ms !important; animation-iteration-count:1 !important; transition-duration:1ms !important; } }"
+        : "") +
+      (current?.active === false
+        ? "\n@layer starter-defaults { *,*::before,*::after { animation-play-state:paused !important; } }"
+        : "")
+    );
+  }
+  function applyStyles(root) {
+    if (!(root instanceof ShadowRoot) || root.ownerDocument !== document)
+      throw new TypeError("Expected a ShadowRoot from this extension document");
+    if (closedError)
+      throw Object.assign(new Error("Extension surface closed"), {
+        code: "EXTENSION_UNAVAILABLE",
+        retryable: false,
+      });
+    let entry = shadowStyles.get(root);
+    if (!entry) {
+      const style = document.createElement("style");
+      style.dataset.starterDefaults = "";
+      style.textContent = shadowCss();
+      const firstPaint = painted ? null : initialPaint.cloneNode(true);
+      root.prepend(style);
+      if (firstPaint) root.prepend(firstPaint);
+      const picker = installSelectPicker(root);
+      selectPickers.add(picker);
+      entry = {
+        style,
+        firstPaint,
+        picker,
+        motion: current?.theme.motion || "full",
+        active: current?.active !== false,
+        references: 0,
+      };
+      shadowStyles.set(root, entry);
+    }
+    entry.references++;
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      if (--entry.references || shadowStyles.get(root) !== entry) return;
+      entry.picker.dispose();
+      selectPickers.delete(entry.picker);
+      entry.style.remove();
+      entry.firstPaint?.remove();
+      shadowStyles.delete(root);
+    };
+  }
   let paintScheduled = false,
     painted = false;
   function schedulePainted() {
@@ -122,6 +277,11 @@
         window.requestAnimationFrame(() => {
           paintScheduled = false;
           if (painted || !current?.view || !port) return;
+          // Flush author rendering and theme styles with transitions suppressed.
+          // Removing the rule after this commit must not animate initial colors.
+          void document.documentElement?.offsetWidth;
+          initialPaint.remove();
+          for (const entry of shadowStyles.values()) entry.firstPaint?.remove();
           painted = true;
           parent.postMessage({ type: "starter:painted", version: 1 }, "*");
         }),
@@ -150,6 +310,7 @@
       root.classList.toggle("dark", theme.mode === "dark");
       root.classList.toggle("light", theme.mode !== "dark");
       root.dataset.motion = theme.motion || "full";
+      root.dataset.active = String(current.active !== false);
       for (const [name, token] of Object.entries(theme.tokens))
         root.style.setProperty(name, token);
       root.lang = current.locale;
@@ -172,7 +333,18 @@
         }
       }
     }
-    selectPicker.refresh();
+    for (const entry of shadowStyles.values()) {
+      const motion = current.theme.motion || "full";
+      const active = current.active !== false;
+      if (entry.motion !== motion || entry.active !== active) {
+        entry.motion = motion;
+        entry.active = active;
+        entry.style.textContent = shadowCss();
+      }
+    }
+    for (const picker of selectPickers)
+      if (current.active === false) picker.close();
+      else picker.refresh();
     for (const listener of listeners) notify(listener);
     schedulePainted();
   }
@@ -180,21 +352,29 @@
     reveal?.cancel();
     if (
       !current ||
+      current.active === false ||
+      document.visibilityState === "hidden" ||
       current.theme.motion === "reduced" ||
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
       typeof document.startViewTransition !== "function" ||
       typeof document.documentElement?.animate !== "function"
     )
       return;
-    let next, release, handle;
+    let next, release, handle, animation;
     let updating = false,
       applied = false,
       cancelled = false;
     const operation = {
       mode: current.theme.mode,
       finish(snapshot) {
-        if (applied) applySnapshot(snapshot);
+        if (snapshot.active === false) {
+          next = snapshot;
+          if (applied) applySnapshot(snapshot);
+          operation.cancel();
+        } else if (applied || (!next && snapshot.theme.mode === operation.mode))
+          applySnapshot(snapshot);
         else {
+          // 显式主题选择可能直接回到原模式；待提交过渡仍须使用最新草稿和环境。
           next = snapshot;
           if (updating) commit();
         }
@@ -203,6 +383,7 @@
         cancelled = true;
         commit();
         handle?.skipTransition();
+        animation?.cancel?.();
         if (reveal === operation) reveal = undefined;
       },
     };
@@ -233,7 +414,7 @@
     void handle.ready
       .then(() => {
         if (reveal !== operation || !applied) return;
-        const animation = document.documentElement.animate(
+        animation = document.documentElement.animate(
           {
             clipPath: [
               `circle(0px at ${value.x}px ${value.y}px)`,
@@ -260,7 +441,7 @@
       })
       .catch(() => {});
   }
-  function installSelectPicker() {
+  function installSelectPicker(scope = document) {
     // Keep the native control itself: labels, form submission/reset, framework
     // change handlers and programmatic value/selectedIndex remain native DOM APIs.
     // Only the single-select picker is enhanced; authors can opt out per control.
@@ -279,7 +460,8 @@
       !node.multiple &&
       node.size <= 1 &&
       node.dataset.starterSelect !== "native";
-    const enabled = (node) => eligible(node) && !node.matches(":disabled");
+    const enabled = (node) =>
+      current?.active !== false && eligible(node) && !node.matches(":disabled");
     const selectable = (option) =>
       !!option &&
       !option.disabled &&
@@ -397,7 +579,7 @@
     function show(select) {
       if (!enabled(select)) return;
       if (open?.select === select) return;
-      close(true);
+      for (const picker of selectPickers) picker.close(true);
       const popup = document.createElement("div");
       popup.id = `starter-listbox-${++nextId}`;
       popup.dataset.starterListbox = "";
@@ -447,14 +629,14 @@
       select.setAttribute("aria-expanded", "true");
       select.setAttribute("aria-controls", popup.id);
       select.setAttribute("aria-haspopup", "listbox");
-      document.body.append(popup);
+      (scope === document ? document.body : scope).append(popup);
       try {
         popup.showPopover?.();
       } catch {
         popup.removeAttribute("popover");
       }
       renderOptions();
-      observer.observe(document.body, {
+      observer.observe(scope === document ? document.body : scope, {
         childList: true,
         characterData: true,
         subtree: true,
@@ -626,32 +808,45 @@
         renderOptions();
       }
     }
-    document.addEventListener("pointerdown", pointer, true);
-    document.addEventListener("mousedown", suppressMouse, true);
-    document.addEventListener("keydown", keydown, true);
-    document.addEventListener("focusin", focus, true);
-    document.addEventListener("reset", reset, true);
-    document.addEventListener("input", change, true);
-    document.addEventListener("change", change, true);
+    function outside(event) {
+      if (open && !event.composedPath().includes(scope.host)) close(true);
+    }
+    scope.addEventListener("pointerdown", pointer, true);
+    scope.addEventListener("mousedown", suppressMouse, true);
+    scope.addEventListener("keydown", keydown, true);
+    scope.addEventListener("focusin", focus, true);
+    scope.addEventListener("reset", reset, true);
+    scope.addEventListener("input", change, true);
+    scope.addEventListener("change", change, true);
+    if (scope !== document) {
+      document.addEventListener("pointerdown", outside, true);
+      document.addEventListener("focusin", outside, true);
+    }
     window.addEventListener("resize", position);
     document.addEventListener("scroll", position, true);
     return {
+      close,
       refresh: position,
       dispose() {
         close();
-        document.removeEventListener("pointerdown", pointer, true);
-        document.removeEventListener("mousedown", suppressMouse, true);
-        document.removeEventListener("keydown", keydown, true);
-        document.removeEventListener("focusin", focus, true);
-        document.removeEventListener("reset", reset, true);
-        document.removeEventListener("input", change, true);
-        document.removeEventListener("change", change, true);
+        scope.removeEventListener("pointerdown", pointer, true);
+        scope.removeEventListener("mousedown", suppressMouse, true);
+        scope.removeEventListener("keydown", keydown, true);
+        scope.removeEventListener("focusin", focus, true);
+        scope.removeEventListener("reset", reset, true);
+        scope.removeEventListener("input", change, true);
+        scope.removeEventListener("change", change, true);
+        if (scope !== document) {
+          document.removeEventListener("pointerdown", outside, true);
+          document.removeEventListener("focusin", outside, true);
+        }
         window.removeEventListener("resize", position);
         document.removeEventListener("scroll", position, true);
       },
     };
   }
   const selectPicker = installSelectPicker();
+  selectPickers.add(selectPicker);
   const ready = new Promise((resolve, reject) => {
     const terminate = (message, code = "EXTENSION_UNAVAILABLE") => {
       if (closedError) return;
@@ -663,7 +858,13 @@
       window.removeEventListener("message", connect);
       listeners.clear();
       reveal?.cancel();
-      selectPicker.dispose();
+      for (const picker of selectPickers) picker.dispose();
+      selectPickers.clear();
+      for (const entry of shadowStyles.values()) {
+        entry.style.remove();
+        entry.firstPaint?.remove();
+      }
+      shadowStyles.clear();
       for (const request of pending.values()) request.reject(closedError);
       pending.clear();
       const connection = port;
@@ -690,10 +891,13 @@
         if (closedError) return;
         const message = event.data;
         if (message?.type === "state") {
-          resolve(structuredClone(message.value));
-          if (reveal && message.value.theme.mode !== reveal.mode)
-            reveal.finish(message.value);
-          else applySnapshot(message.value);
+          // 首次快照完整，后续消息只替换变化的顶层字段；作者仍收到完整快照。
+          const first = received === undefined;
+          const value = { active: true, ...received, ...message.value };
+          received = value;
+          if (first) resolve(structuredClone(value));
+          if (reveal) reveal.finish(value);
+          else applySnapshot(value);
         } else if (message?.type === "theme-transition") {
           prepareReveal(message.value);
         } else if (message?.type === "closed") {
@@ -725,10 +929,15 @@
   void ready.catch(() => {});
   async function request(method, params) {
     await ready;
-    if (!port || pending.size >= 4 || sequence >= 2147483647)
+    if (!port || received?.active === false || sequence >= 2147483647)
       throw Object.assign(new Error("Extension bridge unavailable or busy"), {
         code: "EXTENSION_UNAVAILABLE",
         retryable: false,
+      });
+    if (pending.size >= 4)
+      throw Object.assign(new Error("Extension bridge is busy"), {
+        code: "EXTENSION_BUSY",
+        retryable: true,
       });
     const id = ++sequence;
     const message = { version: 1, id, method, params };
@@ -751,6 +960,7 @@
   Object.defineProperty(window, "starter", {
     value: Object.freeze({
       ready,
+      applyStyles,
       onChange(listener) {
         if (closedError) return () => {};
         listeners.add(listener);
@@ -778,10 +988,30 @@
             service !== "lan" &&
             service !== "wallpaper" &&
             service !== "resources" &&
-            service !== "links"
+            service !== "links" &&
+            service !== "window"
           )
             return Promise.reject(
               Object.assign(new Error("Unknown extension service"), {
+                code: "INVALID_ARGUMENT",
+                retryable: false,
+              }),
+            );
+          if (
+            service === "window" &&
+            (!value ||
+              typeof value !== "object" ||
+              Array.isArray(value) ||
+              !(
+                (value.action === "get-state" &&
+                  Object.keys(value).sort().join(",") === "action") ||
+                (value.action === "set-always-on-top" &&
+                  typeof value.enabled === "boolean" &&
+                  Object.keys(value).sort().join(",") === "action,enabled")
+              ))
+          )
+            return Promise.reject(
+              Object.assign(new Error("Invalid extension window request"), {
                 code: "INVALID_ARGUMENT",
                 retryable: false,
               }),

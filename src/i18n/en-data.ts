@@ -22,13 +22,13 @@ export const enData: DataMessages = {
   "data.purgeHint":
     "Permanently delete {count} notes. This cannot be undone. Create a backup first if needed.",
   "data.confirm": "Confirm operation",
-  "data.conflict": "Note version conflict",
+  "data.conflict": "Note changed in another window",
   "data.conflictHint":
-    "Your local text is retained. Review the remote content, then keep editing locally and save again, or save a separate copy. Remote changes are never overwritten automatically.",
-  "data.viewRemote": "View remote content",
+    "Your edits are retained. Review the latest saved content before continuing and saving, or save a separate copy. Changes from other windows are never overwritten automatically.",
+  "data.viewRemote": "View saved content",
   "data.remoteUnavailable":
-    "The remote content is unavailable or the note was removed. Your local text is retained and can be saved as a copy.",
-  "data.keepLocal": "Keep local and continue editing",
+    "The saved content is unavailable or the note was removed. Your edits are retained and can be saved as a copy.",
+  "data.keepLocal": "Keep current edits",
   "data.saveCopy": "Save as a copy",
   "data.discardEdits": "Discard current edits",
   "data.draftRecovered":
@@ -37,16 +37,19 @@ export const enData: DataMessages = {
     "Draft saved on this device for this window's next launch.",
   "data.backups": "Backup and restore",
   "data.backupHint":
-    "Backups include all notes, recycled items and per-window drafts. Each backup is limited to 16 MiB; oversized data is rejected, never truncated. Keep a local backup or export it to a file.",
+    "Backups include all notes, recycled items and per-window drafts and can be restored locally or exported. External imports are limited to 16 MiB; larger local backups remain restorable from their original backup directory.",
   "data.createBackup": "Create full backup",
+  "data.backupAction": "Back up",
   "data.importBackup": "Import backup from file",
+  "data.importBackupAction": "Import backup",
+  "data.backupHistory": "Backup history",
   "data.previewBackup": "Preview backup",
   "data.exportBackup": "Export file",
   "data.restoreBackup": "Restore this backup",
   "data.backupCreated": "Backed up {count} notes",
   "data.backupCount": "{notes} notes · {trashed} recycled · {drafts} drafts",
   "data.restoreHint":
-    "Restoring replaces all notes, recycled items and persisted drafts. Current data is backed up first, then restored in a transaction. A failed restore preserves current data.",
+    "Restoring replaces all notes, recycled items and saved drafts. Current data is backed up first. A failed restore preserves current data.",
   "data.saveBeforeRestore":
     "Save or discard your current edits first. Unsaved edits in other windows remain protected by version conflict checks.",
   "data.restored":

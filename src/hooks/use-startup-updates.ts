@@ -7,7 +7,7 @@ import { getCurrentWindowLabel, isTauri } from "@/lib/tauri";
 import { checkUpdates, getUpdatesSnapshot } from "@/lib/updates-store";
 import { reportClientError } from "@/lib/report-error";
 
-/** 主窗口可见、设置就绪后检查一次；后台失败只留在更新页供重试。 */
+/** 主窗口可见、设置就绪后检查一次；后台失败只留在设置的更新区供重试。 */
 export function useStartupUpdates() {
   const { settings, persistence } = useSettings();
   const ready = persistence === "saved" || persistence === "saving";
@@ -36,7 +36,7 @@ export function useStartupUpdates() {
           duration: 12000,
           action: {
             label: t("updates.viewUpdate"),
-            onClick: () => navigate("/updates"),
+            onClick: () => navigate("/settings?section=updates"),
           },
         });
     }

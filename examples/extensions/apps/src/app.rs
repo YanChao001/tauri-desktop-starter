@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{data::DataStudio, tasks::Tasks, text::TextStudio, view::tr};
+use crate::{data::DataStudio, studio, tasks::Tasks, text::TextStudio, view::tr};
 
-const TABS: [&str; 4] = ["text", "data", "todo", "connections"];
+const TABS: [&str; 5] = ["studio", "text", "data", "todo", "connections"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,7 +21,7 @@ impl Lab {
     fn new(request: &Value, zh: bool) -> Self {
         Self {
             schema: 3,
-            tab: "text".into(),
+            tab: "studio".into(),
             text: TextStudio::new(zh),
             data: DataStudio::new(),
             tasks: Tasks::new(request),
@@ -71,6 +71,7 @@ pub(crate) fn handle(input: &str) -> Result<String, String> {
     state.text.fields(fields)?;
     state.data.fields(fields)?;
     state.tasks.fields(fields)?;
+    studio::validate_fields(fields)?;
     let action = request["action"].as_str().unwrap_or("");
     if action.starts_with("tab-") && !TABS.contains(&action.trim_start_matches("tab-")) {
         return Err("Unknown workspace tab".into());
@@ -89,6 +90,9 @@ pub(crate) fn handle(input: &str) -> Result<String, String> {
     }
     if action.starts_with("todo-") {
         state.tab = "todo".into();
+    }
+    if action == "workspace-export" {
+        state.tab = "studio".into();
     }
     let mut errors = BTreeMap::<String, String>::new();
     let mut effects = Vec::<Value>::new();
@@ -122,6 +126,7 @@ pub(crate) fn handle(input: &str) -> Result<String, String> {
             state.tab = "text".into();
         }
         _ => match state.tab.as_str() {
+            "studio" => studio::act(action, fields, zh, &mut errors, &mut artifacts),
             "text" => state.text.act(action, zh, &mut errors, &mut artifacts),
             "data" | "connections" => state.data.act(
                 action,
@@ -144,13 +149,14 @@ pub(crate) fn handle(input: &str) -> Result<String, String> {
     }
     state.validate()?;
     let view = match state.tab.as_str() {
+        "studio" => studio::render(fields, zh),
         "text" => state.text.render(zh),
         "data" => state.data.render(zh),
         "todo" => state.tasks.render(&request, zh),
         "connections" => state.data.render_connections(&request, zh),
         _ => unreachable!("validated workspace tab"),
     };
-    let tabs=[("text","文本","Text"),("data","CSV / JSON","CSV / JSON"),("todo","待办","Tasks"),("connections","文件与网络","Files & network")].into_iter().map(|(id,cn,en)|json!({"id":format!("tab-{id}"),"label":tr(zh,cn,en),"active":state.tab==id})).collect::<Vec<_>>();
+    let tabs=[("studio","交互工作台","Interactive studio"),("text","文本","Text"),("data","CSV / JSON","CSV / JSON"),("todo","待办","Tasks"),("connections","文件与网络","Files & network")].into_iter().map(|(id,cn,en)|json!({"id":format!("tab-{id}"),"label":tr(zh,cn,en),"active":state.tab==id})).collect::<Vec<_>>();
     let serialized = serde_json::to_string(&state).map_err(|error| error.to_string())?;
     if serialized.len() > 256 * 1024 {
         return Err(tr(
@@ -236,10 +242,12 @@ mod tests {
     }
 
     #[test]
-    fn workspace_starts_in_an_empty_text_tool_with_only_four_tabs() {
+    fn workspace_starts_in_the_studio_without_host_effects() {
         let view = call("", None, json!({}), Value::Null, json!([]));
-        assert_eq!(view["display"], "Text tools");
-        assert_eq!(view["tabs"].as_array().unwrap().len(), 4);
+        assert_eq!(view["display"], "Interactive studio");
+        assert_eq!(view["tabs"][0]["id"], "tab-studio");
+        assert_eq!(view["tabs"][0]["active"], true);
+        assert_eq!(view["fields"][0]["id"], "workspace");
         assert_eq!(view["fields"][0]["value"], "");
         assert!(view["effects"].as_array().unwrap().is_empty());
         assert!(
@@ -249,6 +257,67 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn schema_three_tool_sessions_remain_readable_without_workspace_state() {
+        let old = json!({
+            "schema":3,"tab":"text",
+            "text":{"input":"Keep original text","mode":"original","analyzed":false,"notice":""},
+            "data":{"source":"name,score\nAda,9","format":"csv","analyzed":false,"files":[],"network":[],"status":"","received":"","response":"","received_truncated":false,"source_notice":""},
+            "tasks":{"input":"Keep task draft","due":"2026-10-27","status":"","clear_confirm":false,"pending":null,"view_revision":null}
+        }).to_string();
+        let restored = call(&old, None, json!({}), Value::Null, json!([]));
+        assert_eq!(restored["display"], "Text tools");
+        assert_eq!(restored["fields"][0]["value"], "Keep original text");
+        let studio = call(
+            restored["state"].as_str().unwrap(),
+            Some("tab-studio"),
+            json!({}),
+            Value::Null,
+            json!([]),
+        );
+        let state: Value = serde_json::from_str(studio["state"].as_str().unwrap()).unwrap();
+        assert_eq!(state["schema"], 3);
+        assert_eq!(state["data"]["source"], "name,score\nAda,9");
+        assert_eq!(state["tasks"]["input"], "Keep task draft");
+        assert!(state.get("workspace").is_none());
+        assert!(studio["effects"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn workspace_export_failure_keeps_state_and_input_then_can_be_retried() {
+        let before = call(
+            "",
+            None,
+            json!({"text":"Keep text","data-source":"Keep dataset","todo":"Keep task"}),
+            Value::Null,
+            json!([]),
+        );
+        let failed = call(
+            before["state"].as_str().unwrap(),
+            Some("workspace-export"),
+            json!({"workspace":"  { incomplete","workspace-format":"json"}),
+            Value::Null,
+            json!([]),
+        );
+        assert_eq!(failed["state"], before["state"]);
+        assert_eq!(failed["fields"][0]["value"], "  { incomplete");
+        assert!(failed["errors"].get("workspace").is_some());
+        assert!(failed["artifacts"].as_array().unwrap().is_empty());
+        assert!(failed["effects"].as_array().unwrap().is_empty());
+        let payload =
+            json!({"schema":1,"name":"Canvas","columns":["id"],"rows":[["node-1"]]}).to_string();
+        let retried = call(
+            failed["state"].as_str().unwrap(),
+            Some("workspace-export"),
+            json!({"workspace":payload}),
+            Value::Null,
+            json!([]),
+        );
+        assert_eq!(retried["state"], before["state"]);
+        assert_eq!(retried["artifacts"][0]["name"], "workspace.json");
+        assert!(retried["errors"].as_object().unwrap().is_empty());
     }
 
     #[test]

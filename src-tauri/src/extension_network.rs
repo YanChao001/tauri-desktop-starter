@@ -3,6 +3,7 @@ use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     extensions::{ExtensionManifest, ExtensionPermission},
+    network::{NetworkMode, permitted_header},
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -50,8 +51,8 @@ pub struct ExtensionHttpRequest {
     pub body: Option<String>,
     #[serde(default)]
     pub credential: Option<String>,
-    #[serde(default)]
-    pub network_mode: ExtensionNetworkMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_mode: Option<ExtensionNetworkMode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -84,12 +85,40 @@ fn timeout_error() -> NativeError {
         "Extension HTTP request exceeded its time limit",
     )
 }
+// 系统 resolver 的安全拒绝会被 reqwest 包装；只恢复内部类型，不解析外部错误文本。
+fn native_transport_error(error: &reqwest::Error) -> Option<NativeError> {
+    let mut source = std::error::Error::source(error);
+    while let Some(error) = source {
+        if let Some(error) = error.downcast_ref::<NativeError>() {
+            return Some(error.clone());
+        }
+        source = error.source();
+    }
+    None
+}
 fn transport_error(error: reqwest::Error, message: &str) -> NativeError {
-    if error.is_timeout() {
+    if let Some(error) = native_transport_error(&error) {
+        error
+    } else if error.is_timeout() {
         timeout_error()
     } else {
         failed(message)
     }
+}
+fn image_transport_error(error: reqwest::Error) -> NativeError {
+    if let Some(error) = native_transport_error(&error) {
+        return error;
+    }
+    let code = if error.is_timeout() {
+        ErrorCode::ExtensionTimeout
+    } else {
+        ErrorCode::ExtensionRunFailed
+    };
+    NativeError::operation(
+        code,
+        "Extension image connection failed",
+        format!("{error:?}"),
+    )
 }
 pub(crate) fn check_cancelled(stop: &AtomicBool) -> NativeResult<()> {
     if stop.load(Ordering::Acquire) {
@@ -220,36 +249,39 @@ fn public_hostname(host: &str) -> bool {
             .any(|name| host == *name || host.ends_with(&format!(".{name}")))
 }
 
-fn permitted_header(name: &str) -> bool {
-    !matches!(
-        name,
-        "authorization"
-            | "proxy-authorization"
-            | "cookie"
-            | "cookie2"
-            | "set-cookie"
-            | "host"
-            | "connection"
-            | "content-length"
-            | "transfer-encoding"
-            | "upgrade"
-            | "te"
-            | "trailer"
-            | "keep-alive"
-            | "expect"
-            | "origin"
-            | "referer"
-            | "forwarded"
-            | "via"
-    ) && !name.starts_with("proxy-")
-        && !name.starts_with("sec-")
-        && !name.starts_with("x-forwarded-")
+/// 宿主直连优先；继承系统代理只使用扩展已经声明并获授的能力。
+pub(crate) fn resolve_network_mode(
+    manifest: &ExtensionManifest,
+    grants: &[ExtensionPermission],
+    host_mode: NetworkMode,
+    requested: Option<ExtensionNetworkMode>,
+    local: bool,
+) -> NativeResult<ExtensionNetworkMode> {
+    if host_mode == NetworkMode::Direct || requested == Some(ExtensionNetworkMode::Direct) {
+        return Ok(ExtensionNetworkMode::Direct);
+    }
+    if local {
+        return if requested == Some(ExtensionNetworkMode::System) {
+            Err(invalid("Loopback HTTP requests cannot use a system proxy"))
+        } else {
+            Ok(ExtensionNetworkMode::Direct)
+        };
+    }
+    let permission = ExtensionPermission::NetworkSystemProxy;
+    if manifest.has_permission(permission) && grants.contains(&permission) {
+        Ok(ExtensionNetworkMode::System)
+    } else if requested == Some(ExtensionNetworkMode::System) {
+        Err(invalid("System proxy access was not granted"))
+    } else {
+        Ok(ExtensionNetworkMode::Direct)
+    }
 }
 
 pub(crate) fn validate_request(
     manifest: &ExtensionManifest,
     grants: &[ExtensionPermission],
     request: &ExtensionHttpRequest,
+    host_mode: NetworkMode,
 ) -> NativeResult<ValidatedRequest> {
     bounded_text(&request.url, HTTP_URL_LIMIT, "Extension URL")?;
     let url = url::Url::parse(&request.url).map_err(|_| invalid("Invalid extension HTTP URL"))?;
@@ -273,15 +305,8 @@ pub(crate) fn validate_request(
     if !manifest.has_permission(permission) || !grants.contains(&permission) {
         return Err(invalid("Network access to this origin was not granted"));
     }
-    if request.network_mode == ExtensionNetworkMode::System {
-        if local {
-            return Err(invalid("Loopback HTTP requests cannot use a system proxy"));
-        }
-        let permission = ExtensionPermission::NetworkSystemProxy;
-        if !manifest.has_permission(permission) || !grants.contains(&permission) {
-            return Err(invalid("System proxy access was not granted"));
-        }
-    }
+    let network_mode =
+        resolve_network_mode(manifest, grants, host_mode, request.network_mode, local)?;
     if !rule.methods.contains(&request.method) {
         return Err(invalid("The extension did not declare this HTTP method"));
     }
@@ -335,7 +360,7 @@ pub(crate) fn validate_request(
         method,
         headers,
         local,
-        network_mode: request.network_mode,
+        network_mode,
     })
 }
 
@@ -350,7 +375,8 @@ fn validate_addresses(addresses: &[SocketAddr], local: bool) -> NativeResult<()>
             }
         })
     {
-        return Err(invalid(
+        return Err(NativeError::new(
+            ErrorCode::ExtensionNetworkBlocked,
             "Extension destination must resolve entirely to approved network addresses",
         ));
     }
@@ -443,12 +469,12 @@ impl reqwest::dns::Resolve for SystemResolver {
     }
 }
 
-async fn transport(
+async fn transport_builder(
     url: &url::Url,
     local: bool,
     mode: ExtensionNetworkMode,
     timeout: Duration,
-) -> NativeResult<reqwest::Client> {
+) -> NativeResult<reqwest::ClientBuilder> {
     let host = url
         .host_str()
         .ok_or_else(|| invalid("Missing network host"))?;
@@ -473,7 +499,17 @@ async fn transport(
             }));
         }
     }
-    builder
+    Ok(builder)
+}
+
+async fn transport(
+    url: &url::Url,
+    local: bool,
+    mode: ExtensionNetworkMode,
+    timeout: Duration,
+) -> NativeResult<reqwest::Client> {
+    transport_builder(url, local, mode, timeout)
+        .await?
         .build()
         .map_err(|_| failed("Cannot prepare extension HTTP transport"))
 }
@@ -545,6 +581,54 @@ async fn response_bytes(
 }
 
 /// 固定公网图片下载；来源与传输边界归此模块，解码和资源租约由调用服务维护。
+const IMAGE_USER_AGENT: &str = concat!(
+    "TauriDesktopStarter/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/YanChao001/tauri-desktop-starter)"
+);
+
+fn image_request(client: &reqwest::Client, url: url::Url) -> reqwest::RequestBuilder {
+    client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, IMAGE_USER_AGENT)
+}
+
+async fn image_transport(
+    url: &url::Url,
+    local: bool,
+    mode: ExtensionNetworkMode,
+) -> NativeResult<reqwest::Client> {
+    transport_builder(url, local, mode, IMAGE_TIMEOUT)
+        .await?
+        // 只由下面的图片 GET 控制一次重试，避免叠加 reqwest 协议重试。
+        .retry(reqwest::retry::never())
+        .build()
+        .map_err(|_| failed("Cannot prepare extension image transport"))
+}
+
+/// 调用方以同一个总 deadline 包裹 DNS、两次发送、退避和读体。
+async fn send_image(client: &reqwest::Client, url: &url::Url) -> NativeResult<reqwest::Response> {
+    match image_request(client, url.clone()).send().await {
+        Ok(response) => Ok(response),
+        Err(error)
+            if native_transport_error(&error).is_none()
+                && (error.is_connect() || error.is_request()) =>
+        {
+            // 响应头前的连接 / 发送失败只重试固定 GET；不重做 DNS、换代理或放宽 TLS。
+            log::warn!(
+                "Retrying image connection once: {}",
+                crate::redaction::redact(&format!("{error:?}"))
+            );
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            image_request(client, url.clone())
+                .send()
+                .await
+                .map_err(image_transport_error)
+        }
+        Err(error) => Err(image_transport_error(error)),
+    }
+}
+
 pub(crate) async fn fetch_public_image(
     source: &str,
     mode: ExtensionNetworkMode,
@@ -552,22 +636,29 @@ pub(crate) async fn fetch_public_image(
     let url = approved_public_url(source)?;
     let stop = AtomicBool::new(false);
     cancellable(&stop, Instant::now() + IMAGE_TIMEOUT, async move {
-        let client = transport(&url, false, mode, IMAGE_TIMEOUT).await?;
-        let response = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|error| transport_error(error, "Extension image connection failed"))?;
+        let client = image_transport(&url, false, mode).await?;
+        let response = send_image(&client, &url).await?;
         image_response(response).await
     })
     .await
 }
 
 async fn image_response(mut response: reqwest::Response) -> NativeResult<(Vec<u8>, String)> {
-    if !response.status().is_success() {
-        return Err(failed(
-            "Extension image source did not return a successful direct response",
+    if response.status().is_redirection() {
+        return Err(NativeError::new(
+            ErrorCode::ExtensionImageRedirect,
+            "Extension images require a direct response without redirects",
         ));
+    }
+    if !response.status().is_success() {
+        return Err(NativeError {
+            code: ErrorCode::ExtensionImageSourceRejected,
+            message: format!(
+                "Extension image source returned HTTP {}",
+                response.status().as_u16()
+            ),
+            retryable: response.status().is_server_error() || response.status().as_u16() == 429,
+        });
     }
     let mime = response
         .headers()
@@ -580,7 +671,8 @@ async fn image_response(mut response: reqwest::Response) -> NativeResult<(Vec<u8
         .trim()
         .to_ascii_lowercase();
     if !matches!(mime.as_str(), "image/jpeg" | "image/png" | "image/webp") {
-        return Err(invalid(
+        return Err(NativeError::new(
+            ErrorCode::ExtensionImageInvalid,
             "Extension images require JPEG, PNG or WebP MIME types",
         ));
     }
@@ -589,7 +681,17 @@ async fn image_response(mut response: reqwest::Response) -> NativeResult<(Vec<u8
         IMAGE_RESPONSE_LIMIT,
         "Extension image exceeds 16 MiB",
     )
-    .await?;
+    .await
+    .map_err(|error| {
+        if error.code == ErrorCode::InputTooLong {
+            NativeError::new(
+                ErrorCode::ExtensionImageTooLarge,
+                "Extension image exceeds 16 MiB",
+            )
+        } else {
+            error
+        }
+    })?;
     Ok((bytes, mime))
 }
 
@@ -688,17 +790,23 @@ mod tests {
             headers: BTreeMap::new(),
             body: None,
             credential: None,
-            network_mode: ExtensionNetworkMode::Direct,
+            network_mode: None,
         }
     }
 
     #[test]
-    fn network_modes_default_to_direct_and_system_requires_its_own_grant() {
+    fn network_modes_preserve_omission_and_system_requires_its_own_grant() {
         let parsed: ExtensionHttpRequest = serde_json::from_value(serde_json::json!({
             "url":"https://example.com/items", "method":"GET"
         }))
         .unwrap();
-        assert_eq!(parsed.network_mode, ExtensionNetworkMode::Direct);
+        assert_eq!(parsed.network_mode, None);
+        assert!(
+            serde_json::to_value(&parsed)
+                .unwrap()
+                .get("networkMode")
+                .is_none()
+        );
         for addition in [
             serde_json::json!({"networkMode":"insecure"}),
             serde_json::json!({"proxyUrl":"http://127.0.0.1:8000"}),
@@ -712,27 +820,36 @@ mod tests {
             assert!(serde_json::from_value::<ExtensionHttpRequest>(value).is_err());
         }
         let mut request = parsed;
-        request.network_mode = ExtensionNetworkMode::System;
+        request.network_mode = Some(ExtensionNetworkMode::System);
         let mut public = manifest("https://example.com", false);
         let grants = [
             ExtensionPermission::NetworkHttps,
             ExtensionPermission::NetworkSystemProxy,
         ];
-        assert!(validate_request(&public, &grants, &request).is_err());
+        assert!(validate_request(&public, &grants, &request, NetworkMode::System).is_err());
         public
             .optional_permissions
             .push(ExtensionPermission::NetworkSystemProxy);
-        assert!(validate_request(&public, &[ExtensionPermission::NetworkHttps], &request).is_err());
+        assert!(
+            validate_request(
+                &public,
+                &[ExtensionPermission::NetworkHttps],
+                &request,
+                NetworkMode::System
+            )
+            .is_err()
+        );
         assert!(
             validate_request(
                 &public,
                 &[ExtensionPermission::NetworkSystemProxy],
-                &request
+                &request,
+                NetworkMode::System
             )
             .is_err()
         );
         assert_eq!(
-            validate_request(&public, &grants, &request)
+            validate_request(&public, &grants, &request, NetworkMode::System)
                 .unwrap()
                 .network_mode,
             ExtensionNetworkMode::System
@@ -750,8 +867,94 @@ mod tests {
                     ExtensionPermission::NetworkSystemProxy
                 ],
                 &request,
+                NetworkMode::System
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn host_policy_inherits_only_granted_proxy_access_and_overrides_old_system_hints() {
+        let mut public = manifest("https://example.com", false);
+        let mut request = request("https://example.com/items");
+        let grants = [
+            ExtensionPermission::NetworkHttps,
+            ExtensionPermission::NetworkSystemProxy,
+        ];
+        for declared in [false, true] {
+            if declared {
+                public
+                    .optional_permissions
+                    .push(ExtensionPermission::NetworkSystemProxy);
+            }
+            for proxy_granted in [false, true] {
+                let grants = if proxy_granted {
+                    &grants[..]
+                } else {
+                    &grants[..1]
+                };
+                request.network_mode = None;
+                assert_eq!(
+                    validate_request(&public, grants, &request, NetworkMode::System)
+                        .unwrap()
+                        .network_mode,
+                    if declared && proxy_granted {
+                        ExtensionNetworkMode::System
+                    } else {
+                        ExtensionNetworkMode::Direct
+                    }
+                );
+                for hint in [
+                    None,
+                    Some(ExtensionNetworkMode::Direct),
+                    Some(ExtensionNetworkMode::System),
+                ] {
+                    request.network_mode = hint;
+                    assert_eq!(
+                        validate_request(&public, grants, &request, NetworkMode::Direct)
+                            .unwrap()
+                            .network_mode,
+                        ExtensionNetworkMode::Direct
+                    );
+                }
+                request.network_mode = Some(ExtensionNetworkMode::Direct);
+                assert_eq!(
+                    validate_request(&public, grants, &request, NetworkMode::System)
+                        .unwrap()
+                        .network_mode,
+                    ExtensionNetworkMode::Direct
+                );
+                assert_eq!(
+                    serde_json::to_value(&request).unwrap()["networkMode"],
+                    "direct"
+                );
+            }
+        }
+        request.network_mode = Some(ExtensionNetworkMode::System);
+        assert!(validate_request(&public, &[], &request, NetworkMode::Direct).is_err());
+
+        let mut local = manifest("http://127.0.0.1:8000", true);
+        local
+            .optional_permissions
+            .push(ExtensionPermission::NetworkSystemProxy);
+        let grants = [
+            ExtensionPermission::NetworkLocal,
+            ExtensionPermission::NetworkSystemProxy,
+        ];
+        request.url = "http://127.0.0.1:8000/items".into();
+        request.network_mode = None;
+        assert_eq!(
+            validate_request(&local, &grants, &request, NetworkMode::System)
+                .unwrap()
+                .network_mode,
+            ExtensionNetworkMode::Direct
+        );
+        request.network_mode = Some(ExtensionNetworkMode::System);
+        assert_eq!(
+            validate_request(&local, &grants, &request, NetworkMode::Direct)
+                .unwrap()
+                .network_mode,
+            ExtensionNetworkMode::Direct
         );
     }
 
@@ -933,8 +1136,16 @@ mod tests {
     fn requests_require_the_exact_origin_method_and_grant() {
         let manifest = manifest("https://example.com", false);
         let valid = request("https://example.com/resource?query=value");
-        assert!(validate_request(&manifest, &[], &valid).is_err());
-        assert!(validate_request(&manifest, &[ExtensionPermission::NetworkHttps], &valid).is_ok());
+        assert!(validate_request(&manifest, &[], &valid, NetworkMode::System).is_err());
+        assert!(
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkHttps],
+                &valid,
+                NetworkMode::System
+            )
+            .is_ok()
+        );
         for url in [
             "https://other.example/resource",
             "https://example.com:444/resource",
@@ -946,7 +1157,8 @@ mod tests {
                 validate_request(
                     &manifest,
                     &[ExtensionPermission::NetworkHttps],
-                    &request(url)
+                    &request(url),
+                    NetworkMode::System
                 )
                 .is_err()
             );
@@ -954,7 +1166,13 @@ mod tests {
         let mut invalid = valid.clone();
         invalid.method = "DELETE".to_owned();
         assert!(
-            validate_request(&manifest, &[ExtensionPermission::NetworkHttps], &invalid).is_err()
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkHttps],
+                &invalid,
+                NetworkMode::System
+            )
+            .is_err()
         );
         invalid = valid;
         invalid.headers = BTreeMap::from([
@@ -962,23 +1180,40 @@ mod tests {
             ("accept".to_owned(), "application/json".to_owned()),
         ]);
         assert!(
-            validate_request(&manifest, &[ExtensionPermission::NetworkHttps], &invalid).is_err()
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkHttps],
+                &invalid,
+                NetworkMode::System
+            )
+            .is_err()
         );
         invalid.headers = BTreeMap::from([(
             "Authorization".to_owned(),
             "Bearer inline-secret".to_owned(),
         )]);
         assert!(
-            validate_request(&manifest, &[ExtensionPermission::NetworkHttps], &invalid).is_err()
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkHttps],
+                &invalid,
+                NetworkMode::System
+            )
+            .is_err()
         );
         invalid.headers.clear();
         invalid.method = "POST".to_owned();
         invalid.body = Some("x".repeat(HTTP_BODY_LIMIT + 1));
         assert_eq!(
-            validate_request(&manifest, &[ExtensionPermission::NetworkHttps], &invalid)
-                .err()
-                .unwrap()
-                .code,
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkHttps],
+                &invalid,
+                NetworkMode::System
+            )
+            .err()
+            .unwrap()
+            .code,
             ErrorCode::InputTooLong
         );
     }
@@ -988,10 +1223,22 @@ mod tests {
         let manifest = manifest("http://127.0.0.1:8234", true);
         let request = request("http://127.0.0.1:8234/api");
         assert!(
-            validate_request(&manifest, &[ExtensionPermission::NetworkHttps], &request).is_err()
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkHttps],
+                &request,
+                NetworkMode::System
+            )
+            .is_err()
         );
         assert!(
-            validate_request(&manifest, &[ExtensionPermission::NetworkLocal], &request).is_ok()
+            validate_request(
+                &manifest,
+                &[ExtensionPermission::NetworkLocal],
+                &request,
+                NetworkMode::System
+            )
+            .is_ok()
         );
     }
 
@@ -1083,6 +1330,172 @@ mod tests {
         (origin, server)
     }
 
+    fn image_sequence_fixture(
+        responses: Vec<Option<Vec<u8>>>,
+    ) -> (String, std::thread::JoinHandle<usize>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut requests = 0;
+            for response in responses {
+                let deadline = Instant::now() + Duration::from_secs(2);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                Instant::now() < deadline,
+                                "expected image connection did not arrive"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("cannot accept image connection: {error}"),
+                    }
+                };
+                // Windows accepts inherit the listener's nonblocking mode.
+                // The fixture reads a complete HTTP request with its own timeout.
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 4096];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let length = stream.read(&mut buffer).unwrap();
+                    assert_ne!(length, 0);
+                    request.extend_from_slice(&buffer[..length]);
+                    assert!(request.len() <= HEADER_LIMIT);
+                }
+                assert!(request.starts_with(b"GET /image HTTP/1.1\r\n"));
+                requests += 1;
+                if let Some(response) = response {
+                    stream.write_all(&response).unwrap();
+                }
+                // None 关闭响应头前的连接，覆盖建立连接后才发生的发送错误。
+            }
+            let deadline = Instant::now() + Duration::from_millis(350);
+            while Instant::now() < deadline {
+                match listener.accept() {
+                    Ok(_) => requests += 1,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("cannot inspect image connections: {error}"),
+                }
+            }
+            requests
+        });
+        (origin, server)
+    }
+
+    fn image_wire(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(width, height)
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .unwrap();
+        let bytes = bytes.into_inner();
+        let mut response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: image/png\r\nConnection: close\r\n\r\n", bytes.len()).into_bytes();
+        response.extend(bytes);
+        response
+    }
+
+    fn fetch_fixture_image(origin: &str, budget: Duration) -> NativeResult<(Vec<u8>, String)> {
+        tauri::async_runtime::block_on(async {
+            let stop = AtomicBool::new(false);
+            cancellable(&stop, Instant::now() + budget, async {
+                let url = url::Url::parse(&format!("{origin}/image")).unwrap();
+                let client = image_transport(&url, true, ExtensionNetworkMode::Direct).await?;
+                image_response(send_image(&client, &url).await?).await
+            })
+            .await
+        })
+    }
+
+    #[test]
+    fn trusted_dns_rejections_keep_their_native_code_without_retrying() {
+        struct RejectingResolver(Arc<std::sync::atomic::AtomicUsize>);
+        impl reqwest::dns::Resolve for RejectingResolver {
+            fn resolve(&self, _name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                let error = NativeError::new(
+                    ErrorCode::ExtensionNetworkBlocked,
+                    "Extension destination must resolve entirely to approved network addresses",
+                );
+                Box::pin(std::future::ready(Err(
+                    Box::new(error) as Box<dyn std::error::Error + Send + Sync>
+                )))
+            }
+        }
+        tauri::async_runtime::block_on(async {
+            let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .dns_resolver(Arc::new(RejectingResolver(calls.clone())))
+                .retry(reqwest::retry::never())
+                .timeout(Duration::from_secs(1))
+                .build()
+                .unwrap();
+            let url = url::Url::parse("https://images.wikimedia.org/image").unwrap();
+            let error = send_image(&client, &url).await.unwrap_err();
+            assert_eq!(error.code, ErrorCode::ExtensionNetworkBlocked);
+            assert!(!error.retryable);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+            let error = client.get(url).send().await.unwrap_err();
+            let error = transport_error(error, "Extension HTTP connection failed");
+            assert_eq!(error.code, ErrorCode::ExtensionNetworkBlocked);
+            assert!(!error.retryable);
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+        });
+    }
+
+    #[test]
+    fn image_get_retries_a_disconnected_send_once_and_validates_the_second_response() {
+        let (origin, server) = image_sequence_fixture(vec![None, Some(image_wire(2, 3))]);
+        let (bytes, mime) = fetch_fixture_image(&origin, Duration::from_secs(2)).unwrap();
+        let decoded = crate::extension_resources::decode_image(&bytes, &mime).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (2, 3));
+        assert_eq!(server.join().unwrap(), 2);
+    }
+
+    #[test]
+    fn image_get_stops_after_two_failed_sends_and_keeps_a_retryable_error() {
+        let (origin, server) = image_sequence_fixture(vec![None, None]);
+        let error = fetch_fixture_image(&origin, Duration::from_secs(2)).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ExtensionRunFailed);
+        assert!(error.retryable);
+        assert_eq!(server.join().unwrap(), 2);
+    }
+
+    #[test]
+    fn image_retry_backoff_stays_inside_the_original_deadline() {
+        let (origin, server) = image_sequence_fixture(vec![None]);
+        let error = fetch_fixture_image(&origin, Duration::from_millis(80)).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ExtensionTimeout);
+        assert_eq!(server.join().unwrap(), 1);
+    }
+
+    #[test]
+    fn image_get_never_retries_received_http_or_content_errors() {
+        for (wire, expected) in [
+            (b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(), ErrorCode::ExtensionImageSourceRejected),
+            (b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(), ErrorCode::ExtensionImageSourceRejected),
+            (b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(), ErrorCode::ExtensionImageSourceRejected),
+            (b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(), ErrorCode::ExtensionImageRedirect),
+            (b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(), ErrorCode::ExtensionImageInvalid),
+            (image_wire(8193, 1), ErrorCode::ExtensionImageTooLarge),
+        ] {
+            let (origin, server) = image_sequence_fixture(vec![Some(wire)]);
+            let error = fetch_fixture_image(&origin, Duration::from_secs(2))
+                .and_then(|(bytes, mime)| crate::extension_resources::decode_image(&bytes, &mime))
+                .unwrap_err();
+            assert_eq!(error.code, expected);
+            assert_eq!(server.join().unwrap(), 1);
+        }
+    }
+
     #[test]
     fn image_responses_require_success_raster_mime_and_their_own_byte_limit() {
         for (wire, expected) in [
@@ -1092,15 +1505,15 @@ mod tests {
             ),
             (
                 b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: image/svg+xml\r\nConnection: close\r\n\r\n".as_slice(),
-                Some(ErrorCode::InvalidArgument),
+                Some(ErrorCode::ExtensionImageInvalid),
             ),
             (
                 b"HTTP/1.1 200 OK\r\nContent-Length: 16777217\r\nContent-Type: image/png\r\nConnection: close\r\n\r\n".as_slice(),
-                Some(ErrorCode::InputTooLong),
+                Some(ErrorCode::ExtensionImageTooLarge),
             ),
             (
                 b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice(),
-                Some(ErrorCode::ExtensionRunFailed),
+                Some(ErrorCode::ExtensionImageRedirect),
             ),
         ] {
             let (origin, server) = fixture(wire);
@@ -1109,7 +1522,7 @@ mod tests {
                 let client = transport(&url, true, ExtensionNetworkMode::Direct, IMAGE_TIMEOUT)
                     .await
                     .unwrap();
-                let response = client.get(url).send().await.unwrap();
+                let response = image_request(&client, url).send().await.unwrap();
                 image_response(response).await
             });
             if let Some(code) = expected {
@@ -1119,8 +1532,52 @@ mod tests {
             }
             let request = server.join().unwrap().to_ascii_lowercase();
             assert!(request.starts_with("get /image http/1.1"));
+            assert!(request.contains(&format!("user-agent: {}", IMAGE_USER_AGENT.to_ascii_lowercase())));
             assert!(!request.contains("authorization:") && !request.contains("cookie:"));
         }
+    }
+
+    #[test]
+    fn image_transport_failures_offer_retry_without_exposing_request_details() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let error = tauri::async_runtime::block_on(async {
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap()
+                .get(format!("http://{address}/image?token=private"))
+                .send()
+                .await
+                .unwrap_err()
+        });
+        let error = image_transport_error(error);
+        assert_eq!(error.code, ErrorCode::ExtensionRunFailed);
+        assert!(error.retryable);
+        assert_eq!(error.message, "Extension image connection failed");
+    }
+
+    #[test]
+    fn rejected_image_sources_have_stable_codes_and_retry_only_transient_statuses() {
+        for (wire, retryable) in [
+            (b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice(), false),
+            (b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice(), true),
+            (b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice(), true),
+        ] {
+            let (origin, server) = fixture(wire);
+            let error = tauri::async_runtime::block_on(async {
+                let url = url::Url::parse(&origin).unwrap();
+                let client = transport(&url, true, ExtensionNetworkMode::Direct, IMAGE_TIMEOUT).await.unwrap();
+                image_response(image_request(&client, url).send().await.unwrap()).await.unwrap_err()
+            });
+            assert_eq!(error.code, ErrorCode::ExtensionImageSourceRejected);
+            assert_eq!(error.retryable, retryable);
+            assert!(!error.message.contains(&origin));
+            server.join().unwrap();
+        }
+        let error = validate_addresses(&["198.19.2.164:443".parse().unwrap()], false).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ExtensionNetworkBlocked);
     }
 
     #[test]
@@ -1133,8 +1590,13 @@ mod tests {
         request
             .headers
             .insert("Content-Type".to_owned(), "application/json".to_owned());
-        let validated =
-            validate_request(&manifest, &[ExtensionPermission::NetworkLocal], &request).unwrap();
+        let validated = validate_request(
+            &manifest,
+            &[ExtensionPermission::NetworkLocal],
+            &request,
+            NetworkMode::System,
+        )
+        .unwrap();
         let response = tauri::async_runtime::block_on(fetch(
             validated,
             request.body,
@@ -1162,7 +1624,7 @@ mod tests {
             let (origin, server) = fixture(response);
             let manifest = manifest(&origin, true);
             let request = request(&format!("{origin}/items"));
-            let validated = validate_request(&manifest, &[ExtensionPermission::NetworkLocal], &request).unwrap();
+            let validated = validate_request(&manifest, &[ExtensionPermission::NetworkLocal], &request, NetworkMode::System).unwrap();
             let result = tauri::async_runtime::block_on(fetch(validated, None, None, Arc::new(AtomicBool::new(false)), Instant::now() + HTTP_TIMEOUT));
             assert!(result.is_err());
             server.join().unwrap();

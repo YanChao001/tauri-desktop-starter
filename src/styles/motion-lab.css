@@ -9,30 +9,8 @@
 }
 .lab-heading {
   position: relative;
-  padding: 1rem 0 2rem;
+  padding: 0 0 1.25rem;
   padding-right: 6rem;
-}
-.lab-heading > p {
-  color: var(--muted-foreground);
-  font: 0.7rem/1.4 var(--font-mono, monospace);
-  letter-spacing: 0.14em;
-}
-.lab-heading h2 {
-  margin-top: 1rem;
-  font-size: clamp(1.9rem, 4.8cqi, 3.4rem);
-  line-height: 1.18;
-  font-weight: 600;
-  letter-spacing: -0.055em;
-  max-width: 22ch;
-  text-wrap: balance;
-}
-.lab-heading > span {
-  display: block;
-  max-width: 42rem;
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  line-height: 1.85;
-  color: var(--muted-foreground);
 }
 .lab-brand-mark {
   position: absolute;
@@ -58,7 +36,7 @@
 }
 .lab-scene-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 1rem;
   gap: 0.6rem;
 }
@@ -67,12 +45,13 @@
   align-items: center;
   min-width: 0;
   gap: 0.6rem;
-  padding: 1rem 0.9rem;
+  padding: 0.75rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--card);
   font-size: 0.8rem;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 160ms;
 }
@@ -84,6 +63,8 @@
 }
 .lab-scene-tabs button > span:not(.lab-scene-number) {
   min-width: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .lab-scene-tabs button .lab-scene-number {
   margin-left: auto;
@@ -108,7 +89,7 @@
 }
 .lab-console {
   border: 1px solid var(--lab-line);
-  border-radius: 1.4rem;
+  border-radius: var(--radius-xl);
   overflow: hidden;
   background: var(--card);
 }
@@ -118,7 +99,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 1rem;
-  padding: 1.3rem 1.5rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--lab-line);
 }
 .lab-console-heading h3 {
@@ -139,7 +120,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--muted-foreground);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 .lab-status i {
   width: 0.35rem;
@@ -313,6 +294,11 @@
 .lab-spring-handle:active {
   cursor: grabbing;
 }
+.lab-spring-handle:hover {
+  stroke: var(--lab-art);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+}
 .lab-spring-handle:focus-visible {
   outline: none;
   stroke: var(--ring);
@@ -326,18 +312,17 @@
   background: var(--card);
 }
 .lab-control-panel > h3 {
-  margin-bottom: 1.6rem;
+  margin-bottom: 1rem;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.03em;
 }
 .lab-controls-fields {
   display: grid;
-  gap: 1.3rem;
+  gap: 1rem;
 }
 .lab-range {
   display: block;
-  margin-bottom: 0.3rem;
 }
 .lab-range > span {
   display: flex;
@@ -360,13 +345,13 @@
   cursor: pointer;
 }
 .lab-presets {
-  margin-top: 1.5rem;
+  margin-top: 1rem;
 }
 .lab-presets > span {
   display: block;
   margin-bottom: 0.65rem;
   color: var(--muted-foreground);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
 }
 .lab-presets > div {
   display: flex;
@@ -390,8 +375,8 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1rem;
-  margin-top: 1.5rem;
+  padding: 0.75rem;
+  margin-top: 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--background);
@@ -401,7 +386,7 @@
 }
 .lab-response span {
   display: block;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
 }
 .lab-response strong {
@@ -427,13 +412,13 @@
   stroke-linecap: round;
 }
 .lab-notes {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
   border-top: 1px solid var(--border);
 }
 .lab-notes > span {
   color: var(--foreground);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 .lab-notes p {
@@ -462,7 +447,12 @@
   padding: 0.5rem 0.8rem;
   font-size: 0.75rem;
   color: var(--muted-foreground);
+  border-radius: var(--radius-md);
   cursor: pointer;
+}
+.lab-layout-tabs button:hover {
+  background: var(--accent);
+  color: var(--foreground);
 }
 .lab-layout-tabs button > span:last-child {
   position: relative;
@@ -498,9 +488,12 @@
   text-align: left;
   padding: 1rem;
   border: 1px solid var(--border);
-  border-radius: 1.1rem;
+  border-radius: var(--radius-xl);
   background: var(--card);
   cursor: pointer;
+}
+.lab-space-card:hover {
+  border-color: var(--lab-tint);
 }
 .lab-card-rose {
   --lab-tint: var(--lab-pink);
@@ -525,7 +518,7 @@
   height: 2rem;
   flex-shrink: 0;
   border: 1px solid var(--border);
-  border-radius: 0.65rem;
+  border-radius: var(--radius-lg);
   background: var(--background);
   color: var(--lab-tint);
 }
@@ -639,6 +632,10 @@
   background: var(--accent);
   border-color: var(--primary);
 }
+.lab-focus-options button:hover {
+  background: var(--accent);
+  border-color: var(--primary);
+}
 .lab-focus-options button > svg {
   width: 0.9rem;
   height: 0.9rem;
@@ -670,9 +667,12 @@
   aspect-ratio: 1.45;
   transform-style: preserve-3d;
   cursor: pointer;
-  border-radius: 1.3rem;
+  border-radius: var(--radius-xl);
   text-align: left;
   touch-action: pan-y;
+}
+.lab-tilt-card:hover .lab-tilt-face {
+  border-color: var(--lab-art);
 }
 .lab-tilt-face {
   position: absolute;
@@ -711,7 +711,7 @@
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   letter-spacing: 0.03em;
 }
@@ -787,7 +787,7 @@
   margin-top: 0.35rem;
   padding-top: 0.7rem;
   border-top: 1px solid var(--border);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
 }
 .lab-card-signature svg {
@@ -902,6 +902,16 @@
   color: var(--primary);
   font-size: 1.3rem;
 }
+@container motion-lab (min-width: 50rem) {
+  .lab-scene-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container motion-lab (max-width: 25rem) {
+  .lab-scene-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @container motion-lab (min-width: 780px) {
   .lab-experiment {
     grid-template-columns: minmax(0, 1fr) 17rem;
@@ -915,9 +925,6 @@
   }
 }
 @container motion-lab (max-width: 580px) {
-  .lab-scene-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .lab-heading {
     padding-right: 0;
   }

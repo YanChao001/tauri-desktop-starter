@@ -1,11 +1,27 @@
-import { useMemo, type ComponentProps } from "react";
+import {
+  lazy,
+  Suspense,
+  useMemo,
+  type ComponentProps,
+  type ComponentType,
+} from "react";
 import { cn } from "@/lib/utils";
 import type { CodeLanguage } from "@/lib/code-language";
+import { reportClientError } from "@/lib/report-error";
 import { tokenizeRust, type RustToken } from "@/lib/rust-highlight";
-import {
-  tokenizeTypeScript,
-  type TypeScriptToken,
-} from "@/lib/typescript-highlight";
+
+function PlainCode({ code }: { code: string }) {
+  return code;
+}
+
+const TypeScriptCode = lazy<ComponentType<{ code: string }>>(() =>
+  import("./typescript-code")
+    .then((module) => ({ default: module.TypeScriptCode }))
+    .catch((error: unknown) => {
+      reportClientError(error);
+      return { default: PlainCode };
+    }),
+);
 
 type TokenKind =
   | "plain"
@@ -15,8 +31,7 @@ type TokenKind =
   | "boolean"
   | "null"
   | "punctuation"
-  | RustToken["kind"]
-  | TypeScriptToken["kind"];
+  | RustToken["kind"];
 type Token = { kind: TokenKind; text: string };
 const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const LITERAL = /^(true|false|null)\b/;
@@ -96,9 +111,7 @@ export function CodeBlock({
         ? tokenizeJson(code)
         : language === "rust"
           ? tokenizeRust(code)
-          : language === "typescript"
-            ? tokenizeTypeScript(code)
-            : [{ kind: "plain" as const, text: code }],
+          : [{ kind: "plain" as const, text: code }],
     [code, language],
   );
   return (
@@ -111,18 +124,24 @@ export function CodeBlock({
       )}
     >
       <code data-language={language}>
-        {tokens.map((token, index) =>
-          token.kind === "plain" ? (
-            token.text
-          ) : (
-            <span
-              key={index}
-              className={`code-token code-token--${token.kind}`}
-              data-token={token.kind}
-            >
-              {token.text}
-            </span>
-          ),
+        {language === "typescript" ? (
+          <Suspense fallback={code}>
+            <TypeScriptCode code={code} />
+          </Suspense>
+        ) : (
+          tokens.map((token, index) =>
+            token.kind === "plain" ? (
+              token.text
+            ) : (
+              <span
+                key={index}
+                className={`code-token code-token--${token.kind}`}
+                data-token={token.kind}
+              >
+                {token.text}
+              </span>
+            ),
+          )
         )}
       </code>
     </pre>

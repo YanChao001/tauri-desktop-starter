@@ -3,7 +3,6 @@ import { Loader2Icon, TerminalIcon } from "lucide-react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/code-block";
 import { HelpTooltip } from "@/components/help-tooltip";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -101,17 +100,11 @@ export default function Bridge() {
   return (
     <div className="studio-page">
       <div className="studio-intro">
-        <span className="studio-eyebrow">{t("studio.bridgeEyebrow")}</span>
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-4 text-muted-foreground" />
           <h2>{t("bridge.title")}</h2>
-          <HelpTooltip label={`${t("bridge.title")} · ${t("title.help")}`}>
-            {t("bridge.subtitle")}
-          </HelpTooltip>
-          <Badge variant="outline" className="font-normal">
-            invoke
-          </Badge>
         </div>
+        <p>{t("bridge.subtitle")}</p>
       </div>
 
       <Card>
@@ -160,14 +153,17 @@ export default function Bridge() {
           </form>
 
           <div
-            className="rounded-md border bg-muted/40 px-3 py-2.5"
+            className="flex min-w-0 items-start gap-3 rounded-md border bg-muted/40 px-3 py-2.5"
             role="status"
             aria-live="polite"
           >
-            <p className="text-xs text-muted-foreground">
+            <p className="shrink-0 pt-0.5 text-xs text-muted-foreground">
               {t("bridge.result")}
             </p>
-            <p className="mt-1 h-16 overflow-auto whitespace-pre-wrap break-words text-sm">
+            <p
+              className="max-h-24 min-h-5 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words text-sm"
+              tabIndex={0}
+            >
               {result?.language === language
                 ? result.message
                 : t("bridge.notCalled")}
@@ -176,42 +172,47 @@ export default function Bridge() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-mono text-xs font-medium">
-              src-tauri/src/commands.rs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CodeBlock
-              code={RUST_SNIPPET}
-              language="rust"
-              aria-label="src-tauri/src/commands.rs"
-              className="p-3"
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xs font-medium">
-              {t("bridge.frontend")}
-              <HelpTooltip
-                label={`${t("bridge.frontend")} · ${t("title.help")}`}
-              >
-                {t("bridge.note")}
-              </HelpTooltip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CodeBlock
-              code={TS_SNIPPET}
-              language="typescript"
-              className="p-3"
-            />
-          </CardContent>
-        </Card>
-      </div>
+      <details className="rounded-xl border bg-card">
+        <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {t("bridge.developerDetails")}
+        </summary>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-3 p-4 pt-0">
+          <Card className="min-w-0">
+            <CardHeader className="min-h-7">
+              <CardTitle className="font-mono text-xs font-medium">
+                src-tauri/src/commands.rs
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CodeBlock
+                code={RUST_SNIPPET}
+                language="rust"
+                aria-label="src-tauri/src/commands.rs"
+                className="h-96 w-full p-3"
+              />
+            </CardContent>
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader className="min-h-7">
+              <CardTitle className="flex items-center gap-2 text-xs font-medium">
+                {t("bridge.frontend")}
+                <HelpTooltip
+                  label={`${t("bridge.frontend")} · ${t("title.help")}`}
+                >
+                  {t("bridge.note")}
+                </HelpTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CodeBlock
+                code={TS_SNIPPET}
+                language="typescript"
+                className="h-96 w-full p-3"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </details>
     </div>
   );
 }

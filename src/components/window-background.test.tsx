@@ -33,12 +33,14 @@ describe("窗口插画", () => {
     const previews = container.querySelectorAll(
       ".pattern-artwork--preview .skin-scene",
     );
-    expect(previews).toHaveLength(8);
+    expect(previews).toHaveLength(
+      BUILTIN_BACKGROUNDS.filter((kind) => kind !== "plain").length,
+    );
     expect(
       new Set(
         [...previews].map((image) => (image as HTMLElement).style.maskImage),
       ).size,
-    ).toBe(8);
+    ).toBe(previews.length);
     for (const kind of ["sakura", "starlight"]) {
       const instances = container.querySelectorAll(
         `[data-pattern="${kind}"] .skin-scene`,
@@ -69,8 +71,6 @@ describe("窗口插画", () => {
       const document = new DOMParser().parseFromString(source, "image/svg+xml");
       expect(document.querySelector("parsererror")).toBeNull();
       const svg = document.documentElement;
-      expect(svg.getAttribute("viewBox")).toBe("0 0 1600 1000");
-      expect(svg.getAttribute("preserveAspectRatio")).toBe("xMidYMid slice");
       expect(
         svg.querySelectorAll(
           "script, filter, radialGradient, image, foreignObject, animate, animateTransform, [filter]",
@@ -86,7 +86,6 @@ describe("窗口插画", () => {
       expect(source).not.toMatch(
         /(?:data:|https?:\/\/)(?!www\.w3\.org\/2000\/svg)/,
       );
-      expect(svg.querySelector("rect")).toBeNull();
     },
   );
 

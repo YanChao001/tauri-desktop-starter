@@ -32,8 +32,8 @@ export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
   const flipControl = useRef<Playback | null>(null);
   const playing = usePlaybackGate(flipControl, active);
   useEffect(() => {
-    if (reduced || !active) {
-      flipAngle.jump(reduced ? 0 : flipped ? 180 : 0);
+    if (reduced) {
+      flipAngle.jump(0);
       return;
     }
     const control = animate(flipAngle, flipped ? 180 : 0, {
@@ -47,7 +47,7 @@ export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
       control.stop();
       flipControl.current = null;
     };
-  }, [flipped, reduced, active, flipAngle, playing]);
+  }, [flipped, reduced, flipAngle, playing]);
   const glareX = useTransform(x, (value) => `${50 + value / 2}%`);
   const glareY = useTransform(y, (value) => `${50 + value / 2}%`);
   const reset = () => {

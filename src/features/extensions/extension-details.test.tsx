@@ -65,9 +65,11 @@ function renderConsent({
 it("keeps optional grants explicit and supports selecting, partially selecting and clearing the whole group", async () => {
   const user = userEvent.setup();
   const changed = renderConsent();
-  const group = screen.getByRole("group", { name: "Optional capabilities" });
+  const group = screen.getByRole("group", {
+    name: en["ext.optionalPermissions"],
+  });
   const all = within(group).getByRole("checkbox", {
-    name: "Select all optional capabilities",
+    name: en["ext.selectAllOptionalPermissions"],
   });
   const storage = within(group).getByRole("checkbox", {
     name: en["ext.permission.storage"],
@@ -119,7 +121,7 @@ it("also offers select all for one optional capability without granting it by de
     initial: [],
   });
   const all = screen.getByRole("checkbox", {
-    name: "Select all optional capabilities",
+    name: en["ext.selectAllOptionalPermissions"],
   });
   expect(screen.getAllByRole("checkbox")).toHaveLength(2);
   expect(all).not.toBeChecked();
@@ -134,7 +136,7 @@ it("reflects existing partial grants and disables the group while an operation i
     disabled: true,
   });
   const all = screen.getByRole("checkbox", {
-    name: "Select all optional capabilities",
+    name: en["ext.selectAllOptionalPermissions"],
   });
   expect(all).toBePartiallyChecked();
   for (const checkbox of screen.getAllByRole("checkbox"))
@@ -157,6 +159,87 @@ it("keeps required capabilities separate and omits consent controls in read-only
   );
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("group", { name: "Optional capabilities" }),
+    screen.queryByRole("group", { name: en["ext.optionalPermissions"] }),
   ).not.toBeInTheDocument();
+});
+
+it("keeps source limitations and permissions visible while technical identifiers stay collapsed", async () => {
+  const user = userEvent.setup();
+  const fingerprint = "b".repeat(64);
+  render(
+    <ExtensionDetails
+      value={{
+        ...value,
+        manifest: {
+          ...value.manifest,
+          commands: [
+            {
+              id: "app",
+              title: "Open workspace",
+              function: "app",
+              inputFormat: "json",
+              resultFormat: "view",
+              permissions: [],
+            },
+          ],
+          network: [{ origin: "https://service.example", methods: ["GET"] }],
+        },
+      }}
+      origin={{
+        kind: "market",
+        source: {
+          repository: "example/extensions",
+          publicKeyFingerprint: fingerprint,
+          catalogRevision: 7,
+          packageSha256: "c".repeat(64),
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText(en["ext.source.market"])).toBeVisible();
+  expect(screen.getByText(en["ext.source.marketHint"])).toBeVisible();
+  expect(screen.getByText(en["ext.permission.text:read"])).toBeVisible();
+  expect(screen.getByText("Open workspace")).toBeVisible();
+  for (const technical of [
+    value.manifest.id,
+    value.sha256,
+    fingerprint,
+    "example/extensions",
+    "https://service.example",
+    "Open workspace (json → view)",
+  ]) {
+    expect(
+      screen.getByText(technical, {
+        exact:
+          technical !== "example/extensions" &&
+          technical !== "https://service.example",
+      }),
+    ).not.toBeVisible();
+  }
+  await user.click(screen.getByText(en["ext.technicalInfo"]));
+  expect(screen.getByText(value.manifest.id)).toBeVisible();
+  expect(screen.getByText(value.sha256)).toBeVisible();
+  expect(screen.getByText(fingerprint)).toBeVisible();
+  expect(screen.getByText("Open workspace (json → view)")).toBeVisible();
+});
+
+it("omits repeated identity in installed details and shows which optional permissions are allowed", () => {
+  render(
+    <ExtensionDetails
+      value={value}
+      showIdentity={false}
+      origin={{ kind: "local" }}
+      grantedPermissions={["text:read", "storage"]}
+    />,
+  );
+  expect(screen.queryByText(value.manifest.name)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(value.manifest.description),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText(value.manifest.author)).toBeVisible();
+  expect(screen.getByText(en["ext.source.localHint"])).toBeVisible();
+  const storage = screen.getByText(en["ext.permission.storage"]).closest("li");
+  const files = screen.getByText(en["ext.permission.files:read"]).closest("li");
+  expect(storage).toHaveTextContent(en["ext.permissionAllowed"]);
+  expect(files).toHaveTextContent(en["ext.permissionNotAllowed"]);
 });

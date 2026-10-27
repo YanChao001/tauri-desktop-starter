@@ -1,17 +1,19 @@
 {
   "referenceHost": "x86_64-pc-windows-msvc",
   "sources": {
-    "Cargo.lock": "53db3bc26dd4c95689d62aa37c254298c44d0cc6a22f9647b282be7e77bd0258",
-    "Cargo.toml": "b6afb1899f542b8421a228bc791b7580ce9083440b732143d5b931d3b8f0330b",
-    "build-extension-apps.mjs": "959db4fd89e49dafeb0609a577087a4df2a13d7db90874b83f7afd5d7e4cc469",
-    "extension.json": "39e9075c8172231f7cf81e410e321ce32feef8c9fb0cf19381d8cb88cbf05139",
+    "Cargo.lock": "f29755a0bee18965a5a4ede25322290c3beb0d9ea8a08fb39b7085f9b3be4e10",
+    "Cargo.toml": "1aa28ceb4c4b43e1e9b920f188a71facce308a082388c5230f9ab8df8071849a",
+    "extension-apps-recipe.mjs": "dbffa848b3d3a1b136f2680f7b20e206728f4bb03c5512481878a0d9ab6dd436",
+    "extension.json": "ce1eb79037484c7e295467bd81983b68b0f732e920713cc7095ce038ec1ea6aa",
     "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
-    "src/app.rs": "bc8750f4cf7fa336c68460c207ad4ba4f0ae7ee0b409ed965f4d31aad6afa5ef",
-    "src/data.rs": "b0a169d6b8241c44840ef09145168ea812f984728f6644a2af35f963596bf5da",
-    "src/lib.rs": "c8ed3f00cf2f1839702ca28e6d83342220dc9f5739ca5b6f3a2e2fe509baf721",
+    "src/app.rs": "f6bbe8bf196760fb927efb3ac83b14d8e8633995c68b720c0c8dbebf6be0b994",
+    "src/data.rs": "194386cc9e362892e715046aeca025a4a32b5fa928e7516f4b465948f996d529",
+    "src/lib.rs": "44f57483d7b46d7dcb6fec1bc4a6f0c2d51a74d87b415fe5ab44b02e14a34452",
+    "src/studio.rs": "9ebd969c5d0173bd0860429b955e6fe9a15df3ffeeba6b00eae15af2ad72a74e",
     "src/tasks.rs": "a89149781805d1570afa290512f023f25807ebf5652fb216b575aa18456396d4",
     "src/text.rs": "3c7be98e41b8e87b149359e8329e1ccae2539d7c39e3917fcc6fabad8095d3ea",
-    "src/view.rs": "8d09d0adff23b24a5f53c38b72a1dfa115db5877ca719f6d74978121dab2ae2e"
+    "src/view.rs": "8d09d0adff23b24a5f53c38b72a1dfa115db5877ca719f6d74978121dab2ae2e",
+    "ui/main.html": "7d3a41a866a66172a1171a0a4f5544549d1eb4d4c4a875974f4c00b180efa35b"
   },
-  "sha256": "f980150095d0775fbd066ce3624ffe70461e9de2fe7feee8fc27c6420779afa5"
+  "sha256": "b9a48f082e12f00d62c5fc9c3742515c91b3809bcee7b22a6e55aa10051a9b0d"
 }

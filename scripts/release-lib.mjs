@@ -42,7 +42,10 @@ function assertDraftRelease(release, version) {
 }
 
 /** 由单一 job 创建或复用草稿，再把 ID 传给所有并行构建。 */
-export function ensureDraftRelease({ version, repository, commit }, request) {
+export function ensureDraftRelease(
+  { version, repository, commit, git },
+  request,
+) {
   const endpoint = `repos/${repositoryName(repository)}/releases`;
   const allReleases = request([
     `${endpoint}?per_page=100`,
@@ -68,6 +71,7 @@ export function ensureDraftRelease({ version, repository, commit }, request) {
     body: generateReleaseNotes(
       { version, repository, commit, releases: allReleases },
       request,
+      git,
     ),
     draft: true,
     prerelease: version.split("+")[0].includes("-"),

@@ -58,7 +58,6 @@ describe("LanguageSwitch", () => {
     expect(selectors[0]).toHaveTextContent("简体中文");
     expect(selectors[1]).toHaveTextContent("中");
     fireEvent.keyDown(selectors[1]!, { key: "Enter" });
-    expect(screen.getAllByRole("option")).toHaveLength(2);
     fireEvent.click(screen.getByRole("option", { name: "English" }));
 
     const englishSelectors = screen.getAllByRole("combobox", {

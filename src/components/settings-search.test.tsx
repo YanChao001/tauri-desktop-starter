@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/providers/i18n";
@@ -13,6 +20,18 @@ function Content() {
       <SettingsSearch />
       <section id="settings-theme" tabIndex={-1}>
         Theme target
+      </section>
+      <section id="settings-desktop" tabIndex={-1}>
+        Desktop target
+      </section>
+      <section id="settings-background" tabIndex={-1}>
+        Background target
+      </section>
+      <section id="settings-updates" tabIndex={-1}>
+        Updates target
+      </section>
+      <section id="settings-updates-auto" tabIndex={-1}>
+        Automatic updates target
       </section>
       <button onClick={() => navigate("/settings?focus=theme")}>
         Locate again
@@ -72,6 +91,22 @@ describe("settings search", () => {
     expect(input).toHaveValue("");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  it("returns Escape from a result to search and keeps a selected setting focused", async () => {
+    const user = userEvent.setup();
+    search();
+    const input = screen.getByRole("searchbox", { name: "搜索设置" });
+    await user.type(input, "dark");
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: /主题/ })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.type(input, "dark");
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => expect(screen.getByText("Theme target")).toHaveFocus());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
   it("focuses deep links on entry and repeated navigation to the same setting", () => {
     search("/settings?focus=theme");
     const target = screen.getByText("Theme target");
@@ -79,5 +114,19 @@ describe("settings search", () => {
     screen.getByRole("searchbox").focus();
     fireEvent.click(screen.getByText("Locate again"));
     expect(target).toHaveFocus();
+  });
+  it("locates the desktop section and gives a specific valid focus target priority", () => {
+    const view = search("/settings?section=desktop");
+    expect(screen.getByText("Desktop target")).toHaveFocus();
+    view.unmount();
+    search("/settings?section=desktop&focus=background");
+    expect(screen.getByText("Background target")).toHaveFocus();
+  });
+  it("locates the update section and prioritizes a valid specific setting", () => {
+    const view = search("/settings?section=updates&focus=unknown");
+    expect(screen.getByText("Updates target")).toHaveFocus();
+    view.unmount();
+    search("/settings?section=updates&focus=autoUpdates");
+    expect(screen.getByText("Automatic updates target")).toHaveFocus();
   });
 });

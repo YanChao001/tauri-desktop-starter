@@ -31,7 +31,9 @@ export function projectFile(root, path) {
     !inside(base, target) ||
     !inside(base, realpathSync(target))
   )
-    throw new Error(`拒绝修改目录链接或项目外文件：${path}`);
+    throw new Error(
+      `Refusing to modify directory links or files outside the project: ${path}`,
+    );
   return target;
 }
 
@@ -51,15 +53,19 @@ export function applyFileChanges(
   const committed = [];
   const assertParent = (entry) => {
     if (realpathSync(dirname(entry.target)) !== entry.parent)
-      throw new Error(`文件目录在预检后被替换：${entry.path}`);
+      throw new Error(
+        `File directory was replaced after preflight: ${entry.path}`,
+      );
     if (entry.parent !== root && !inside(root, entry.parent))
-      throw new Error(`文件目录已移出项目：${entry.path}`);
+      throw new Error(
+        `File directory has moved outside the project: ${entry.path}`,
+      );
   };
   try {
     for (const change of changes) {
       const target = projectFile(root, change.path);
       if (!contentsEqual(target, change.before))
-        throw new Error(`文件在预检后被修改：${change.path}`);
+        throw new Error(`File was modified after preflight: ${change.path}`);
       const token = randomUUID();
       const temporary = join(dirname(target), `.update-${token}.tmp`);
       const backup = join(dirname(target), `.update-${token}.bak`);
@@ -79,7 +85,7 @@ export function applyFileChanges(
       beforeCommit(index, entry);
       assertParent(entry);
       if (!contentsEqual(projectFile(root, entry.path), entry.before))
-        throw new Error(`文件在提交前被修改：${entry.path}`);
+        throw new Error(`File was modified before commit: ${entry.path}`);
       renameSync(entry.target, entry.backup);
       committed.push(entry);
       renameSync(entry.temporary, entry.target);
@@ -91,9 +97,12 @@ export function applyFileChanges(
         assertParent(entry);
         try {
           if (!contentsEqual(projectFile(root, entry.path), entry.content))
-            throw new Error(`回滚目标已被并发修改：${entry.path}`, {
-              cause: error,
-            });
+            throw new Error(
+              `Rollback target was modified concurrently: ${entry.path}`,
+              {
+                cause: error,
+              },
+            );
           unlinkSync(entry.target);
         } catch (failure) {
           if (failure.code !== "ENOENT") throw failure;
@@ -105,7 +114,7 @@ export function applyFileChanges(
     }
     if (failures.length)
       throw new Error(
-        `${error.message}\n恢复失败，备份保留：${failures.join("; ")}`,
+        `${error.message}\nRecovery failed; backups retained: ${failures.join("; ")}`,
         {
           cause: error,
         },
@@ -126,7 +135,7 @@ export function applyFileChanges(
       unlinkSync(entry.backup);
     } catch (error) {
       console.warn(
-        `文件更新已完成；旧备份清理失败，请检查 ${entry.backup}：${error.message}`,
+        `File updates completed; the previous backup could not be removed. Check ${entry.backup}: ${error.message}`,
       );
     }
   }
@@ -136,7 +145,8 @@ export function applyFileChanges(
 export function removeProjectPath(root, path) {
   const base = realpathSync(root);
   const target = resolve(base, path);
-  if (!inside(base, target)) throw new Error(`拒绝删除项目外路径：${target}`);
+  if (!inside(base, target))
+    throw new Error(`Refusing to remove a path outside the project: ${target}`);
   try {
     lstatSync(target);
   } catch (error) {
@@ -145,7 +155,9 @@ export function removeProjectPath(root, path) {
   }
   const parent = realpathSync(dirname(target));
   if (parent !== base && !inside(base, parent)) {
-    throw new Error(`拒绝通过目录链接删除项目外路径：${target}`);
+    throw new Error(
+      `Refusing to remove a path outside the project through a directory link: ${target}`,
+    );
   }
   // rmSync 删除顶层链接本身，不遍历链接目标。
   rmSync(target, { recursive: true, force: true });

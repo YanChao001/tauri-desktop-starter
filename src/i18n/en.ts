@@ -31,13 +31,13 @@ export const en = {
   "nav.overview": "Showroom",
   "nav.components": "Playground",
   "nav.motion": "Motion lab",
-  "nav.bridge": "Native bridge",
+  "nav.bridge": "App communication",
   "nav.settings": "Settings",
-  "app.native": "Native window",
+  "app.native": "Desktop app",
   "app.preview": "Browser preview",
   "browserDemo.title": "Browser demo",
   "browserDemo.description":
-    "Explore the app's interface, themes and motion. Native capabilities require the desktop version.",
+    "Explore the interface, themes and motion. Open the desktop app for files, notes and system tools.",
   "browserDemo.source": "Source",
   "browserDemo.download": "Download desktop",
   "browserDemo.navigation": "Choose a demo page",
@@ -63,7 +63,7 @@ export const en = {
   "title.close": "Close",
   "title.toggleTheme": "Toggle theme",
   "title.aboutBody":
-    "A reusable desktop foundation: Tauri 2 for the native shell, React 19 for the interface. Rename it and start building.",
+    "Edit files, organize notes, manage tasks and use desktop tools in one workspace. Make it yours with appearance and layout settings.",
   "common.copied": "Copied to clipboard",
   "common.openFailed":
     "Unable to open the link. Copy the address into your browser.",
@@ -77,6 +77,14 @@ export const en = {
   "common.reload": "Reload",
   "common.language": "Language",
   "settings.title": "Settings",
+  "settings.network": "Network",
+  "settings.networkMode": "Network connection",
+  "settings.networkModeSystem": "Use system proxy",
+  "settings.networkModeDirect": "Direct connection",
+  "settings.networkModeHint":
+    "Applies to subsequent network requests after saving. Plugins still need separate permission to use the system proxy.",
+  "settings.networkModeBrowserHint":
+    "Your browser controls the connection. Open the desktop app to change this setting.",
   "settings.subtitle":
     "Preferences stay on this device. Appearance, layout and size apply instantly; startup position applies the next time a window opens.",
   "settings.appearance": "Appearance",
@@ -112,22 +120,22 @@ export const en = {
   "settings.motionReduced": "Reduced",
   "settings.menuBar": "Show menu bar",
   "settings.menuBarHint": "File / Edit / View / Help in the title bar",
-  "settings.runtime": "Runtime",
+  "settings.runtime": "App information",
   "settings.runtimeHint":
-    "Comes from Rust and is unavailable in browser preview",
+    "View app and device information. This is unavailable in browser preview.",
   "settings.appVersion": "App version",
   "settings.tauriVersion": "Tauri version",
   "settings.environment": "Environment",
   "settings.links": "Links",
   "settings.linksHint": "Opens in your default browser",
   "settings.resetHint":
-    "Restores appearance, layout, window sizes and background preferences, keeping language, notes and system startup settings",
+    "Restores appearance, layout, window sizes, network connection and background preferences, keeping language, notes and system startup settings",
   "settings.resetConfirmTitle": "Restore default preferences?",
   "settings.resetConfirmDescription":
-    "Resets appearance, layout, all window sizes and background preferences. Startup position returns to remembering the last position; open windows stay in place. Language, notes and system startup settings are retained. A preferences file from a newer app version will also be replaced.",
+    "Resets appearance, layout, all window sizes and background preferences. Network connection returns to using the system proxy. Startup position returns to remembering the last position; open windows stay in place. Language, notes and system startup settings are retained. A preferences file from a newer app version will also be replaced.",
   "settings.windowSize": "Window size",
   "settings.windowSizeHint":
-    "Select a common size to apply and remember it immediately, in logical pixels. Maximized windows are restored first. You can also resize by dragging the window edges.",
+    "Choose a common size to apply and remember it immediately. Maximized windows are restored first. You can also resize by dragging the window edges.",
   "settings.windowBrowserHint":
     "Window dimensions are managed by the desktop app and cannot be changed in browser preview.",
   "settings.windowCompact": "Compact",
@@ -145,20 +153,21 @@ export const en = {
   "settings.windowPositionCenter": "Center",
   "settings.windowPositionHint":
     "Takes effect the next time a window opens. Open windows stay in place.",
-  "bridge.title": "Frontend ↔ Rust",
+  "bridge.title": "App communication",
   "bridge.subtitle":
-    "The frontend calls Rust via invoke. Results are serialized over IPC, and the TypeScript contract is generated from Rust.",
-  "bridge.demo": "Call example",
+    "Enter a name and see the desktop app respond. The name is processed on this device. This feature requires the desktop app.",
+  "bridge.demo": "Send a greeting",
   "bridge.demoHint":
-    "Change the name and click. An empty name hits the Rust-side validation to show how errors cross IPC.",
+    "Enter a name and send a greeting. An empty name shows a reminder. Names are processed on this device only.",
   "bridge.name": "Name",
   "bridge.namePlaceholder": "Enter a name",
-  "bridge.call": "Call greet",
-  "bridge.result": "Result",
-  "bridge.notCalled": "Not called yet",
-  "bridge.success": "Rust command succeeded",
+  "bridge.call": "Send greeting",
+  "bridge.result": "Response",
+  "bridge.notCalled": "Enter a name and send a greeting",
+  "bridge.success": "Response received",
   "bridge.failed": "Call failed: {error}",
-  "bridge.browserOnly": "Not available in browser preview. Run pnpm app:dev.",
+  "bridge.browserOnly": "Open the desktop app to use this feature.",
+  "bridge.developerDetails": "Developer resources",
   "bridge.frontend": "Frontend call",
   "bridge.note":
     "Register new commands in bindings.rs, then run pnpm bindings:generate to update the frontend contract.",
@@ -232,6 +241,10 @@ export const en = {
     "Could not save or load wallpapers. Existing images were kept. Please retry.",
   "settings.chooseWallpaper": "Use wallpaper: {name}",
   "settings.deleteWallpaper": "Delete wallpaper: {name}",
+  "settings.deleteWallpaperTitle": "Remove wallpaper from library?",
+  "settings.deleteWallpaperDescription":
+    "Remove the library copy and name of “{name}”. If it is your current wallpaper, the background will switch to a plain color. The original image file will be kept.",
+  "settings.removeWallpaper": "Remove wallpaper",
   "settings.renameWallpaper": "Rename wallpaper: {name}",
   "settings.renameWallpaperTitle": "Rename wallpaper",
   "settings.renameWallpaperHint":

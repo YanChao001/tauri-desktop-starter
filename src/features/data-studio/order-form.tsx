@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { TriangleAlertIcon } from "lucide-react";
 import { HelpTooltip } from "@/components/help-tooltip";
 import {
   Popover,
@@ -18,6 +19,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -58,6 +65,8 @@ export function OrderForm() {
   });
   const kind = form.watch("kind");
   const [fail, setFail] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const summaryFocusTarget = useRef<FieldPath<OrderValues> | null>(null);
   const errors = form.formState.errors;
   const summary: {
     name: FieldPath<OrderValues>;
@@ -98,29 +107,112 @@ export function OrderForm() {
   const message = (code: string | undefined) =>
     code ? t(errorKeys[code] ?? "labs.form.required") : null;
   function errorFor(name: string, code?: string) {
+    const text = message(code);
+    if (!text) return null;
     return (
-      <p
-        id={`${fieldId(name)}-error`}
-        className="h-5 truncate text-xs text-destructive"
-        title={message(code) ?? undefined}
-      >
-        {message(code)}
-      </p>
+      <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              id={`${fieldId(name)}-error`}
+              className="min-w-0 flex-1 truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {text}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-72 leading-relaxed">
+            {text}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+  function fieldLabel(name: string, label: string, code?: string) {
+    return (
+      <div className="flex h-5 min-w-0 items-center gap-2">
+        <Label htmlFor={fieldId(name)} className="shrink-0">
+          {label}
+        </Label>
+        {errorFor(name, code)}
+      </div>
     );
   }
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle>{t("labs.form.title")}</CardTitle>
-          <HelpTooltip label={`${t("labs.form.title")} · ${t("title.help")}`}>
-            {t("labs.form.hint")}
-          </HelpTooltip>
+        <div className="flex min-h-9 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <CardTitle className="min-w-0 truncate">
+              {t("labs.form.title")}
+            </CardTitle>
+            <HelpTooltip label={`${t("labs.form.title")} · ${t("title.help")}`}>
+              {t("labs.form.hint")}
+            </HelpTooltip>
+          </div>
+          {summary.length ? (
+            <div role="alert" className="shrink-0">
+              <Popover
+                open={summaryOpen}
+                onOpenChange={(open) => {
+                  if (open) summaryFocusTarget.current = null;
+                  setSummaryOpen(open);
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive"
+                  >
+                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
+                    <span className="tabular-nums" aria-hidden="true">
+                      {summary.length}
+                    </span>
+                    <span className="sr-only">
+                      {t("labs.form.errors")} ({summary.length})
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="max-h-64 overflow-auto text-sm"
+                  align="end"
+                  onCloseAutoFocus={(event) => {
+                    const target = summaryFocusTarget.current;
+                    summaryFocusTarget.current = null;
+                    if (target) {
+                      event.preventDefault();
+                      form.setFocus(target);
+                    }
+                  }}
+                >
+                  <ul className="list-disc space-y-1 pl-5">
+                    {summary.map((item) => (
+                      <li key={item.name}>
+                        <a
+                          href={`#${fieldId(item.name)}`}
+                          className="text-primary underline"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            summaryFocusTarget.current = item.name;
+                            setSummaryOpen(false);
+                          }}
+                        >
+                          {item.label}: {message(item.message)}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </PopoverContent>
+              </Popover>
+            </div>
+          ) : null}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="@container/order-fields">
         <form
-          className="space-y-5"
+          className="space-y-4"
           noValidate
           onSubmit={form.handleSubmit(async (values) => {
             // 本地异步提交示例；没有远端 API 或数据持久化。
@@ -141,47 +233,13 @@ export function OrderForm() {
           })}
           aria-busy={form.formState.isSubmitting}
         >
-          <div className="h-10">
-            {summary.length ? (
-              <div role="alert">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="text-destructive"
-                    >
-                      {t("labs.form.errors")} ({summary.length})
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="max-h-64 overflow-auto text-sm"
-                    align="start"
-                  >
-                    <ul className="list-disc space-y-1 pl-5">
-                      {summary.map((item) => (
-                        <li key={item.name}>
-                          <a
-                            href={`#${fieldId(item.name)}`}
-                            className="text-primary underline"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              form.setFocus(item.name);
-                            }}
-                          >
-                            {item.label}: {message(item.message)}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            ) : null}
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="order-customer">{t("labs.form.customer")}</Label>
+          <div className="grid gap-3 @min-[20rem]/order-fields:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
+              {fieldLabel(
+                "customer",
+                t("labs.form.customer"),
+                errors.customer?.message,
+              )}
               <Input
                 id="order-customer"
                 maxLength={100}
@@ -192,10 +250,9 @@ export function OrderForm() {
                   errors.customer ? "order-customer-error" : undefined
                 }
               />
-              {errorFor("customer", errors.customer?.message)}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="order-email">{t("labs.data.email")}</Label>
+            <div className="min-w-0 space-y-1.5">
+              {fieldLabel("email", t("labs.data.email"), errors.email?.message)}
               <Input
                 id="order-email"
                 type="email"
@@ -206,10 +263,11 @@ export function OrderForm() {
                   errors.email ? "order-email-error" : undefined
                 }
               />
-              {errorFor("email", errors.email?.message)}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="order-kind">{t("labs.form.kind")}</Label>
+          </div>
+          <div className="grid gap-3 @min-[20rem]/order-fields:grid-cols-2 @min-[38rem]/order-fields:grid-cols-3">
+            <div className="min-w-0 space-y-1.5 @min-[20rem]/order-fields:col-span-2 @min-[38rem]/order-fields:col-span-1">
+              {fieldLabel("kind", t("labs.form.kind"))}
               <Controller
                 control={form.control}
                 name="kind"
@@ -242,24 +300,8 @@ export function OrderForm() {
                 )}
               />
             </div>
-            {kind === "business" ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="order-company">{t("labs.form.company")}</Label>
-                <Input
-                  id="order-company"
-                  maxLength={100}
-                  autoComplete="organization"
-                  {...form.register("company")}
-                  aria-invalid={!!errors.company}
-                  aria-describedby={
-                    errors.company ? "order-company-error" : undefined
-                  }
-                />
-                {errorFor("company", errors.company?.message)}
-              </div>
-            ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="order-start">{t("labs.form.start")}</Label>
+            <div className="min-w-0 space-y-1.5">
+              {fieldLabel("start", t("labs.form.start"), errors.start?.message)}
               <Input
                 id="order-start"
                 type="date"
@@ -269,10 +311,9 @@ export function OrderForm() {
                   errors.start ? "order-start-error" : undefined
                 }
               />
-              {errorFor("start", errors.start?.message)}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="order-end">{t("labs.form.end")}</Label>
+            <div className="min-w-0 space-y-1.5">
+              {fieldLabel("end", t("labs.form.end"), errors.end?.message)}
               <Input
                 id="order-end"
                 type="date"
@@ -280,23 +321,46 @@ export function OrderForm() {
                 aria-invalid={!!errors.end}
                 aria-describedby={errors.end ? "order-end-error" : undefined}
               />
-              {errorFor("end", errors.end?.message)}
             </div>
           </div>
+          {kind === "business" ? (
+            <div className="min-w-0 space-y-1.5">
+              {fieldLabel(
+                "company",
+                t("labs.form.company"),
+                errors.company?.message,
+              )}
+              <Input
+                id="order-company"
+                maxLength={100}
+                autoComplete="organization"
+                {...form.register("company")}
+                aria-invalid={!!errors.company}
+                aria-describedby={
+                  errors.company ? "order-company-error" : undefined
+                }
+              />
+            </div>
+          ) : null}
           <fieldset className="space-y-3">
             <legend className="mb-2 text-sm font-medium">
               {t("labs.form.lines")}
             </legend>
             {fields.map((field, index) => (
-              <fieldset key={field.id} className="rounded-md border p-3">
+              <fieldset
+                key={field.id}
+                className="@container/order-line min-w-0 rounded-md border p-3"
+              >
                 <legend className="px-1 text-xs text-muted-foreground">
                   {t("labs.form.line", { number: index + 1 })}
                 </legend>
-                <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-                  <div className="space-y-1.5">
-                    <Label htmlFor={fieldId(`lines.${index}.description`)}>
-                      {t("labs.form.description")}
-                    </Label>
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3 @min-[34rem]/order-line:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  <div className="col-span-full min-w-0 space-y-1.5 @min-[34rem]/order-line:col-span-1">
+                    {fieldLabel(
+                      `lines.${index}.description`,
+                      t("labs.form.description"),
+                      errors.lines?.[index]?.description?.message,
+                    )}
                     <Input
                       id={fieldId(`lines.${index}.description`)}
                       maxLength={200}
@@ -308,15 +372,13 @@ export function OrderForm() {
                           : undefined
                       }
                     />
-                    {errorFor(
-                      `lines.${index}.description`,
-                      errors.lines?.[index]?.description?.message,
-                    )}
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={fieldId(`lines.${index}.quantity`)}>
-                      {t("labs.form.quantity")}
-                    </Label>
+                  <div className="min-w-0 space-y-1.5">
+                    {fieldLabel(
+                      `lines.${index}.quantity`,
+                      t("labs.form.quantity"),
+                      errors.lines?.[index]?.quantity?.message,
+                    )}
                     <Input
                       id={fieldId(`lines.${index}.quantity`)}
                       type="number"
@@ -332,15 +394,13 @@ export function OrderForm() {
                           : undefined
                       }
                     />
-                    {errorFor(
-                      `lines.${index}.quantity`,
-                      errors.lines?.[index]?.quantity?.message,
-                    )}
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={fieldId(`lines.${index}.price`)}>
-                      {t("labs.form.price")}
-                    </Label>
+                  <div className="min-w-0 space-y-1.5">
+                    {fieldLabel(
+                      `lines.${index}.price`,
+                      t("labs.form.price"),
+                      errors.lines?.[index]?.price?.message,
+                    )}
                     <Input
                       id={fieldId(`lines.${index}.price`)}
                       type="number"
@@ -357,10 +417,6 @@ export function OrderForm() {
                           : undefined
                       }
                     />
-                    {errorFor(
-                      `lines.${index}.price`,
-                      errors.lines?.[index]?.price?.message,
-                    )}
                   </div>
                   <Button
                     type="button"
@@ -387,30 +443,32 @@ export function OrderForm() {
             </Button>
           </fieldset>
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm">
-              <Controller
-                name="consent"
-                control={form.control}
-                render={({ field }) => (
-                  <Checkbox
-                    id="order-consent"
-                    name={field.name}
-                    ref={field.ref}
-                    checked={field.value}
-                    onBlur={field.onBlur}
-                    onCheckedChange={(checked) =>
-                      field.onChange(checked === true)
-                    }
-                    aria-invalid={!!errors.consent}
-                    aria-describedby={
-                      errors.consent ? "order-consent-error" : undefined
-                    }
-                  />
-                )}
-              />
-              {t("labs.form.consent")}
-            </label>
-            {errorFor("consent", errors.consent?.message)}
+            <div className="flex min-h-5 min-w-0 items-center gap-2">
+              <label className="flex shrink-0 items-center gap-2 text-sm">
+                <Controller
+                  name="consent"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Checkbox
+                      id="order-consent"
+                      name={field.name}
+                      ref={field.ref}
+                      checked={field.value}
+                      onBlur={field.onBlur}
+                      onCheckedChange={(checked) =>
+                        field.onChange(checked === true)
+                      }
+                      aria-invalid={!!errors.consent}
+                      aria-describedby={
+                        errors.consent ? "order-consent-error" : undefined
+                      }
+                    />
+                  )}
+                />
+                {t("labs.form.consent")}
+              </label>
+              {errorFor("consent", errors.consent?.message)}
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={fail}

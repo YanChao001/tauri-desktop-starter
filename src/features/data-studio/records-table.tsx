@@ -591,7 +591,7 @@ export function RecordsTable() {
                 value={String(table.state.pagination.pageSize)}
                 onValueChange={(value) => table.setPageSize(Number(value))}
               >
-                <SelectTrigger aria-label={t("labs.data.pageSize")}>
+                <SelectTrigger size="sm" aria-label={t("labs.data.pageSize")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent position="popper" align="start">

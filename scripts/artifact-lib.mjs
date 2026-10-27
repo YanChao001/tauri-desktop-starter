@@ -34,7 +34,7 @@ export function renameWithRetry(
   } = {},
 ) {
   if (typeof validate !== "function")
-    throw new Error("目录重命名必须提供路径校验");
+    throw new Error("Directory renames require path validation");
   for (let attempt = 0; ; attempt += 1) {
     validate(source, destination);
     try {
@@ -70,7 +70,7 @@ function segment(value, label) {
     typeof value !== "string" ||
     !/^[a-zA-Z0-9][a-zA-Z0-9.+_-]*$/.test(value)
   ) {
-    throw new Error(`无效的${label}：${value}`);
+    throw new Error(`Invalid ${label}: ${value}`);
   }
   return value;
 }
@@ -88,12 +88,14 @@ function publicationPath(root, path) {
   const base = realpathSync(root);
   const target = resolve(base, path);
   if (target === base || !contained(base, target))
-    throw new Error("发布路径超出项目目录");
+    throw new Error("Publication path is outside the project directory");
   let current = target;
   while (current !== base) {
     try {
       if (lstatSync(current).isSymbolicLink())
-        throw new Error(`发布路径不能包含目录链接：${current}`);
+        throw new Error(
+          `Publication path cannot contain directory links: ${current}`,
+        );
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -104,13 +106,13 @@ function publicationPath(root, path) {
 
 export function artifactDirectory(root, version, target, kind) {
   if (!["installers", "portable"].includes(kind))
-    throw new Error(`未知产物类型：${kind}`);
+    throw new Error(`Unknown artifact kind: ${kind}`);
   return publicationPath(
     root,
     join(
       "artifacts",
-      segment(version, "版本"),
-      segment(target, "目标平台"),
+      segment(version, "version"),
+      segment(target, "target platform"),
       kind,
     ),
   );
@@ -119,7 +121,8 @@ export function artifactDirectory(root, version, target, kind) {
 /** 先复制完整结果，再替换同版本 / 平台 / 类型，保留其他产物与原有成功结果。 */
 export function publishArtifacts(root, { version, target, kind, entries }) {
   const outputDir = artifactDirectory(root, version, target, kind);
-  if (!entries.length) throw new Error("本次构建没有可归档的分发文件");
+  if (!entries.length)
+    throw new Error("No distribution files to archive for this build");
   const names = new Set();
   const sources = entries.map(({ source, path: entryPath, contents }) => {
     const path =
@@ -132,7 +135,7 @@ export function publishArtifacts(root, { version, target, kind, entries }) {
       isAbsolute(path) ||
       path.split(/[\\/]/).some((part) => !part || part === "." || part === "..")
     ) {
-      throw new Error(`无效的分发文件路径：${path}`);
+      throw new Error(`Invalid distribution file path: ${path}`);
     }
     const key = path.toLowerCase();
     if (
@@ -144,21 +147,25 @@ export function publishArtifacts(root, { version, target, kind, entries }) {
           key.startsWith(`${name}/`),
       )
     )
-      throw new Error(`分发文件重名：${path}`);
+      throw new Error(`Duplicate distribution file path: ${path}`);
     names.add(key);
     if (contents !== undefined) {
       if (typeof contents !== "string" || source !== undefined)
-        throw new Error(`分发文本内容无效：${path}`);
+        throw new Error(`Invalid distribution text contents: ${path}`);
       return { path, contents, directory: false };
     }
     const absolute = realpathSync(source);
     if (contained(outputDir, absolute))
-      throw new Error("不能将旧发布目录用作本次构建来源");
+      throw new Error(
+        "The existing publication directory cannot be used as a build source",
+      );
     const stat = lstatSync(absolute);
     if (stat.isDirectory() && contained(absolute, outputDir))
-      throw new Error("构建来源目录不能包含发布目录");
+      throw new Error(
+        "Build source directory cannot contain the publication directory",
+      );
     if (!stat.isFile() && !stat.isDirectory())
-      throw new Error(`不支持的分发文件：${source}`);
+      throw new Error(`Unsupported distribution file: ${source}`);
     return { source: absolute, path, directory: stat.isDirectory() };
   });
 
@@ -172,7 +179,9 @@ export function publishArtifacts(root, { version, target, kind, entries }) {
         publicationPath(root, source);
         publicationPath(root, destination);
         if (dirname(source) !== parent || dirname(destination) !== parent)
-          throw new Error("发布目录只允许在同一个父目录内替换");
+          throw new Error(
+            "Publication directories can only be replaced within the same parent directory",
+          );
       },
     });
   try {
@@ -208,7 +217,7 @@ export function publishArtifacts(root, { version, target, kind, entries }) {
         removeProjectPath(root, relative(root, backup));
       } catch (error) {
         console.warn(
-          `新产物已归档；旧备份暂未清除：${backup}（${error.message}）`,
+          `New artifacts archived; the previous backup could not be removed: ${backup} (${error.message})`,
         );
       }
     }

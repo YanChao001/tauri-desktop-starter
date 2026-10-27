@@ -1,4 +1,10 @@
-import { useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +16,7 @@ import {
 import { useI18n } from "@/providers/i18n";
 import type { ExtensionInfo } from "@/lib/tauri";
 import { useExtensionChromeTarget } from "./extension-chrome-slot";
+import { useExtensionActivity } from "./extension-activity";
 import {
   Tooltip,
   TooltipContent,
@@ -32,14 +39,24 @@ export function ExtensionFrame({
   children: ReactNode;
 }) {
   const { t } = useI18n();
-  const target = useExtensionChromeTarget();
+  const active = useExtensionActivity();
+  const activity = useRef(active);
+  activity.current = active;
+  const chromeTarget = useExtensionChromeTarget();
+  const target = active ? chromeTarget : null;
   const [open, setOpen] = useState(false);
   const [hintOpen, setHintOpen] = useState(false);
   const restoringFocus = useRef(false);
+  useEffect(() => {
+    if (active) return;
+    setOpen(false);
+    setHintOpen(false);
+  }, [active]);
   const toolbar = (
     <TooltipProvider delayDuration={650} skipDelayDuration={0}>
       <Tooltip
-        open={hintOpen && !open}
+        disableHoverableContent
+        open={active && hintOpen && !open}
         onOpenChange={(value) => {
           if (!restoringFocus.current && !open) setHintOpen(value);
         }}
@@ -47,7 +64,7 @@ export function ExtensionFrame({
         <DropdownMenu
           key={`${item.generation}:${item.package.manifest.id}`}
           modal={false}
-          open={open}
+          open={active && open}
           onOpenChange={(value) => {
             setOpen(value);
             setHintOpen(false);
@@ -77,7 +94,10 @@ export function ExtensionFrame({
             align={target?.placement === "navigation" ? "start" : "end"}
             collisionPadding={12}
             onCloseAutoFocus={(event) => {
-              if (document.activeElement?.closest('[role="dialog"]'))
+              if (
+                !activity.current ||
+                document.activeElement?.closest('[role="dialog"]')
+              )
                 event.preventDefault();
               restoringFocus.current = true;
               queueMicrotask(() => {

@@ -198,7 +198,7 @@ export function ResourceLibrary({ active }: { active: boolean }) {
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper">
             {CATEGORIES.map((item) => (
               <SelectItem key={item.id} value={item.id}>
                 {t(item.label)}

@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -31,12 +32,14 @@ describe("Bridge 命令调用", () => {
   });
   afterEach(cleanup);
 
-  it("前端调用示例明确使用 TypeScript 高亮", () => {
+  it("前端调用示例明确使用 TypeScript 高亮", async () => {
     const { container } = render(<Bridge />);
     const snippet = container.querySelector('code[data-language="typescript"]');
     expect(snippet).toHaveTextContent('invokeGreet("Ada", language)');
-    expect(snippet?.querySelector('[data-token="keyword"]')).toHaveTextContent(
-      "export",
+    await waitFor(() =>
+      expect(
+        snippet?.querySelector('[data-token="keyword"]'),
+      ).toHaveTextContent("export"),
     );
     expect(snippet?.querySelector('[data-token="function"]')).toHaveTextContent(
       "invokeGreet",

@@ -126,7 +126,8 @@ export function desktopUiChecks() {
       await $("[data-slot=tooltip-content]").waitForExist({ reverse: true });
       assert.equal((await $$("[data-slot=tooltip-content]")).length, 0);
 
-      await navigate("/desktop");
+      await navigate("/settings");
+      await $("#settings-desktop").scrollIntoView();
       await $("[data-testid=open-secondary-window]").waitForEnabled();
       for (const width of [880, 1120]) {
         // CI 工作区可能小于预设尺寸，沿用原生服务报告的可用范围。
@@ -153,19 +154,21 @@ export function desktopUiChecks() {
           await patchSettings({ language, fontSize: "lg", theme: "light" });
           await settledAppearance({ language, fontSize: "lg", theme: "light" });
           const controls = await browser.execute(() =>
-            [...document.querySelectorAll(".settings-row-control")].map(
-              (element) => {
-                const control = element.getBoundingClientRect();
-                const row = element
-                  .closest(".settings-row")
-                  .getBoundingClientRect();
-                return {
-                  right: control.right,
-                  withinRow:
-                    control.left >= row.left && control.right <= row.right + 1,
-                };
-              },
-            ),
+            [
+              ...document.querySelectorAll(
+                "#settings-desktop .settings-row-control",
+              ),
+            ].map((element) => {
+              const control = element.getBoundingClientRect();
+              const row = element
+                .closest(".settings-row")
+                .getBoundingClientRect();
+              return {
+                right: control.right,
+                withinRow:
+                  control.left >= row.left && control.right <= row.right + 1,
+              };
+            }),
           );
           assert.equal(controls.length, 3);
           assert.ok(controls.every((control) => control.withinRow));
@@ -178,13 +181,26 @@ export function desktopUiChecks() {
       }
       await patchSettings({ language: "zh", fontSize: "md" });
       await settledAppearance({ language: "zh", fontSize: "md" });
+      await $("#settings-desktop").scrollIntoView();
       await screenshot("desktop-controls.png");
       await navigate("/bridge");
+      await browser.waitUntil(async () =>
+        /^(应用通信|App communication)$/.test(await $("main h2").getText()),
+      );
+      const developerResources = await $("main details > summary");
+      assert.match(
+        await developerResources.getText(),
+        /^(开发者资料|Developer resources)$/,
+      );
+      await developerResources.click();
       for (const theme of ["light", "dark"]) {
         await patchSettings({ theme });
         await settledAppearance({ theme });
         for (const language of ["rust", "typescript"]) {
-          await $("code[data-language=" + language + "]").waitForDisplayed();
+          const code = await $("code[data-language=" + language + "]");
+          await code.waitForDisplayed();
+          await code.$("[data-token=keyword]").waitForDisplayed();
+          await code.$("[data-token=string]").waitForDisplayed();
           const colors = await browser.execute((value) => {
             const code = document.querySelector(
               "code[data-language=" + value + "]",
@@ -213,16 +229,74 @@ export function desktopUiChecks() {
         await screenshot("desktop-code-examples-" + theme + ".png");
       }
     } finally {
-      await patchSettings(original);
-      await settledAppearance({
-        language: original.language,
-        theme: original.theme,
-        background: original.background,
+      const probe = await browser.execute(() => {
+        const events = [];
+        const listener = (event) => {
+          if (events.length < 4)
+            events.push({
+              at: Date.now(),
+              startedAt: event.detail?.startedAt,
+              duration: event.detail?.duration,
+            });
+        };
+        window.addEventListener("starter:theme-reveal", listener);
+        globalThis.__STARTER_E2E_RESTORE_PROBE__ = { events, listener };
+        return {
+          viewTransition: typeof document.startViewTransition === "function",
+          theme: document.documentElement.classList.contains("dark")
+            ? "dark"
+            : "light",
+          motion: document.documentElement.dataset.motion,
+          language: document.documentElement.lang,
+        };
       });
-      await invoke("set_window_size", {
-        width: originalWindow.width,
-        height: originalWindow.height,
+      const mark = (stage, details = {}) =>
+        console.info("Desktop UI restore:", {
+          stage,
+          at: Date.now(),
+          ...details,
+        });
+      mark("save-before", {
+        original: {
+          theme: original.theme,
+          motion: original.motion,
+          language: original.language,
+        },
+        current: probe,
       });
+      try {
+        await patchSettings(original);
+        mark("save-after");
+        mark("settled-before");
+        await settledAppearance({
+          language: original.language,
+          theme: original.theme,
+          background: original.background,
+        });
+        mark("settled-after");
+        mark("theme-reveals-before-resize", {
+          events: await browser.execute(
+            () => globalThis.__STARTER_E2E_RESTORE_PROBE__.events,
+          ),
+        });
+        mark("resize-before");
+        await invoke("set_window_size", {
+          width: originalWindow.width,
+          height: originalWindow.height,
+        });
+        mark("resize-after");
+      } finally {
+        // 仅采集本次临时窗口的主题时点，不在断连时覆盖原始失败。
+        const reveals = await browser
+          .execute(() => {
+            const active = globalThis.__STARTER_E2E_RESTORE_PROBE__;
+            window.removeEventListener("starter:theme-reveal", active.listener);
+            delete globalThis.__STARTER_E2E_RESTORE_PROBE__;
+            return active.events;
+          })
+          .catch(() => undefined);
+        mark("theme-reveals", { events: reveals });
+      }
     }
   });
 

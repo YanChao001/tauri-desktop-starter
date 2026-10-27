@@ -1,5 +1,14 @@
 import { SafeMarkdown } from "@/components/safe-markdown";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { createTranslator } from "@/i18n/translate";
@@ -10,11 +19,15 @@ const bridge = vi.hoisted(() => ({
   native: false,
   open: vi.fn().mockResolvedValue(undefined),
 }));
+const preference = vi.hoisted(() => ({ motion: "full" }));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => bridge.native,
   openExternal: bridge.open,
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("@/providers/settings", () => ({
+  useSettings: () => ({ settings: preference }),
+}));
 
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ language: "en", t: createTranslator(en) }),
@@ -22,6 +35,8 @@ vi.mock("@/providers/i18n", () => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  preference.motion = "full";
   bridge.native = false;
   bridge.open.mockClear();
   vi.mocked(toast.error).mockClear();
@@ -57,6 +72,16 @@ it("renders GFM content without executing raw HTML, unsafe links or external ima
   expect(screen.getByText(/External image blocked/)).toBeVisible();
 });
 
+it("Markdown 表格保留表格语义，并提供有名称的键盘滚动区域", async () => {
+  const user = userEvent.setup();
+  render(<SafeMarkdown content={"| A | B |\n| - | - |\n| 1 | 2 |"} />);
+  const region = screen.getByRole("region", { name: "Markdown table" });
+  expect(within(region).getByRole("table")).toBeVisible();
+  expect(within(region).getAllByRole("columnheader")).toHaveLength(2);
+  await user.tab();
+  expect(region).toHaveFocus();
+});
+
 it.each([
   ["rust", "rust", "pub fn main() {}", "keyword", "pub"],
   ["rs", "rust", "pub fn main() {}", "keyword", "pub"],
@@ -72,15 +97,18 @@ it.each([
   ["JSON", "json", '{ "safe": true }', "property", '"safe"'],
 ])(
   "媒体 Markdown 的 %s 围栏按实际语言高亮",
-  (info, language, source, token, text) => {
+  async (info, language, source, token, text) => {
     const { container } = render(
       <SafeMarkdown content={"```" + info + "\n" + source + "\n```"} />,
     );
     const code = container.querySelector(`code[data-language="${language}"]`);
     expect(code?.textContent).toBe(source + "\n");
-    expect(code?.querySelector(`[data-token="${token}"]`)).toHaveTextContent(
-      text,
-    );
+    const expectHighlight = () =>
+      expect(code?.querySelector(`[data-token="${token}"]`)).toHaveTextContent(
+        text,
+      );
+    if (language === "typescript") await waitFor(expectHighlight);
+    else expectHighlight();
     expect(code?.parentElement).toHaveAttribute("tabindex", "0");
     expect(container.querySelector("pre pre")).toBeNull();
   },
@@ -154,3 +182,90 @@ it("keeps the current preview after an invalid file and revokes local URLs on re
   unmount();
   expect(revoke).toHaveBeenCalledWith("blob:two");
 });
+
+it.each(["audio", "video"])(
+  "%s 在隐藏页签、后台文档或播放器离屏时暂停，可见后等待用户播放",
+  (kind) => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:media");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(() => {});
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    let pageVisibility: DocumentVisibilityState = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(
+      () => pageVisibility,
+    );
+    let viewport: IntersectionObserverCallback | undefined;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          viewport = callback;
+        }
+        observe = observe;
+        disconnect = disconnect;
+      },
+    );
+    // 减少装饰动效不应阻止用户主动播放媒体。
+    preference.motion = "reduced";
+    const { container, rerender, unmount } = render(<MediaPreview />);
+    fireEvent.change(screen.getByLabelText("Choose image, audio or video"), {
+      target: {
+        files: [
+          new File(["media"], `sample.${kind}`, { type: `${kind}/test` }),
+        ],
+      },
+    });
+    const player = container.querySelector(kind);
+    expect(player).toBeInstanceOf(HTMLMediaElement);
+    expect(observe).toHaveBeenCalledExactlyOnceWith(player);
+    fireEvent.play(player!);
+    expect(pause).not.toHaveBeenCalled();
+
+    rerender(<MediaPreview active={false} />);
+    expect(pause).toHaveBeenCalledTimes(1);
+    rerender(<MediaPreview active />);
+    expect(play).not.toHaveBeenCalled();
+    expect(pause).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      pageVisibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(pause).toHaveBeenCalledTimes(2);
+    act(() => {
+      pageVisibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(play).not.toHaveBeenCalled();
+    expect(pause).toHaveBeenCalledTimes(2);
+
+    act(() =>
+      viewport?.(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+    expect(pause).toHaveBeenCalledTimes(3);
+    fireEvent.play(player!);
+    expect(pause).toHaveBeenCalledTimes(4);
+    act(() =>
+      viewport?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+    expect(play).not.toHaveBeenCalled();
+    expect(pause).toHaveBeenCalledTimes(4);
+    fireEvent.play(player!);
+    expect(pause).toHaveBeenCalledTimes(4);
+    unmount();
+    expect(pause).toHaveBeenCalledTimes(5);
+    expect(disconnect).toHaveBeenCalledOnce();
+  },
+);

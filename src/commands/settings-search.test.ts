@@ -70,6 +70,51 @@ describe("settings search metadata", () => {
     ])
       expect(searchSettings(query, createTranslator(en))[0]?.id).toBe("skin");
   });
+  it("finds startup, background operation and multiple windows in shared settings", () => {
+    for (const [query, id] of [
+      ["登录", "autostart"],
+      ["后台", "background"],
+      ["多窗口", "windows"],
+    ] as const)
+      expect(
+        searchSettings(query, createTranslator(zhCN)).map((entry) => entry.id),
+      ).toContain(id);
+    for (const [query, id] of [
+      ["autostart", "autostart"],
+      ["keep running", "background"],
+      ["second window", "windows"],
+    ] as const)
+      expect(
+        searchSettings(query, createTranslator(en)).map((entry) => entry.id),
+      ).toContain(id);
+  });
+
+  it("finds the host network mode through translated choices and bilingual aliases", () => {
+    for (const query of ["代理", "直连", "直链", "网络", "系统代理"])
+      expect(searchSettings(query, createTranslator(zhCN))).toContainEqual(
+        expect.objectContaining({
+          id: "networkMode",
+          anchor: "settings-networkMode",
+        }),
+      );
+    for (const query of ["proxy", "direct", "network", "system proxy"])
+      expect(searchSettings(query, createTranslator(en))).toContainEqual(
+        expect.objectContaining({
+          id: "networkMode",
+          anchor: "settings-networkMode",
+        }),
+      );
+    for (const dictionary of [zhCN, en]) {
+      const t = createTranslator(dictionary);
+      for (const key of [
+        "settings.networkModeSystem",
+        "settings.networkModeDirect",
+      ] as const)
+        expect(searchSettings(t(key), t).map((entry) => entry.id)).toContain(
+          "networkMode",
+        );
+    }
+  });
 
   it("scrolls and transfers focus to the matching setting", () => {
     const target = document.createElement("section");
@@ -84,5 +129,24 @@ describe("settings search metadata", () => {
     });
     expect(target).toHaveFocus();
     expect(focusSetting("missing")).toBe(false);
+  });
+  it("finds update checks, the startup preference and current version in both languages", () => {
+    for (const [query, id, anchor] of [
+      ["检查更新", "updates", "settings-updates-check"],
+      ["自动更新", "autoUpdates", "settings-updates-auto"],
+      ["版本", "version", "settings-updates-version"],
+    ] as const) {
+      expect(searchSettings(query, createTranslator(zhCN))).toContainEqual(
+        expect.objectContaining({ id, anchor }),
+      );
+    }
+    for (const [query, id] of [
+      ["check for updates", "updates"],
+      ["automatic updates", "autoUpdates"],
+      ["version", "version"],
+    ] as const)
+      expect(
+        searchSettings(query, createTranslator(en)).map((entry) => entry.id),
+      ).toContain(id);
   });
 });

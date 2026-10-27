@@ -125,7 +125,7 @@ it("sorts the whole model and limits rendered rows in virtual mode", () => {
   expect(
     within(screen.getByRole("table")).getAllByRole("row")[1],
   ).toHaveTextContent("Demo 10000");
-  fireEvent.click(screen.getByLabelText("Virtual scrolling"));
+  fireEvent.click(screen.getByLabelText("Continuous scrolling"));
   expect(screen.getByRole("table")).toHaveAttribute("aria-rowcount", "10001");
   expect(
     within(screen.getByRole("table")).getAllByRole("row").length,

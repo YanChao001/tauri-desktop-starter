@@ -58,6 +58,8 @@
   --surface-muted: oklch(0.97 0 0);
   --app-chrome-height: 40px;
   --app-font-sans: "Geist Variable", sans-serif;
+  --control-input-font-size: 1rem;
+  --control-input-line-height: 1.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -91,6 +93,14 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* 文本输入按宿主视口切换字号与行高，隔离扩展文档沿用同一组 token。 */
+@media (min-width: 48rem) {
+  :root {
+    --control-input-font-size: 0.875rem;
+    --control-input-line-height: 1.25rem;
+  }
 }
 
 .dark {
@@ -321,9 +331,20 @@ html[data-background="plain"] {
   --skin-card-opacity: 100%;
 }
 
-/* 通知说明沿用应用语义色，避免系统主题与应用主题不同时使用固定灰色。 */
+/* 通知继承应用的字体、字号和语义色，与页面外观偏好保持一致。 */
+.toaster[data-sonner-toaster] {
+  font-family: var(--font-sans);
+}
+.toaster .cn-toast[data-styled="true"] {
+  font-size: 0.8125rem;
+}
 .toaster .cn-toast[data-styled="true"] [data-description] {
   color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.toaster .cn-toast[data-styled="true"] :is([data-button], [data-cancel]) {
+  font-family: inherit;
+  font-size: 0.75rem;
 }
 
 .app-shell {
@@ -453,6 +474,16 @@ html[data-motion="reduced"] *::after {
 }
 ::view-transition-new(root) {
   z-index: 2;
+}
+
+/* next-themes 暂停颜色过渡时，主题按钮仍保留同一日月变换。 */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-motion="full"] [data-theme-control] > svg {
+    transition:
+      transform 220ms ease-in-out,
+      rotate 220ms ease-in-out,
+      scale 220ms ease-in-out !important;
+  }
 }
 
 /* 原生滚动配合同一套无箭头细轨道；渐变只改变颜色，不改变布局宽度。 */

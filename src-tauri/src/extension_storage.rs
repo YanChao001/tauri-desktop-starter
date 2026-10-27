@@ -75,16 +75,7 @@ fn check_stopped(stop: Option<&AtomicBool>) -> NativeResult<()> {
 }
 
 fn valid_key(key: &str) -> bool {
-    !key.is_empty()
-        && key.len() <= MAX_KEY_BYTES
-        && key
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && key.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
-        && key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    !key.is_empty() && key.len() <= MAX_KEY_BYTES && !key.chars().any(char::is_control)
 }
 
 impl ExtensionStorageStore {
@@ -235,7 +226,7 @@ impl ExtensionStorageStore {
                 for (key, value) in changes {
                     if !valid_key(&key) {
                         return Err(invalid(
-                            "Storage keys require 1 to 128 ASCII slug characters",
+                            "Storage keys require 1 to 128 bytes without control characters",
                         ));
                     }
                     if let Some(value) = value {
@@ -458,6 +449,27 @@ mod tests {
     }
 
     #[test]
+    fn bounded_unicode_and_namespaced_keys_stay_inside_the_plugin_document() {
+        let temporary = crate::extension_paths::temporary_directory();
+        let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
+        let keys = [
+            "上次搜索",
+            "user/preferences",
+            "_draft",
+            "field name",
+            "../literal",
+        ];
+        let changes = keys
+            .iter()
+            .map(|key| ((*key).to_owned(), Some(json!(true))))
+            .collect();
+        let saved = store.patch(ID, 0, changes).unwrap();
+        assert_eq!(store.snapshot(ID).unwrap(), saved);
+        assert!(keys.iter().all(|key| saved.values.contains_key(*key)));
+        assert_eq!(std::fs::read_dir(&store.root).unwrap().count(), 1);
+    }
+
+    #[test]
     fn quotas_and_keys_fail_without_changing_existing_data() {
         let temporary = crate::extension_paths::temporary_directory();
         let store = ExtensionStorageStore::new(temporary.path().join("storage"), false);
@@ -472,17 +484,7 @@ mod tests {
                 .code,
             ErrorCode::InputTooLong
         );
-        for key in [
-            "",
-            ".",
-            "..",
-            "../escape",
-            "field name",
-            "你好",
-            "-name",
-            "name_",
-            "a\0b",
-        ] {
+        for key in ["", "a\0b", "line\nbreak"] {
             assert_eq!(
                 store.patch(ID, 1, changes(key, None)).unwrap_err().code,
                 ErrorCode::InvalidArgument
@@ -570,7 +572,7 @@ mod tests {
                 ErrorCode::StorageCorrupt,
             ),
             (
-                json!({"schemaVersion": 1, "extensionId": ID, "revision": 1, "values": {"../invalid": true}}),
+                json!({"schemaVersion": 1, "extensionId": ID, "revision": 1, "values": {"invalid\u{0}key": true}}),
                 ErrorCode::StorageCorrupt,
             ),
             (

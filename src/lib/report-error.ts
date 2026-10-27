@@ -19,14 +19,6 @@ function redact(text: string) {
     .replace(/(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\n)]+/g, "[local path]")
     .replace(/\/(?:Users|home)\/[^/\s]+/g, "/[home]");
 }
-// UTF-8 单个字符最多占四字节，必须遵守原生传输边界的字节限制
-function bounded(text: string, bytes: number) {
-  const encoded = new TextEncoder().encode(text);
-  if (encoded.length <= bytes) return text;
-  let end = bytes;
-  while ((encoded[end]! & 0xc0) === 0x80) end--;
-  return new TextDecoder().decode(encoded.subarray(0, end));
-}
 /** 限流且不递归上报日志自身的错误。 */
 export function reportClientError(
   error: unknown,
@@ -41,10 +33,8 @@ export function reportClientError(
   if (count++ >= 20) return;
   const stack = error instanceof Error ? error.stack : undefined;
   void recordFrontendError({
-    message: bounded(redact(errorMessage(error)), 4000),
-    stack: stack ? bounded(redact(stack), 8000) : undefined,
-    componentStack: componentStack
-      ? bounded(redact(componentStack), 8000)
-      : undefined,
+    message: redact(errorMessage(error)),
+    stack: stack ? redact(stack) : undefined,
+    componentStack: componentStack ? redact(componentStack) : undefined,
   }).catch(() => {});
 }

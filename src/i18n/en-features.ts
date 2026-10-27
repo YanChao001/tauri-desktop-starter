@@ -8,8 +8,8 @@ export const enFeatures = {
   "updates.restartDescription":
     "Restarting closes all application windows. Save any notes you are editing first.",
   "nav.desktop": "Desktop",
-  "nav.database": "Local database",
-  "nav.diagnostics": "Diagnostics",
+  "nav.database": "Local notes",
+  "nav.diagnostics": "Diagnostics & recovery",
   "nav.updates": "Updates",
   "commands.title": "Quick actions",
   "commands.description":
@@ -22,9 +22,9 @@ export const enFeatures = {
   "commands.groupWindow": "Window",
   "commands.groupHelp": "Help",
   "commands.groupTools": "Tools",
-  "commands.openDesktop": "Open desktop integration",
+  "commands.openDesktop": "Open window and startup settings",
   "commands.openWindow": "Open a second window",
-  "commands.openDatabase": "Open database",
+  "commands.openDatabase": "Open local notes",
   "commands.checkUpdates": "Check for updates",
   "commands.copyDiagnostics": "Copy diagnostics",
   "layout.sidebar": "Navigation",
@@ -39,7 +39,7 @@ export const enFeatures = {
   "settings.searchResults": "Found {count} settings",
   "settings.appMode": "Application mode",
   "settings.appModeDescription":
-    "Minimal mode hides component, motion and IPC demos while retaining all desktop features.",
+    "Minimal mode hides demos, including interaction and motion, while keeping files, notes, and all other desktop features.",
   "settings.modeDemo": "Full showcase",
   "settings.modeMinimal": "Minimal workspace",
   "settings.sidebarWidth": "Sidebar width",
@@ -62,9 +62,12 @@ export const enFeatures = {
   "common.open": "Open",
   "home.title": "Welcome to {name}",
   "home.settings": "Personalize settings",
-  "home.desktop": "Manage desktop features",
+  "home.desktop": "Manage windows and startup",
   "home.database": "Open local notes",
   "desktop.title": "Desktop integration",
+  "desktop.settingsTitle": "Windows & startup",
+  "desktop.browserOnly":
+    "Launch at login, background operation and multiple windows require the desktop app. These options cannot be changed in the browser.",
   "desktop.description":
     "Manage startup, background behavior and windows using real device status.",
   "desktop.autostart": "Launch at login",
@@ -83,12 +86,13 @@ export const enFeatures = {
   "desktop.openWindow": "Open a second window",
   "desktop.windowOpen": "The second window is open",
   "desktop.changed": "Desktop settings updated",
-  "database.title": "Local database",
+  "database.title": "Local notes",
   "database.description":
-    "Store notes in SQLite. Create, search, edit and delete notes with conflict detection across windows.",
+    "Create, search, and edit notes on your device. If multiple windows change the same note, you will be asked to resolve the conflict.",
   "database.search": "Search notes",
   "database.searchPlaceholder": "Search titles or content…",
   "database.new": "New note",
+  "database.createNote": "Create a note",
   "database.titleLabel": "Title",
   "database.bodyLabel": "Content",
   "database.titlePlaceholder": "Name this note",
@@ -105,24 +109,27 @@ export const enFeatures = {
   "database.discardDescription": "Switching notes discards your current edits.",
   "database.discard": "Discard changes",
   "database.version": "Version {version}",
-  "diagnostics.title": "Diagnostics and logs",
+  "diagnostics.title": "Diagnostics & recovery",
   "diagnostics.description":
-    "Review runtime status and explicitly copy redacted diagnostics when reporting a problem. Nothing is uploaded automatically.",
+    "Check app and storage status, copy a problem report, or inspect backups and recover from a startup problem. Reports are never uploaded automatically; original files are preserved before recovery.",
+  "diagnostics.details": "View detailed report and logs",
   "diagnostics.copy": "Copy diagnostics",
   "diagnostics.copied": "Diagnostics copied",
   "diagnostics.refresh": "Refresh diagnostics",
   "diagnostics.preview": "Diagnostics preview",
   "diagnostics.logs":
-    "Frontend and native errors are recorded in app logs. Copied diagnostics exclude note content and full user paths.",
+    "Activity logs are stored on your device. Copied reports exclude note content and full user paths.",
   "updates.title": "Application updates",
+  "updates.browserOnly":
+    "Update checks, installation and automatic checks require the desktop app. View version history for release information in the browser.",
   "updates.description":
-    "Check, download and install signature-verified updates. The Windows installer closes the app and may restart it automatically; other platforms can restart after installation.",
+    "Find new versions and choose when to download and install them.",
   "updates.installConfirmTitle": "Save your work before installing",
   "updates.installConfirmDescription":
     "Unsaved work in every window is checked again before installation. On Windows the installer closes the app and may reopen it. A portable Windows app becomes an installed app; download manually to keep it portable.",
   "updates.check": "Check for updates",
   "updates.checking": "Checking…",
-  "updates.latest": "You are using the latest version",
+  "updates.latest": "Up to date",
   "updates.available": "Version {version} is available",
   "updates.current": "Current version: {version}",
   "updates.install": "Download and install",
@@ -132,7 +139,7 @@ export const enFeatures = {
   "updates.restart": "Restart application",
   "updates.releaseNotes": "Release notes",
   "updates.notConfigured":
-    "The update signing public key is not configured. Complete deployment using the release guide before checking for updates.",
+    "In-app updates are unavailable. View version history for new versions.",
   "updates.configuration": "Update preferences",
   "updates.configurationDescription":
     "Get stable releases and verify the update package's origin and integrity before installation.",
@@ -140,29 +147,29 @@ export const enFeatures = {
   "updates.autoCheckHint":
     "Check in the background after startup and notify you of new versions. You choose when to download and install.",
   "updates.viewUpdate": "View update",
-  "updates.releases": "View GitHub releases",
+  "updates.releases": "View version history",
   "updates.lastChecked": "Last successful check: {time}",
-  "updates.idle":
-    "Updates have not been checked yet. Select Check for updates to get the current status.",
+  "updates.idle": "Updates have not been checked yet",
   "updates.checkTimeout":
-    "The update check timed out. Check your connection and retry, or download from GitHub releases.",
+    "The update check timed out. Check your connection and retry, or download from version history.",
   "updates.feedUnavailable":
-    "The update source has not provided an available update manifest yet. Retry later or view installers on GitHub releases.",
+    "Update information is not available yet. Retry later or view installers in version history.",
   "updates.platformUnavailable":
-    "This release has no update for your system and installation type. View available packages on GitHub releases.",
-  "updates.endpoint": "Release source",
-  "updates.endpointDisabled": "Updates are disabled for this deployment",
-  "updates.keyConfigured": "Signing public key configured",
-  "updates.keyMissing": "Signing public key required",
+    "No update is available for your system and installation type. View packages in version history.",
+  "updates.endpoint": "Update source",
+  "updates.endpointDisabled":
+    "Automatic updates have not been enabled for this app",
+  "updates.keyConfigured": "Update verification configured",
+  "updates.keyMissing": "Update verification not configured",
   "errors.VALIDATION": "Please check the input and try again",
   "errors.CONFLICT":
     "Another window changed this data. Refresh and merge your changes.",
   "errors.SETTINGS_CONFLICT": "Another window updated settings. Please retry.",
   "errors.NOT_FOUND": "The requested data no longer exists",
-  "errors.DATABASE": "Database operation failed",
+  "errors.DATABASE": "Could not access or update local data. Please retry.",
   "errors.IO": "Could not read or write application data",
   "errors.UPDATE_NOT_CONFIGURED":
-    "Configure the release endpoint and update signing public key first",
+    "Automatic updates have not been enabled for this app. Visit the releases page for new versions.",
   "errors.UPDATE": "Update operation failed",
   "errors.UNSUPPORTED": "This operation is unavailable on this platform",
   "errors.INTERNAL":

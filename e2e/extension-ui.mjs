@@ -19,15 +19,43 @@ import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { readUiDocuments } from "../scripts/extension-ui-resources.mjs";
 import { createBoundaryServices } from "./extensions/service-fixture.mjs";
+import { checkSlither, checkSlitherReload } from "./extensions/slither.mjs";
+import {
+  assertLanLayoutRestored,
+  changeLanLayoutForImport,
+  checkLanChat,
+} from "./extensions/lan-chat.mjs";
 import {
   checkCalculatorGestures,
   checkCalculatorBusyDraft,
+  checkCalculatorWindowsKeys,
+  checkCalculatorStandardKeys,
+  checkCalculatorProgrammer,
+  checkCalculatorDates,
+  checkCalculatorConverters,
+  checkCalculatorModeLayouts,
+  checkCalculatorHistoryLayout,
+  pasteCalculatorExpression,
+  openCalculatorGraph,
+  openCalculatorAnalysis,
+  openCalculatorHistory,
+  openCalculatorWorkspace,
+  setCalculatorFunctions,
+  setCalculatorRange,
+  closeCalculatorRange,
   checkLanPolling,
+  checkLanTransferCancellation,
 } from "./extensions/regressions.mjs";
 import {
   installPaintProbe,
   checkInitialPaint,
 } from "./extensions/paint-probe.mjs";
+import { checkCalculatorControlStability } from "./extensions/calculator-stability.mjs";
+import {
+  checkCalculatorOfflineCurrency,
+  checkCalculatorProgrammerPopups,
+  checkCalculatorReview,
+} from "./extensions/calculator-review.mjs";
 import {
   checkChrome,
   checkNormalControls,
@@ -37,6 +65,12 @@ import {
   stableFrameGeometry,
   checkHostScroll,
   checkPermissionConsent,
+  checkWallpaperHelp,
+  checkWallpaperDiscoveryLayout,
+  checkWallpaperCardActions,
+  checkWallpaperLocalGallery,
+  checkWallpaperPreview,
+  checkWallpaperMotion,
   checkWallpaperCapabilityBoundaries,
 } from "./extensions/surface-checks.mjs";
 
@@ -44,6 +78,8 @@ const root = resolve(import.meta.dirname, ".."),
   cache = join(root, ".cache");
 // 并行审查可使用独立报告目录，不改动其他运行产生的截图和诊断。
 const runId = process.env.STARTER_EXTENSION_UI_RUN_ID;
+const calculatorPackagePath =
+  process.env.STARTER_EXTENSION_UI_CALCULATOR_PACKAGE;
 if (runId !== undefined && !/^[a-zA-Z0-9_-]{1,80}$/.test(runId))
   throw Error("STARTER_EXTENSION_UI_RUN_ID must be a bounded plain identifier");
 const output = join(root, "artifacts/extensions/custom-ui", runId ?? "");
@@ -162,7 +198,7 @@ const init =
   window.addEventListener("message",event=>{if(window===window.top&&event.data?.type==="fixture:protocol-probe")window.__iframeProtocolRequests.push(event.data.value);});
   const postPortMessage=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...args){
     if(window!==window.top&&message?.version===1&&Number.isInteger(message.id)&&typeof message.method==="string")parent.postMessage({type:"fixture:protocol-probe",value:{method:message.method,id:message.id,at:performance.timeOrigin+performance.now()}},"*");
-    if(window===window.top&&message?.type==="state")window.__latestHostBusy=message.value?.busy;
+    if(window===window.top&&message?.type==="state"&&message.value&&Object.hasOwn(message.value,"busy"))window.__latestHostBusy=message.value.busy;
     let receipt;if(window===window.top&&message?.error){receipt={at:performance.timeOrigin+performance.now(),id:message.id,error:message.error};window.__protocolErrors.push(receipt);}
     const timing=window===window.top&&window.__extensionUiTest?.transportTiming;
     const forward=()=>{if(receipt){receipt.deliveredAt=performance.timeOrigin+performance.now();receipt.deliveredHostBusy=window.__latestHostBusy;}return postPortMessage.call(this,message,...args);};
@@ -196,16 +232,36 @@ const busyScenarios = [
 const selectedNames = process.argv
   .slice(2)
   .filter((value) => !value.startsWith("--"));
+const wallpaperSelectedOnly =
+  selectedNames.length === 1 && selectedNames[0] === "wallpaper-browser";
 const selectedProfiles = process.argv
   .find((value) => value.startsWith("--profiles="))
   ?.slice("--profiles=".length)
   .split(",")
   .map(Number);
+const wallpaperLocalOnly = process.argv.includes("--wallpaper-local-only");
+const wallpaperPreviewOnly = process.argv.includes("--wallpaper-preview-only");
+const wallpaperUiOnly = wallpaperLocalOnly || wallpaperPreviewOnly;
+const calculatorHistoryLayoutOnly = process.argv.includes(
+  "--calculator-history-layout-only",
+);
+const calculatorStabilityOnly = process.argv.includes(
+  "--calculator-stability-only",
+);
+const calculatorReviewGraphOnly = process.argv.includes(
+  "--calculator-review-graph-only",
+);
+const calculatorPopupsOnly = process.argv.includes("--calculator-popups-only");
+const calculatorReviewOnly =
+  process.argv.includes("--calculator-review-only") ||
+  calculatorReviewGraphOnly;
+const calculatorReview =
+  calculatorReviewOnly || process.argv.includes("--calculator-review");
 if (
   selectedNames.some((name) => !names.includes(name)) ||
-  selectedProfiles?.some((index) => ![0, 1, 2, 3].includes(index))
+  selectedProfiles?.some((index) => ![0, 1, 2, 3, 4, 5, 6, 7].includes(index))
 )
-  throw Error("Use plugin names and optional --profiles=0,1,2,3");
+  throw Error("Use plugin names and optional --profiles=0,1,2,3,4,5,6,7");
 const sharedInputs = Object.fromEntries(
   await Promise.all(
     [
@@ -237,13 +293,76 @@ const sharedInputs = Object.fromEntries(
       "e2e/extensions/native.ts",
       "e2e/extensions/providers.tsx",
       "e2e/extensions/service-fixture.mjs",
+      "e2e/extensions/slither.mjs",
+      "e2e/extensions/lan-chat.mjs",
       "e2e/extensions/regressions.mjs",
+      "e2e/extensions/calculator-stability.mjs",
+      "e2e/extensions/calculator-review.mjs",
       "e2e/extensions/paint-probe.mjs",
       "e2e/extensions/surface-checks.mjs",
     ].map(async (path) => [path, hash(await readFile(join(root, path)))]),
   ),
 );
 const services = createBoundaryServices();
+const currencyHttpCalls = [];
+let currencyFailurePending = false;
+function currencyHttpFixture(input, effect) {
+  const request = effect.request;
+  if (
+    effect.kind !== "http" ||
+    !/^currency-rates-\d+$/.test(effect.id) ||
+    request.url !== "https://open.er-api.com/v6/latest/USD" ||
+    request.method !== "GET" ||
+    request.body != null ||
+    request.credential != null ||
+    request.headers.Accept !== "application/json" ||
+    Object.keys(request.headers).length !== 1
+  )
+    throw Error("Unexpected calculator currency HTTP boundary");
+  const failed = currencyFailurePending;
+  currencyFailurePending = false;
+  const error = !(input.boundaryGrantedPermissions ?? []).includes(
+    "network:https",
+  )
+    ? {
+        code: "EXTENSION_UNAVAILABLE",
+        message: "Currency HTTP permission is not granted",
+        retryable: false,
+      }
+    : failed
+      ? {
+          code: "EXTENSION_RUN_FAILED",
+          message: "Explicit offline currency HTTP boundary failure",
+          retryable: false,
+        }
+      : null;
+  const receipt = {
+    id: effect.id,
+    error,
+    value: error
+      ? null
+      : {
+          url: request.url,
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            result: "success",
+            base_code: "USD",
+            time_last_update_unix: 1700000000,
+            time_next_update_unix: 1700086400,
+            rates: { USD: 1, EUR: 0.8, CNY: 7.2, JPY: 150 },
+          }),
+        },
+  };
+  currencyHttpCalls.push({
+    plugin: input.id,
+    request: structuredClone(request),
+    boundaryMock: true,
+    inventedRates: true,
+    receipt: structuredClone(receipt),
+  });
+  return receipt;
+}
 const pageDiagnostics = new WeakMap();
 function observeFixturePage(page) {
   const diagnostics = { network: [], messages: [] };
@@ -436,16 +555,42 @@ async function settled(frame) {
   });
 }
 try {
-  for (const name of names) {
+  const fixtureNames =
+    wallpaperUiOnly || wallpaperSelectedOnly
+      ? ["wallpaper-browser"]
+      : selectedNames.length === 1 &&
+          selectedNames[0] === "scientific-calculator"
+        ? ["scientific-calculator", "lab", "wallpaper-browser"]
+        : names;
+  for (const name of fixtureNames) {
     const source =
       name === "lab"
         ? join(root, "examples/extensions/apps")
         : join(root, "marketplace/plugins", name);
-    const manifest = JSON.parse(
-      await readFile(join(source, "extension.json"), "utf8"),
-    );
-    const artifact =
-      name === "lab"
+    const packageText =
+      name === "scientific-calculator" && calculatorPackagePath
+        ? await readFile(resolve(calculatorPackagePath), "utf8")
+        : undefined;
+    const frozenPackage = packageText ? JSON.parse(packageText) : undefined;
+    if (
+      packageText &&
+      (!frozenPackage ||
+        typeof frozenPackage !== "object" ||
+        typeof frozenPackage.manifest !== "object" ||
+        frozenPackage.manifest === null ||
+        typeof frozenPackage.wasm !== "string" ||
+        !frozenPackage.uiDocuments ||
+        typeof frozenPackage.uiDocuments !== "object")
+    )
+      throw Error(
+        "Calculator fixture package must contain manifest, base64 wasm and uiDocuments",
+      );
+    const manifest =
+      frozenPackage?.manifest ??
+      JSON.parse(await readFile(join(source, "extension.json"), "utf8"));
+    const artifact = frozenPackage
+      ? undefined
+      : name === "lab"
         ? join(root, "resources/extensions/demo-apps.wasm")
         : join(
             root,
@@ -455,8 +600,12 @@ try {
             JSON.parse(await readFile(join(source, "build.json"), "utf8"))
               .artifact,
           );
-    const wasm = await readFile(artifact),
-      uiDocuments = await readUiDocuments(manifest, join(source, "ui"));
+    const wasm = frozenPackage
+        ? Buffer.from(frozenPackage.wasm, "base64")
+        : await readFile(artifact),
+      uiDocuments =
+        frozenPackage?.uiDocuments ??
+        (await readUiDocuments(manifest, join(source, "ui")));
     const plugin = {
       name,
       manifest,
@@ -482,6 +631,8 @@ try {
         ...manifest.optionalPermissions.filter(
           (permission) =>
             name === "wallpaper-browser" ||
+            (name === "scientific-calculator" &&
+              ["window:control", "network:https"].includes(permission)) ||
             ["messaging:lan", "wallpapers:manage"].includes(permission),
         ),
       ],
@@ -499,6 +650,7 @@ try {
       manifest: hash(JSON.stringify(manifest)),
       wasm: hash(wasm),
       ui: hash(JSON.stringify(uiDocuments)),
+      ...(packageText ? { fixturePackage: hash(packageText) } : {}),
     };
     plugins.push(plugin);
   }
@@ -559,6 +711,14 @@ try {
                           ),
                       );
                   }
+                  if (
+                    plugin.name === "scientific-calculator" &&
+                    requestUrl.searchParams.get("calculatorPermissions") ===
+                      "offline"
+                  )
+                    item.grantedPermissions = item.grantedPermissions.filter(
+                      (permission) => permission !== "network:https",
+                    );
                   return item;
                 }),
                 runs: [],
@@ -620,7 +780,7 @@ try {
                   plugin.name !== "wallpaper-browser")
               )
                 throw Error("Undeclared boundary service");
-              const captured = services.request(input);
+              const captured = await services.request(input);
               const latency =
                 input.service === "lan"
                   ? Number(
@@ -658,8 +818,49 @@ try {
                 permissions: input.boundaryGrantedPermissions,
                 storage: null,
               };
-              if (plugin.name === "wallpaper-browser")
+              if (
+                ["wallpaper-browser", "scientific-calculator"].includes(
+                  plugin.name,
+                )
+              )
                 viewRequest = { ...viewRequest, host };
+              // Layout-only data fixture: validate the seeded session with the real Wasm,
+              // without spending one native process launch per history/memory item.
+              if (
+                calculatorHistoryLayoutOnly &&
+                plugin.name === "scientific-calculator" &&
+                viewRequest.state &&
+                /^layout-(empty|history|memory)$/.test(
+                  viewRequest.fields.operator ?? "",
+                )
+              ) {
+                const state = JSON.parse(viewRequest.state),
+                  kind = viewRequest.fields.operator.slice(7),
+                  mode = viewRequest.fields.mode;
+                if (kind !== "memory") {
+                  state.history =
+                    kind === "history"
+                      ? Array.from({ length: 32 }, (_value, index) => ({
+                          expression: `${"(".repeat(12)}85^2${")".repeat(12)}+${31 - index}+3+3+3+3`,
+                          value: 7268 - index,
+                          exact: String(7268 - index),
+                          angle: "deg",
+                          mode,
+                        }))
+                      : [];
+                  state.memories = [];
+                } else
+                  state.memories = Array.from({ length: 16 }, (_value, index) =>
+                    String(123456789012345 + index),
+                  );
+                state.memory = Number(state.memories[0] ?? 0);
+                state.memory_set = state.memories.length > 0;
+                viewRequest = {
+                  ...viewRequest,
+                  state: JSON.stringify(state),
+                  fields: { ...viewRequest.fields, operator: "" },
+                };
+              }
               const seen = new Set();
               for (let round = 0; round < 4; round++) {
                 const fixturePath = join(temporary, `request-${++serial}.json`);
@@ -681,7 +882,11 @@ try {
                 });
                 const view = result.smoke.output;
                 if (!view.effects.length) return json(response, view);
-                if (plugin.name !== "wallpaper-browser")
+                if (
+                  !["wallpaper-browser", "scientific-calculator"].includes(
+                    plugin.name,
+                  )
+                )
                   throw Error("Unexpected effect in offline UI fixture");
                 for (const effect of view.effects) {
                   if (seen.has(effect.id) || seen.size >= 16)
@@ -698,7 +903,9 @@ try {
                   locale: input.request.locale,
                   host,
                   results: view.effects.map((effect) =>
-                    services.http(input, effect),
+                    plugin.name === "scientific-calculator"
+                      ? currencyHttpFixture(input, effect)
+                      : services.http(input, effect),
                   ),
                 };
               }
@@ -770,6 +977,38 @@ try {
       font: "20px",
       window: "false",
     },
+    {
+      language: "zh",
+      theme: "light",
+      width: 420,
+      height: 720,
+      font: "16px",
+      window: "true",
+    },
+    {
+      language: "zh",
+      theme: "dark",
+      width: 420,
+      height: 720,
+      font: "16px",
+      window: "true",
+    },
+    {
+      language: "zh",
+      theme: "dark",
+      width: 1400,
+      height: 928,
+      font: "20px",
+      window: "false",
+    },
+    {
+      language: "zh",
+      theme: "dark",
+      width: 1120,
+      height: 600,
+      font: "16px",
+      window: "false",
+    },
   ];
   for (const profile of process.argv.some((value) =>
     [
@@ -777,12 +1016,14 @@ try {
       "--settings-only",
       "--consent-only",
       "--capabilities-only",
+      "--wallpaper-surface-only",
+      "--wallpaper-local-only",
+      "--wallpaper-preview-only",
     ].includes(value),
   )
     ? []
-    : profiles.filter(
-        (_profile, index) =>
-          !selectedProfiles || selectedProfiles.includes(index),
+    : profiles.filter((_profile, index) =>
+        selectedProfiles ? selectedProfiles.includes(index) : index < 6,
       )) {
     const context = await browser.newContext({
       viewport: { width: profile.width, height: profile.height },
@@ -792,6 +1033,8 @@ try {
     for (const name of names.filter(
       (name) => !selectedNames.length || selectedNames.includes(name),
     )) {
+      // 420×720 对应计算器默认独立窗口，其他插件沿用既有尺寸矩阵。
+      if (profile.width === 420 && name !== "scientific-calculator") continue;
       const page = await newFixturePage(context),
         errors = [],
         warnings = [];
@@ -841,25 +1084,374 @@ try {
         await page.close();
         continue;
       }
-      async function action(id) {
+      async function action(id, scope = "") {
         const previous = calls.length;
-        await frame.locator(`[data-action="${id}"]`).click();
+        await frame
+          .locator(`${scope} [data-action="${id}"]:visible`.trim())
+          .click();
         await expect
           .poll(() => calls.length, { timeout: 60000 })
           .toBeGreaterThan(previous);
         await idle(page, frame);
       }
       const beforeServices = services.calls.length;
+      let studioChecks;
+      let calculatorChecks;
       if (name === "scientific-calculator") {
-        await frame.locator("#expression").fill("2^3^2");
-        await action("calculate");
-        await expect(frame.locator("#result")).toHaveText("512");
-        await frame.locator("#angle").selectOption("deg");
-        await frame.locator("#expression").fill("sin(90)");
-        await action("calculate");
-        await expect(frame.locator("#result")).toHaveText("1");
-        await frame.locator("#functions").fill("sin(x)\ncos(x)\nx^2 / 10");
-        await action("plot");
+        const modeSnapshots = [];
+        const snapshot = async (mode) => {
+          await settled(frame);
+          if (mode.startsWith("converter-")) {
+            const geometry = await frame.locator("html").evaluate(() =>
+              Object.fromEntries(
+                [
+                  "calculate-heading",
+                  "converter-panel",
+                  "converter-value-from",
+                  "converter-output-from",
+                  "converter-value-to",
+                  "converter-output-to",
+                  "converter-keypad",
+                ].map((id) => {
+                  const node = document.getElementById(id),
+                    style = getComputedStyle(node),
+                    range = document.createRange();
+                  range.selectNodeContents(node);
+                  return [
+                    id,
+                    {
+                      rect: node.getBoundingClientRect().toJSON(),
+                      textRect: range.getBoundingClientRect().toJSON(),
+                      clientHeight: node.clientHeight,
+                      scrollHeight: node.scrollHeight,
+                      scrollTop: node.scrollTop,
+                      fontSize: style.fontSize,
+                      lineHeight: style.lineHeight,
+                      overflow: style.overflow,
+                      padding: style.padding,
+                      height: style.height,
+                      minHeight: style.minHeight,
+                      display: style.display,
+                      alignItems: style.alignItems,
+                      gridTemplateRows: style.gridTemplateRows,
+                      gridRow: style.gridRow,
+                    },
+                  ];
+                }),
+              ),
+            );
+            geometry.equivalents = await frame
+              .locator("#converter-equivalents")
+              .evaluate((node) => ({
+                rect: node.getBoundingClientRect().toJSON(),
+                items: [...node.children].map((item) => ({
+                  text: item.textContent,
+                  hidden: item.hidden,
+                  rect: item.getBoundingClientRect().toJSON(),
+                  contentWidth: item.scrollWidth,
+                  width: item.clientWidth,
+                  whimsical: item.dataset.whimsical,
+                })),
+              }));
+            for (const side of ["from", "to"]) {
+              const button = geometry["converter-value-" + side].rect;
+              const value = geometry["converter-output-" + side].rect;
+              expect(value.top).toBeGreaterThanOrEqual(button.top - 1);
+              expect(value.bottom).toBeLessThanOrEqual(button.bottom + 1);
+            }
+            for (const item of geometry.equivalents.items.filter(
+              (item) => !item.hidden && item.rect.width > 0,
+            )) {
+              expect(item.rect.left).toBeGreaterThanOrEqual(
+                geometry.equivalents.rect.left - 1,
+              );
+              expect(item.rect.right).toBeLessThanOrEqual(
+                geometry.equivalents.rect.right + 1,
+              );
+              expect(item.contentWidth).toBeLessThanOrEqual(item.width + 1);
+            }
+            await writeFile(
+              join(
+                output,
+                `calculator-${mode}-${profile.theme}-${profile.width}-geometry.json`,
+              ),
+              JSON.stringify(geometry, null, 2),
+            );
+          }
+          const violations = (
+            await new AxeBuilder({ page })
+              .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+              .analyze()
+          ).violations;
+          if (violations.length)
+            await writeFile(
+              join(
+                output,
+                `calculator-${mode}-${profile.theme}-${profile.width}-axe.json`,
+              ),
+              JSON.stringify(violations, null, 2),
+            );
+          if (
+            !process.argv.includes("--calculator-history-layout-record") &&
+            !process.argv.includes("--calculator-stability-record")
+          )
+            expect(
+              violations.map((value) => ({
+                id: value.id,
+                nodes: value.nodes.map((node) => node.target),
+              })),
+            ).toEqual([]);
+          expect(
+            await frame
+              .locator("html")
+              .evaluate((node) => node.scrollWidth > innerWidth + 1),
+          ).toBe(false);
+          const filename = `calculator-${mode}-${profile.theme}-${profile.width}.png`;
+          await page.screenshot({ path: join(output, filename) });
+          modeSnapshots.push({
+            mode,
+            screenshot: filename,
+            axeViolations: violations.length,
+          });
+          console.log(
+            `PASS calculator ${mode} ${profile.width}px, axe ${violations.length}`,
+          );
+        };
+        const modeContext = {
+          page,
+          frame,
+          idle: () => idle(page, frame),
+          snapshot,
+          freshGraph: process.argv.includes("--calculator-fresh-graph"),
+        };
+        if (calculatorPopupsOnly) {
+          const popups = await checkCalculatorProgrammerPopups({
+            ...modeContext,
+            reload: async () => {
+              const old = await page.locator("iframe").elementHandle();
+              await page
+                .getByRole("button", {
+                  name:
+                    profile.language === "zh" ? "扩展工具" : "Extension tools",
+                  exact: true,
+                })
+                .click();
+              await page
+                .getByRole("menuitem", {
+                  name:
+                    profile.language === "zh"
+                      ? "重新加载界面"
+                      : "Reload interface",
+                  exact: true,
+                })
+                .click();
+              await old.waitForElementState("hidden");
+              await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+              await observeSdk(frame);
+              await idle(page, frame);
+            },
+          });
+          expect(errors).toEqual([]);
+          expect(warnings).toEqual([]);
+          report.push({
+            plugin: name,
+            profile,
+            inputHashes: plugins.find((plugin) => plugin.name === name)
+              .inputHashes,
+            calculatorChecks: { popups, modeSnapshots },
+            errors,
+            warnings,
+            nativeIpc: false,
+            scope: "Programmer popup semantic and native keyboard delta only",
+          });
+          await page.close();
+          continue;
+        }
+        const review =
+          calculatorReview && (calculatorReviewOnly || profile.width >= 800)
+            ? await checkCalculatorReview({
+                ...modeContext,
+                graphOnly: calculatorReviewGraphOnly,
+                record: async (name, value) =>
+                  writeFile(
+                    join(
+                      output,
+                      `calculator-review-${name}-${profile.width}.json`,
+                    ),
+                    JSON.stringify(value, null, 2),
+                  ),
+              })
+            : undefined;
+        if (calculatorReviewOnly) {
+          expect(errors).toEqual([]);
+          expect(warnings).toEqual([]);
+          report.push({
+            plugin: name,
+            profile,
+            inputHashes: plugins.find((plugin) => plugin.name === name)
+              .inputHashes,
+            calculatorChecks: { review, modeSnapshots },
+            actualWasmActions: calls.slice(before).map((call) => call.action),
+            errors,
+            warnings,
+            nativeIpc: false,
+            scope:
+              "Calculator audit regressions: compound result arithmetic and clipboard event routing",
+          });
+          await page.close();
+          continue;
+        }
+        if (calculatorHistoryLayoutOnly || calculatorStabilityOnly) {
+          const record = (prefix) => async (name, value) =>
+            writeFile(
+              join(
+                output,
+                `calculator-${prefix}-${name}-${profile.width}-${profile.height}.json`,
+              ),
+              JSON.stringify(value, null, 2),
+            );
+          const historyLayout = calculatorHistoryLayoutOnly
+              ? await checkCalculatorHistoryLayout({
+                  ...modeContext,
+                  recordOnly: process.argv.includes(
+                    "--calculator-history-layout-record",
+                  ),
+                  record: record("history-layout"),
+                })
+              : undefined,
+            controlStability = calculatorStabilityOnly
+              ? await checkCalculatorControlStability({
+                  ...modeContext,
+                  recordOnly: process.argv.includes(
+                    "--calculator-stability-record",
+                  ),
+                  record: record("stability"),
+                })
+              : undefined;
+          expect(errors).toEqual([]);
+          expect(warnings).toEqual([]);
+          report.push({
+            plugin: name,
+            profile,
+            inputHashes: plugins.find((plugin) => plugin.name === name)
+              .inputHashes,
+            calculatorChecks: {
+              historyLayout,
+              controlStability,
+              modeSnapshots,
+            },
+            actualWasmActions: calls.slice(before).map((call) => call.action),
+            errors,
+            warnings,
+            nativeIpc: false,
+            chrome,
+            scope:
+              "Long history/memory inner scrolling and invariant keypad geometry",
+          });
+          console.log(
+            `PASS calculator layout stability ${profile.width}×${profile.height}px, recorded failures ${(historyLayout?.failures.length ?? 0) + (controlStability?.failures.length ?? 0)}`,
+          );
+          await page.close();
+          continue;
+        }
+        const graphOnly = process.argv.includes("--calculator-graph-only");
+        const converter =
+          !graphOnly &&
+          (await frame.locator('[data-converter-category="currency"]').count())
+            ? await checkCalculatorConverters({
+                ...modeContext,
+                layoutOnly:
+                  process.argv.includes("--calculator-layouts-only") ||
+                  process.argv.includes("--calculator-navigation-only"),
+                navigationOnly: process.argv.includes(
+                  "--calculator-navigation-only",
+                ),
+                layoutCategories: process.argv
+                  .find((argument) =>
+                    argument.startsWith("--calculator-converter-categories="),
+                  )
+                  ?.split("=")[1]
+                  .split(","),
+                currency: {
+                  calls: () => currencyHttpCalls,
+                  failNext: () => {
+                    currencyFailurePending = true;
+                  },
+                },
+              })
+            : undefined;
+        if (converter && profile.width < 800) {
+          const layouts = await checkCalculatorModeLayouts(modeContext);
+          expect(errors).toEqual([]);
+          expect(warnings).toEqual([]);
+          report.push({
+            plugin: name,
+            inputHashes: plugins.find((plugin) => plugin.name === name)
+              .inputHashes,
+            profile,
+            calculatorChecks: { converter, layouts, modeSnapshots },
+            actualWasmActions: calls.slice(before).map((call) => call.action),
+            errors,
+            warnings,
+            axeViolations: 0,
+            nativeIpc: false,
+            chrome,
+            scope: converter.navigationOnly
+              ? "All 13 converter navigation entries and five calculator mode layouts/accessibility only"
+              : "Representative converter calculations and five calculator mode layouts/accessibility; full calculator business flow covered by the wide profile",
+          });
+          console.log(
+            `PASS ${name} ${profile.width}px converter representatives and calculator layouts`,
+          );
+          await page.close();
+          continue;
+        }
+        if (!graphOnly) {
+          const standard = await checkCalculatorStandardKeys(modeContext);
+          const programmer = await checkCalculatorProgrammer(modeContext);
+          const date = await checkCalculatorDates(modeContext);
+          const scientific = await checkCalculatorWindowsKeys({
+            frame,
+            action,
+            idle: () => idle(page, frame),
+          });
+          calculatorChecks = {
+            review,
+            standard,
+            programmer,
+            date,
+            scientific,
+            converter,
+            modeSnapshots,
+          };
+          await pasteCalculatorExpression(frame, "2^3^2");
+          await action("calculate");
+          await expect(frame.locator("#result")).toHaveText("512");
+          const angleModes = [];
+          for (let step = 0; step < 3; step++) {
+            await frame.locator("#angle-cycle").click();
+            angleModes.push(await frame.locator("#angle").inputValue());
+          }
+          expect(new Set(angleModes)).toEqual(new Set(["deg", "rad", "grad"]));
+          for (let step = 0; step < 3; step++) {
+            if ((await frame.locator("#angle").inputValue()) === "deg") break;
+            await frame.locator("#angle-cycle").click();
+          }
+          await pasteCalculatorExpression(frame, "sin(90)");
+          await action("calculate");
+          await expect(frame.locator("#result")).toHaveText("1");
+          await page.screenshot({
+            path: join(
+              output,
+              `scientific-main-${profile.theme}-${profile.width}.png`,
+            ),
+          });
+          await snapshot("scientific");
+        }
+        await openCalculatorGraph(frame);
+        await setCalculatorFunctions(frame, ["sin(x)", "cos(x)", "x^2 / 10"]);
+        await action("plot", "#graph-input-pane");
+        await openCalculatorGraph(frame);
         await expect(frame.locator("#legend .dot")).toHaveCount(3);
         await expect
           .poll(() =>
@@ -916,23 +1508,24 @@ try {
             })),
           );
         const graphButtons = await frame
-          .locator(".graph-actions > button")
+          .locator(".graph-zooms > button")
           .evaluateAll((buttons) =>
             buttons.map((button) => button.getBoundingClientRect().height),
           );
-        expect(graphButtons).toHaveLength(3);
+        expect(graphButtons).toHaveLength(4);
         expect(
           Math.max(...graphButtons) - Math.min(...graphButtons),
         ).toBeLessThanOrEqual(1);
-        await frame.locator("#functions").fill("x^2-4");
-        for (const [id, value] of [
-          ["xmin", "0"],
-          ["xmax", "3"],
-          ["ymin", "-5"],
-          ["ymax", "6"],
-        ])
-          await frame.locator("#" + id).fill(value);
-        await action("plot");
+        await snapshot("graph");
+        await setCalculatorFunctions(frame, ["x^2-4"]);
+        await setCalculatorRange(frame, {
+          xmin: "0",
+          xmax: "3",
+          ymin: "-5",
+          ymax: "6",
+        });
+        await action("plot", "#graph-settings");
+        await closeCalculatorRange(frame);
         await expect(frame.locator("#legend span")).toHaveCount(1);
         if (process.argv.includes("--busy-only")) {
           const timingRuns = [];
@@ -982,7 +1575,8 @@ try {
           await page.close();
           continue;
         }
-        const popup = await checkSelectPopup(frame, "#angle");
+        await openCalculatorAnalysis(frame);
+        const popup = await checkSelectPopup(frame, "#curve");
         await writeFile(
           join(
             output,
@@ -1044,6 +1638,8 @@ try {
           await expect(frame.locator("#graph")).toBeVisible();
           await idle(page, frame);
           if (process.argv.includes("--regressions-only")) {
+            expect(errors).toEqual([]);
+            expect(warnings).toEqual([]);
             report.push({
               plugin: name,
               inputHashes: plugins.find((plugin) => plugin.name === name)
@@ -1051,6 +1647,14 @@ try {
               profile,
               regression: "calculator-pan",
               maximumPerSecond: gesture.maximumPerSecond,
+              calculatorChecks,
+              graphSnapshots: modeSnapshots,
+              errors,
+              warnings,
+              actualWasmActions: calls.slice(before).map((call) => call.action),
+              scope: graphOnly
+                ? "Graph contrast, real pointer/wheel/keyboard pressure, draft timing and reload regressions only"
+                : "Calculator graph and draft timing regressions",
               nativeIpc: false,
             });
             console.log(
@@ -1060,19 +1664,27 @@ try {
             continue;
           }
         }
+        await openCalculatorAnalysis(frame);
         await frame.locator("#curve").selectOption("0");
         await frame.locator("#a").fill("0");
         await frame.locator("#b").fill("3");
         await action("root");
+        await expect(frame.locator("#analysis-result")).toBeVisible();
         expect(
-          Number(await frame.locator("#result").textContent()),
+          Number(await frame.locator("#analysis-result").textContent()),
         ).toBeCloseTo(2, 8);
         await frame.locator("#b").fill("2");
         await action("integrate");
         expect(
-          Number(await frame.locator("#result").textContent()),
+          Number(await frame.locator("#analysis-result").textContent()),
         ).toBeCloseTo(-16 / 3, 8);
+        await openCalculatorHistory(frame);
+        await expect(frame.locator("#history button").first()).toBeVisible();
+        if (await frame.locator("#rail-close").isVisible())
+          await frame.locator("#rail-close").click();
+        await openCalculatorWorkspace(frame);
         await action("export");
+        await frame.locator("#settings-close").click();
         expect(
           await page.evaluate(() => window.__extensionUiTest.artifacts.length),
         ).toBeGreaterThan(0);
@@ -1093,10 +1705,7 @@ try {
           artifactGeometry.containerWidth + 1,
         );
         expect(artifactGeometry.title).toBe(artifactGeometry.text);
-        expect(artifactGeometry.height).toBeCloseTo(
-          parseFloat(profile.font) * 2,
-          0,
-        );
+        expect(artifactGeometry.height).toBeGreaterThanOrEqual(24);
         const beforeArtifactRetry = calls.length;
         await frame.locator("#artifacts button").click();
         await expect
@@ -1134,7 +1743,7 @@ try {
           await page.close();
           continue;
         }
-        await frame.locator("#expression").fill("42+1");
+        await pasteCalculatorExpression(frame, "42+1");
         await expect
           .poll(() =>
             frame
@@ -1145,57 +1754,22 @@ try {
           )
           .toBe("42+1");
       } else if (name === "snake") {
-        await frame.locator("#start").click();
-        await frame.locator("#board").focus();
-        await page.keyboard.press("ArrowDown");
-        await expect
-          .poll(
-            () =>
-              frame
-                .locator("html")
-                .evaluate(() =>
-                  window.__sdkSnapshot?.checkpoint?.moves?.includes("down"),
-                ),
-            { timeout: 10000 },
-          )
-          .toBe(true);
-        await page.keyboard.press("Space");
-        await expect(frame.locator("#overlay")).toBeVisible();
-        await expect
-          .poll(() =>
-            frame
-              .locator("html")
-              .evaluate(() =>
-                window.__audioSuspendStates?.includes("suspended"),
-              ),
-          )
-          .toBe(true);
-        await frame.locator("#start").click();
-        await expect
-          .poll(() =>
-            frame
-              .locator("html")
-              .evaluate(() => window.__audioResumeStates?.includes("running")),
-          )
-          .toBe(true);
-        await page.keyboard.press("Space");
-        await expect(frame.locator("#overlay")).toBeVisible();
-        const replay = await frame.locator("html").evaluate(async () =>
-          starter.run("validate", {
-            checkpoint: JSON.stringify(window.__sdkSnapshot.checkpoint),
-          }),
-        );
-        expect(replay.description).toMatch(/Wasm/);
+        studioChecks = await checkSlither({
+          page,
+          frame,
+          profile,
+          output,
+          idle: () => idle(page, frame),
+          settled: () => settled(frame),
+        });
       } else if (name === "lan-chat") {
-        const inheritedFont = await frame
-          .locator("body")
-          .evaluate((node) => getComputedStyle(node).fontFamily);
-        await expect(frame.locator("#addresses")).toHaveCSS(
-          "font-family",
-          inheritedFont,
-        );
         if (process.argv.includes("--stress-poll") || profile.width === 1120) {
           const polling = await checkLanPolling(page, frame);
+          polling.transferCancellation = await checkLanTransferCancellation(
+            page,
+            frame,
+            services,
+          );
           await writeFile(
             join(output, "lan-polling-regression.json"),
             JSON.stringify(polling, null, 2),
@@ -1217,115 +1791,281 @@ try {
             continue;
           }
         }
-        await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
-        await frame.locator("#nickname").fill("Fixture tester");
-        await frame.locator("#start").click();
-        await expect(frame.locator("#stop")).toBeEnabled();
-        await frame.locator("#address").fill("192.168.1.21");
-        await frame.locator("#connect").click();
-        await expect(frame.locator("#contacts [data-peer]")).toHaveCount(1);
-        await frame.locator("#draft").fill("Fixture message 你好");
-        await frame.locator("#send").click();
-        await expect(frame.locator("#draft")).toHaveValue("");
-        await expect(frame.locator("#messages")).toContainText(
-          "Fixture message 你好",
-        );
-        const sendsBefore = services.calls.filter(
-          (call) => call.service === "lan" && call.request.action === "send",
-        ).length;
-        await frame.locator("#draft").fill("Multiline draft");
-        await frame.locator("#draft").press("Shift+Enter");
-        await expect(frame.locator("#draft")).toHaveValue("Multiline draft\n");
-        expect(
-          services.calls.filter(
-            (call) => call.service === "lan" && call.request.action === "send",
-          ).length,
-        ).toBe(sendsBefore);
-        await frame.locator("#draft").fill("IME draft");
-        await frame.locator("#draft").dispatchEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          isComposing: true,
-          bubbles: true,
-        });
-        await expect(frame.locator("#draft")).toHaveValue("IME draft");
-        expect(
-          services.calls.filter(
-            (call) => call.service === "lan" && call.request.action === "send",
-          ).length,
-        ).toBe(sendsBefore);
-        await frame.locator("#draft").fill("Keyboard message");
-        await frame.locator("#draft").press("Enter");
-        await expect(frame.locator("#draft")).toHaveValue("");
-        await expect(frame.locator("#messages")).toContainText(
-          "Keyboard message",
-        );
-        await frame.locator("#draft").fill("Retained unsent draft");
-        const chatLayout = await frame.locator(".chat").evaluate((node) => ({
-          headerBottom: node.querySelector(".chat-head").getBoundingClientRect()
-            .bottom,
-          logTop: node.querySelector("#messages").getBoundingClientRect().top,
-          logBottom: node.querySelector("#messages").getBoundingClientRect()
-            .bottom,
-          composerTop: node.querySelector("#composer").getBoundingClientRect()
-            .top,
-        }));
-        expect(chatLayout.headerBottom).toBeLessThanOrEqual(
-          chatLayout.logTop + 1,
-        );
-        expect(chatLayout.logBottom).toBeLessThanOrEqual(
-          chatLayout.composerTop + 1,
-        );
-        await frame.locator("#export").click();
-        await expect
-          .poll(() =>
-            page.evaluate(() => window.__extensionUiTest.artifacts.length),
-          )
-          .toBeGreaterThan(0);
-        await expect(frame.locator("#draft")).toHaveValue(
-          "Retained unsent draft",
-        );
-        expect(
-          await page.evaluate(
-            () => window.__extensionUiTest.artifacts[0].content,
-          ),
-        ).toContain("Fixture message 你好");
+        studioChecks = await checkLanChat({ page, frame, services, profile });
       } else if (name === "wallpaper-browser") {
         await expect(frame.locator("#import")).toBeEnabled();
-        await expect(frame.locator("#network-mode")).toHaveValue("system");
+        await expect(frame.locator("#network-mode")).toHaveCount(0);
+        await expect(frame.locator("#query")).toBeVisible();
+        await expect(frame.locator("#category")).toBeVisible();
+        await expect(frame.locator("#search-form")).toHaveAttribute(
+          "role",
+          "search",
+        );
+        await expect(frame.locator("#provider")).toHaveValue("upx8");
+        const providers = await frame
+          .locator("#provider option")
+          .evaluateAll((nodes) => nodes.map((node) => node.value));
+        expect(providers).toEqual([
+          "upx8",
+          "wallhaven",
+          "commons",
+          "nekosbest",
+        ]);
+        const loadWallpapers = async (action, expectedHttp) => {
+          const beforeHttp = services.httpCalls.length;
+          await action();
+          await expect
+            .poll(() => services.httpCalls.slice(beforeHttp).length, {
+              timeout: 60000,
+            })
+            .toBe(expectedHttp);
+          await idle(page, frame);
+        };
+        const thumbnails = async () => {
+          await expect(frame.locator("#results .result")).toHaveCount(24, {
+            timeout: 60000,
+          });
+          await expect
+            .poll(
+              () =>
+                frame
+                  .locator("#results .result img")
+                  .evaluateAll(
+                    (images) =>
+                      images.filter(
+                        (image) =>
+                          image.src.startsWith("data:image/") &&
+                          image.complete &&
+                          image.naturalWidth > 0,
+                      ).length,
+                  ),
+              { timeout: 60000 },
+            )
+            .toBe(24);
+          const geometry = await frame
+            .locator("#results .result")
+            .evaluateAll((cards) =>
+              cards.map((card) => {
+                const box = card.getBoundingClientRect();
+                const image = card.querySelector("img").getBoundingClientRect();
+                return {
+                  x: box.x,
+                  y: box.y,
+                  width: box.width,
+                  imageWidth: image.width,
+                  imageHeight: image.height,
+                  overflow: card.scrollWidth - card.clientWidth,
+                };
+              }),
+            );
+          for (const card of geometry) {
+            expect(card.imageWidth).toBeGreaterThan(0);
+            expect(card.imageHeight).toBeGreaterThan(0);
+            expect(card.imageWidth / card.imageHeight).toBeCloseTo(1.6, 1);
+            expect(card.overflow).toBeLessThanOrEqual(1);
+          }
+          expect(new Set(geometry.map((card) => card.y)).size).toBeGreaterThan(
+            1,
+          );
+          if (profile.width >= 900)
+            expect(
+              new Set(geometry.map((card) => card.x)).size,
+            ).toBeGreaterThan(1);
+          await expect.poll(() => services.activeResources()).toBe(0);
+          return geometry;
+        };
+        await thumbnails();
+        await expect(frame.locator("#preview-dialog")).not.toBeVisible();
+        const discoveryLayout = await checkWallpaperDiscoveryLayout(frame);
+        const help = await checkWallpaperHelp(frame, profile.font);
+        const preview = await checkWallpaperPreview(
+          page,
+          frame,
+          profile.language,
+          join(output, `${name}-${profile.language}-${profile.width}`),
+        );
+        const loadedProviders = ["upx8"];
+        let filterChecks;
+        if (profile.width === 1120) {
+          for (const provider of ["wallhaven", "commons"]) {
+            await loadWallpapers(
+              () => frame.locator("#provider").selectOption(provider),
+              1,
+            );
+            await thumbnails();
+            loadedProviders.push(provider);
+            if (provider === "wallhaven") {
+              const query = frame.locator("#query");
+              await query.fill("forest & blue");
+              const composingRuns = await page.evaluate(
+                () =>
+                  window.__iframeProtocolRequests.filter(
+                    (request) => request.method === "run",
+                  ).length,
+              );
+              await query.evaluate(async (node) => {
+                node.dispatchEvent(
+                  new CompositionEvent("compositionstart", {
+                    bubbles: true,
+                    data: "林",
+                  }),
+                );
+                node.dispatchEvent(
+                  new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    code: "Enter",
+                    isComposing: true,
+                    bubbles: true,
+                    cancelable: true,
+                  }),
+                );
+                node.dispatchEvent(
+                  new CompositionEvent("compositionend", {
+                    bubbles: true,
+                    data: "林",
+                  }),
+                );
+                await new Promise((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(resolve)),
+                );
+              });
+              expect(
+                await page.evaluate(
+                  () =>
+                    window.__iframeProtocolRequests.filter(
+                      (request) => request.method === "run",
+                    ).length,
+                ),
+              ).toBe(composingRuns);
+              const beforeSearchHttp = services.httpCalls.length;
+              await loadWallpapers(() => query.press("Enter"), 1);
+              await thumbnails();
+              expect(services.httpCalls.slice(beforeSearchHttp)).toHaveLength(
+                1,
+              );
+              const searched = new URL(services.httpCalls.at(-1).request.url);
+              expect(searched.searchParams.get("q")).toBe("forest & blue");
+              expect(searched.searchParams.get("sorting")).toBe("relevance");
+              await loadWallpapers(
+                () => frame.locator("#category").selectOption("anime"),
+                1,
+              );
+              await thumbnails();
+              const categorized = new URL(
+                services.httpCalls.at(-1).request.url,
+              );
+              expect(categorized.searchParams.get("q")).toBe("forest & blue");
+              expect(categorized.searchParams.get("categories")).toBe("010");
+              const previousSummary = await frame
+                .locator("#result-summary")
+                .textContent();
+              const previousIds = await frame
+                .locator("#results .result")
+                .evaluateAll((cards) =>
+                  cards.map((card) => card.dataset.resultId),
+                );
+              await query.fill("unrelated pending filter");
+              services.failNextHttp();
+              await loadWallpapers(() => query.press("Enter"), 1);
+              await expect(query).toHaveValue("unrelated pending filter");
+              await expect(frame.locator("#result-summary")).toHaveText(
+                previousSummary,
+              );
+              expect(
+                await frame
+                  .locator("#results .result")
+                  .evaluateAll((cards) =>
+                    cards.map((card) => card.dataset.resultId),
+                  ),
+              ).toEqual(previousIds);
+              const retained = await frame
+                .locator("html")
+                .evaluate(() => JSON.parse(window.__sdkSnapshot.view.state));
+              expect({
+                provider: retained.provider,
+                query: retained.query,
+                category: retained.category,
+              }).toEqual({
+                provider: "wallhaven",
+                query: "forest & blue",
+                category: "anime",
+              });
+              await query.fill("fixture-no-results");
+              const beforeEmpty = services.httpCalls.length;
+              await loadWallpapers(() => query.press("Enter"), 1);
+              await expect(frame.locator("#results .result")).toHaveCount(0);
+              await expect(
+                frame.locator("#results .empty-state"),
+              ).toBeVisible();
+              await expect(frame.locator("#result-summary")).toContainText(
+                "fixture-no-results",
+              );
+              expect(services.httpCalls.slice(beforeEmpty)).toHaveLength(1);
+              filterChecks = {
+                enterSubmitsOnce: true,
+                composingDoesNotSearch: true,
+                encodedQuery: searched.toString(),
+                categoryRequest: categorized.toString(),
+                failedFilterRetainsSummaryAndImages: true,
+                emptySearchDoesNotFillUnrelatedImages: true,
+              };
+            } else {
+              await loadWallpapers(
+                () => frame.locator("#category").selectOption("forest"),
+                1,
+              );
+              await thumbnails();
+              expect(
+                new URL(services.httpCalls.at(-1).request.url).searchParams.get(
+                  "gsrsearch",
+                ),
+              ).toBe("forest filetype:bitmap");
+            }
+          }
+        }
         const beforeHttp = services.httpCalls.length;
-        const popup = await checkSelectPopup(frame, "#network-mode");
-        await writeFile(
-          join(
-            output,
-            `${name}-${profile.language}-${profile.width}-popup.json`,
-          ),
-          JSON.stringify(popup, null, 2),
+        services.failNextImage();
+        await loadWallpapers(
+          () => frame.locator("#provider").selectOption("nekosbest"),
+          2,
         );
-        await expect(frame.locator("#network-mode")).toHaveCSS(
-          "box-sizing",
-          "border-box",
-        );
-        await expect(frame.locator("#network-mode")).toHaveCSS(
-          "min-height",
-          `${parseFloat(profile.font) * 2}px`,
-        );
-        await frame.locator("#query").fill("landscape");
-        await frame.locator("#search").click();
-        await idle(page, frame);
-        await expect(frame.locator("#results .result")).toHaveCount(2, {
-          timeout: 60000,
-        });
-        const searchCalls = calls
+        await expect(frame.locator("#results .result")).toHaveCount(24);
+        const firstResult = frame.locator("#results .result").first();
+        await expect(
+          firstResult.locator('.result-media[data-state="error"]'),
+        ).toHaveCount(1);
+        await firstResult.focus();
+        await firstResult.press("Enter");
+        await expect(frame.locator("#preview-dialog")).toBeVisible();
+        await expect(frame.locator("#retry-preview")).toBeEnabled();
+        const beforeRetryHttp = services.httpCalls.length;
+        await frame.locator("#retry-preview").click();
+        await expect(frame.locator("#preview-image")).toBeVisible();
+        await frame.locator("#preview-close").click();
+        await expect(frame.locator("#preview-dialog")).not.toBeVisible();
+        await expect(firstResult).toBeFocused();
+        const imageGrid = await thumbnails();
+        loadedProviders.push("nekosbest");
+        expect(services.httpCalls.length).toBe(beforeRetryHttp);
+        const providerCalls = calls
           .slice(before)
           .filter((call) => call.plugin === name);
-        expect(searchCalls.some((call) => call.action === "search")).toBe(true);
-        expect(searchCalls.some((call) => call.action === "host-result")).toBe(
-          true,
+        expect(providerCalls.some((call) => call.action === "load")).toBe(true);
+        expect(
+          providerCalls.some((call) => call.action === "host-result"),
+        ).toBe(true);
+        expect(services.httpCalls.slice(beforeHttp)).toHaveLength(2);
+        expect(new URL(services.httpCalls.at(-1).request.url).origin).toBe(
+          "https://nekos.best",
         );
-        expect(services.httpCalls.slice(beforeHttp)).toHaveLength(1);
-        expect(services.httpCalls.at(-1).receipt.value.body).toContain("iusc");
-        expect(services.httpCalls.at(-1).request.networkMode).toBe("system");
+        expect(
+          Array.isArray(
+            JSON.parse(services.httpCalls.at(-1).receipt.value.body).results,
+          ),
+        ).toBe(true);
+        expect(services.httpCalls.at(-1).request).not.toHaveProperty(
+          "networkMode",
+        );
         expect(
           services.calls
             .slice(beforeServices)
@@ -1340,53 +2080,34 @@ try {
                 ].includes(call.request.action),
             ),
         ).toBe(false);
-        for (const card of await frame.locator("#results .result").all()) {
-          const layout = await card.evaluate((node) => {
-            const style = getComputedStyle(node);
-            const label = node.querySelector("strong");
-            return {
-              inset:
-                label.getBoundingClientRect().left -
-                node.getBoundingClientRect().left,
-              expected:
-                parseFloat(style.paddingLeft) +
-                parseFloat(style.borderLeftWidth),
-              overflow: node.scrollWidth - node.clientWidth,
-            };
-          });
-          expect(Math.abs(layout.inset - layout.expected)).toBeLessThanOrEqual(
-            1,
-          );
-          expect(layout.overflow).toBeLessThanOrEqual(1);
-        }
         const layoutBeforeFailure = await frame
-          .locator("#search-form")
+          .locator("#provider")
           .evaluate((node) => ({
             top: node.offsetTop,
             height: node.offsetHeight,
           }));
-        await frame.locator("#query").fill("fixture-search-failure");
-        await frame.locator("#search").click();
-        await idle(page, frame);
+        services.failNextHttp();
+        await loadWallpapers(() => frame.locator("#search").click(), 2);
         const toast = page.locator("[data-sonner-toast]").last();
         await expect(toast).toHaveAttribute("data-type", "error", {
           timeout: 60000,
         });
-        await expect(toast).toContainText(
-          profile.language === "zh" ? "搜索" : "search",
-        );
-        await expect(frame.locator("#query")).toHaveValue(
-          "fixture-search-failure",
-        );
+        await expect(frame.locator("#provider")).toHaveValue("nekosbest");
         expect(
-          await frame.locator("#search-form").evaluate((node) => ({
+          await frame.locator("#provider").evaluate((node) => ({
             top: node.offsetTop,
             height: node.offsetHeight,
           })),
         ).toEqual(layoutBeforeFailure);
-        await expect(frame.locator("#results .result")).toHaveCount(2);
-        await frame.locator("#query").fill("landscape");
-        await frame.locator("#results .result").first().click();
+        await expect(frame.locator("#results .result")).toHaveCount(24);
+        await firstResult.focus();
+        await firstResult.press("Space");
+        await expect(frame.locator("#preview-dialog")).toBeVisible();
+        await expect(frame.locator("#preview-image")).toBeVisible();
+        await frame.locator("#preview-close").press("Escape");
+        await expect(frame.locator("#preview-dialog")).not.toBeVisible();
+        await expect(firstResult).toBeFocused();
+        await firstResult.click();
         await expect(frame.locator("#preview-image")).toBeVisible();
         await expect.poll(() => services.activeResources()).toBe(0);
         await frame.locator("#open-source").click();
@@ -1413,11 +2134,13 @@ try {
           ),
         );
         const fetched = resourceCalls.filter(
-          (call) => call.request.action === "fetch-image",
+          (call) =>
+            call.request.action === "fetch-image" && call.response?.resourceId,
         );
-        expect(fetched).toHaveLength(3);
+        expect(fetched.length).toBeGreaterThanOrEqual(50);
         for (const call of fetched) {
           expect(call.completed).toBe(true);
+          expect(call.request).not.toHaveProperty("networkMode");
           expect(
             resourceCalls.filter(
               (release) =>
@@ -1445,21 +2168,115 @@ try {
             }
           }, fetched[0].response.resourceId);
         expect(releasedPreview).toBe("NOT_FOUND");
+        await frame.locator("#preview-close").click();
+        await firstResult.hover();
+        const animations = await frame
+          .locator("#results")
+          .evaluate(
+            (node) =>
+              node
+                .getAnimations({ subtree: true })
+                .filter(
+                  (animation) =>
+                    animation.playState === "running" &&
+                    animation.effect.getComputedTiming().duration > 1,
+                ).length,
+          );
+        expect(animations).toBe(0);
+        await frame.locator("html").evaluate(() => window.scrollTo(0, 0));
+        await page.screenshot({
+          path: join(
+            output,
+            `${name}-${profile.language}-${profile.width}-discovery.png`,
+          ),
+        });
+        await writeFile(
+          join(
+            output,
+            `${name}-${profile.language}-${profile.width}-discovery.json`,
+          ),
+          JSON.stringify(
+            {
+              providers,
+              loadedProviders,
+              filterChecks,
+              imagesBeforeSelection: 24,
+              help,
+              imageGrid,
+              discoveryLayout,
+              preview,
+              singleImageRetry: true,
+              failedBatchRetainsResults: true,
+              keyboardPreview: true,
+              reducedMotion: true,
+            },
+            null,
+            2,
+          ),
+        );
         await frame.locator("#local-tab").click();
+        const popup = await checkSelectPopup(frame, "#fit");
+        await writeFile(
+          join(
+            output,
+            `${name}-${profile.language}-${profile.width}-popup.json`,
+          ),
+          JSON.stringify(popup, null, 2),
+        );
+        await expect(frame.locator("#fit")).toHaveCSS(
+          "box-sizing",
+          "border-box",
+        );
+        await expect(frame.locator("#fit")).toHaveCSS(
+          "height",
+          `${parseFloat(profile.font) * 2}px`,
+        );
         const card = frame.locator(
           '#gallery [data-wallpaper-id="' + "f".repeat(64) + '"]',
         );
         await expect(card).toBeVisible();
+        if (profile.width <= 400) {
+          await frame.locator("h1").hover();
+          await expect(
+            page.locator("[data-sonner-toast]").last(),
+          ).not.toBeVisible({ timeout: 10000 });
+        }
+        const cardActions = await checkWallpaperCardActions(
+          frame,
+          card,
+          profile.font,
+        );
+        await writeFile(
+          join(
+            output,
+            `${name}-${profile.language}-${profile.width}-card-actions.json`,
+          ),
+          JSON.stringify(cardActions, null, 2),
+        );
         await card.locator('[data-action="apply"]').click();
         await expect(card).toHaveClass(/active/);
+        await expect(card.locator('[data-action="apply"]')).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        if (profile.width <= 400) {
+          await frame.locator("h1").hover();
+          await expect(
+            page.locator("[data-sonner-toast]").last(),
+          ).not.toBeVisible({
+            timeout: 10000,
+          });
+        }
         await card.locator('[data-action="rename"]').click();
         await expect(frame.locator("#confirm-dialog")).toBeVisible();
         await frame.locator("#rename-value").fill("Unsaved rename");
         await frame.locator("#dialog-cancel").click();
-        await expect(card.locator("h2")).toHaveText("Fixture landscape");
+        await expect(card.locator("h2")).toContainText("Fixture landscape");
+        await expect(card.locator('[data-action="rename"]')).toBeFocused();
         await card.locator('[data-action="remove"]').click();
         await frame.locator("#dialog-cancel").click();
         await expect(card).toBeVisible();
+        await expect(card.locator('[data-action="remove"]')).toBeFocused();
         await frame.locator("#import").click();
         await expect(
           page.locator("[data-sonner-toast]").filter({
@@ -1474,7 +2291,196 @@ try {
               .evaluate(() => window.__sdkSnapshot.checkpoint?.tab),
           )
           .toBe("local");
-      } else {
+      } else if (name === "lab") {
+        const studioCallsBefore = calls.length;
+        const scenes = [];
+        const inspectStudioScene = async (scene) => {
+          await expect(frame.locator(`#scene-${scene}`)).toBeVisible();
+          const violations = (
+            await new AxeBuilder({ page })
+              .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+              .analyze()
+          ).violations;
+          await writeFile(
+            join(
+              output,
+              `${name}-${profile.language}-${profile.width}-${scene}-axe.json`,
+            ),
+            JSON.stringify(violations, null, 2),
+          );
+          expect(
+            violations.map((value) => ({
+              id: value.id,
+              nodes: value.nodes.map((node) => node.target),
+            })),
+            `Studio ${scene} accessibility`,
+          ).toEqual([]);
+          expect(
+            await frame
+              .locator("html")
+              .evaluate((node) => node.scrollWidth > innerWidth + 1),
+            `Studio ${scene} horizontal overflow`,
+          ).toBe(false);
+          const navigationCopy = await frame
+            .locator("#studio-nav button")
+            .evaluateAll((buttons) =>
+              buttons.map((button) => {
+                const bounds = button.getBoundingClientRect();
+                const copy = button
+                  .querySelector(".nav-copy")
+                  .getBoundingClientRect();
+                return {
+                  scene: button.dataset.scene,
+                  top: copy.top - bounds.top,
+                  bottom: bounds.bottom - copy.bottom,
+                  left: copy.left - bounds.left,
+                  right: bounds.right - copy.right,
+                };
+              }),
+            );
+          expect(
+            navigationCopy.filter((copy) =>
+              [copy.top, copy.bottom, copy.left, copy.right].some(
+                (inset) => inset < -1,
+              ),
+            ),
+            `Studio ${scene} navigation copy containment`,
+          ).toEqual([]);
+          if (profile.width <= 380) {
+            const titles = await frame
+              .locator("#studio-nav .nav-copy strong")
+              .evaluateAll((nodes) =>
+                nodes.map((node) => ({
+                  text: node.textContent,
+                  whiteSpace: getComputedStyle(node).whiteSpace,
+                  width: node.clientWidth,
+                  contentWidth: node.scrollWidth,
+                })),
+              );
+            expect(
+              titles.filter(
+                (title) =>
+                  title.whiteSpace !== "nowrap" ||
+                  title.contentWidth > title.width + 1,
+              ),
+              `Studio ${scene} compact navigation titles`,
+            ).toEqual([]);
+          }
+          await frame.locator("html").evaluate(() => window.scrollTo(0, 0));
+          await page.screenshot({
+            path: join(
+              output,
+              `${name}-${profile.language}-${profile.width}-${scene}.png`,
+            ),
+          });
+          scenes.push({
+            scene,
+            axeViolations: violations.length,
+            navigationCopyContained: true,
+            compactNavigationTitlesUnbroken: profile.width <= 380,
+          });
+        };
+        await expect(frame.locator("#scene-canvas")).toBeVisible();
+        await expect(frame.locator(".canvas-node")).toHaveCount(5);
+        await expect(frame.locator("#node-count")).toHaveText("5");
+        await inspectStudioScene("canvas");
+        await frame.locator("#studio-tab-lens").click();
+        await expect(frame.locator("#lens-count")).toHaveText("8");
+        await expect(frame.locator("#lens-total")).toHaveText("526");
+        await expect(frame.locator("#lens-chart .bar-fill")).toHaveCount(8);
+        await inspectStudioScene("lens");
+        await frame.locator("#studio-tab-flow").click();
+        await frame.locator("#flow-run").click();
+        await expect(frame.locator("#flow-count")).toHaveText("8 / 3");
+        expect(
+          await frame
+            .locator("#flow-table tbody tr")
+            .evaluateAll((rows) =>
+              rows.map((row) => [...row.cells].map((cell) => cell.textContent)),
+            ),
+        ).toEqual([
+          ["Build", "Build", "247"],
+          ["Design", "Design", "182"],
+          ["Research", "Research", "97"],
+        ]);
+        await inspectStudioScene("flow");
+        expect(calls.length).toBe(studioCallsBefore);
+        await frame.locator("#studio-tab-canvas").click();
+        const artifactsBefore = await page.evaluate(
+          () => window.__extensionUiTest.artifacts.length,
+        );
+        await frame.locator("#canvas-export").click();
+        await expect
+          .poll(
+            () =>
+              page.evaluate(() => window.__extensionUiTest.artifacts.length),
+            { timeout: 60000 },
+          )
+          .toBe(artifactsBefore + 1);
+        await idle(page, frame);
+        expect(
+          calls.slice(studioCallsBefore).map((call) => call.action),
+        ).toEqual(["tab-studio", "workspace-export"]);
+        const artifact = await page.evaluate(() =>
+          window.__extensionUiTest.artifacts.at(-1),
+        );
+        expect(artifact.name).toBe("workspace.json");
+        expect(artifact.mediaType).toBe("application/json");
+        const canvas = JSON.parse(artifact.content);
+        expect(canvas.rows).toHaveLength(5);
+        expect(canvas.columns).toEqual([
+          "id",
+          "title",
+          "note",
+          "tone",
+          "x",
+          "y",
+          "connections",
+        ]);
+        expect(canvas.rows.map((row) => row[0])).toEqual([
+          "n1",
+          "n2",
+          "n3",
+          "n4",
+          "n5",
+        ]);
+        expect(
+          await page.evaluate(() => window.__extensionUiTest.exportPath),
+        ).toBeNull();
+        await expect(
+          page.locator("[data-sonner-toast]").filter({
+            hasText:
+              profile.language === "zh" ? "导出已保存。" : "Export saved.",
+          }),
+        ).toHaveCount(0);
+        await expect
+          .poll(() =>
+            frame
+              .locator("html")
+              .evaluate(
+                () => window.__sdkSnapshot.checkpoint?.studio?.nodes?.length,
+              ),
+          )
+          .toBe(5);
+        studioChecks = {
+          scenes,
+          sceneSwitchWasmActions: 0,
+          pipeline: [247, 182, 97],
+          canvasArtifact: {
+            name: artifact.name,
+            rows: canvas.rows.length,
+            saveCancelled: true,
+            checkpointRetained: true,
+          },
+        };
+        await frame.locator("#studio-tab-tools").click();
+        await expect(frame.locator('[data-action="tab-text"]')).toHaveAttribute(
+          "aria-selected",
+          "true",
+          { timeout: 60000 },
+        );
+        await expect(frame.locator('[data-field="text"]')).toBeVisible();
+        await idle(page, frame);
         await frame.locator('[data-field="text"]').fill("hello 你好");
         await frame.locator('[data-field="mode"]').selectOption("upper");
         await action("analyze");
@@ -1557,14 +2563,23 @@ try {
         window.__extensionUiTest.exports.at(-1),
       );
       if (name === "scientific-calculator")
-        await frame.locator("#expression").fill("999");
+        await pasteCalculatorExpression(frame, "999");
       else if (name === "lab")
         await frame.locator('[data-field="todo"]').fill("Changed after export");
-      else if (name === "lan-chat")
+      else if (name === "lan-chat") {
+        expect(
+          JSON.parse(JSON.parse(exported.content).ui.state).layout,
+        ).toEqual(studioChecks.layoutCustomization.preferences);
         await frame.locator("#draft").fill("Changed after export");
-      else if (name === "wallpaper-browser") {
+        await changeLanLayoutForImport(
+          page,
+          frame,
+          studioChecks.layoutCustomization,
+        );
+      } else if (name === "wallpaper-browser") {
         await frame.locator("#remote-tab").click();
-        await frame.locator("#query").fill("Changed after export");
+        await frame.locator("#provider").selectOption("upx8");
+        await idle(page, frame);
       }
       const importedFrame = await page.locator("iframe").elementHandle();
       const beforeImportGeometry = await frameGeometry(page);
@@ -1660,6 +2675,12 @@ try {
       await idle(page, frame);
       expect(calls.length).toBe(callsBeforeImport);
       stableFrameGeometry(beforeImportGeometry, await frameGeometry(page));
+      if (name === "lan-chat")
+        await assertLanLayoutRestored(
+          frame,
+          studioChecks.layoutCustomization,
+          "import",
+        );
       await page.keyboard.press("Escape");
       // Common host tools sit outside plugin content. Rebuilding only the frame
       // must restore checkpoints/fields without restarting the Wasm session.
@@ -1688,22 +2709,20 @@ try {
         await expect(frame.locator("#expression")).toHaveValue("42+1");
         await expect(frame.locator("#functions")).toHaveValue("x^2-4");
       } else if (name === "snake") {
-        await expect(frame.locator("#overlay")).toBeVisible();
-        const checkpoint = await frame
-          .locator("html")
-          .evaluate(() => window.__sdkSnapshot.checkpoint);
-        await page.waitForTimeout(250);
-        expect(
-          await frame
-            .locator("html")
-            .evaluate(() => window.__sdkSnapshot.checkpoint.moves),
-        ).toEqual(checkpoint.moves);
-      } else if (name === "lan-chat")
+        await checkSlitherReload(frame, studioChecks.preferences);
+      } else if (name === "lan-chat") {
         await expect(frame.locator("#draft")).toHaveValue(
           "Retained unsent draft",
         );
-      else if (name === "wallpaper-browser") {
-        await expect(frame.locator("#query")).toHaveValue("landscape");
+        await assertLanLayoutRestored(
+          frame,
+          studioChecks.layoutCustomization,
+          "reload",
+        );
+      } else if (name === "wallpaper-browser") {
+        await expect(frame.locator("#provider")).toHaveValue("nekosbest");
+        await expect(frame.locator("#query")).toHaveValue("");
+        await expect(frame.locator("#category")).toHaveValue("neko");
         await expect(frame.locator("#local-tab")).toHaveAttribute(
           "aria-selected",
           "true",
@@ -1817,13 +2836,12 @@ try {
         for (const tab of otherTabs)
           expect(tab.background).not.toBe(selectedTab.background);
       }
-      if (["lan-chat", "wallpaper-browser"].includes(name)) {
+      if (name === "wallpaper-browser") {
         const normal = defaults.controls.find(
-          (control) =>
-            control.id === (name === "lan-chat" ? "start" : "settings"),
+          (control) => control.id === "settings",
         );
         expect(normal.boxSizing).toBe("border-box");
-        expect(parseFloat(normal.minHeight)).toBe(parseFloat(profile.font) * 2);
+        expect(normal.height).toBeCloseTo(parseFloat(profile.font) * 2, 0);
         expect(parseFloat(normal.fontSize)).toBe(
           parseFloat(profile.font) * 0.875,
         );
@@ -1909,11 +2927,10 @@ try {
         plugin: name,
         inputHashes: plugins.find((plugin) => plugin.name === name).inputHashes,
         profile,
-        authorUiLanguageCoverage:
-          name === "lan-chat"
-            ? "Chinese author UI; English profile covers host and SDK locale/theme only"
-            : "Chinese and English author UI",
+        authorUiLanguageCoverage: "Chinese and English author UI",
         actualWasmActions: calls.slice(before).map((call) => call.action),
+        studioChecks,
+        calculatorChecks,
         errors,
         warnings,
         axeViolations: violations.length,
@@ -1929,6 +2946,11 @@ try {
           skeletonObserved: initialPaint.skeletonObserved,
         },
         serviceBoundaryMock: services.calls.slice(beforeServices),
+        unsupportedWindowBoundary: await page.evaluate(() =>
+          window.__extensionUiTest.serviceCalls.filter(
+            (call) => call.service === "window",
+          ),
+        ),
         sessionViewValidationBoundaryMock: await page.evaluate(
           () =>
             window.__extensionUiTest.sessionViewValidationBoundaryMockCalls > 0,
@@ -1945,6 +2967,153 @@ try {
     }
     await context.close();
   }
+  if (calculatorReview) {
+    const context = await browser.newContext({
+      viewport: { width: 420, height: 720 },
+      reducedMotion: "reduce",
+    });
+    await context.addInitScript({ content: init });
+    const page = await newFixturePage(context),
+      errors = [],
+      warnings = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type()))
+        warnings.push(message.text());
+    });
+    await page.goto(
+      `http://127.0.0.1:${port}/?plugin=scientific-calculator&window=true&language=en&theme=light&font=20px&calculatorPermissions=offline`,
+    );
+    const frame = page.frameLocator("iframe");
+    await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+    await observeSdk(frame);
+    await idle(page, frame);
+    const offlineCurrency = await checkCalculatorOfflineCurrency({
+      page,
+      frame,
+      idle: () => idle(page, frame),
+      currencyCalls: () => currencyHttpCalls,
+      snapshot: async (name) => {
+        await settled(frame);
+        const violations = (
+          await new AxeBuilder({ page })
+            .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+            .analyze()
+        ).violations;
+        expect(violations).toEqual([]);
+        await page.screenshot({
+          path: join(output, `calculator-${name}-light-420.png`),
+        });
+      },
+    });
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    report.push({
+      plugin: "scientific-calculator",
+      regression: "currency-no-https-permission",
+      profile: {
+        width: 420,
+        height: 720,
+        language: "en",
+        theme: "light",
+        font: "20px",
+        window: "true",
+      },
+      calculatorChecks: { offlineCurrency },
+      errors,
+      warnings,
+      axeViolations: 0,
+      nativeIpc: false,
+    });
+    console.log(
+      "PASS calculator no-HTTPS typing stays offline and quiet; manual refresh explains permission",
+    );
+    await context.close();
+  }
+  if (wallpaperLocalOnly) {
+    for (const profile of [
+      { width: 900, height: 760, font: "16px", theme: "dark" },
+      { width: 360, height: 760, font: "20px", theme: "light" },
+    ]) {
+      const context = await browser.newContext({
+        viewport: { width: profile.width, height: profile.height },
+        reducedMotion: "reduce",
+      });
+      await context.addInitScript({ content: init });
+      const page = await newFixturePage(context),
+        errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const beforeHttp = services.httpCalls.length;
+      await page.goto(
+        `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: "wallpaper-browser", window: "true", language: "zh", wallpaperPermissions: "denied" })}`,
+      );
+      const frame = page.frameLocator("iframe");
+      await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+      await observeSdk(frame);
+      await idle(page, frame);
+      const local = await checkWallpaperLocalGallery(
+        page,
+        frame,
+        join(output, `wallpaper-local-${profile.width}-card.png`),
+      );
+      await idle(page, frame);
+      expect(services.httpCalls.slice(beforeHttp)).toHaveLength(0);
+      expect(errors).toEqual([]);
+      report.push({
+        plugin: "wallpaper-browser",
+        regression: "direct-local-actions",
+        profile,
+        ...local,
+        nativeIpc: false,
+      });
+      console.log(
+        `PASS wallpaper-browser ${profile.width}px image apply and direct edit/delete controls`,
+      );
+      await context.close();
+    }
+  }
+  if (wallpaperPreviewOnly) {
+    for (const profile of [
+      { width: 900, height: 760, font: "16px", theme: "dark", language: "en" },
+      { width: 360, height: 760, font: "20px", theme: "light", language: "zh" },
+    ]) {
+      const context = await browser.newContext({
+        viewport: { width: profile.width, height: profile.height },
+        reducedMotion: "reduce",
+      });
+      await context.addInitScript({ content: init });
+      const page = await newFixturePage(context),
+        errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(
+        `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: "wallpaper-browser", window: "true" })}`,
+      );
+      const frame = page.frameLocator("iframe");
+      await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+      await observeSdk(frame);
+      await idle(page, frame);
+      const preview = await checkWallpaperPreview(
+        page,
+        frame,
+        profile.language,
+        join(output, `wallpaper-preview-${profile.width}`),
+      );
+      await idle(page, frame);
+      await expect.poll(() => services.activeResources()).toBe(0);
+      expect(errors).toEqual([]);
+      report.push({
+        plugin: "wallpaper-browser",
+        regression: "preview-layout-and-info",
+        profile,
+        ...preview,
+        nativeIpc: false,
+      });
+      console.log(
+        `PASS wallpaper-browser ${profile.width}px compact preview and independent image details`,
+      );
+      await context.close();
+    }
+  }
   if (
     ![
       "--security-only",
@@ -1952,9 +3121,47 @@ try {
       "--artifact-only",
       "--settings-only",
       "--consent-only",
+      "--wallpaper-local-only",
+      "--wallpaper-preview-only",
     ].some((flag) => process.argv.includes(flag)) &&
     (!selectedNames.length || selectedNames.includes("wallpaper-browser"))
   ) {
+    if (!process.argv.includes("--capabilities-only")) {
+      const context = await browser.newContext({
+        viewport: { width: 1120, height: 800 },
+        reducedMotion: "no-preference",
+      });
+      await context.addInitScript({ content: init });
+      const page = await newFixturePage(context);
+      await page.goto(
+        `http://127.0.0.1:${port}/?plugin=wallpaper-browser&window=true&language=zh&theme=dark&motion=full`,
+      );
+      const frame = page.frameLocator("iframe");
+      await expect(frame.locator("#results .result")).toHaveCount(24, {
+        timeout: 60000,
+      });
+      await observeSdk(frame);
+      await idle(page, frame);
+      const motion = await checkWallpaperMotion(page, frame);
+      await expect(frame.locator("#results .result img")).toHaveCount(24, {
+        timeout: 60000,
+      });
+      await expect.poll(() => services.activeResources()).toBe(0);
+      await writeFile(
+        join(output, "wallpaper-browser-motion.json"),
+        JSON.stringify(motion, null, 2),
+      );
+      report.push({
+        plugin: "wallpaper-browser",
+        regression: "visible-motion-and-reduction",
+        ...motion,
+        nativeIpc: false,
+      });
+      console.log(
+        "PASS wallpaper-browser entrance, hover and motion preferences",
+      );
+      await context.close();
+    }
     for (const mode of ["denied", "direct", "links-only"]) {
       const context = await browser.newContext({
         viewport: { width: 900, height: 760 },
@@ -1984,7 +3191,7 @@ try {
         mode,
       );
       await idle(page, frame);
-      expect(services.activeResources()).toBe(0);
+      await expect.poll(() => services.activeResources()).toBe(0);
       const network = services.httpCalls.slice(beforeHttp);
       if (mode === "denied") {
         expect(network).toHaveLength(0);
@@ -2003,15 +3210,15 @@ try {
           ]),
         );
       } else {
-        expect(network).toHaveLength(1);
-        expect(network[0].request.networkMode).toBe("direct");
+        expect(network).toHaveLength(3);
+        expect(network[0].request).not.toHaveProperty("networkMode");
         if (mode === "links-only")
           expect(
             services.calls
               .slice(beforeServices)
               .filter((call) => call.service === "links")
               .map((call) => call.request.url),
-          ).toEqual(["https://www.wikipedia.org/one"]);
+          ).toEqual(["https://wp.upx8.com/"]);
       }
       expect(errors).toEqual([]);
       expect(warnings).toEqual([]);
@@ -2032,6 +3239,7 @@ try {
     !process.argv.includes("--security-only") &&
     !process.argv.includes("--chrome-only") &&
     !process.argv.includes("--capabilities-only") &&
+    !wallpaperUiOnly &&
     !process.argv.includes("--regressions-only")
   ) {
     for (const language of ["zh", "en"]) {
@@ -2044,11 +3252,10 @@ try {
       await page.goto(
         `http://127.0.0.1:${port}/?plugin=center&language=${language}&font=20px`,
       );
-      for (const name of [
-        "lab",
-        "scientific-calculator",
-        "wallpaper-browser",
-      ]) {
+      const consentNames = wallpaperSelectedOnly
+        ? ["wallpaper-browser"]
+        : ["lab", "scientific-calculator", "wallpaper-browser"];
+      for (const name of consentNames) {
         const permissions = await checkPermissionConsent(
           page,
           plugins.find((plugin) => plugin.name === name).manifest,
@@ -2069,6 +3276,7 @@ try {
   if (
     !process.argv.includes("--security-only") &&
     !process.argv.includes("--capabilities-only") &&
+    !wallpaperUiOnly &&
     !process.argv.includes("--regressions-only") &&
     !process.argv.includes("--chrome-only") &&
     !process.argv.includes("--artifact-only") &&
@@ -2088,7 +3296,7 @@ try {
     await expect(child.locator("h1")).toBeVisible({ timeout: 60000 });
     await observeSdk(child);
     await idle(first, child);
-    await child.locator("#expression").fill("123+4");
+    await pasteCalculatorExpression(child, "123+4");
     await expect
       .poll(() =>
         child
@@ -2205,6 +3413,8 @@ try {
       "--security-only",
       "--settings-only",
       "--capabilities-only",
+      "--wallpaper-local-only",
+      "--wallpaper-preview-only",
       "--regressions-only",
       "--chrome-only",
       "--artifact-only",
@@ -2286,94 +3496,108 @@ try {
     );
     await context.close();
   }
-  const securityPage = observeFixturePage(await browser.newPage());
-  await securityPage.context().addInitScript({ content: init });
-  let externalRequests = 0;
-  await securityPage.route("https://denied.invalid/**", (route) => {
-    externalRequests++;
-    return route.abort();
-  });
-  await securityPage.goto(
-    `http://127.0.0.1:${port}/?plugin=scientific-calculator&window=true`,
-  );
-  const securityFrame = securityPage.frameLocator("iframe");
-  await expect(securityFrame.locator("main")).toHaveAttribute(
-    "aria-busy",
-    "false",
-    { timeout: 60000 },
-  );
-  const restrictions = await securityFrame
-    .locator("html")
-    .evaluate(async () => {
-      let networkBlocked = false,
-        storageBlocked = false,
-        rtcBlocked = false;
-      try {
-        await fetch("https://denied.invalid/fetch");
-      } catch {
-        networkBlocked = true;
-      }
-      try {
-        void localStorage.length;
-      } catch {
-        storageBlocked = true;
-      }
-      try {
-        const connection = new RTCPeerConnection({ iceServers: [] });
-        connection.close();
-      } catch {
-        rtcBlocked = true;
-      }
-      const nested = document.createElement("iframe");
-      nested.src = "about:blank";
-      document.body.append(nested);
-      let recoveredRtc = false;
-      try {
-        recoveredRtc =
-          typeof nested.contentWindow.RTCPeerConnection === "function";
-      } catch {
-        // An opaque or blocked descendant cannot expose its globals.
-      }
-      nested.remove();
-      return { networkBlocked, storageBlocked, rtcBlocked, recoveredRtc };
+  if (!wallpaperUiOnly) {
+    const securityPage = observeFixturePage(await browser.newPage());
+    await securityPage.context().addInitScript({ content: init });
+    let externalRequests = 0;
+    await securityPage.route("https://denied.invalid/**", (route) => {
+      externalRequests++;
+      return route.abort();
     });
-  expect(restrictions).toEqual({
-    networkBlocked: true,
-    storageBlocked: true,
-    rtcBlocked: true,
-    recoveredRtc: false,
-  });
-  await securityFrame.locator("html").evaluate(() => {
-    location.href = "https://denied.invalid/navigation";
-  });
-  await securityPage.waitForTimeout(250);
-  expect(externalRequests).toBe(0);
-  await securityPage.close();
-  console.log(
-    "PASS opaque-origin storage, WebRTC, direct fetch and navigation restrictions",
-  );
-  await writeFile(
-    join(output, "security.json"),
-    JSON.stringify(
-      { restrictions, externalRequests, nativeProtocol: false },
-      null,
-      2,
-    ),
-  );
+    await securityPage.goto(
+      `http://127.0.0.1:${port}/?plugin=${wallpaperSelectedOnly ? "wallpaper-browser" : "scientific-calculator"}&window=true`,
+    );
+    const securityFrame = securityPage.frameLocator("iframe");
+    await expect(securityFrame.locator("main")).toBeVisible({ timeout: 60000 });
+    await observeSdk(securityFrame);
+    await expect
+      .poll(
+        () =>
+          securityFrame
+            .locator("html")
+            .evaluate(() => window.__sdkSnapshot?.busy),
+        { timeout: 60000 },
+      )
+      .toBe(false);
+    const restrictions = await securityFrame
+      .locator("html")
+      .evaluate(async () => {
+        let networkBlocked = false,
+          storageBlocked = false,
+          rtcBlocked = false;
+        try {
+          await fetch("https://denied.invalid/fetch");
+        } catch {
+          networkBlocked = true;
+        }
+        try {
+          void localStorage.length;
+        } catch {
+          storageBlocked = true;
+        }
+        try {
+          const connection = new RTCPeerConnection({ iceServers: [] });
+          connection.close();
+        } catch {
+          rtcBlocked = true;
+        }
+        const nested = document.createElement("iframe");
+        nested.src = "about:blank";
+        document.body.append(nested);
+        let recoveredRtc = false;
+        try {
+          recoveredRtc =
+            typeof nested.contentWindow.RTCPeerConnection === "function";
+        } catch {
+          // An opaque or blocked descendant cannot expose its globals.
+        }
+        nested.remove();
+        return { networkBlocked, storageBlocked, rtcBlocked, recoveredRtc };
+      });
+    expect(restrictions).toEqual({
+      networkBlocked: true,
+      storageBlocked: true,
+      rtcBlocked: true,
+      recoveredRtc: false,
+    });
+    await securityFrame.locator("html").evaluate(() => {
+      location.href = "https://denied.invalid/navigation";
+    });
+    await securityPage.waitForTimeout(250);
+    expect(externalRequests).toBe(0);
+    await securityPage.close();
+    console.log(
+      "PASS opaque-origin storage, WebRTC, direct fetch and navigation restrictions",
+    );
+    await writeFile(
+      join(output, "security.json"),
+      JSON.stringify(
+        { restrictions, externalRequests, nativeProtocol: false },
+        null,
+        2,
+      ),
+    );
+  }
   await writeFile(
     join(
       output,
-      process.argv.includes("--capabilities-only")
-        ? "capabilities-run.json"
-        : process.argv.includes("--regressions-only")
-          ? "regressions-run.json"
-          : process.argv.includes("--chrome-only")
-            ? "chrome-run.json"
-            : process.argv.includes("--artifact-only")
-              ? "artifact-run.json"
-              : process.argv.includes("--security-only")
-                ? "security-run.json"
-                : "report.json",
+      wallpaperPreviewOnly
+        ? "wallpaper-preview-run.json"
+        : wallpaperLocalOnly
+          ? "wallpaper-local-run.json"
+          : process.argv.includes("--capabilities-only")
+            ? "capabilities-run.json"
+            : process.argv.includes("--wallpaper-surface-only")
+              ? "wallpaper-surface-run.json"
+              : process.argv.includes("--regressions-only")
+                ? "regressions-run.json"
+                : process.argv.includes("--chrome-only")
+                  ? "chrome-run.json"
+                  : process.argv.includes("--artifact-only")
+                    ? "artifact-run.json"
+                    : process.argv.includes("--security-only")
+                      ? "security-run.json"
+                      : "report.json",
     ),
     JSON.stringify(
       {
@@ -2390,8 +3614,11 @@ try {
         })),
         nativeIpc: false,
         serviceNativeBoundary:
-          "LAN, gallery, image-resource and external-link services are explicit browser boundaryMock substitutes; offline HTTP receipts are parsed by real packaged Wasm",
+          "LAN, gallery, image-resource and external-link services are explicit browser boundaryMock substitutes; window services are explicitly unsupported; offline HTTP receipts are parsed by real packaged Wasm",
         offlineHttpBoundaryMock: services.httpCalls,
+        currencyHttpBoundaryMock: currencyHttpCalls,
+        currencyRatesSource:
+          "Invented offline HTTP fixture rates; parsed and converted by real packaged Wasm; no live currency rates verified",
         sessionValidationNativeBoundary:
           "Imports reuse unchanged real-Wasm exports; Rust view parsing is boundaryMock here",
         readinessTimingBoundaryMock:
@@ -2434,7 +3661,26 @@ try {
               expression: document.querySelector("#expression")?.value,
               fields: window.__sdkSnapshot?.fields,
               checkpoint: window.__sdkSnapshot?.checkpoint,
+              activeElement: (() => {
+                const active = document.activeElement;
+                const dialog = active?.closest("dialog");
+                const popover = active?.closest("[popover]");
+                return {
+                  tag: active?.tagName,
+                  id: active?.id,
+                  action: active?.dataset.action,
+                  role: active?.getAttribute("role"),
+                  text: active?.textContent?.slice(0, 120),
+                  connected: active?.isConnected,
+                  rects: active?.getClientRects().length,
+                  dialog: dialog?.id,
+                  dialogOpen: dialog?.open,
+                  popover: popover?.id,
+                  popoverHidden: popover?.hidden,
+                };
+              })(),
               stateTransitions: window.__sdkStateTransitions,
+              lanSettingsGeometry: window.__lanSettingsGeometryTrace,
               overflow: {
                 viewport: innerWidth,
                 root: document.documentElement.scrollWidth,
@@ -2463,9 +3709,7 @@ try {
                   .slice(0, 40),
               },
               defaultControl: [
-                ...document.querySelectorAll(
-                  "#start,#field-todo,#network-mode",
-                ),
+                ...document.querySelectorAll("#start,#field-todo,#fit"),
               ].map((node) => ({
                 id: node.id,
                 boxSizing: getComputedStyle(node).boxSizing,

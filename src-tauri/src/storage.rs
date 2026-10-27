@@ -12,7 +12,10 @@ use specta::Type;
 #[cfg(not(feature = "e2e"))]
 use tauri::Manager;
 
-use crate::error::{ErrorCode, NativeError, NativeResult};
+use crate::{
+    error::{ErrorCode, NativeError, NativeResult},
+    network::NetworkMode,
+};
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
 const SETTINGS_SCHEMA_VERSION: u32 = 3;
@@ -99,6 +102,27 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> NativeResult<()> {
     fs::create_dir_all(parent).map_err(|e| {
         NativeError::operation(ErrorCode::StorageIo, "Cannot create storage directory", e)
     })?;
+    // tempfile 的 Windows persist 直接调用 Win32；临时文件和目标都使用扩展路径，
+    // 避免深层缓存目录在 MoveFileExW 阶段触发传统 MAX_PATH 限制。
+    #[cfg(windows)]
+    let path = {
+        let name = path
+            .file_name()
+            .ok_or_else(|| NativeError::new(ErrorCode::StorageIo, "Invalid storage path"))?;
+        fs::canonicalize(if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        })
+        .map_err(|e| {
+            NativeError::operation(ErrorCode::StorageIo, "Cannot resolve storage directory", e)
+        })?
+        .join(name)
+    };
+    #[cfg(windows)]
+    let parent = path
+        .parent()
+        .ok_or_else(|| NativeError::new(ErrorCode::StorageIo, "Invalid storage path"))?;
     let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| {
         NativeError::operation(
             ErrorCode::StorageIo,
@@ -235,6 +259,16 @@ pub(crate) fn validate_settings(settings: &Value) -> NativeResult<()> {
             "windowPosition must be remember or center",
         ));
     }
+    if !future_schema
+        && object
+            .get("networkMode")
+            .is_some_and(|value| !matches!(value.as_str(), Some("system" | "direct")))
+    {
+        return Err(NativeError::new(
+            ErrorCode::InvalidArgument,
+            "networkMode must be system or direct",
+        ));
+    }
     fn depth(value: &Value, current: usize) -> bool {
         current <= 16
             && match value {
@@ -350,6 +384,18 @@ impl SettingsStore {
     }
 
     pub fn save(&self, settings: Value, expected_revision: i32) -> NativeResult<SettingsSnapshot> {
+        self.save_and(settings, expected_revision, || ())
+            .map(|(snapshot, ())| snapshot)
+    }
+
+    /// 成功保存后仍持写锁执行后续存储操作；回调可读上次完成的快照，但不得重入保存。
+    /// 回调结果单独返回，失败不能隐藏已经提交、需要广播的新设置快照。
+    pub(crate) fn save_and<T>(
+        &self,
+        settings: Value,
+        expected_revision: i32,
+        after_save: impl FnOnce() -> T,
+    ) -> NativeResult<(SettingsSnapshot, T)> {
         validate_settings(&settings)?;
         // 串行执行持久化写入，但不持有快照锁
         // fsync 期间窗口事件仍可读取最后一次已提交的偏好设置
@@ -379,12 +425,14 @@ impl SettingsStore {
             NativeError::operation(ErrorCode::StorageIo, "Cannot serialize settings", e)
         })?;
         atomic_write(&self.path, &bytes)?;
+        let result = after_save();
+        // 后续存储完成后才发布新 revision，避免读者据此保存仍待删除的图片。
         *self
             .inner
             .lock()
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Settings lock is unavailable"))? =
             next.clone();
-        Ok(next)
+        Ok((next, result))
     }
 
     pub fn run_in_background(&self) -> bool {
@@ -397,6 +445,19 @@ impl SettingsStore {
                     .and_then(Value::as_bool)
             })
             .unwrap_or(false)
+    }
+
+    pub fn network_mode(&self) -> NativeResult<NetworkMode> {
+        let state = self
+            .inner
+            .lock()
+            .map_err(|_| NativeError::new(ErrorCode::Internal, "Settings lock is unavailable"))?;
+        Ok(
+            match state.settings.get("networkMode").and_then(Value::as_str) {
+                Some("direct") => NetworkMode::Direct,
+                _ => NetworkMode::System,
+            },
+        )
     }
 
     pub fn window_position(&self) -> WindowPosition {
@@ -424,6 +485,27 @@ fn read_settings_file(path: &Path) -> std::io::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn atomic_write_replaces_long_windows_paths_without_changing_system_settings() {
+        use std::os::windows::ffi::OsStrExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let raw = directory.path().to_string_lossy();
+        let mut parent = PathBuf::from(raw.trim_start_matches(r"\\?\"));
+        while parent.as_os_str().encode_wide().count() < 230 {
+            parent.push("nested-attachment-cache");
+        }
+        let path = parent.join("f".repeat(64));
+        assert!(!path.to_string_lossy().starts_with(r"\\?\"));
+        assert!(path.as_os_str().encode_wide().count() > 260);
+
+        atomic_write(&path, b"original attachment").unwrap();
+        atomic_write(&path, b"replacement attachment").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"replacement attachment");
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    }
+
     #[test]
     fn fractional_future_schema_versions_keep_the_future_version_guard() {
         assert!(!future_settings_schema(&json!({"schemaVersion": 3})));
@@ -450,6 +532,62 @@ mod tests {
             ErrorCode::SettingsConflict
         );
         assert_eq!(store.snapshot().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn network_mode_defaults_migrates_and_reloads_without_losing_settings() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let store = SettingsStore::open(path.clone()).unwrap();
+        assert_eq!(store.network_mode().unwrap(), NetworkMode::System);
+        store
+            .save(json!({"schemaVersion": 3, "language": "en"}), 0)
+            .unwrap();
+        assert_eq!(store.network_mode().unwrap(), NetworkMode::System);
+        let saved = store
+            .save(
+                json!({"schemaVersion": 3, "language": "en", "networkMode": "direct"}),
+                1,
+            )
+            .unwrap();
+        assert_eq!(store.network_mode().unwrap(), NetworkMode::Direct);
+        let reopened = SettingsStore::open(path.clone()).unwrap();
+        assert_eq!(reopened.network_mode().unwrap(), NetworkMode::Direct);
+        assert_eq!(reopened.snapshot().unwrap(), saved);
+        let original = fs::read(&path).unwrap();
+        for invalid in [json!("proxy"), json!(true), json!(null)] {
+            assert_eq!(
+                store
+                    .save(json!({"schemaVersion": 3, "networkMode": invalid}), 2)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::InvalidArgument
+            );
+            assert_eq!(fs::read(&path).unwrap(), original);
+        }
+        store
+            .save(json!({"schemaVersion": 3, "networkMode": "system"}), 2)
+            .unwrap();
+        assert_eq!(store.network_mode().unwrap(), NetworkMode::System);
+    }
+
+    #[test]
+    fn future_network_mode_is_preserved_without_rewriting_the_archive() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let original = serde_json::to_vec(&json!({
+            "revision": 7,
+            "settings": {"schemaVersion": 99, "networkMode": "future-proxy"},
+        }))
+        .unwrap();
+        fs::write(&path, &original).unwrap();
+        let store = SettingsStore::open(path.clone()).unwrap();
+        assert_eq!(store.network_mode().unwrap(), NetworkMode::System);
+        assert_eq!(
+            store.snapshot().unwrap().settings["networkMode"],
+            "future-proxy"
+        );
+        assert_eq!(fs::read(path).unwrap(), original);
     }
 
     #[test]
@@ -769,6 +907,108 @@ mod tests {
         fs::remove_dir(&path).unwrap();
         fs::write(&path, original).unwrap();
         assert_eq!(store.save(json!({}), 1).unwrap().revision, 2);
+    }
+
+    #[test]
+    fn save_and_holds_the_writer_and_keeps_the_last_complete_snapshot_readable() {
+        use std::sync::{Arc, Barrier, mpsc};
+        use std::time::Duration;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let store = Arc::new(SettingsStore::open(path.clone()).unwrap());
+        let previous = store.snapshot().unwrap();
+        let (saved_tx, saved_rx) = mpsc::sync_channel(0);
+        let resume = Arc::new(Barrier::new(2));
+        let saving = {
+            let store = store.clone();
+            let resume = resume.clone();
+            std::thread::spawn(move || {
+                store.save_and(json!({"language":"en"}), 0, || {
+                    saved_tx.send(()).unwrap();
+                    resume.wait();
+                })
+            })
+        };
+        saved_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (read_tx, read_rx) = mpsc::sync_channel(1);
+        let reading = {
+            let store = store.clone();
+            std::thread::spawn(move || read_tx.send(store.snapshot()).unwrap())
+        };
+        let (started_tx, started_rx) = mpsc::sync_channel(0);
+        let (written_tx, written_rx) = mpsc::sync_channel(1);
+        let stale_writer = {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                written_tx
+                    .send(store.save(json!({"language":"zh"}), 0))
+                    .unwrap();
+            })
+        };
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let readable = read_rx.recv_timeout(Duration::from_secs(2));
+        let still_waiting = written_rx.recv_timeout(Duration::from_millis(50));
+        resume.wait();
+        let (committed, ()) = saving.join().unwrap().unwrap();
+        reading.join().unwrap();
+        stale_writer.join().unwrap();
+        assert_eq!(readable.unwrap().unwrap(), previous);
+        assert!(matches!(
+            still_waiting,
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(
+            written_rx.recv().unwrap().unwrap_err().code,
+            ErrorCode::SettingsConflict,
+        );
+        assert_eq!(
+            SettingsStore::open(path).unwrap().snapshot().unwrap(),
+            committed,
+        );
+    }
+
+    #[test]
+    fn save_and_skips_followup_on_save_failure_and_preserves_committed_followup_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let store = SettingsStore::open(path.clone()).unwrap();
+        let original = store.save(json!({"language":"en"}), 0).unwrap();
+        let called = std::cell::Cell::new(false);
+        for (settings, revision, code) in [
+            (
+                json!({"runInBackground":"invalid"}),
+                1,
+                ErrorCode::InvalidArgument,
+            ),
+            (json!({"language":"zh"}), 0, ErrorCode::SettingsConflict),
+        ] {
+            assert_eq!(
+                store
+                    .save_and(settings, revision, || called.set(true))
+                    .unwrap_err()
+                    .code,
+                code,
+            );
+            assert!(!called.get());
+            assert_eq!(store.snapshot().unwrap(), original);
+        }
+        let (committed, followup): (_, NativeResult<()>) = store
+            .save_and(json!({"language":"zh"}), 1, || {
+                Err(NativeError::new(
+                    ErrorCode::StorageIo,
+                    "Followup write failed",
+                ))
+            })
+            .unwrap();
+        assert_eq!(followup.unwrap_err().code, ErrorCode::StorageIo);
+        assert_eq!(committed.revision, 2);
+        assert_eq!(store.snapshot().unwrap(), committed);
+        assert_eq!(
+            SettingsStore::open(path).unwrap().snapshot().unwrap(),
+            committed
+        );
     }
 
     #[test]

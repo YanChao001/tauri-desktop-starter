@@ -5,7 +5,7 @@ import {
   PuzzleIcon,
   TerminalIcon,
   ImageIcon,
-  MessageCircleIcon,
+  MessagesSquareIcon,
 } from "lucide-react";
 import type { ExtensionIcon as IconName } from "@/lib/tauri";
 
@@ -16,7 +16,7 @@ const ICONS = {
   terminal: TerminalIcon,
   puzzle: PuzzleIcon,
   image: ImageIcon,
-  "message-circle": MessageCircleIcon,
+  "message-circle": MessagesSquareIcon,
 };
 export function resolveExtensionIcon(name?: IconName | null) {
   return ICONS[name ?? "puzzle"];

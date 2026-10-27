@@ -48,6 +48,13 @@ vi.mock("@/routes", () => ({
       icon: () => null,
       demoOnly: true,
     },
+    { path: "/diagnostics", labelKey: "nav.diagnostics", icon: () => null },
+    {
+      path: "/recovery",
+      labelKey: "recovery.title",
+      icon: () => null,
+      hidden: true,
+    },
   ],
 }));
 
@@ -76,6 +83,15 @@ function Probe() {
         Light
       </button>
       <button onClick={() => void commands.execute("navigate:/")}>Home</button>
+      <button onClick={() => void commands.execute("open-desktop")}>
+        Window settings
+      </button>
+      <button onClick={() => void commands.execute("open-window")}>
+        Window options
+      </button>
+      <button onClick={() => void commands.execute("check-updates")}>
+        Update settings
+      </button>
       <button onClick={() => update({ language: "en" })}>English</button>
       <button onClick={() => update({ appMode: "minimal" })}>Minimal</button>
       <button onClick={() => commands.setPaletteOpen(true)}>Palette</button>
@@ -228,6 +244,35 @@ describe("unified application commands", () => {
       screen.queryByRole("option", { name: "交互场景" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "创意展厅" })).toBeVisible();
+  });
+  it("opens shared settings from desktop and browser window commands", () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText("Window settings"));
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/settings?section=desktop",
+    );
+    fireEvent.click(screen.getByText("Window options"));
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/settings?focus=windows",
+    );
+    fireEvent.click(screen.getByText("Update settings"));
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/settings?section=updates",
+    );
+  });
+  it("finds the combined recovery destination without exposing the legacy recovery command", async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText("Palette"));
+    const input = await screen.findByRole("combobox", { name: "快速操作" });
+    fireEvent.change(input, { target: { value: "恢复" } });
+    const destination = await screen.findByRole("option", {
+      name: "诊断与恢复",
+    });
+    expect(
+      screen.queryByRole("option", { name: "启动故障恢复" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(destination);
+    expect(screen.getByTestId("location")).toHaveTextContent("/diagnostics");
   });
 
   it("keeps standalone extension sessions out of host navigation and its shortcuts", () => {

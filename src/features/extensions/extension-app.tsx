@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
+import { flushSync } from "react-dom";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,10 +37,10 @@ import {
   type ExtensionViewDataInput,
 } from "@/lib/tauri";
 import {
-  ExtensionView as ViewRenderer,
   extensionFieldBytes,
-} from "./extension-view";
-import { extensionInstallationIdentity } from "./extension-model";
+  extensionInstallationIdentity,
+} from "./extension-model";
+import { ExtensionView as ViewRenderer } from "./extension-view";
 import { useExtensionPhase } from "./use-extension-phase";
 import { ExtensionSessionImport } from "./extension-session-import";
 import {
@@ -53,16 +60,22 @@ import { ExtensionCustomUi } from "./extension-custom-ui";
 import type { ExtensionUiRequest } from "./extension-ui-bridge";
 import { useDelayedBusy } from "./use-delayed-busy";
 import { ExtensionLoading } from "./extension-loading";
+import { useExtensionActivity } from "./extension-activity";
 
 function validateFieldDrafts(
   view: ExtensionView | null,
   fields: Record<string, string>,
+  policy: "generic-form" | "custom-ui",
 ) {
   const invalidFields = new Set<string>();
   const invalidFieldValues = new Set<string>();
   let bytes = 0;
   for (const [id, value] of Object.entries(fields)) {
     const field = view?.fields.find((field) => field.id === id);
+    if (typeof value !== "string" || value.includes("\0")) {
+      invalidFields.add(id);
+      continue;
+    }
     const size = new TextEncoder().encode(value).length;
     bytes += size;
     if (!field || size > extensionFieldBytes(field)) {
@@ -72,7 +85,9 @@ function validateFieldDrafts(
     let valid = true;
     if (field.kind === "checkbox")
       valid = value === "true" || value === "false";
-    else if (field.kind === "select")
+    // A custom UI can change a parent and dependent select in the same action.
+    // Only the plugin can validate that new context; the old options are stale.
+    else if (field.kind === "select" && policy === "generic-form")
       valid = (field.options ?? []).some((option) => option.value === value);
     else if ((field.kind === "number" || field.kind === "date") && value) {
       const input = document.createElement("input");
@@ -109,37 +124,38 @@ export function ExtensionApp({
   item: ExtensionInfo;
   commandId: string;
   runs: ExtensionSnapshot["runs"];
-  onClose: () => void;
+  onClose: (signal?: AbortSignal) => void | Promise<void>;
   onSettled: () => Promise<void>;
   tools?: ReactNode;
 }) {
   const { t, language } = useI18n();
+  const active = useExtensionActivity();
+  const activity = useRef(active);
+  activity.current = active;
   const manifest = item.package.manifest;
   const documentId = manifest.commands.find(
     (command) => command.id === commandId,
   )?.ui?.document;
+  const fieldDraftPolicy = documentId ? "custom-ui" : "generic-form";
   const documentHash = item.package.uiDocuments?.find(
     (document) => document.id === documentId,
   )?.sha256;
-  const phase = useExtensionPhase(runs, manifest.id);
   const workId = `extension-app:${manifest.id}:${commandId}:${extensionInstallationIdentity(item)}`;
   const session = useExtensionSession(
     `${manifest.id}:${commandId}`,
     extensionInstallationIdentity(item),
   );
-  const [view, setView] = useState<ExtensionView | null>(session.view);
-  const [uiState, setUiState] = useState(session.uiState ?? null);
-  const latest = useRef<ExtensionView | null>(session.view);
-  const [fields, setFields] = useState<Record<string, string>>(session.fields);
-  const latestFields = useRef(fields);
-  const [busy, setBusy] = useState(session.pending !== null);
-  const [dirty, setDirty] = useState(session.dirty);
-  const [saving, setSaving] = useState(session.exporting !== null);
-  const [picking, setPicking] = useState(session.selecting !== null);
+  const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const { view, fields, dirty, error } = state;
+  const uiState = state.uiState ?? null;
+  const busy = state.pending !== null;
+  const phase = useExtensionPhase(runs, manifest.id, busy && active);
+  const saving = state.exporting !== null;
+  const picking = state.selecting !== null;
   const [stopping, setStopping] = useState(false);
   const showProgress = useDelayedBusy(busy || stopping);
   const [closed, setClosed] = useState(false);
-  const [error, setError] = useState<unknown>(session.error);
+  const previousActivity = useRef(active);
   const [surfaceRevision, setSurfaceRevision] = useState(0);
   const [dataOpen, setDataOpen] = useState(false);
   const toolsTrigger = useRef<HTMLButtonElement>(null);
@@ -153,6 +169,7 @@ export function ExtensionApp({
   const alive = useRef(false);
   const closing = useRef(false);
   const init = useRef(() => {});
+  const setError = (error: unknown) => session.update({ error });
   const notifiedError = useRef<unknown>(null);
   useEffect(() => {
     if (!error) notifiedError.current = null;
@@ -168,14 +185,9 @@ export function ExtensionApp({
   const { invalidFields, invalidFieldValues } = validateFieldDrafts(
     view,
     fields,
+    fieldDraftPolicy,
   );
-  const blocked =
-    busy ||
-    saving ||
-    stopping ||
-    picking ||
-    session.exporting !== null ||
-    session.pending !== null;
+  const blocked = busy || saving || stopping || picking;
   const status = !showProgress
     ? ""
     : stopping
@@ -189,21 +201,21 @@ export function ExtensionApp({
     data?: ExtensionViewDataInput,
     refreshLocale = false,
   ) {
+    const current = session.getSnapshot();
     if (
-      session.pending ||
-      session.exporting ||
-      session.selecting ||
+      current.pending ||
+      current.exporting ||
+      current.selecting ||
       closing.current ||
-      validateFieldDrafts(session.view, session.fields).invalidFields.size >
-        0 ||
+      !activity.current ||
+      validateFieldDrafts(current.view, current.fields, fieldDraftPolicy)
+        .invalidFields.size > 0 ||
       !item.enabled
     )
       return;
-    setBusy(true);
-    setError(null);
-    session.error = null;
+    session.update({ error: null });
     const locale = language === "zh" ? "zh-CN" : "en";
-    const draftFields = refreshLocale ? { ...session.fields } : null;
+    const draftFields = refreshLocale ? current.fields : null;
     const pending = viewExtension({
       id: manifest.id,
       commandId,
@@ -215,134 +227,80 @@ export function ExtensionApp({
         host: null,
         results: [],
         action,
-        state: session.view?.state ?? "",
-        fields: session.fields,
+        state: current.view?.state ?? "",
+        fields: current.fields,
         locale,
       },
     })
       .then((next) => {
-        latest.current = next;
         // 原生视图保持已验证原件，语言刷新只在独立字段草稿中保留未提交输入。
-        latestFields.current = Object.fromEntries(
+        const fields = Object.fromEntries(
           next.fields.map((field) => [
             field.id,
             draftFields?.[field.id] ?? field.value,
           ]),
         );
-        session.view = next;
-        session.locale = locale;
-        session.fields = latestFields.current;
-        if (action !== null) session.dirty = true;
-        if (alive.current) {
-          setView(next);
-          setFields(latestFields.current);
-          if (action !== null) setDirty(true);
-        }
+        session.update({
+          view: next,
+          locale,
+          fields,
+          ...(action !== null ? { dirty: true } : {}),
+        });
       })
       .catch((reason: unknown) => {
-        session.error = reason;
-        if (alive.current) setError(reason);
+        session.update({ error: reason });
       })
       .finally(() => {
-        if (session.pending === pending) session.pending = null;
-        if (alive.current) {
-          setBusy(false);
-          setStopping(false);
-        }
+        if (session.getSnapshot().pending === pending)
+          session.update({ pending: null });
+        if (alive.current) setStopping(false);
         void onSettled();
       });
-    session.pending = pending;
+    session.update({ pending });
     return pending;
   }
   init.current = () => run(null);
   useEffect(() => {
     alive.current = true;
-    let disposed = false;
-    // StrictMode's first setup is disposed before any Wasm request is sent.
-    queueMicrotask(() => {
-      if (!disposed && !latest.current) init.current();
-    });
     return () => {
-      disposed = true;
       alive.current = false;
-      if (session.pending)
+      if (session.getSnapshot().pending)
         void cancelExtension(manifest.id, item.generation).catch(() => {});
     };
   }, [manifest.id, item.generation, session]);
   useEffect(() => {
-    let stopped = false;
-    const pending = session.pending;
-    if (pending)
-      void pending.then(() => {
-        if (!stopped) {
-          latest.current = session.view;
-          latestFields.current = session.fields;
-          setView(session.view);
-          setFields(session.fields);
-          setDirty(session.dirty);
-          setError(session.error);
-          setBusy(false);
-          setStopping(false);
-        }
-      });
-    const selecting = session.selecting;
-    if (selecting)
-      void selecting.then(() => {
-        if (!stopped) setPicking(false);
-      });
-    return () => {
-      stopped = true;
-    };
-  }, [session]);
-  useEffect(() => {
-    let stopped = false;
-    const exporting = session.exporting;
-    if (exporting)
-      void exporting.then(
-        () => {
-          if (!stopped) {
-            setSaving(false);
-            setDirty(session.dirty);
-          }
-        },
-        (reason: unknown) => {
-          if (!stopped) {
-            setSaving(false);
-            setDirty(session.dirty);
-            setError(reason);
-          }
-        },
-      );
-    return () => {
-      stopped = true;
-    };
-  }, [session]);
-  useEffect(() => {
-    if (!session.pending && latest.current !== session.view) {
-      latest.current = session.view;
-      latestFields.current = session.fields;
-      setView(session.view);
-      setFields(session.fields);
-      setDirty(session.dirty);
+    const resumed = active && !previousActivity.current;
+    previousActivity.current = active;
+    if (!active) {
+      setDataOpen(false);
+      return;
     }
-  }, [session, session.pending, session.view, session.fields, session.dirty]);
-  useEffect(() => {
-    if (!busy) return;
-    const timer = window.setInterval(() => void onSettled(), 750);
-    return () => window.clearInterval(timer);
-  }, [busy, onSettled]);
+    if (closed && !resumed) return;
+    let disposed = false;
+    // StrictMode 的首次清理先于请求；缓存页面恢复时只初始化尚无视图的会话。
+    queueMicrotask(() => {
+      if (disposed || !activity.current) return;
+      if (closed) {
+        closing.current = false;
+        setClosed(false);
+        setSurfaceRevision((value) => value + 1);
+      }
+      if (!session.getSnapshot().view) init.current();
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [active, closed, session]);
   useEffect(() => {
     const locale = language === "zh" ? "zh-CN" : "en";
-    if (session.locale === locale) localeRefresh.current = null;
+    if (state.locale === locale) localeRefresh.current = null;
     if (
-      !session.view ||
-      session.locale === locale ||
+      !active ||
+      !view ||
+      state.locale === locale ||
       localeRefresh.current === locale ||
-      validateFieldDrafts(session.view, session.fields).invalidFields.size >
+      validateFieldDrafts(view, fields, fieldDraftPolicy).invalidFields.size >
         0 ||
-      session.pending ||
-      session.exporting ||
-      session.selecting ||
       busy ||
       saving ||
       picking ||
@@ -356,13 +314,13 @@ export function ExtensionApp({
   });
   async function settle(signal?: AbortSignal, waitForExport = false) {
     signal?.throwIfAborted();
-    await session.selecting;
+    await session.getSnapshot().selecting;
     signal?.throwIfAborted();
     if (waitForExport) {
-      await session.exporting;
+      await session.getSnapshot().exporting;
       signal?.throwIfAborted();
     }
-    const pending = session.pending;
+    const pending = session.getSnapshot().pending;
     if (pending) {
       await cancelExtension(manifest.id, item.generation);
       await pending;
@@ -371,17 +329,17 @@ export function ExtensionApp({
   }
   async function save(signal?: AbortSignal) {
     signal?.throwIfAborted();
-    if (session.exporting || closing.current)
+    if (session.getSnapshot().exporting || closing.current)
       throw new NativeBridgeError({
         code: "CONFLICT",
         message: "Session is busy",
         retryable: false,
       });
-    if (alive.current) setSaving(true);
     const pending = (async () => {
       try {
         await settle(signal);
         signal?.throwIfAborted();
+        const current = session.getSnapshot();
         const saved = await saveExtensionSession(
           `${manifest.id}-session.json`,
           serializeExtensionSession({
@@ -389,19 +347,19 @@ export function ExtensionApp({
             kind: "view",
             ...extensionSessionIdentity(item, commandId),
             result: null,
-            view: session.view,
-            fields: session.fields,
+            view: current.view,
+            fields: current.fields,
             ...(documentHash
               ? {
                   ui: {
                     sha256: documentHash,
-                    state: session.uiState ?? null,
+                    state: current.uiState ?? null,
                   },
                 }
               : {}),
-            inputText: session.draft.inputText,
-            files: session.draft.files.map((file) => file.name),
-            url: session.draft.url,
+            inputText: current.draft.inputText,
+            files: current.draft.files.map((file) => file.name),
+            url: current.draft.url,
           }),
         );
         signal?.throwIfAborted();
@@ -411,14 +369,15 @@ export function ExtensionApp({
             message: "Export cancelled",
             retryable: false,
           });
-        session.dirty = false;
-        if (alive.current) setDirty(false);
+        session.update({ dirty: false });
+      } catch (error) {
+        if (!signal?.aborted) session.update({ error });
+        throw error;
       } finally {
-        session.exporting = null;
-        if (alive.current) setSaving(false);
+        session.update({ exporting: null });
       }
     })();
-    session.exporting = pending;
+    session.update({ exporting: pending });
     await pending;
   }
   useUnsavedWork({
@@ -429,27 +388,21 @@ export function ExtensionApp({
     discard: async (signal) => {
       await settle(signal, true);
       signal?.throwIfAborted();
-      latest.current = null;
-      latestFields.current = {};
-      session.view = null;
-      session.uiState = null;
-      session.fields = {};
-      session.dirty = false;
-      session.draft = { inputText: "", url: "", files: [] };
-      if (alive.current) {
-        setView(null);
-        setUiState(null);
-        setFields({});
-        setDirty(false);
-      }
+      resetSession();
     },
   });
-  useEffect(() => {
-    if (closed) onClose();
-  }, [closed, onClose]);
+  function resetSession() {
+    session.update({
+      view: null,
+      uiState: null,
+      fields: {},
+      dirty: false,
+      draft: { inputText: "", url: "", files: [] },
+    });
+  }
   async function close(signal?: AbortSignal) {
     signal?.throwIfAborted();
-    if (session.exporting || closing.current)
+    if (session.getSnapshot().exporting || closing.current)
       throw new NativeBridgeError({
         code: "CONFLICT",
         message: "Session is busy",
@@ -457,18 +410,24 @@ export function ExtensionApp({
       });
     closing.current = true;
     setStopping(true);
+    let previousDirty: boolean | undefined;
     try {
       await settle(signal);
       signal?.throwIfAborted();
-      latest.current = null;
-      latestFields.current = {};
-      session.view = null;
-      session.uiState = null;
-      session.fields = {};
-      session.dirty = false;
-      session.draft = { inputText: "", url: "", files: [] };
+      // The user already chose export/discard. Let native close negotiation see
+      // that decision, while retaining the full draft until closing succeeds.
+      previousDirty = session.getSnapshot().dirty;
+      // Navigation can unmount immediately; publish the clean registration before
+      // its cleanup decides whether to retain an off-page unsaved-work callback.
+      flushSync(() => session.update({ dirty: false }));
+      await onClose(signal);
+      // 成功导航可能卸载页面，也可能只停用缓存页面；这两种清理都会终止对话框。
+      // 当前页面仍活动时的显式取消，才保留用户此前的会话。
+      if (alive.current && activity.current) signal?.throwIfAborted();
+      resetSession();
       if (alive.current) setClosed(true);
     } catch (reason) {
+      if (previousDirty !== undefined) session.update({ dirty: previousDirty });
       closing.current = false;
       if (alive.current) {
         setStopping(false);
@@ -477,10 +436,11 @@ export function ExtensionApp({
     }
   }
   function updateUiFields(patch: Record<string, string>) {
+    const current = session.getSnapshot();
     if (
-      session.pending ||
-      session.exporting ||
-      session.selecting ||
+      current.pending ||
+      current.exporting ||
+      current.selecting ||
       closing.current
     )
       throw new NativeBridgeError({
@@ -488,41 +448,26 @@ export function ExtensionApp({
         message: "Session is busy",
         retryable: false,
       });
-    const next = { ...session.fields, ...patch };
+    const next = { ...current.fields, ...patch };
     if (
-      Object.entries(next).some(([id, value]) => {
-        const field = session.view?.fields.find((field) => field.id === id);
-        return (
-          !field ||
-          new TextEncoder().encode(value).length > extensionFieldBytes(field)
-        );
-      }) ||
-      Object.values(next).reduce(
-        (sum, value) => sum + new TextEncoder().encode(value).length,
-        0,
-      ) >
-        1024 * 1024
+      validateFieldDrafts(current.view, next, fieldDraftPolicy).invalidFields
+        .size > 0
     )
       throw new NativeBridgeError({
         code: "INVALID_ARGUMENT",
         message: "Invalid UI fields",
         retryable: false,
       });
-    session.fields = next;
-    latestFields.current = next;
-    session.dirty = true;
-    if (alive.current) {
-      setFields(next);
-      setDirty(true);
-    }
+    session.update({ fields: next, dirty: true });
   }
   async function saveArtifact(index: number) {
-    const artifact = session.view?.artifacts?.[index];
+    const current = session.getSnapshot();
+    const artifact = current.view?.artifacts?.[index];
     if (
       !artifact ||
-      session.pending ||
-      session.exporting ||
-      session.selecting ||
+      current.pending ||
+      current.exporting ||
+      current.selecting ||
       closing.current
     )
       throw new NativeBridgeError({
@@ -531,7 +476,6 @@ export function ExtensionApp({
         retryable: false,
       });
     let saved = false;
-    if (alive.current) setSaving(true);
     const pending = saveExtensionArtifact(
       manifest.id,
       item.package.sha256,
@@ -542,15 +486,20 @@ export function ExtensionApp({
         saved = path !== null;
       })
       .finally(() => {
-        session.exporting = null;
-        if (alive.current) setSaving(false);
+        session.update({ exporting: null });
       });
-    session.exporting = pending;
+    session.update({ exporting: pending });
     await pending;
     return saved;
   }
   async function executeUi(request: ExtensionUiRequest): Promise<unknown> {
-    if (!alive.current || closed || closing.current || !item.enabled)
+    if (
+      !alive.current ||
+      !activity.current ||
+      closed ||
+      closing.current ||
+      !item.enabled
+    )
       throw new NativeBridgeError({
         code: "EXTENSION_UNAVAILABLE",
         message: "Session is closed",
@@ -573,34 +522,22 @@ export function ExtensionApp({
       );
     if (request.method === "artifact") return saveArtifact(request.index);
     if (request.method === "checkpoint") {
+      const current = session.getSnapshot();
       if (
-        session.exporting ||
+        current.exporting ||
         closing.current ||
-        (!request.dirty && (session.pending || session.selecting))
+        (!request.dirty && (current.pending || current.selecting))
       )
         throw new NativeBridgeError({
           code: "CONFLICT",
           message: "Session is busy",
           retryable: false,
         });
-      session.uiState = request.value;
-      session.dirty = request.dirty;
-      if (alive.current) {
-        setUiState(request.value);
-        setDirty(request.dirty);
-      }
+      session.update({ uiState: request.value, dirty: request.dirty });
       return null;
     }
     updateUiFields(request.fields);
     if (request.method === "fields") return null;
-    if (
-      validateFieldDrafts(session.view, session.fields).invalidFields.size > 0
-    )
-      throw new NativeBridgeError({
-        code: "INVALID_ARGUMENT",
-        message: "Correct invalid field drafts before running the extension",
-        retryable: false,
-      });
     const pending = run(request.action);
     if (!pending)
       throw new NativeBridgeError({
@@ -609,11 +546,12 @@ export function ExtensionApp({
         retryable: false,
       });
     await pending;
-    if (session.error) throw session.error;
-    return session.view;
+    const completed = session.getSnapshot();
+    if (completed.error) throw completed.error;
+    return completed.view;
   }
   return (
-    <section className="min-w-0 space-y-5" hidden={closed}>
+    <section className="min-w-0" hidden={closed}>
       <ExtensionFrame
         item={item}
         announcement={status}
@@ -731,12 +669,10 @@ export function ExtensionApp({
                 invalidFieldValues={invalidFieldValues}
                 onAction={run}
                 onField={(id, value) => {
-                  const next = { ...latestFields.current, [id]: value };
-                  latestFields.current = next;
-                  session.fields = next;
-                  session.dirty = true;
-                  setFields(next);
-                  setDirty(true);
+                  session.update({
+                    fields: { ...session.getSnapshot().fields, [id]: value },
+                    dirty: true,
+                  });
                 }}
               />
             </>
@@ -803,44 +739,33 @@ export function ExtensionApp({
           if (alive.current) setError(reason);
         }}
         onPending={(pending, completed) => {
-          if (pending !== null || session.selecting === completed) {
-            session.selecting = pending;
-            if (alive.current) setPicking(pending !== null);
-          }
+          if (pending !== null || session.getSnapshot().selecting === completed)
+            session.update({ selecting: pending });
         }}
         onRestore={(imported: ExtensionSessionExport) => {
-          latest.current = imported.view;
-          latestFields.current = imported.fields;
-          session.view = imported.view;
-          session.locale = language === "zh" ? "zh-CN" : "en";
-          session.uiState = imported.ui?.state ?? null;
-          session.fields = imported.fields;
-          session.draft = {
-            inputText: imported.inputText,
-            url: imported.url,
-            files: [],
-          };
-          session.dirty = true;
-          setView(imported.view);
-          setUiState(session.uiState);
-          setFields(imported.fields);
-          setDirty(true);
-          setError(null);
+          session.update({
+            view: imported.view,
+            locale: language === "zh" ? "zh-CN" : "en",
+            uiState: imported.ui?.state ?? null,
+            fields: imported.fields,
+            draft: {
+              inputText: imported.inputText,
+              url: imported.url,
+              files: [],
+            },
+            dirty: true,
+            error: null,
+          });
           setSurfaceRevision((value) => value + 1);
         }}
       />
       <ExtensionData
-        presentation="dialog"
-        open={dataOpen}
+        open={active && dataOpen}
         onOpenChange={setDataOpen}
         returnFocusRef={toolsTrigger}
         item={item}
         blocked={blocked || invalidFields.size > 0}
         session={session}
-        onDirty={() => setDirty(true)}
-        onPickingChange={(value) => {
-          if (alive.current) setPicking(value);
-        }}
         onSend={(data) => {
           run("host-data", data);
           setDataOpen(false);
@@ -848,9 +773,8 @@ export function ExtensionApp({
       />
       <ExtensionSessionClose
         ref={closeControl}
-        showTrigger={false}
         returnFocusRef={toolsTrigger}
-        dirty={dirty || session.dirty}
+        dirty={dirty}
         busy={busy}
         disabled={saving || stopping || picking}
         onSave={save}

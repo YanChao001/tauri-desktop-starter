@@ -114,12 +114,16 @@ describe("generated native bridge", () => {
 
   it("bounds error logs without splitting Unicode characters", async () => {
     vi.mocked(invoke).mockResolvedValue(null);
-    await recordFrontendError({ message: "🌸".repeat(1100), stack: "stack" });
+    await recordFrontendError({
+      message: "🌸".repeat(1100),
+      stack: "s".repeat(9000),
+      componentStack: "a" + "中".repeat(3000),
+    });
     expect(invoke).toHaveBeenLastCalledWith("record_frontend_error", {
       error: {
-        message: "🌸".repeat(1000),
-        stack: "stack",
-        componentStack: null,
+        message: "🌸".repeat(1024),
+        stack: "s".repeat(8192),
+        componentStack: "a" + "中".repeat(2730),
       },
     });
   });

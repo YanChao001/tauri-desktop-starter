@@ -86,6 +86,31 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("explains the UTF-8 text limit and enables running again after the input is corrected", () => {
+  render(
+    <ExtensionRunner
+      items={[tool]}
+      runs={[]}
+      onSettled={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+  const input = screen.getByLabelText("Input text");
+  const run = screen.getByRole("button", { name: "Run extension" });
+  fireEvent.change(input, {
+    target: { value: "汉".repeat(Math.ceil((1024 * 1024) / 3)) },
+  });
+  const error = screen.getByRole("alert");
+  expect(error).toBeVisible();
+  expect(error).toHaveTextContent("Remove some content to continue");
+  expect(input).toHaveAttribute("aria-describedby", error.id);
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(run).toBeDisabled();
+  fireEvent.change(input, { target: { value: "Corrected input" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(input).not.toHaveAttribute("aria-describedby");
+  expect(run).toBeEnabled();
+});
+
 it("keeps short runs locked without flashing progress or changing the feedback controls", async () => {
   const pending = deferred<string>();
   vi.mocked(native.runExtension).mockReturnValueOnce(pending.promise);
@@ -113,6 +138,45 @@ it("keeps short runs locked without flashing progress or changing the feedback c
   expect(stop).not.toBeVisible();
   expect(screen.getByRole("status", { name: "Execution status" })).toBe(status);
   expect(status).toBeEmptyDOMElement();
+});
+
+it("continues announcing a long run and cooperative stopping from the output heading", async () => {
+  const pending = deferred<string>();
+  vi.mocked(native.runExtension).mockReturnValueOnce(pending.promise);
+  const onSettled = vi.fn().mockResolvedValue(undefined);
+  const view = render(
+    <ExtensionRunner
+      items={[tool]}
+      runs={[{ id: "test.tool", owner: "browser", phase: "queued" }]}
+      onSettled={onSettled}
+    />,
+  );
+  const status = screen.getByRole("status", { name: "Execution status" });
+  vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  expect(status).toHaveTextContent("Queued, waiting for a runtime slot…");
+  expect(status).toHaveAttribute("tabindex", "0");
+  fireEvent.focus(status);
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Queued, waiting for a runtime slot…",
+  );
+  fireEvent.blur(status);
+  view.rerender(
+    <ExtensionRunner
+      items={[tool]}
+      runs={[{ id: "test.tool", owner: "browser", phase: "running" }]}
+      onSettled={onSettled}
+    />,
+  );
+  expect(status).toHaveTextContent("Running: test.tool");
+  fireEvent.click(screen.getByRole("button", { name: "Request stop" }));
+  expect(status).toHaveTextContent("Waiting for the extension to stop…");
+  expect(native.cancelExtension).toHaveBeenCalledWith("test.tool", 1);
+  await act(async () => pending.resolve("Final result"));
+  expect(status).toBeEmptyDOMElement();
+  expect(status).not.toHaveAttribute("tabindex");
+  expect(screen.getByText("Final result")).toBeVisible();
 });
 
 it("exports the actual final result when completion races with lifecycle cancellation", async () => {
