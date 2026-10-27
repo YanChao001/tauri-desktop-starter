@@ -6,24 +6,6 @@
 
 采用精简版 GitFlow：两条长期分支 + 四种短期分支。
 
-```mermaid
-gitGraph
-  commit id: "init"
-  branch develop
-  commit id: "feat: 基建"
-  branch feature/12-window-state
-  commit id: "feat(window): 记住窗口位置"
-  commit id: "test(window): 补充用例"
-  checkout develop
-  merge feature/12-window-state
-  branch release/1.1.0
-  commit id: "chore: 版本 1.1.0"
-  checkout main
-  merge release/1.1.0 tag: "v1.1.0"
-  checkout develop
-  merge main
-```
-
 | 分支                     | 用途                                 | 从哪来    | 合到哪                             | 生命周期   |
 | ------------------------ | ------------------------------------ | --------- | ---------------------------------- | ---------- |
 | `main`                   | 生产代码，每次合并都对应一个发布标签 | —         | —                                  | 永久       |
@@ -33,42 +15,25 @@ gitGraph
 | `release/<x.y.z>`        | 发布修复、版本和必要发布配置         | `develop` | `main`，再由 `main` 回流 `develop` | 发布后删除 |
 | `hotfix/<x.y.z>`         | 线上紧急修复                         | `main`    | `main`，再由 `main` 回流 `develop` | 发布后删除 |
 
-**分支命名**：全小写，单词用连字符；功能 / 普通修复分支有 issue 时带上编号，发布 / 紧急修复分支使用版本号。
-
-```text
-feature/42-command-palette
-fix/57-window-flash
-release/1.2.0
-hotfix/1.1.1
-```
+分支名全小写，单词用连字符；功能 / 普通修复有 issue 时带编号，如 `feature/42-command-palette`、`fix/57-window-flash`；发布 / 紧急修复使用版本号。
 
 ## 日常开发流程
 
 ```bash
-# 1. 更新本地集成分支
+# 从最新集成分支开始
 git switch develop
 git pull --ff-only
-
-# 2. 切特性分支
 git switch -c feature/42-command-palette
 
-# 3. 开发过程中定期同步（不要用 merge）
+# 开发中及合并前同步
 git fetch origin
 git rebase origin/develop
 
-# 4. 按改动运行相关检查；此处以命令逻辑变更为例，完整说明见 docs/testing.md
-pnpm exec vitest related --run src/providers/commands.tsx
-
-# 5. 推送（首次）
+# 完成相关检查后首次推送
 git push -u origin feature/42-command-palette
-
-# 6. 合并前再 rebase 一次，然后强推自己的分支
-git fetch origin
-git rebase origin/develop
-git push --force-with-lease
-
-# 7. 开 PR → CI 通过 → 完成适用评审 → 合并（用 --no-ff，见下文）
 ```
+
+按 [日常验证范围](../testing.md#日常验证范围) 自检后开 PR；CI 通过、无冲突并完成适用评审后，以 merge commit 合入 `develop`。已推送分支的同步方式见下表。
 
 ## rebase 规则（必须遵守）
 
@@ -82,11 +47,7 @@ git push --force-with-lease
 | `develop` / `main`        | 保护分支：只能通过 PR 合并，不 rebase、不 force push、不直接 push                  |
 | `release/*` / `hotfix/*`  | 由发布负责人推送，不改写共享历史；仅修复与必要的版本、发布配置调整                 |
 
-特性分支使用 rebase，避免引入额外的集成合并节点，便于按提交审查自己的改动；PR 的文件差异仍由合并基点决定，不能把 merge 一概理解为会把他人的修改列入 PR。
-
-**普通功能 / 修复分支的 PR 内部提交要做整理：** 合并前用 `git rebase -i origin/develop` 把 `fix typo`、`再改一下` 这类提交合并或改写，留下能独立读懂、能独立回滚的原子提交。发布与紧急修复分支遵循上表的不改写共享历史规则。
-
-分支内 rebase 保持提交线性，集成时 `--no-ff` 保留特性边界；与 squash 等方案的取舍见 [ADR 0002](../adr/0002-git-merge-strategy.md)。改变合并策略时统一调整仓库设置与规范。
+普通功能 / 修复分支合并前用 `git rebase -i origin/develop` 整理临时提交，留下可独立理解和回滚的原子提交；发布与紧急修复分支不改写共享历史。分支内 rebase 保持线性，集成时 `--no-ff` 保留特性边界，取舍见 [ADR 0002](../adr/0002-git-merge-strategy.md)。改变策略时同步仓库设置与规范。
 
 ## 提交信息规范
 
@@ -120,7 +81,7 @@ git push --force-with-lease
 feat(window): 支持记住窗口尺寸与位置
 fix(tauri): 修复重复启动时窗口不聚焦
 refactor(ipc): 把 invoke 调用收敛到 lib/tauri.ts
-build(deps): 升级 tauri 到 2.12.4
+build(deps): 更新 Tauri 依赖
 docs: 补充发布流程中的签名说明
 ```
 
@@ -138,14 +99,14 @@ docs: 补充发布流程中的签名说明
 
 ## 合并方式
 
-| 合并路径                | 命令                              | 说明                                             |
-| ----------------------- | --------------------------------- | ------------------------------------------------ |
-| `feature/*` → `develop` | `git merge --no-ff feature/xxx`   | 保留合并节点，便于整块回滚                       |
-| `release/*` → `main`    | `git merge --no-ff release/x.y.z` | 同上，并在合并后打 tag                           |
-| `hotfix/*` → `main`     | `git merge --no-ff hotfix/x.y.z`  | 发布紧急修复，并在合并后打 tag                   |
-| `main` → `develop`      | `git merge --no-ff main`          | 发布后回流正式发布提交、修复和版本，保留共同祖先 |
+| 合并路径                          | 命令                              | 说明                                             |
+| --------------------------------- | --------------------------------- | ------------------------------------------------ |
+| `feature/*` / `fix/*` → `develop` | `git merge --no-ff feature/xxx`   | 保留合并节点，便于整块回滚                       |
+| `release/*` → `main`              | `git merge --no-ff release/x.y.z` | 同上，并在合并后打 tag                           |
+| `hotfix/*` → `main`               | `git merge --no-ff hotfix/x.y.z`  | 发布紧急修复，并在合并后打 tag                   |
+| `main` → `develop`                | `git merge --no-ff main`          | 发布后回流正式发布提交、修复和版本，保留共同祖先 |
 
-合并前需 CI 通过、无冲突并完成适用评审；普通特性分支同步最新 `develop`，发布和紧急修复分支不改写共享历史。发布按 `release/*`（或 `hotfix/*`）→ `main` → `develop` 顺序走 PR，回流完成后再删除短期分支。不要将同一发布分支分别合入两条长期分支：那样虽可得到相同文件，却未将 `main` 的正式发布提交带回 `develop`。
+表中命令说明合并策略，保护分支的实际合入通过 PR 完成。发布按 `release/*`（或 `hotfix/*`）→ `main` → `develop` 顺序回流，完成后再删除短期分支；不将同一发布分支分别合入两条长期分支，以免遗漏 `main` 的正式发布提交。
 
 若发布期间 `develop` 已推进，导致直接从 `main` 回流的 PR 无法满足其同步要求，从最新 `develop` 创建 `sync/release-x.y.z`，合并 `origin/main`、处理实际冲突后向 `develop` 开 PR；不为同步而直接修改保护分支。发布与回流的取舍见 [ADR 0005](../adr/0005-gitflow-release-backmerge.md)。
 
@@ -155,14 +116,9 @@ docs: 补充发布流程中的签名说明
 
 **标题**：遵循提交信息规范；合并时确认合并提交能说明该 PR 的用途，标题是否自动沿用取决于平台合并设置。
 
-**描述**（见 [PR 模板](../../.github/pull_request_template.md)）必须包含：
+**描述**：按 [PR 模板](../../.github/pull_request_template.md) 交代最终行为、原因、实际验证结果及影响范围，注明相关但未验证的情形。
 
-1. 变更内容（一段话说明最终行为）
-2. 变更原因（问题背景与关联 issue）
-3. 验证结果（执行的测试与手动检查）
-4. 影响范围（打包、权限、数据结构及其他边界变化）
-
-达到 [设计评审门槛](../engineering-at-scale.md#设计评审与-adr-门槛) 的改动附提案或 ADR，并注明受影响模块及适用评审；数据兼容、恢复和性能验证如实给出证据与未验证范围，不在 PR 模板中另定义一套设计流程。
+达到 [设计评审门槛](../engineering-at-scale.md#设计评审与-adr-门槛) 时附影响分析和适用评审，长期技术取舍再记录 ADR。
 
 **关于规模**：
 
@@ -208,25 +164,25 @@ git push -u origin develop
 | 分支同步要求 | `develop` 要求来源分支最新；`main` 不要求来源分支包含最新 `main` |
 | 允许强推     | 关闭                                                             |
 | 允许合并方式 | 只保留 merge commit（与 `--no-ff` 策略一致）                     |
-| 合并后       | 特性分支可删除；发布与紧急修复分支两处合入后删除                 |
+| 合并后       | 特性分支可删除；发布与紧急修复待 `main` 回流 `develop` 后删除    |
 
 GitHub 路径：Settings → Branches → Add branch protection rule。
 
-`main` 使用必需状态检查的宽松模式，仍须通过 `质量门禁`，不豁免管理员或允许强推。PR 的 CI 默认检出合并结果；发布前核对已验证的来源和目标 SHA，目标 `main` 推进后重新验证，不沿用旧基线结果。这样无需为了满足祖先关系，提前向 `release/*` 补入不改变文件的合并。两种状态检查模式的区别见 [GitHub 说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)。
+`main` 使用必需状态检查的宽松模式，仍须通过 `质量门禁`，不豁免管理员或允许强推。发布前核对已验证的来源和目标 SHA，目标 `main` 推进后重新验证，不沿用旧基线结果，也无需为祖先关系向 `release/*` 补入空合并。两种状态检查模式见 [GitHub 说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)。
 
 分支保护、默认分支、允许的合并方式都是服务端设置，本地仓库无法携带；创建派生仓库时由管理员配置，换开发机器无需重设现有仓库规则。
 
 ## 自动化工作流
 
-| 工作流                                          | 触发条件                                      | 行为                                                                                                                                                                              |
-| ----------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [持续集成](../../.github/workflows/ci.yml)      | 向 `main` / `develop` 提交 PR、推送或手动运行 | 前端、浏览器、三端 Rust 和桌面 E2E 全部成功后，`质量门禁` 才通过；校验已提交的 README 图片并保留原生截图产物，图片按 [截图流程](../testing.md#readme-原生截图更新) 随功能 PR 提交 |
-| [在线演示](../../.github/workflows/pages.yml)   | `develop` 的相关源码推送，或在该分支手动运行  | 构建并验证浏览器产物，通过 GitHub Actions 部署 Pages，无需产物分支                                                                                                                |
-| [版本发布](../../.github/workflows/release.yml) | 推送 `v*` 标签，或手动运行                    | 验证代码已进入 `main` 及版本一致，构建各平台安装包，必要任务全部成功后自动公开 Release                                                                                            |
-| [依赖更新](../../.github/dependabot.yml)        | 配置的更新周期                                | 向 `develop` 提交依赖更新 PR，沿用相同检查和评审                                                                                                                                  |
-| [依赖审计](../../.github/workflows/audit.yml)   | 每周一或手动运行                              | 检查 npm 与 Rust 锁文件中的已知漏洞                                                                                                                                               |
+| 工作流                                          | 触发条件                                      | 行为                                                                                                    |
+| ----------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [持续集成](../../.github/workflows/ci.yml)      | 向 `main` / `develop` 提交 PR、推送或手动运行 | 汇总前端、浏览器、三端 Rust 与桌面 E2E 为 `质量门禁`；覆盖范围见 [测试规范](../testing.md#日常验证范围) |
+| [在线演示](../../.github/workflows/pages.yml)   | `develop` 的相关源码推送，或在该分支手动运行  | 构建并验证浏览器产物，通过 GitHub Actions 部署 Pages，无需产物分支                                      |
+| [版本发布](../../.github/workflows/release.yml) | 推送 `v*` 标签，或手动运行                    | 验证代码已进入 `main` 及版本一致，构建各平台安装包，必要任务全部成功后自动公开 Release                  |
+| [依赖更新](../../.github/dependabot.yml)        | 配置的更新周期                                | 向 `develop` 提交依赖更新 PR，沿用相同检查和评审                                                        |
+| [依赖审计](../../.github/workflows/audit.yml)   | 每周一或手动运行                              | 检查 npm 与 Rust 锁文件中的已知漏洞                                                                     |
 
-初始化时 `main` 与 `develop` 指向同一个首版提交，后续按分支模型开发。发布、签名与安装验收见 [构建与发布](../build-release.md)。
+触发条件和任务以链接的配置为准；CI 配置不等于本地或目标设备实测。README 图片随相关功能 PR 提交，见 [截图流程](../testing.md#readme-原生截图更新)。
 
 ## 冲突处理
 
@@ -238,61 +194,48 @@ GitHub 路径：Settings → Branches → Add branch protection rule。
 
 ## 发布流程
 
-以下以发布 `1.2.0` 为例，分支、版本与 tag 均替换为本次实际值；上一个版本的 tag 必须已存在，首次发布直接审查 `git log HEAD --oneline`。
-
-推送发布 tag 即决定公开该版本；适用的正式安装、签名与升级验收、未验证范围和发布说明须在打 tag 前确认。草稿只用于构建暂存，发布工作流的全部必要任务成功后会自动公开，不再另等人工发布。任务失败或取消时保留草稿；无需修改源码时重跑失败任务，具体规则见 [CI 多平台构建](../build-release.md#ci-多平台构建)。
+以下以 `1.2.0` 为例，替换为实际版本与标签。这里维护分支操作；产物、签名、发布说明、验收和失败重跑统一见 [构建与发布](../build-release.md#ci-多平台构建)。
 
 ```bash
-# 1. 从 develop 切发布分支
+# 从最新 develop 创建发布分支
 git switch develop
 git pull --ff-only
 git switch -c release/1.2.0
-
-# 2. 同步版本号（见 scripts/version.mjs 的 set 子命令）
 pnpm version:set 1.2.0
 
-# 3. 审查发布提交范围；把 v1.1.1 换成上个真实版本的 tag
+# 审查范围；首次发布改用 git log HEAD --oneline
 git log v1.1.1..HEAD --oneline
-
-# 4. 此分支仅做修复与必要的版本、发布调整，不引入新功能
-
-# 5. 推送发布分支，向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
 git push -u origin release/1.2.0
+```
 
-# 6. 确认适用验收与发布说明后，在 main 的正式发布提交上打标签，触发自动发布
+发布分支只接受修复及必要版本、发布配置调整。向 `main` 开 PR，CI 和适用评审通过后保留 merge commit 合并。完成 [发布检查清单](../build-release.md#发布检查清单)，在确认的正式发布提交打 tag：
+
+```bash
 git switch main
 git pull --ff-only
 git tag -a v1.2.0 -m "v1.2.0"
 git push origin v1.2.0
+```
 
-# 7. 从 main 向 develop 开回流 PR，CI 和适用评审通过后保留 merge commit 合并
-# develop 若已推进，按「合并方式」一节使用 sync 分支处理
+推送 tag 即决定公开，工作流成功后自动发布；适用验收、未验证范围和发布说明须提前确认。再从 `main` 向 `develop` 开回流 PR，按 [合并方式](#合并方式) 处理同步，完成后删除发布分支：
 
-# 8. 回流完成后删除发布分支
+```bash
 git fetch origin
 git branch -d release/1.2.0
 git push origin --delete release/1.2.0
 ```
 
-发布检查清单见 [构建与发布](../build-release.md#发布检查清单)。
-
 ## 紧急修复
+
+仅线上故障走 hotfix；未发布的缺陷从 `develop` 按普通修复处理。
 
 ```bash
 git switch main
 git pull --ff-only
 git switch -c hotfix/1.1.1
-# 修复后同步本次版本，再自检、提交
+# 修复后同步版本，再自检、提交
 pnpm version:set 1.1.1
 git push -u origin hotfix/1.1.1
-# 先向 main 开 PR，CI 和适用评审通过后保留 merge commit 合并
-
-# main PR 合并且适用验收与发布说明确认后，在对应合并提交打标签，触发自动发布
-git switch main
-git pull --ff-only
-git tag -a v1.1.1 -m "v1.1.1"
-git push origin v1.1.1
-# 再从 main 向 develop 开回流 PR，通过检查和适用评审后合并
 ```
 
-判断标准：**只有线上故障才走 hotfix**。还没发布的 bug 一律回 develop 走正常流程。
+随后沿用 [发布流程](#发布流程)：PR 合入 `main` → 确认适用验收和说明 → 在正式发布提交打 tag → `main` 回流 `develop` → 删除短期分支。紧急恢复后补齐的设计与回归要求见 [设计评审门槛](../engineering-at-scale.md#设计评审与-adr-门槛)。

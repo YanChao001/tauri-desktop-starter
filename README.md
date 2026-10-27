@@ -1,6 +1,6 @@
 # Tauri Desktop Starter
 
-[在线演示](https://yanchao001.github.io/tauri-desktop-starter/) · [English](./README.en.md) · [文档索引](./docs/README.md) · [发行记录](https://github.com/YanChao001/tauri-desktop-starter/releases) · [Code signing policy](./docs/code-signing-policy.md)
+[在线演示](https://yanchao001.github.io/tauri-desktop-starter/) · [English](./README.en.md) · [文档索引](./docs/README.md) · [发行记录](https://github.com/YanChao001/tauri-desktop-starter/releases)
 
 Tauri 2 + React 19 + TypeScript 桌面应用基座。默认保留完整、可操作的 demo，体验后按产品需要裁剪；`minimal` 仅隐藏演示入口，不删除源码、依赖或权限。
 
@@ -10,7 +10,7 @@ Tauri 2 + React 19 + TypeScript 桌面应用基座。默认保留完整、可操
 | ------------------------------------------------ | ----------------------------------------------- |
 | ![展厅亮色主题](./docs/assets/preview-light.png) | ![展厅暗色主题](./docs/assets/preview-dark.png) |
 
-以上为隔离 Windows 桌面构建的原生截图，按 [截图更新流程](./docs/testing.md#readme-原生截图更新) 在本地采集并随功能 PR 提交，发布时随代码进入 `main`。皮肤资源见 [说明](./resources/skins/README.md)。
+截图来自隔离的 Windows 原生构建，更新见 [截图流程](./docs/testing.md#readme-原生截图更新)；更多外观见 [皮肤资源](./resources/skins/README.md)。
 
 ## 快速开始
 
@@ -27,36 +27,22 @@ pnpm app:dev
 
 ## 已有能力
 
-| 领域       | 可操作演示                                                                                                                              |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 交互与动效 | 创意展厅、外观预览 / 应用 / 撤销；表单、控件状态、反馈、收藏；弹簧、共享布局、倾斜与 SVG 路径                                           |
-| 外观与导航 | 中英文、明暗 / 系统主题、强调色、字体、圆角；八款线稿与本机壁纸图库；命令面板、设置搜索、侧栏调宽与全屏                                 |
-| 文件与任务 | 原生选择 / 拖入、文本编辑与预览、原子保存和外部冲突；Rust 扫描 / SHA-256、有界队列、进度、取消、重试与导出                              |
-| 数据可靠性 | SQLite 分页、搜索、排序、回收站、持久草稿与版本冲突；完整逻辑备份、事务恢复、启动隔离恢复                                               |
-| 表格与表单 | 万条数据、虚拟滚动与批量部分失败；CSV 字段映射、校验、有效行确认与 CSV / JSON 导出；动态表单与错误定位                                  |
-| 冲突与检索 | 文件 / 笔记逐块差异选择与合并后版本校验；命令面板搜索本地笔记及已授权最近文件名；可下载工作流样例                                       |
-| 扩展       | Wasm 命令、隔离 HTML / Canvas 与独立窗口；可选授权、声明网络、私有存储、图片资源、图库、外链与 LAN、生成文件和会话；Rust / JS / TS 工具 |
-| 网络与媒体 | 本地 fixture / 白名单 HTTPS、缓存、超时、取消、有限重试；安全 Markdown、本地附件、图表、WSS 与固定 worker                               |
-| 桌面集成   | 多窗口、托盘、自启动、窗口尺寸与启动位置、未保存工作协商；通知、剪贴板、快捷键、深链 / 文件关联和系统凭据                               |
-| 工程链路   | 类型化 IPC、设置迁移与跨窗口同步、脱敏诊断、签名更新入口；前端 / 脚本 / Rust / 浏览器 / 桌面测试与版本化分发                            |
+| 领域       | 可操作演示                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| 交互与外观 | 创意展厅、表单与控件、持续动效；中英文、主题、强调色、字体、皮肤与壁纸图库；命令面板与设置搜索     |
+| 文件与任务 | 原生选择 / 拖入、文本编辑、原子保存与冲突合并；Rust 扫描 / SHA-256、队列、进度与合作取消           |
+| 数据与表单 | SQLite 分页、回收站、持久草稿与版本冲突；备份和隔离恢复；虚拟表格、CSV 映射校验与导出              |
+| 扩展与媒体 | Wasm 命令、隔离 HTML / Canvas 与独立窗口、受控官方市场；HTTPS / WSS、Markdown、附件、图表与 worker |
+| 桌面集成   | 多窗口、托盘、自启动、未保存工作协商；通知、剪贴板、快捷键、深链 / 文件关联与系统凭据              |
+| 工程链路   | 类型化 IPC、设置迁移与跨窗口同步、脱敏诊断、签名更新；分层测试与版本化分发                         |
 
-体验路径、源码入口、数据边界和实际裁剪方法统一见 [模块指南](./docs/demo-modules.md)，扩展协议与系统权限边界见 [Extism 扩展](./docs/extensions.md)。内置本地工作台提供文本、CSV / JSON、待办、文件与网络四个工具；市场源码收录科学计算器、贪吃蛇、局域网聊天和壁纸库。LAN 为用户手动连接的明文无账户服务；壁纸库按关键词搜索必应图片，管理应用背景，并将原图另存与图库压缩导入分开，均需单独授权。必应结果不按许可筛选，图片许可由原站决定。
-
-内置及本地包可离线安装；市场插件需要与清单要求匹配的原生宿主，当前壁纸库要求 0.1.6，其他三款要求 0.1.5。旧宿主不能仅靠刷新前端适配，配套版本与兼容说明见 [扩展指南](./docs/extensions.md#架构与兼容范围)。市场源码需独立构建、签名并发布为 latest 才会更新线上内容。开发态旧扩展需归档重建；正式签名、更新公钥与外部服务由维护者配置。
+体验路径、源码入口和实际裁剪方法见 [模块指南](./docs/demo-modules.md)。内置本地工作台提供创意画布、数据透镜和流程编排，支持即时交互与成果导出，文本、CSV / JSON、待办及文件网络操作收在工具箱；市场收录计算器、贪吃蛇、内网通信和壁纸库。计算器提供标准、科学、绘图、程序员和日期计算五种模式，以及货币等十三类转换器。安装与宿主兼容、授权边界及插件独立发布见 [扩展指南](./docs/extensions.md)。
 
 ## 从源码运行
 
-| 命令                          | 用途                                   |
-| ----------------------------- | -------------------------------------- |
-| `pnpm app:dev`                | Rust + WebView 桌面开发                |
-| `pnpm dev`                    | 浏览器开发，固定端口 1420              |
-| `pnpm build` / `pnpm preview` | 构建 / 预览桌面前端，无 Rust 进程      |
-| `pnpm build:web`              | 生成可部署的浏览器演示                 |
-| `pnpm test:ui`                | 构建并进行无头界面检查，不占用桌面焦点 |
-
 前端入口为 [index.html](./index.html) → [main.tsx](./src/main.tsx) → [App.tsx](./src/App.tsx)；原生入口为 [main.rs](./src-tauri/src/main.rs) → [lib.rs](./src-tauri/src/lib.rs)。修改源码，不手改构建输出。
 
-两种环境使用 HashRouter，支持 `#/components` 等深层链接；浏览器偏好与原生存档分别维护。F5 调试、全部工程命令及 GitHub Pages 部署见 [开发指南](./docs/development.md)。模块职责和通信方式见 [架构说明](./docs/architecture.md)。
+两种环境使用 HashRouter，支持 `#/components` 等深层链接；浏览器偏好与原生存档分别维护。构建浏览器演示用 `pnpm build:web`；全部命令、F5 调试与 Pages 部署见 [开发指南](./docs/development.md)，模块和通信边界见 [架构说明](./docs/architecture.md)。
 
 ## 创建派生项目
 
@@ -68,17 +54,16 @@ pnpm init:project --config ../my-app.json
 # 如需精简初始界面，两条命令均添加 --minimal
 ```
 
-初始化同时同步深链、文件关联、浏览器存储隔离和品牌链接；用 `pnpm config:check` 检查派生配置一致性。随后替换品牌 SVG，配置实际安全报告渠道、签名和更新密钥。真实移除功能按 [裁剪配方](./docs/demo-modules.md#实际裁剪模块) 同步清理调用方、IPC、依赖、权限、翻译与测试。
+初始化同步应用身份、深链、文件关联和浏览器存储隔离；随后运行 `pnpm config:check`，替换品牌 SVG，配置安全报告渠道、签名和更新密钥。实际移除功能见 [裁剪配方](./docs/demo-modules.md#实际裁剪模块)。
 
 ## 验证
 
 ```sh
-pnpm verify       # 工程综合检查，覆盖范围见测试规范
-pnpm test:ui      # 浏览器生产构建、交互和无障碍检查
-pnpm bindings:check
+pnpm verify   # 工程综合检查，覆盖范围见测试规范
+pnpm test:ui  # 浏览器生产构建、交互和无障碍检查
 ```
 
-日常按 [改动范围](./docs/testing.md#日常验证范围) 选择检查。Rust、真实桌面与安装升级需分别验收；真实窗口测试只在独立环境或安排的前台时段运行，见 [测试规范](./docs/testing.md#避免干扰本机桌面)。
+日常按 [改动范围](./docs/testing.md#日常验证范围) 选择检查。绑定、Rust、真实桌面与安装升级需分别验证；真实窗口测试只在独立环境或安排的前台时段运行，见 [桌面干扰边界](./docs/testing.md#避免干扰本机桌面)。
 
 ## 构建产物
 
@@ -87,7 +72,7 @@ pnpm app:build     # 安装包
 pnpm app:portable  # Windows 便携 exe 与说明
 ```
 
-最终分发在 `artifacts/<version>/<target-triple>/installers/` 或 `portable/`，附 SHA-256 清单。`dist/`、`dist-web/` 和 `src-tauri/target/` 为生成输出。平台格式、签名与更新见 [构建与发布](./docs/build-release.md)。
+最终分发在 `artifacts/<version>/<target-triple>/installers/` 或 `portable/`，附 SHA-256 清单。平台格式、签名与更新见 [构建与发布](./docs/build-release.md)。
 
 便携版仍依赖 WebView2，数据保存在当前用户目录。清理前先用 `pnpm clean:temporary --dry-run` 检查范围；各模式的删除与保留边界见 [清理说明](./docs/development.md#清理构建产物)。
 

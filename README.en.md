@@ -4,11 +4,11 @@
 
 An open source Tauri 2, React 19 and TypeScript desktop starter with a complete, interactive demo. Keep the examples while exploring, then remove modules your product does not need. **Minimal mode changes visibility; it does not remove code, dependencies or permissions.**
 
-The desktop app includes SQLite pagination, drafts, backups and recovery; a file workbench; real Rust scan / SHA-256 jobs; window lifecycle coordination; system integration; network examples; and data table, form and media labs. Browser previews share the React source and clearly distinguish local fixtures, external services and desktop-only capabilities.
+Explore SQLite, drafts and recovery; file editing and Rust scan / SHA-256 jobs; desktop integration; Wasm extensions; and data, form and media labs. Browser previews share the React source; native storage and system features require the desktop app.
 
 ## Desktop windows
 
-Captured from an isolated Windows desktop build using the [screenshot update workflow](./docs/testing.md#readme-原生截图更新). Refresh images locally and include them in the UI pull request; releases carry them into `main` with the code.
+Captured from an isolated Windows desktop build; see the [screenshot workflow](./docs/testing.md#readme-原生截图更新).
 
 | Light                                                    | Dark                                                   |
 | -------------------------------------------------------- | ------------------------------------------------------ |
@@ -27,20 +27,19 @@ pnpm run doctor
 pnpm app:dev
 ```
 
-For a browser preview, run `pnpm dev`. To test the deployed browser build:
+For a browser preview, run `pnpm dev` and open `http://localhost:1420`. To check the production browser build:
 
 ```sh
-pnpm build:web
 pnpm exec playwright install --only-shell chromium
-pnpm test:browser
+pnpm test:ui
 ```
 
-`pnpm verify` checks frontend and scripts. Rust, generated bindings, browser smoke tests and desktop E2E have separate commands in the [testing guide](./docs/testing.md). `pnpm app:build` produces installers; `pnpm app:portable` produces a Windows executable distribution under `artifacts/<version>/<target>/`. Portable builds still use the current user's data directories and require WebView2.
+`pnpm verify` checks the frontend and scripts. Generated bindings, Rust, browser and native desktop checks are covered separately in the [testing guide](./docs/testing.md). `pnpm app:build` produces installers and `pnpm app:portable` a Windows executable distribution under `artifacts/<version>/<target-triple>/`. Portable builds use the current user's data directories and require WebView2; see [build and release](./docs/build-release.md).
 
 ## Make it yours
 
 Use `pnpm init:project --config ../my-app.json --dry-run`, review the changes, then repeat without `--dry-run`. Initialization synchronizes branding, URL schemes, file associations and browser storage isolation. Run `pnpm config:check` to detect configuration drift. Configure your own icons, security contact, signing and update keys; see the [initialization guide](./docs/development.md#项目初始化).
 
-The [module guide](./docs/demo-modules.md) includes hands-on workflows, a complete page → Rust IPC → test example, and concrete database / updater removal recipes. Changes span routes, commands, generated bindings, dependencies, permissions, translations and tests.
+The [module guide](./docs/demo-modules.md) covers workflows, adding a page and Rust IPC, and removing modules. Extension installation, host compatibility and plugin development are covered in the [extension guide](./docs/extensions.md).
 
-The local session demo is not remote OAuth. Signing configuration and CI support are not proof of signed releases or installation tests on every platform. Platform results and remaining limits belong in release evidence. The Chinese documentation remains the detailed engineering reference.
+Check the [signing policy](./docs/code-signing-policy.md) for distribution trust and verification. The Chinese documentation is the detailed engineering reference.
