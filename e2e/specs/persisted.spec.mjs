@@ -93,7 +93,10 @@ describe("App process restart", () => {
         { cause: error },
       );
     }
-    recordWindowPlacement("restart-restored", positionDetails());
+    console.info(
+      "Restored window position:",
+      recordWindowPlacement("restart-restored", positionDetails()),
+    );
     const geometry = await invoke("get_window_geometry");
     assert.equal(geometry.ok, true);
     assert.equal(
