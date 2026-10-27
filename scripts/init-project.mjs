@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   applyInitialization,
+  checkInitialization,
   initializationDiff,
   prepareInitialization,
 } from "./init-lib.mjs";
@@ -36,15 +37,16 @@ try {
     );
   const root = resolve(import.meta.dirname, "..");
   const patch = config ? JSON.parse(readFileSync(resolve(config), "utf8")) : {};
-  const plan = prepareInitialization(root, patch, { minimal });
   if (check) {
-    if (plan.changes.length)
+    const differences = checkInitialization(root);
+    if (differences.length)
       throw new Error(
-        `应用配置未同步：${plan.changes.map(({ path }) => path).join("、")}。请运行 pnpm init:project --dry-run 核对，再运行 pnpm init:project。`,
+        `应用配置未同步：${differences.join("、")}。请运行 pnpm init:project --dry-run 核对，再运行 pnpm init:project。`,
       );
     console.log("应用身份、系统集成与品牌配置一致。");
     process.exit(0);
   }
+  const plan = prepareInitialization(root, patch, { minimal });
   console.log(initializationDiff(plan) || "应用配置已一致，无需修改。");
   if (dryRun) console.log(`预览完成：${plan.changes.length} 个文件，未写入。`);
   else {

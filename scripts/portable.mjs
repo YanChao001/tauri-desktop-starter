@@ -12,23 +12,25 @@ import {
 async function main() {
   if (process.platform !== "win32")
     throw new Error(
-      "便携包脚本只处理 Windows；Linux 请分发 AppImage，macOS 请分发 .app / DMG。",
+      "Portable builds are supported only on Windows. Use AppImage on Linux or .app / DMG on macOS.",
     );
   const root = resolve(import.meta.dirname, "..");
   const raw = process.argv.slice(2);
   if (raw.includes("--help") || raw.includes("-h")) {
     console.log(
-      "用法: pnpm app:portable [--skip-build] [--target <triple>] [--config <JSON>] [--features <features>] [--ci]",
+      "Usage: pnpm app:portable [--optimize speed|size] [--skip-build] [--target <triple>] [--config <JSON>] [--features <features>] [--ci]\nDefaults to size for smaller binaries; use speed for faster compilation. --skip-build requires a portable build with the same optimization strategy.",
     );
     return;
   }
   const skipBuild = raw.includes("--skip-build");
   const args = raw.filter((arg) => arg !== "--skip-build");
   if (args.some((arg) => /^(?:--bundles|-b)(?:=|$)/.test(arg)))
-    throw new Error("便携版不生成安装器；--bundles 请使用 pnpm app:build。");
+    throw new Error(
+      "Portable builds do not generate installers. Use pnpm app:build with --bundles.",
+    );
   const plan = prepareBuild(root, [...args, "--no-bundle"]);
   if (plan.platform !== "windows")
-    throw new Error("便携版只支持 Windows 编译目标");
+    throw new Error("Portable builds require a Windows target.");
   const productName = plan.config.productName ?? plan.package.name;
   const executableName = portableFileName(productName);
   artifactDirectory(root, plan.version, plan.target, "portable");
@@ -36,7 +38,9 @@ async function main() {
     ? loadPortableBuild(plan)
     : await buildApplication(plan);
   if (!built.target.includes("-windows-"))
-    throw new Error("便携构建记录不属于 Windows 目标平台");
+    throw new Error(
+      "The portable build receipt does not refer to a Windows target.",
+    );
   if (!skipBuild) recordPortableBuild(plan, built);
   const readme = `${productName} 便携版 v${plan.version}
 
@@ -61,14 +65,16 @@ manifest.json 记录版本、目标平台和文件 SHA-256，可用于检查分�
       { source: resolve(root, "resources/third-party"), path: "third-party" },
     ],
   });
-  console.log(`便携版已生成：${relative(root, output)}`);
+  console.log(`Portable build created: ${relative(root, output)}`);
 }
 
 try {
   await main();
 } catch (error) {
-  console.error(`便携包生成失败：${error.message}`);
+  console.error(`Portable build failed: ${error.message}`);
   if (["EPERM", "EBUSY", "EACCES"].includes(error.code))
-    console.error("请关闭占用发布文件的程序，并检查目录写入权限后重试。");
+    console.error(
+      "Close programs using the distribution files, check directory write permissions, and try again.",
+    );
   process.exitCode = 1;
 }

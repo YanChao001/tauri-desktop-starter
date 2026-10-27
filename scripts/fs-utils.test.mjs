@@ -72,7 +72,7 @@ test("rollback preserves concurrent user edits and retains the original backup",
           }
         },
       }),
-    /恢复失败.*备份保留/,
+    /Recovery failed.*backups retained/,
   );
   assert.equal(
     readFileSync(join(plan.root, "text.txt"), "utf8"),
@@ -94,7 +94,7 @@ test("preflight preserves changed text and binary bytes that decode to the same 
   ]) {
     const plan = fixture(t);
     writeFileSync(join(plan.root, path), contents);
-    assert.throws(() => applyFileChanges(plan), /预检后被修改/);
+    assert.throws(() => applyFileChanges(plan), /modified after preflight/);
     for (const change of plan.changes)
       assert.deepEqual(
         readFileSync(join(plan.root, change.path)),
@@ -126,7 +126,7 @@ test("transaction cleanup cannot follow a directory replaced after staging", (t)
           writeFileSync(outsideBackup, "unrelated backup file");
         },
       }),
-    /文件目录在预检后被替换/,
+    /File directory was replaced after preflight/,
   );
   assert.equal(
     readFileSync(outsideTemporary, "utf8"),

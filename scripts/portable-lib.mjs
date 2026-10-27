@@ -20,7 +20,7 @@ export function portableFileName(value) {
     /[. ]$/.test(value) ||
     /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value)
   ) {
-    throw new Error(`不是有效的 Windows 程序文件名：${value}`);
+    throw new Error(`Invalid Windows executable filename: ${value}`);
   }
   return `${value}.exe`;
 }
@@ -31,7 +31,13 @@ function receiptPath(plan) {
 
 function fingerprint(plan) {
   return createHash("sha256")
-    .update(JSON.stringify({ config: plan.config, buildArgs: plan.buildArgs }))
+    .update(
+      JSON.stringify({
+        config: plan.config,
+        buildArgs: plan.buildArgs,
+        optimize: plan.optimize,
+      }),
+    )
     .digest("hex");
 }
 
@@ -74,7 +80,7 @@ export function loadPortableBuild(plan) {
       receipt.fingerprint !== fingerprint(plan) ||
       receipt.sha256 !== fileSha256(executable)
     ) {
-      throw new Error("版本、配置或程序内容已经变化");
+      throw new Error("The version, configuration, or executable has changed");
     }
     return {
       executable,
@@ -83,7 +89,7 @@ export function loadPortableBuild(plan) {
     };
   } catch (error) {
     throw new Error(
-      `不能跳过构建：${error.message}。请先执行 pnpm app:portable。`,
+      `Cannot skip the build: ${error.message}. Run pnpm app:portable first.`,
       { cause: error },
     );
   }

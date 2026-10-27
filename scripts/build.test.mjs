@@ -12,7 +12,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { parse as parseToml } from "smol-toml";
 import {
+  cargoBuildArgs,
   cargoExecutable,
   effectiveConfig,
   locateBuildOutput,
@@ -29,6 +31,64 @@ function fixture(t) {
   });
   return root;
 }
+
+test("release builds default to size and accept both explicit optimization forms", () => {
+  const common = ["--features", "one", "two", "--ci"];
+  const defaults = parseBuildArgs(common);
+  assert.equal(defaults.optimize, "size");
+  assert.deepEqual(cargoBuildArgs(defaults), ["--message-format=json"]);
+  for (const selection of [["--optimize", "size"], ["--optimize=size"]]) {
+    const explicit = parseBuildArgs([...selection, ...common]);
+    assert.deepEqual(explicit, defaults);
+    assert.deepEqual(cargoBuildArgs(explicit), cargoBuildArgs(defaults));
+  }
+});
+
+test("speed optimization supplies valid Cargo release overrides without leaking into bundle arguments", () => {
+  const common = ["--config", "signing.json", "--ci"];
+  for (const selection of [["--optimize", "speed"], ["--optimize=speed"]]) {
+    const options = parseBuildArgs([...common, ...selection]);
+    assert.equal(options.optimize, "speed");
+    assert.deepEqual(options.common, common);
+    const args = cargoBuildArgs(options);
+    assert.equal(args.shift(), "--message-format=json");
+    const overrides = [];
+    while (args.length) {
+      assert.equal(args.shift(), "--config");
+      overrides.push(args.shift());
+    }
+    assert.deepEqual(
+      { ...parseToml(overrides.join("\n")).profile.release },
+      {
+        "codegen-units": 256,
+        lto: "off",
+        "opt-level": 0,
+        incremental: true,
+        strip: false,
+      },
+    );
+    // 解析及修改某次调用的参数不能污染后续构建。
+    args.push("changed");
+    assert.equal(cargoBuildArgs(options).includes("changed"), false);
+    assert.deepEqual(cargoBuildArgs(parseBuildArgs([])), [
+      "--message-format=json",
+    ]);
+  }
+});
+
+test("optimization rejects missing, invalid and repeated selections", () => {
+  for (const args of [
+    ["--optimize"],
+    ["--optimize="],
+    ["--optimize", "--ci"],
+    ["--optimize", "fast"],
+    ["--optimize=Speed"],
+    ["--optimize", "speed", "--optimize=size"],
+    ["--optimize=size", "--optimize", "size"],
+  ]) {
+    assert.throws(() => parseBuildArgs(args), /--optimize/);
+  }
+});
 
 test("release arguments retain config order and list values for both build stages", () => {
   const options = parseBuildArgs([
@@ -107,7 +167,7 @@ test("JSON configuration uses RFC 7396 and rejects version drift or unsupported 
         "1.2.3",
         "windows",
       ),
-    /版本/,
+    /version/,
   );
   for (const path of ["custom.toml", "custom.json5"]) {
     assert.throws(
@@ -118,7 +178,7 @@ test("JSON configuration uses RFC 7396 and rejects version drift or unsupported 
           "1.2.3",
           "windows",
         ),
-      /仅支持 JSON/,
+      /only supports JSON/,
     );
   }
   const merged = mergeConfig({}, JSON.parse('{"__proto__":{"polluted":true}}'));
@@ -156,11 +216,11 @@ test("Cargo messages select the main binary and locate default or explicit targe
     assert.equal(built.target, host);
     assert.equal(built.executable, join(outputDir, "renamed.exe"));
   }
-  assert.throws(() => locateBuildOutput(plan, []), /一个主程序/);
+  assert.throws(() => locateBuildOutput(plan, []), /exactly one main binary/);
   mkdirSync(join(root, "outside"));
   assert.throws(
     () => locateBuildOutput(plan, [join(root, "outside/app.exe")]),
-    /超出/,
+    /outside/,
   );
 });
 
@@ -252,7 +312,7 @@ test("bundle directory junctions cannot redirect backup or deletion", async (t) 
       () => assert.fail("must not build"),
       () => assert.fail("must not publish"),
     ),
-    /不能通过链接/,
+    /links must not redirect/,
   );
   assert.equal(readFileSync(join(outside, "keep"), "utf8"), "do not delete");
 });

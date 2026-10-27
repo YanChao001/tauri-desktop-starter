@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import {
   applyInitialization,
+  checkInitialization,
   initializationDiff,
   prepareInitialization,
   validateAppConfig,
@@ -366,6 +367,62 @@ test("configuration synchronization detects drift and preserves the original cop
   assert.equal(prepareInitialization(root).changes.length, 0);
 });
 
+test("configuration checks compare TOML and JSON values without rewriting valid formatting", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(prepareInitialization(root));
+  const manifestPath = join(root, "src-tauri/Cargo.toml");
+  const manifest = readFileSync(manifestPath, "utf8")
+    .replace(
+      'authors = ["Example"]',
+      "authors = [\n  'Example', # retained author\n]",
+    )
+    .replaceAll('"old-app"', "'old-app'")
+    .replaceAll('"old_app_lib"', "'old_app_lib'")
+    .replace('description = "An app"', "description = '''An app'''")
+    .replace('version = "0.1.0"', "version = '0.1.0'");
+  writeFileSync(manifestPath, manifest);
+  const lockPath = join(root, "src-tauri/Cargo.lock");
+  const lock = readFileSync(lockPath, "utf8").replace(/"([^"]*)"/g, "'$1'");
+  writeFileSync(lockPath, lock);
+  const pkgPath = join(root, "package.json");
+  const pkg = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(JSON.parse(readFileSync(pkgPath, "utf8"))).reverse(),
+    ),
+  );
+  writeFileSync(pkgPath, pkg);
+
+  assert.deepEqual(checkInitialization(root), []);
+  assert.equal(readFileSync(manifestPath, "utf8"), manifest);
+  assert.equal(readFileSync(lockPath, "utf8"), lock);
+  assert.equal(readFileSync(pkgPath, "utf8"), pkg);
+
+  writeFileSync(
+    manifestPath,
+    manifest.replace("'Example'", "'Different author'"),
+  );
+  assert.deepEqual(checkInitialization(root), ["src-tauri/Cargo.toml"]);
+});
+
+test("checking multiline authors does not relax initialization's preflight before writes", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(prepareInitialization(root));
+  const path = join(root, "src-tauri/Cargo.toml");
+  const manifest = readFileSync(path, "utf8").replace(
+    'authors = ["Example"]',
+    'authors = [\n  "Example",\n]',
+  );
+  writeFileSync(path, manifest);
+  assert.deepEqual(checkInitialization(root), []);
+  const original = readFileSync(join(root, "app.config.json"), "utf8");
+  assert.throws(
+    () => prepareInitialization(root, { name: "New product" }),
+    /单行数组/,
+  );
+  assert.equal(readFileSync(path, "utf8"), manifest);
+  assert.equal(readFileSync(join(root, "app.config.json"), "utf8"), original);
+});
+
 test("invalid or conflicting integration names fail before changing files", (t) => {
   const { root, files } = fixture(t);
   for (const patch of [
@@ -466,6 +523,7 @@ test("unrelated TOML syntax errors abort initialization before any write", (t) =
     () => prepareInitialization(root, { name: "Acme" }),
     /TOML|Invalid|Unexpected/,
   );
+  assert.throws(() => checkInitialization(root), /TOML|Invalid|Unexpected/);
   assert.equal(
     readFileSync(join(root, "app.config.json"), "utf8"),
     files["app.config.json"],
@@ -589,5 +647,8 @@ test("directory junctions cannot redirect initialization outside the project", (
     join(root, "src-tauri"),
     process.platform === "win32" ? "junction" : "dir",
   );
-  assert.throws(() => prepareInitialization(root), /ENOENT|项目外/);
+  assert.throws(
+    () => prepareInitialization(root),
+    /ENOENT|outside the project/,
+  );
 });
