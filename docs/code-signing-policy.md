@@ -28,11 +28,13 @@
 
 ## 构建与签名流程
 
-1. 在已合入 `main` 的发布提交打 tag（`v<version>`），触发 [`.github/workflows/release.yml`](../.github/workflows/release.yml)；手动触发的 ref 与版本要求见 [CI 多平台构建](./build-release.md#ci-多平台构建)；
-2. GitHub Actions 在 `windows-latest` 上从选定 ref 的源码构建，产物进入 **draft Release**；
+1. 在打 tag 前确认适用验收、未验证范围与发布说明，在已合入 `main` 的发布提交打 tag（`v<version>`）即决定公开该版本，触发 [`.github/workflows/release.yml`](../.github/workflows/release.yml)；手动触发的 ref 与版本要求见 [CI 多平台构建](./build-release.md#ci-多平台构建)；
+2. GitHub Actions 在 `windows-latest` 上从选定 ref 的源码构建，产物进入仅供构建暂存的 **draft Release**；
 3. 构建任务直接上传未签名安装包 artifact；配置 SignPath 后，`sign-windows` job 使用本次运行的 artifact ID 提交签名请求并等待人工批准；
 4. 用 `Get-AuthenticodeSignature` 校验签名有效后，重新生成签名文件清单并上传 `signed-installers-x86_64-pc-windows-msvc`；再次核对目标 tag 与 draft 状态后覆盖 draft 的未签名资产，已公开 Release 拒绝覆盖；
-5. 人工确认 draft 内容后发布。
+5. 校验、全部平台构建及已启用的更新清单 / 签名任务全部成功后，工作流自动公开同一个 Release；未启用的可选任务可以跳过。任务失败或取消时保留草稿，无需修改源码时重跑失败任务，不另设人工公开步骤。
+
+自动公开不替代 SignPath 门户的人工签名审批，也不证明正式安装与升级已在所有目标平台验收；实际检查与限制随发布说明记录。
 
 启用服务时须配置 SignPath 的 GitHub connector，校验仓库、工作流和 commit 的构建来源。签名请求只接受本仓库 GitHub Actions 的产物，不接受本地构建；门户配置由维护者核对，不由本地工作流文件自动完成。
 
