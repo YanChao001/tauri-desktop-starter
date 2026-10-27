@@ -17,7 +17,8 @@ use url::Url;
 use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
-    storage::DataPaths,
+    network::NetworkMode,
+    storage::{DataPaths, SettingsStore},
 };
 
 pub const UPDATE_EVENT: &str = "app://update-progress";
@@ -215,11 +216,17 @@ impl UpdateManager {
         status.configured = true;
         status.endpoint = Some(policy.endpoint.clone());
         let endpoint = validate_policy(&policy)?;
+        let network_mode = app.state::<SettingsStore>().network_mode()?;
         let updater = app
             .updater_builder()
             .pubkey(&policy.public_key)
             .endpoints(vec![endpoint])
             .and_then(|builder| {
+                let builder = if network_mode == NetworkMode::Direct {
+                    builder.no_proxy()
+                } else {
+                    builder
+                };
                 builder
                     .timeout(Duration::from_secs(300))
                     .configure_client(|client| client.https_only(true))
@@ -284,7 +291,7 @@ impl UpdateManager {
     }
 
     async fn install_inner(&self, app: &tauri::AppHandle, operation_id: i32) -> NativeResult<()> {
-        let (policy, update) = self
+        let (policy, mut update) = self
             .pending
             .lock()
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Update state is unavailable"))?
@@ -303,6 +310,9 @@ impl UpdateManager {
                 "Update deployment configuration changed; check again",
             ));
         }
+        // 检查结果会缓存更新句柄；下载按此刻已提交的宿主偏好重新选择传输。
+        // configure_client 只限制 HTTPS，不捕获检查时的代理模式。
+        update.no_proxy = app.state::<SettingsStore>().network_mode()? == NetworkMode::Direct;
         let mut downloaded = 0_f64;
         let mut last_event = Instant::now();
         let handle = app.clone();

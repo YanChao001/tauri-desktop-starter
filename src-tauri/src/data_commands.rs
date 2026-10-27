@@ -133,7 +133,7 @@ pub async fn pick_data_backup(app: tauri::AppHandle) -> NativeResult<Option<Back
 pub async fn save_data_backup(app: tauri::AppHandle, id: String) -> NativeResult<bool> {
     blocking::run(move || {
         let contents = app.state::<Database>().export_backup(&backups(&app), &id)?;
-        crate::workbench::save_text_content(&app, &id, &contents, BACKUP_LIMIT)
+        crate::workbench::save_text_content(&app, &id, &contents, contents.len())
             .map(|path| path.is_some())
     })
     .await

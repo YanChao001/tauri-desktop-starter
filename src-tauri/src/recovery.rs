@@ -491,11 +491,11 @@ impl RecoveryState {
             .map(|directory| directory.path().join("backups"))
             .ok_or_else(|| invalid("Recovery workspace is not active"))
     }
-    fn read_backup(&self, database: &Database, id: &str) -> NativeResult<String> {
+    fn backup_location(&self, id: &str) -> NativeResult<(PathBuf, String)> {
         if let Some(id) = id.strip_prefix("existing:") {
-            database.export_backup(&self.paths.data.join("backups"), id)
+            Ok((self.paths.data.join("backups"), id.into()))
         } else {
-            database.export_backup(&self.temporary_backups()?, id)
+            Ok((self.temporary_backups()?, id.into()))
         }
     }
 }
@@ -550,8 +550,11 @@ pub async fn preview_recovery_backup(
     blocking::run(move || {
         let state = app.state::<RecoveryState>();
         let database = app.state::<Database>();
-        let contents = state.read_backup(&database, &id)?;
-        database.import_backup(&state.temporary_backups()?, &contents)
+        state.temporary_backups()?;
+        let (directory, backup_id) = state.backup_location(&id)?;
+        let mut preview = database.preview_backup(&directory, &backup_id)?;
+        preview.info.id = id;
+        Ok(preview)
     })
     .await
 }
@@ -575,8 +578,8 @@ pub async fn restore_recovery_backup(
         }
         let database = app.state::<Database>();
         let directory = state.temporary_backups()?;
-        let contents = state.read_backup(&database, &id)?;
-        let imported = database.import_backup(&directory, &contents)?;
+        let (source, id) = state.backup_location(&id)?;
+        let imported = database.copy_backup(&source, &directory, &id)?;
         let result = database.restore_backup(&directory, &imported.info.id)?;
         status.restored = true;
         status.notes = result.restored;
@@ -729,7 +732,7 @@ mod tests {
         let status = restarted.recovery.report().unwrap();
         assert!(!status.active);
         assert_eq!(
-            restarted.database.list("").unwrap()[0].body,
+            restarted.database.get(1).unwrap().body,
             "content from backup"
         );
         assert_eq!(
@@ -1036,7 +1039,7 @@ mod tests {
         let initialized = initialize(&paths).unwrap();
         assert!(!initialized.recovery.report().unwrap().active);
         assert_eq!(
-            initialized.database.list("").unwrap()[0].body,
+            initialized.database.get(1).unwrap().body,
             "Original database"
         );
         assert_eq!(

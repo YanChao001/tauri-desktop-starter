@@ -1,7 +1,13 @@
 import type {
   ExtensionView,
   ExtensionPermission,
-} from "../src/lib/generated/bindings";
+  ExtensionWindowRequest,
+  ExtensionWindowState,
+} from "./generated/protocol";
+export type {
+  ExtensionWindowRequest,
+  ExtensionWindowState,
+} from "./generated/protocol";
 
 export interface ExtensionUiSnapshot {
   view: ExtensionView | null;
@@ -9,6 +15,8 @@ export interface ExtensionUiSnapshot {
   checkpoint: unknown;
   busy: boolean;
   dirty: boolean;
+  /** Whether this surface is visible and interactive; omitted by older hosts. */
+  active?: boolean;
   locale: "zh-CN" | "en";
   grantedPermissions: ExtensionPermission[];
   theme: {
@@ -82,6 +90,10 @@ export interface ExtensionUiServices {
   >;
   request(service: "links", request: { url: string }): Promise<null>;
   request(
+    service: "window",
+    request: ExtensionWindowRequest,
+  ): Promise<ExtensionWindowState>;
+  request(
     service: "lan" | "wallpaper",
     request: Record<string, unknown>,
   ): Promise<unknown>;
@@ -89,6 +101,7 @@ export interface ExtensionUiServices {
 export interface ExtensionUiApi {
   readonly ready: Promise<ExtensionUiSnapshot>;
   onChange(listener: (snapshot: ExtensionUiSnapshot) => void): () => void;
+  applyStyles(root: ShadowRoot): () => void;
   run(action: string, fields?: Record<string, string>): Promise<ExtensionView>;
   setFields(fields: Record<string, string>): Promise<void>;
   checkpoint(value: unknown, dirty: boolean): Promise<void>;

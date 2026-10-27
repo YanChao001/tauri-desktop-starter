@@ -23,6 +23,7 @@ function fixture({
     events = new Map(),
     tokens = new Map(),
     classes = new Set();
+  const styles = [];
   const parent = {
     postMessage: (value) =>
       parentMessages.push(JSON.parse(JSON.stringify(value))),
@@ -40,7 +41,18 @@ function fixture({
     readyState: "complete",
     documentElement: root,
     head: { prepend() {} },
-    createElement: () => ({ dataset: {}, textContent: "" }),
+    createElement: () => {
+      const style = {
+        dataset: {},
+        textContent: "",
+        removed: false,
+        remove() {
+          this.removed = true;
+        },
+      };
+      styles.push(style);
+      return style;
+    },
     addEventListener: (name, listener) => documentEvents.set(name, listener),
     removeEventListener: (name) => documentEvents.delete(name),
   };
@@ -88,6 +100,7 @@ function fixture({
     root,
     tokens,
     classes,
+    styles,
     send,
     close,
     messages,
@@ -98,12 +111,12 @@ function fixture({
   };
 }
 
-test("resource and link SDK types expose typed receipts and reject unknown services, actions, paths and identities", () => {
+test("resource, link and window SDK types expose typed receipts and reject unknown services, actions, paths and identities", () => {
   const filename = fileURLToPath(
     new URL("../sdk/service-types.fixture.ts", import.meta.url),
   ).replaceAll("\\", "/");
   const fixtureSource = `
-    import type { ExtensionUiApi, ExtensionResourceRequest } from "./extension-ui";
+    import type { ExtensionUiApi, ExtensionResourceRequest, ExtensionWindowRequest, ExtensionWindowState } from "./extension-ui";
     declare const sdk: ExtensionUiApi;
     async function contract() {
       const image = await sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/image.jpg", networkMode: "system" });
@@ -116,6 +129,10 @@ test("resource and link SDK types expose typed receipts and reject unknown servi
       const opened: null = await sdk.services.request("links", { url: "https://example.com" });
       const legacy: unknown = await sdk.services.request("lan", { action: "status" });
       const wallpaper: unknown = await sdk.services.request("wallpaper", { action: "list" });
+      const windowState: ExtensionWindowState = await sdk.services.request("window", { action: "get-state" });
+      const pinned: boolean = windowState.alwaysOnTop;
+      const windowRequest: ExtensionWindowRequest = { action: "set-always-on-top", enabled: true };
+      const updated: ExtensionWindowState = await sdk.services.request("window", windowRequest);
       declareRequest({ action: "save", resourceId: "resource" });
       // @ts-expect-error 资源回执不暴露系统路径。
       image.path;
@@ -129,7 +146,19 @@ test("resource and link SDK types expose typed receipts and reject unknown servi
       sdk.services.request("links", { url: "https://example.com", expectedGeneration: 2 });
       // @ts-expect-error 插件不能传入任意代理。
       sdk.services.request("resources", { action: "fetch-image", url: "https://example.com", networkMode: "http://proxy" });
-      return { bytes, dataUrl, released, opened, legacy, wallpaper };
+      // @ts-expect-error 窗口服务只允许读取状态和切换置顶。
+      sdk.services.request("window", { action: "close" });
+      // @ts-expect-error 置顶值必须是布尔值。
+      sdk.services.request("window", { action: "set-always-on-top", enabled: "true" });
+      // @ts-expect-error 窗口由已认证的原生调用者确定。
+      sdk.services.request("window", { action: "get-state", label: "main" });
+      // @ts-expect-error 窗口服务不接受系统路径。
+      sdk.services.request("window", { action: "get-state", path: "C:/file" });
+      // @ts-expect-error 插件不能自述原生身份。
+      sdk.services.request("window", { action: "set-always-on-top", enabled: true, id: "forged" });
+      // @ts-expect-error 原生调用代次由宿主提供。
+      sdk.services.request("window", { action: "get-state", expectedGeneration: 3 });
+      return { bytes, dataUrl, released, opened, legacy, wallpaper, pinned, updated };
     }
     function declareRequest(value: ExtensionResourceRequest) { return value; }
     void contract;
@@ -159,7 +188,7 @@ test("resource and link SDK types expose typed receipts and reject unknown servi
   );
 });
 
-test("resources and links share the existing service channel without supplying native identity", async () => {
+test("resources, links and window share the existing service channel without supplying native identity", async () => {
   const { sdk, send, messages, close } = fixture();
   send({ type: "state", value: snapshot() });
   await sdk.ready;
@@ -205,6 +234,21 @@ test("resources and links share the existing service channel without supplying n
       value: { url: "https://source.example.com/article" },
       result: null,
     },
+    {
+      service: "window",
+      value: { action: "get-state" },
+      result: { alwaysOnTop: false },
+    },
+    {
+      service: "window",
+      value: { action: "set-always-on-top", enabled: true },
+      result: { alwaysOnTop: true },
+    },
+    {
+      service: "window",
+      value: { action: "set-always-on-top", enabled: false },
+      result: { alwaysOnTop: false },
+    },
   ];
   for (const [index, entry] of cases.entries()) {
     const receipt = sdk.services.request(entry.service, entry.value);
@@ -232,6 +276,85 @@ test("resources and links share the existing service channel without supplying n
   close();
 });
 
+test("window SDK rejects malformed requests, paths and forged identity before sending them", async () => {
+  const { sdk, send, messages, close } = fixture();
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  for (const value of [
+    null,
+    [],
+    {},
+    { action: "close" },
+    { action: "get-state", enabled: true },
+    { action: "get-state", label: "main" },
+    { action: "get-state", path: "C:/file" },
+    { action: "get-state", expectedGeneration: 2 },
+    { action: "set-always-on-top" },
+    { action: "set-always-on-top", enabled: "true" },
+    { action: "set-always-on-top", enabled: true, id: "forged" },
+  ])
+    await assert.rejects(
+      sdk.services.request("window", value),
+      (error) => error.code === "INVALID_ARGUMENT" && error.retryable === false,
+    );
+  assert.equal(messages.length, 0);
+  const receipt = sdk.services.request("window", { action: "get-state" });
+  await Promise.resolve();
+  send({ id: 1, result: { alwaysOnTop: false } });
+  assert.deepEqual(await receipt, { alwaysOnTop: false });
+  close();
+});
+
+test("32-field drafts reach the host intact and a host rejection of 33 fields preserves the channel", async () => {
+  const { sdk, send, messages, close } = fixture();
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  const fields = Object.fromEntries(
+    Array.from({ length: 32 }, (_, index) => [`field${index}`, String(index)]),
+  );
+  for (const method of ["run", "fields"]) {
+    const execute = (value) =>
+      method === "run" ? sdk.run("convert", value) : sdk.setFields(value);
+    const accepted = execute(fields);
+    await Promise.resolve();
+    const id = messages.length;
+    assert.deepEqual(messages.at(-1), {
+      version: 1,
+      id,
+      method,
+      params: method === "run" ? { action: "convert", fields } : { fields },
+    });
+    const result = method === "run" ? { state: "converted", fields: [] } : null;
+    send({ id, result });
+    assert.deepEqual(await accepted, result);
+
+    // 数量校验属于宿主；SDK 保留宿主错误，不维护第二套字段额度。
+    const extra = { ...fields, field32: "32" };
+    const rejected = execute(extra);
+    await Promise.resolve();
+    assert.deepEqual(messages.at(-1).params.fields, extra);
+    send({
+      id: id + 1,
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "Too many form fields",
+        retryable: false,
+      },
+    });
+    await assert.rejects(rejected, {
+      code: "INVALID_ARGUMENT",
+      message: "Too many form fields",
+      retryable: false,
+    });
+  }
+  const corrected = sdk.setFields(fields);
+  await Promise.resolve();
+  assert.equal(messages.length, 5);
+  send({ id: 5, result: null });
+  await corrected;
+  close();
+});
+
 test("resource and link requests share the four-operation limit and reject unfinished work on closure", async () => {
   const { sdk, send, messages, close } = fixture();
   send({ type: "state", value: snapshot() });
@@ -245,9 +368,17 @@ test("resource and link requests share the four-operation limit and reject unfin
   await Promise.resolve();
   await assert.rejects(
     sdk.services.request("resources", { action: "save", resourceId: "one" }),
-    (error) => error.code === "EXTENSION_UNAVAILABLE",
+    (error) => error.code === "EXTENSION_BUSY" && error.retryable === true,
   );
   assert.equal(messages.length, 4);
+  send({ id: 1, result: { dataUrl: "data:image/png;base64,YQ==" } });
+  await pending.shift();
+  pending.push(
+    sdk.services.request("resources", { action: "save", resourceId: "one" }),
+  );
+  await Promise.resolve();
+  assert.equal(messages.length, 5);
+  assert.equal(messages.at(-1).id, 5);
   const rejected = pending.map((operation) =>
     assert.rejects(
       operation,
@@ -256,6 +387,37 @@ test("resource and link requests share the four-operation limit and reject unfin
   );
   close();
   await Promise.all(rejected);
+});
+
+test("a busy host receipt keeps the connection usable without automatically retrying", async () => {
+  const { sdk, send, messages, close } = fixture();
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  const operation = sdk.services.request("resources", {
+    action: "fetch-image",
+    url: "https://example.com/image.jpg",
+  });
+  await Promise.resolve();
+  send({
+    id: 1,
+    error: {
+      code: "EXTENSION_BUSY",
+      message: "Extension bridge is busy",
+      retryable: true,
+    },
+  });
+  await assert.rejects(operation, {
+    code: "EXTENSION_BUSY",
+    retryable: true,
+  });
+  await Promise.resolve();
+  assert.equal(messages.length, 1);
+  const next = sdk.setFields({ source: "next" });
+  await Promise.resolve();
+  assert.equal(messages.at(-1).id, 2);
+  send({ id: 2, result: null });
+  assert.equal(await next, null);
+  close();
 });
 
 test("closure before the first state rejects readiness and waiting requests, and releases the channel", async () => {
@@ -269,7 +431,7 @@ test("closure before the first state rejects readiness and waiting requests, and
   assert.equal(port.onmessage, null);
   assert.equal(port.onmessageerror, null);
   assert.equal(port.closed, 1);
-  assert.equal(events.size, 0);
+  assert.deepEqual([...events.keys()], ["contextmenu"]);
   assert.equal(documentEvents.size, 0);
   assert.deepEqual(messages, []);
   await assert.rejects(sdk.setFields({ draft: "late" }), unavailable);
@@ -309,7 +471,7 @@ test("an unreadable channel message terminates both initialization and active re
   assert.equal(active.port.closed, 1);
   assert.equal(active.port.onmessage, null);
   assert.equal(active.port.onmessageerror, null);
-  assert.equal(active.events.size, 0);
+  assert.deepEqual([...active.events.keys()], ["contextmenu"]);
   assert.equal(active.documentEvents.size, 0);
   active.sdk.onChange(() => changes++);
   active.send({ type: "state", value: snapshot() });
@@ -364,6 +526,53 @@ test("the first visible-frame acknowledgement waits for a real view, document re
   );
   close();
 });
+
+test("the first paint commits the host theme before restoring normal CSS transitions", () => {
+  const { root, styles, tokens, send, frame, parentMessages, close } =
+    fixture();
+  const initialPaint = styles.find((style) =>
+    Object.hasOwn(style.dataset, "starterInitialPaint"),
+  );
+  assert.ok(initialPaint);
+  assert.match(initialPaint.textContent, /transition:none !important/);
+  let commits = 0;
+  Object.defineProperty(root, "offsetWidth", {
+    get() {
+      commits++;
+      assert.equal(initialPaint.removed, false);
+      assert.equal(tokens.get("--background"), "#0a0a0a");
+      assert.equal(root.style.colorScheme, "dark");
+      return 800;
+    },
+  });
+  send({
+    type: "state",
+    value: snapshot({
+      view: { state: "rendered" },
+      theme: { mode: "dark", tokens: { "--background": "#0a0a0a" } },
+    }),
+  });
+  frame();
+  assert.equal(initialPaint.removed, false);
+  assert.equal(commits, 0);
+  frame();
+  assert.equal(commits, 1);
+  assert.equal(initialPaint.removed, true);
+  assert.equal(parentMessages.at(-1).type, "starter:painted");
+  send({
+    type: "state",
+    value: snapshot({
+      view: { state: "rendered" },
+      theme: { mode: "light", tokens: { "--background": "white" } },
+    }),
+  });
+  frame();
+  frame();
+  assert.equal(commits, 1);
+  assert.equal(initialPaint.removed, true);
+  assert.equal(root.style.colorScheme, "light");
+  close();
+});
 function snapshot(overrides = {}) {
   return {
     view: null,
@@ -381,6 +590,83 @@ function snapshot(overrides = {}) {
     ...overrides,
   };
 }
+
+test("incremental state patches preserve complete isolated author snapshots", async () => {
+  const { sdk, send, close } = fixture();
+  const observed = [];
+  sdk.onChange((state) => {
+    state.view.state = "author mutation";
+    state.theme.mode = "author mutation";
+  });
+  sdk.onChange((state) => observed.push(state));
+  send({
+    type: "state",
+    value: snapshot({ view: { state: "retained view" } }),
+  });
+  await sdk.ready;
+  send({ type: "state", value: { fields: { query: "edited" }, dirty: true } });
+  send({
+    type: "state",
+    value: { checkpoint: { draft: "saved" }, busy: true },
+  });
+  assert.equal(observed.at(-1).view.state, "retained view");
+  assert.equal(observed.at(-1).theme.mode, "light");
+  assert.deepEqual(observed.at(-1).fields, { query: "edited" });
+  assert.deepEqual(observed.at(-1).checkpoint, { draft: "saved" });
+  assert.equal(observed.at(-1).dirty, true);
+  assert.equal(observed.at(-1).busy, true);
+  close();
+});
+
+test("surface activity defaults to active and rejects new hidden requests while existing receipts still complete", async () => {
+  const { sdk, root, send, messages, close } = fixture();
+  const observed = [];
+  sdk.onChange((state) => observed.push(state));
+  send({ type: "state", value: snapshot() });
+  assert.equal((await sdk.ready).active, true);
+  assert.equal(root.dataset.active, "true");
+  const pending = sdk.services.request("lan", { action: "status" });
+  await Promise.resolve();
+  assert.equal(messages.length, 1);
+
+  send({ type: "state", value: { active: false } });
+  assert.equal(observed.at(-1).active, false);
+  assert.equal(root.dataset.active, "false");
+  assert.equal(root.dataset.motion, "full");
+  for (const request of [
+    sdk.run("refresh"),
+    sdk.setFields({ draft: "retained" }),
+    sdk.checkpoint({ draft: "retained" }, true),
+    sdk.saveArtifact(0),
+    sdk.notify("hidden"),
+    sdk.services.request("lan", { action: "status" }),
+  ])
+    await assert.rejects(request, { code: "EXTENSION_UNAVAILABLE" });
+  assert.equal(messages.length, 1);
+  send({ id: 1, result: { connected: true } });
+  assert.deepEqual(await pending, { connected: true });
+
+  send({ type: "state", value: { busy: true } });
+  assert.equal(observed.at(-1).active, false);
+  send({ type: "state", value: { active: true } });
+  assert.equal(observed.at(-1).active, true);
+  assert.equal(root.dataset.active, "true");
+  const resumed = sdk.notify("resumed");
+  await Promise.resolve();
+  assert.equal(messages.length, 2);
+  send({ id: 2, result: null });
+  await resumed;
+  close();
+});
+
+test("an initially inactive surface still becomes ready without allowing requests", async () => {
+  const { sdk, send, messages, close } = fixture();
+  send({ type: "state", value: snapshot({ active: false }) });
+  assert.equal((await sdk.ready).active, false);
+  await assert.rejects(sdk.notify("hidden"), { code: "EXTENSION_UNAVAILABLE" });
+  assert.equal(messages.length, 0);
+  close();
+});
 
 test("SDK follows locale, host font tokens and theme without overwriting author font properties", async () => {
   const { sdk, root, tokens, classes, send, close } = fixture();
@@ -488,9 +774,11 @@ test("opaque child reveals use host coordinates and keep later state updates whi
     animations.push({ frames, options, animation });
     return animation;
   };
-  let finish;
+  let finish, startUpdate;
   document.startViewTransition = (update) => ({
-    ready: Promise.resolve(update()),
+    ready: new Promise((resolve) => {
+      startUpdate = () => resolve(update());
+    }),
     finished: new Promise((resolve) => {
       finish = resolve;
     }),
@@ -519,7 +807,12 @@ test("opaque child reveals use host coordinates and keep later state updates whi
       theme: { mode: "dark", motion: "full", tokens: {} },
     }),
   });
+  send({ type: "state", value: { fields: { value: "before commit" } } });
+  assert.equal(root.style.colorScheme, "light");
+  startUpdate();
   await new Promise(setImmediate);
+  assert.equal(root.style.colorScheme, "dark");
+  assert.equal(observed.at(-1), "before commit");
   assert.equal(animations.length, 1);
   assert.deepEqual(Array.from(animations[0].frames.clipPath), [
     "circle(0px at -150px -30px)",
@@ -529,12 +822,54 @@ test("opaque child reveals use host coordinates and keep later state updates whi
   assert.ok(animations[0].animation.currentTime >= 20);
   send({
     type: "state",
-    value: snapshot({
-      fields: { value: "new draft" },
-      theme: { mode: "dark", motion: "full", tokens: {} },
-    }),
+    value: { fields: { value: "new draft" } },
   });
   assert.equal(observed.at(-1), "new draft");
+  close();
+});
+
+test("a theme reverting before the reveal callback commits the latest fields and environment", async () => {
+  const { sdk, document, root, send, close } = fixture();
+  let startUpdate, finish;
+  root.animate = () => ({ currentTime: 0 });
+  document.startViewTransition = (update) => ({
+    ready: new Promise((resolve) => {
+      startUpdate = () => resolve(update());
+    }),
+    finished: new Promise((resolve) => {
+      finish = resolve;
+    }),
+    skipTransition() {
+      finish();
+    },
+  });
+  const observed = [];
+  sdk.onChange((state) => observed.push(state));
+  send({ type: "state", value: snapshot({ fields: { value: "initial" } }) });
+  await sdk.ready;
+  send({ type: "theme-transition", value: {} });
+  send({
+    type: "state",
+    value: {
+      fields: { value: "older" },
+      theme: { mode: "dark", motion: "full", tokens: {} },
+    },
+  });
+  // 主题菜单的显式选择可直接回到原模式，不会准备第二次圆形过渡。
+  send({
+    type: "state",
+    value: {
+      fields: { value: "latest" },
+      theme: { mode: "light", motion: "full", tokens: {} },
+      locale: "zh-CN",
+    },
+  });
+  startUpdate();
+  await new Promise(setImmediate);
+  assert.equal(root.style.colorScheme, "light");
+  assert.equal(root.dataset.motion, "full");
+  assert.equal(root.lang, "zh-CN");
+  assert.equal(observed.at(-1).fields.value, "latest");
   close();
 });
 
@@ -555,6 +890,75 @@ test("reduced motion applies a theme change without starting a child view transi
   assert.equal(started, false);
   assert.equal(root.style.colorScheme, "dark");
   close();
+});
+
+test("surface deactivation cancels pending and running reveals and applies the latest snapshot immediately", async () => {
+  for (const commitFirst of [false, true]) {
+    const { sdk, document, root, send, close } = fixture();
+    const observed = [];
+    let startUpdate, finish;
+    let started = 0,
+      cancelled = 0,
+      skipped = 0;
+    root.animate = () => {
+      started++;
+      return {
+        currentTime: 0,
+        cancel() {
+          cancelled++;
+        },
+      };
+    };
+    document.startViewTransition = (update) => ({
+      ready: new Promise((resolve) => {
+        startUpdate = () => resolve(update());
+      }),
+      finished: new Promise((resolve) => {
+        finish = resolve;
+      }),
+      skipTransition() {
+        skipped++;
+        finish();
+      },
+    });
+    sdk.onChange((state) => observed.push(state));
+    send({ type: "state", value: snapshot() });
+    await sdk.ready;
+    send({ type: "theme-transition", value: {} });
+    send({
+      type: "state",
+      value: { theme: { mode: "dark", motion: "full", tokens: {} } },
+    });
+    if (commitFirst) {
+      startUpdate();
+      await new Promise(setImmediate);
+      assert.equal(started, 1);
+    }
+    send({
+      type: "state",
+      value: { active: false, fields: { value: "latest" } },
+    });
+    assert.equal(root.style.colorScheme, "dark");
+    assert.equal(root.dataset.active, "false");
+    assert.equal(root.dataset.motion, "full");
+    assert.equal(observed.at(-1).fields.value, "latest");
+    assert.equal(observed.at(-1).active, false);
+    assert.equal(skipped, 1);
+    assert.equal(cancelled, commitFirst ? 1 : 0);
+    if (!commitFirst) {
+      startUpdate();
+      await new Promise(setImmediate);
+      assert.equal(started, 0);
+    }
+    send({ type: "theme-transition", value: {} });
+    send({
+      type: "state",
+      value: { theme: { mode: "light", motion: "full", tokens: {} } },
+    });
+    assert.equal(root.style.colorScheme, "light");
+    assert.equal(skipped, 1);
+    close();
+  }
 });
 
 test("a native dialog stays pending until the actual reply and closing the surface rejects unfinished requests", async () => {
@@ -592,7 +996,12 @@ test("a native dialog stays pending until the actual reply and closing the surfa
   await assert.rejects(waiting, /Extension surface closed/);
 });
 
-function selectFixture() {
+function selectFixture({
+  url = "https://extension-ui.localhost/main",
+  browserFixture = false,
+  nativeInitializer = false,
+  topLevel = false,
+} = {}) {
   const dom = new JSDOM(
     `<!doctype html><html><body><form id="form">
     <label>Pick <select name="choice" id="choice"><option value="apple">Apple</option>
@@ -605,16 +1014,27 @@ function selectFixture() {
     <button type="button" id="outside">Outside</button>
   </form></body></html>`,
     {
-      url: "https://extension-ui.localhost/main",
+      url,
       runScripts: "outside-only",
       pretendToBeVisual: true,
     },
   );
-  dom.reconfigure({ windowTop: {} });
+  if (!topLevel) dom.reconfigure({ windowTop: {} });
   const { window } = dom;
+  window.structuredClone = structuredClone;
   window.Element.prototype.scrollIntoView = () => {};
   window.postMessage = () => {};
-  window.eval(source);
+  const initializedSource = nativeInitializer
+    ? source.replace("__STARTER_NATIVE_CONTEXT_MENU__", "true")
+    : source;
+  window.eval(
+    browserFixture
+      ? initializedSource.replace(
+          'location.hostname !== "extension-ui.localhost"',
+          '(location.hostname !== "127.0.0.1" || !location.pathname.startsWith("/fixture/ui/"))',
+        )
+      : initializedSource,
+  );
   const port = { start() {}, close() {}, onmessage: null };
   window.dispatchEvent(
     new window.MessageEvent("message", {
@@ -649,8 +1069,166 @@ function selectFixture() {
     disconnect();
     window.close();
   };
-  return { window, control, pointer, key, popup, disconnect, close };
+  return {
+    window,
+    control,
+    pointer,
+    key,
+    popup,
+    disconnect,
+    close,
+    send: (value) => port.onmessage?.({ data: value }),
+  };
 }
+
+test("native extension document menus stay suppressed after business disconnection while author menus keep working", () => {
+  for (const url of [
+    "extension-ui://localhost/main",
+    "http://extension-ui.localhost/main",
+    "https://extension-ui.localhost/main",
+  ]) {
+    const { window, disconnect, close } = selectFixture({ url });
+    try {
+      const button = window.document.querySelector("#outside");
+      const contextMenu = () => {
+        const event = new window.MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        return event;
+      };
+      assert.equal(contextMenu().defaultPrevented, true, url);
+      let authorOpened = 0;
+      button.addEventListener(
+        "contextmenu",
+        (event) => {
+          assert.equal(event.defaultPrevented, false);
+          event.preventDefault();
+          authorOpened++;
+        },
+        { once: true },
+      );
+      assert.equal(contextMenu().defaultPrevented, true);
+      assert.equal(authorOpened, 1);
+      disconnect();
+      assert.equal(contextMenu().defaultPrevented, true);
+    } finally {
+      close();
+    }
+  }
+});
+
+test("native all-frame initialization protects local descendant documents without granting them a host bridge", () => {
+  assert.equal(source.split("__STARTER_NATIVE_CONTEXT_MENU__").length, 2);
+  for (const url of ["about:blank", "about:srcdoc", "http://localhost:1420/"]) {
+    for (const nativeInitializer of [false, true]) {
+      const { window, close } = selectFixture({ url, nativeInitializer });
+      try {
+        assert.equal(window.starter, undefined);
+        assert.equal(window.RTCPeerConnection, undefined);
+        const event = new window.MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+        });
+        window.document.querySelector("#outside").dispatchEvent(event);
+        assert.equal(event.defaultPrevented, nativeInitializer, url);
+        const input = window.document.createElement("textarea");
+        window.document.body.append(input);
+        const editing = new window.MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+        });
+        input.dispatchEvent(editing);
+        assert.equal(editing.defaultPrevented, false, url);
+      } finally {
+        close();
+      }
+    }
+  }
+});
+
+test("native SDK initialization leaves top-level host menu handling to the application", () => {
+  const { window, close } = selectFixture({
+    url: "http://localhost:1420/",
+    nativeInitializer: true,
+    topLevel: true,
+  });
+  try {
+    assert.equal(window.starter, undefined);
+    const event = new window.MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    window.document.querySelector("#outside").dispatchEvent(event);
+    assert.equal(event.defaultPrevented, false);
+  } finally {
+    close();
+  }
+});
+
+test("native extension editing and real text selections retain WebView clipboard menus without a new clipboard bridge", () => {
+  const { window, close } = selectFixture();
+  try {
+    const { document } = window;
+    const region = document.createElement("section");
+    region.innerHTML = `<input id="text" value="Draft"><input id="readonly" readonly value="Copy">
+      <input id="password" type="password"><textarea id="textarea">Draft</textarea>
+      <div contenteditable="true"><span id="editable">Edit</span><span contenteditable="false" id="locked">Locked</span></div>
+      <div contenteditable="plaintext-only" id="plain">Plain</div>
+      <input id="disabled" disabled><input id="checkbox" type="checkbox">
+      <p id="selection">Selectable text</p>`;
+    document.body.append(region);
+    const contextMenu = (id) => {
+      const event = new window.MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+      });
+      document.getElementById(id).dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    for (const id of [
+      "text",
+      "readonly",
+      "password",
+      "textarea",
+      "editable",
+      "plain",
+    ])
+      assert.equal(contextMenu(id), false, id);
+    for (const id of ["locked", "disabled", "checkbox", "selection"])
+      assert.equal(contextMenu(id), true, id);
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById("selection"));
+    selection.addRange(range);
+    assert.equal(contextMenu("selection"), false);
+    assert.equal(contextMenu("outside"), true);
+    selection.removeAllRanges();
+    assert.equal(contextMenu("selection"), true);
+    assert.equal("clipboard" in window.starter, false);
+  } finally {
+    close();
+  }
+});
+
+test("browser extension fixtures keep their ordinary context menu behavior", () => {
+  const { window, close } = selectFixture({
+    url: "http://127.0.0.1/fixture/ui/main",
+    browserFixture: true,
+  });
+  try {
+    assert.equal(typeof window.starter, "object");
+    const event = new window.MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    window.document.querySelector("#outside").dispatchEvent(event);
+    assert.equal(event.defaultPrevented, false);
+  } finally {
+    close();
+  }
+});
 
 test("enhanced select retains its native node, form value and label while keyboard/click selection emits one real change", () => {
   const { window, control, pointer, key, popup, close } = selectFixture();
@@ -738,4 +1316,165 @@ test("select opt-outs, disabled fieldsets, reset and removed controls keep nativ
   pointer(other);
   assert.equal(popup(), null);
   close();
+});
+
+test("explicit shadow styles retain native select semantics, share one picker and clean up idempotently", () => {
+  const { window, control, pointer, key, popup, close } = selectFixture();
+  try {
+    const host = window.document.createElement("section");
+    window.document.body.append(host);
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML =
+      '<label>Shadow choice <select><option value="one">One</option><option value="two">Two</option></select></label>';
+    const select = root.querySelector("select");
+    pointer(select);
+    assert.equal(root.querySelector("[data-starter-listbox]"), null);
+    assert.equal(root.querySelector("[data-starter-defaults]"), null);
+
+    const cleanup = window.starter.applyStyles(root);
+    const secondCleanup = window.starter.applyStyles(root);
+    assert.equal(root.querySelectorAll("[data-starter-defaults]").length, 1);
+    assert.match(
+      root.querySelector("[data-starter-defaults]").textContent,
+      /@layer starter-defaults/,
+    );
+    let changes = 0;
+    select.addEventListener("change", () => changes++);
+    pointer(select);
+    const shadowPopup = () => root.querySelector("[data-starter-listbox]");
+    assert.equal(shadowPopup().getAttribute("aria-label"), "Shadow choice");
+    key("End", select);
+    key("Enter", select);
+    assert.equal(select.value, "two");
+    assert.equal(changes, 1);
+    pointer(select);
+    pointer(control);
+    assert.equal(shadowPopup(), null);
+    assert.notEqual(popup(), null);
+    pointer(select);
+    assert.equal(popup(), null);
+    assert.notEqual(shadowPopup(), null);
+    cleanup();
+    cleanup();
+    assert.equal(root.querySelectorAll("[data-starter-defaults]").length, 1);
+    assert.notEqual(shadowPopup(), null);
+    secondCleanup();
+    secondCleanup();
+    assert.equal(root.querySelector("[data-starter-defaults]"), null);
+    assert.equal(shadowPopup(), null);
+    assert.equal(select.hasAttribute("aria-expanded"), false);
+    pointer(select);
+    assert.equal(shadowPopup(), null);
+  } finally {
+    close();
+  }
+});
+
+test("shadow registration is local to this document and tracks host motion until surface closure", () => {
+  const { window, send, disconnect, pointer, close } = selectFixture();
+  const foreign = new JSDOM("<section></section>");
+  try {
+    assert.throws(
+      () => window.starter.applyStyles(window.document.body),
+      /Expected a ShadowRoot/,
+    );
+    const foreignRoot = foreign.window.document
+      .querySelector("section")
+      .attachShadow({ mode: "open" });
+    assert.throws(
+      () => window.starter.applyStyles(foreignRoot),
+      /Expected a ShadowRoot/,
+    );
+    const host = window.document.createElement("section");
+    window.document.body.append(host);
+    const root = host.attachShadow({ mode: "closed" });
+    root.innerHTML =
+      "<select><option>One</option><option>Two</option></select>";
+    const cleanup = window.starter.applyStyles(root);
+    const style = root.querySelector("[data-starter-defaults]");
+    send({
+      type: "state",
+      value: snapshot({
+        theme: { mode: "dark", motion: "reduced", tokens: {} },
+      }),
+    });
+    assert.match(
+      style.textContent,
+      /\n@layer starter-defaults \{ \*,\*::before,\*::after/,
+    );
+    send({
+      type: "state",
+      value: { theme: { mode: "light", motion: "full", tokens: {} } },
+    });
+    assert.doesNotMatch(
+      style.textContent,
+      /\n@layer starter-defaults \{ \*,\*::before,\*::after/,
+    );
+    pointer(root.querySelector("select"));
+    assert.notEqual(root.querySelector("[data-starter-listbox]"), null);
+    disconnect();
+    assert.equal(root.querySelector("[data-starter-listbox]"), null);
+    assert.equal(root.querySelector("[data-starter-defaults]"), null);
+    assert.throws(
+      () => window.starter.applyStyles(root),
+      /Extension surface closed/,
+    );
+    cleanup();
+    cleanup();
+  } finally {
+    close();
+    foreign.window.close();
+  }
+});
+
+test("inactive surfaces close document and shadow pickers without committing and pause CSS motion until resumed", () => {
+  const { window, send, control, pointer, key, popup, close } = selectFixture();
+  try {
+    send({ type: "state", value: snapshot() });
+    const host = window.document.createElement("section");
+    window.document.body.append(host);
+    const shadow = host.attachShadow({ mode: "closed" });
+    shadow.innerHTML =
+      "<select><option>One</option><option>Two</option></select>";
+    const cleanup = window.starter.applyStyles(shadow);
+    const style = shadow.querySelector("[data-starter-defaults]");
+    pointer(control);
+    key("End");
+    assert.notEqual(popup(), null);
+    send({ type: "state", value: { active: false } });
+    assert.equal(popup(), null);
+    assert.equal(control.value, "apple");
+    assert.equal(control.hasAttribute("aria-expanded"), false);
+    assert.match(
+      style.textContent,
+      /\n@layer starter-defaults \{ \*,\*::before,\*::after \{ animation-play-state:paused/,
+    );
+    assert.equal(window.document.documentElement.dataset.motion, "full");
+    pointer(control);
+    pointer(shadow.querySelector("select"));
+    assert.equal(popup(), null);
+    assert.equal(shadow.querySelector("[data-starter-listbox]"), null);
+
+    send({ type: "state", value: { active: true } });
+    assert.doesNotMatch(
+      style.textContent,
+      /\n@layer starter-defaults \{ \*,\*::before,\*::after \{ animation-play-state:paused/,
+    );
+    pointer(shadow.querySelector("select"));
+    assert.notEqual(shadow.querySelector("[data-starter-listbox]"), null);
+    send({
+      type: "state",
+      value: {
+        active: false,
+        theme: { mode: "dark", motion: "reduced", tokens: {} },
+      },
+    });
+    assert.equal(shadow.querySelector("[data-starter-listbox]"), null);
+    assert.match(style.textContent, /animation-play-state:paused/);
+    assert.match(style.textContent, /animation-duration:1ms/);
+    assert.equal(window.document.documentElement.dataset.motion, "reduced");
+    cleanup();
+  } finally {
+    close();
+  }
 });

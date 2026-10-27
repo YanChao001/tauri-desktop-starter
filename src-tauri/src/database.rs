@@ -41,6 +41,7 @@ pub struct NoteUpdate {
 
 pub struct Database(Mutex<Connection>);
 
+/// 外部导入限额；应用自身的完整快照随已接受的数据增长。
 pub const BACKUP_LIMIT: usize = 16 * 1024 * 1024;
 pub const DATABASE_SCHEMA_VERSION: i32 = 2;
 
@@ -219,23 +220,19 @@ fn validate_label(label: &str) -> NativeResult<()> {
 }
 
 fn decode_backup(contents: &str) -> NativeResult<BackupDocument> {
-    if contents.len() > BACKUP_LIMIT {
-        return Err(NativeError::new(
-            ErrorCode::InputTooLong,
-            "Backup exceeds 16 MiB",
-        ));
-    }
     let document: BackupDocument = serde_json::from_str(contents)
         .map_err(|error| corrupt_json("Invalid notes backup", error))?;
+    validate_backup(&document)?;
+    Ok(document)
+}
+
+fn validate_backup(document: &BackupDocument) -> NativeResult<()> {
     if document.format != "tauri-desktop-notes"
         || document.schema_version != DATABASE_SCHEMA_VERSION
     {
         return Err(invalid("Unsupported notes backup format or schema version"));
     }
     bounded_text(&document.created_at, 64, "Backup date")?;
-    if document.notes.len() > 50_000 || document.drafts.len() > 128 {
-        return Err(invalid("Backup contains too many records"));
-    }
     let mut ids = HashSet::new();
     for archived in &document.notes {
         let note = &archived.note;
@@ -257,7 +254,7 @@ fn decode_backup(contents: &str) -> NativeResult<BackupDocument> {
             return Err(invalid("Backup contains duplicate draft windows"));
         }
     }
-    Ok(document)
+    Ok(())
 }
 
 fn snapshot(connection: &Connection) -> NativeResult<BackupDocument> {
@@ -363,10 +360,10 @@ fn backup_directory(directory: &Path) -> NativeResult<()> {
 }
 
 fn persist_backup(directory: &Path, document: &BackupDocument) -> NativeResult<BackupInfo> {
+    validate_backup(document)?;
     let contents = serde_json::to_string_pretty(document).map_err(|error| {
         NativeError::operation(ErrorCode::Internal, "Cannot encode notes backup", error)
     })?;
-    decode_backup(&contents)?;
     backup_directory(directory)?;
     let mut temporary = tempfile::Builder::new()
         .prefix(".notes-pending-")
@@ -405,21 +402,13 @@ fn read_backup(directory: &Path, id: &str) -> NativeResult<String> {
     if !metadata.is_file() || metadata.is_symlink() {
         return Err(invalid("Backup must be a regular file"));
     }
+    // 此目录中的受控 ID 来自已生成 / 导入的备份，不套用外部导入额度。
     let mut contents = String::new();
     File::open(path)
-        .and_then(|file| {
-            file.take(BACKUP_LIMIT as u64 + 1)
-                .read_to_string(&mut contents)
-        })
+        .and_then(|mut file| file.read_to_string(&mut contents))
         .map_err(|error| {
             NativeError::operation(ErrorCode::StorageIo, "Cannot read notes backup", error)
         })?;
-    if contents.len() > BACKUP_LIMIT {
-        return Err(NativeError::new(
-            ErrorCode::InputTooLong,
-            "Backup exceeds 16 MiB",
-        ));
-    }
     Ok(contents)
 }
 
@@ -484,17 +473,6 @@ impl Database {
             .map_err(database_error)
     }
 
-    pub fn list(&self, search: &str) -> NativeResult<Vec<Note>> {
-        bounded_text(search, 200, "Search")?;
-        let connection = self.lock()?;
-        let mut statement = connection.prepare("SELECT id,title,body,updated_at,version FROM notes WHERE deleted_at IS NULL AND (instr(lower(title),lower(?1)) > 0 OR instr(lower(body),lower(?1)) > 0) ORDER BY updated_at DESC,id DESC").map_err(database_error)?;
-        statement
-            .query_map(params![search], row_note)
-            .map_err(database_error)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(database_error)
-    }
-
     pub fn create(&self, input: NoteInput) -> NativeResult<Note> {
         validate_note(&input.title, &input.body)?;
         let connection = self.lock()?;
@@ -530,19 +508,6 @@ impl Database {
                 ))
             }
         }
-    }
-
-    pub fn delete(&self, id: i32) -> NativeResult<()> {
-        validate_identity(id, None)?;
-        if self
-            .lock()?
-            .execute("UPDATE notes SET deleted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),version=version+1 WHERE id=?1 AND deleted_at IS NULL", params![id])
-            .map_err(database_error)?
-            == 0
-        {
-            return Err(NativeError::new(ErrorCode::NotFound, "Note not found"));
-        }
-        Ok(())
     }
 
     pub fn get(&self, id: i32) -> NativeResult<Note> {
@@ -656,10 +621,13 @@ impl Database {
     }
 
     pub fn create_backup(&self, directory: &Path) -> NativeResult<BackupInfo> {
-        let mut connection = self.lock()?;
-        let transaction = connection.transaction().map_err(database_error)?;
-        let document = snapshot(&transaction)?;
-        transaction.commit().map_err(database_error)?;
+        let document = {
+            let mut connection = self.lock()?;
+            let transaction = connection.transaction().map_err(database_error)?;
+            let document = snapshot(&transaction)?;
+            transaction.commit().map_err(database_error)?;
+            document
+        };
         persist_backup(directory, &document)
     }
 
@@ -685,8 +653,36 @@ impl Database {
     }
 
     pub fn import_backup(&self, directory: &Path, contents: &str) -> NativeResult<BackupPreview> {
+        if contents.len() > BACKUP_LIMIT {
+            return Err(NativeError::new(
+                ErrorCode::InputTooLong,
+                "Imported backup exceeds 16 MiB",
+            ));
+        }
         let document = decode_backup(contents)?;
-        let info = persist_backup(directory, &document)?;
+        if document.notes.len() > 50_000 || document.drafts.len() > 128 {
+            return Err(invalid("Imported backup contains too many records"));
+        }
+        self.persist_preview(directory, &document)
+    }
+
+    /// 仅复制应用备份目录中的受控备份；外部文本须经过 import_backup 限额。
+    pub fn copy_backup(
+        &self,
+        source: &Path,
+        destination: &Path,
+        id: &str,
+    ) -> NativeResult<BackupPreview> {
+        let document = decode_backup(&read_backup(source, id)?)?;
+        self.persist_preview(destination, &document)
+    }
+
+    fn persist_preview(
+        &self,
+        directory: &Path,
+        document: &BackupDocument,
+    ) -> NativeResult<BackupPreview> {
+        let info = persist_backup(directory, document)?;
         Ok(BackupPreview {
             info,
             schema_version: document.schema_version,
@@ -705,12 +701,22 @@ impl Database {
         for entry in fs::read_dir(directory).map_err(|error| {
             NativeError::operation(ErrorCode::StorageIo, "Cannot list notes backups", error)
         })? {
-            let entry = entry.map_err(|error| {
-                NativeError::operation(ErrorCode::StorageIo, "Cannot inspect notes backup", error)
-            })?;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    log::warn!(
+                        "Skipping unreadable notes backup entry: {}",
+                        crate::redaction::redact(&error.to_string())
+                    );
+                    continue;
+                }
+            };
             let id = entry.file_name().to_string_lossy().into_owned();
             if backup_id(&id).is_ok() {
-                result.push(self.preview_backup(directory, &id)?.info);
+                match self.preview_backup(directory, &id) {
+                    Ok(preview) => result.push(preview.info),
+                    Err(error) => log::warn!("Skipping unavailable notes backup {id}: {error}"),
+                }
             }
         }
         result.sort_by(|left, right| {
@@ -777,6 +783,14 @@ impl Database {
 mod tests {
     use super::*;
 
+    fn search(db: &Database, text: &str) -> NotePage {
+        db.query(NoteQuery {
+            search: text.into(),
+            ..query(0, false)
+        })
+        .unwrap()
+    }
+
     #[test]
     fn migration_crud_and_reopen_preserve_data() {
         let temp = tempfile::tempdir().unwrap();
@@ -790,7 +804,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(note.title, "Test");
-        assert_eq!(db.list("body").unwrap(), vec![note.clone()]);
+        assert_eq!(search(&db, "body").items, vec![note.clone()]);
         let next = db
             .update(NoteUpdate {
                 id: note.id,
@@ -813,12 +827,18 @@ mod tests {
         );
         drop(db);
         let reopened = Database::open(&path).unwrap();
-        assert_eq!(reopened.list("").unwrap(), vec![next]);
-        reopened.delete(note.id).unwrap();
-        assert!(reopened.list("").unwrap().is_empty());
+        assert_eq!(search(&reopened, "").items, vec![next.clone()]);
+        let selected = || {
+            vec![NoteVersion {
+                id: note.id,
+                expected_version: next.version,
+            }]
+        };
+        reopened.change_notes(selected(), "trash").unwrap();
+        assert!(search(&reopened, "").items.is_empty());
         assert_eq!(
-            reopened.delete(note.id).unwrap_err().code,
-            ErrorCode::NotFound
+            reopened.change_notes(selected(), "trash").unwrap_err().code,
+            ErrorCode::Conflict
         );
     }
 
@@ -832,8 +852,8 @@ mod tests {
             body: injected.into(),
         })
         .unwrap();
-        assert_eq!(db.list(injected).unwrap().len(), 1);
-        assert_eq!(db.list("%").unwrap().len(), 0);
+        assert_eq!(search(&db, injected).total, 1);
+        assert_eq!(search(&db, "%").total, 0);
         assert!(
             db.create(NoteInput {
                 title: " ".into(),
@@ -848,7 +868,7 @@ mod tests {
             })
             .is_err()
         );
-        assert_eq!(db.list("").unwrap().len(), 1);
+        assert_eq!(search(&db, "").total, 1);
         assert!(
             db.create(NoteInput {
                 title: "中".repeat(200),
@@ -900,9 +920,20 @@ mod tests {
             );
         }
         for id in [0, -1] {
-            assert_eq!(db.delete(id).unwrap_err().code, ErrorCode::InvalidArgument);
+            assert_eq!(
+                db.change_notes(
+                    vec![NoteVersion {
+                        id,
+                        expected_version: 1
+                    }],
+                    "trash"
+                )
+                .unwrap_err()
+                .code,
+                ErrorCode::InvalidArgument
+            );
         }
-        assert_eq!(db.list("").unwrap(), vec![note]);
+        assert_eq!(search(&db, "").items, vec![note]);
     }
 
     fn query(offset: u32, trash: bool) -> NoteQuery {
@@ -940,7 +971,7 @@ mod tests {
             })
             .unwrap();
         }
-        assert_eq!(db.list("").unwrap().len(), 251);
+        assert_eq!(search(&db, "").total, 251);
         let mut ids = HashSet::new();
         for offset in [0, 50, 100, 150, 200, 250] {
             let page = db.query(query(offset, false)).unwrap();
@@ -957,7 +988,82 @@ mod tests {
         assert_eq!(document.notes.len(), 251);
         let restore = db.restore_backup(&backups, &info.id).unwrap();
         assert_eq!(restore.restored, 251);
-        assert_eq!(db.list("").unwrap().len(), 251);
+        assert_eq!(search(&db, "").total, 251);
+    }
+
+    #[test]
+    fn internal_backups_past_import_limit_remain_exportable_copyable_and_restorable() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("notes.db");
+        let db = Database::open(&path).unwrap();
+        let directory = temp.path().join("backups");
+        let empty = db.create_backup(&directory).unwrap();
+        let body = "x".repeat(64 * 1024);
+        let count = BACKUP_LIMIT / body.len() + 1;
+        for index in 0..count {
+            db.create(NoteInput {
+                title: format!("Note {index:03}"),
+                body: body.clone(),
+            })
+            .unwrap();
+        }
+        let complete = db.create_backup(&directory).unwrap();
+        assert!(complete.bytes > BACKUP_LIMIT as f64);
+        assert_eq!(complete.notes, count as u32);
+        let contents = db.export_backup(&directory, &complete.id).unwrap();
+        let exported = temp.path().join("exported.json");
+        crate::workbench::save_text_content_with_picker(&contents, contents.len(), || {
+            Ok(Some(exported.clone()))
+        })
+        .unwrap();
+        assert_eq!(fs::metadata(exported).unwrap().len(), contents.len() as u64);
+        assert_eq!(
+            db.import_backup(&directory, &contents).unwrap_err().code,
+            ErrorCode::InputTooLong
+        );
+        drop(contents);
+        drop(db);
+
+        let db = Database::open(&path).unwrap();
+        assert_eq!(
+            db.preview_backup(&directory, &complete.id)
+                .unwrap()
+                .info
+                .notes,
+            count as u32
+        );
+        let copied_directory = temp.path().join("isolated-backups");
+        let copied = db
+            .copy_backup(&directory, &copied_directory, &complete.id)
+            .unwrap();
+        assert_eq!(copied.info.notes, count as u32);
+        let restored = db.restore_backup(&directory, &empty.id).unwrap();
+        assert_eq!(search(&db, "").total, 0);
+        assert_eq!(restored.safety_backup.notes, count as u32);
+        assert!(restored.safety_backup.bytes > BACKUP_LIMIT as f64);
+        db.restore_backup(&copied_directory, &copied.info.id)
+            .unwrap();
+        assert_eq!(search(&db, "").total, count as u32);
+        assert_eq!(db.get(1).unwrap().body, body);
+    }
+
+    #[test]
+    fn unavailable_backup_entries_do_not_hide_healthy_backups() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = Database::open(&temp.path().join("notes.db")).unwrap();
+        let directory = temp.path().join("backups");
+        let healthy = db.create_backup(&directory).unwrap();
+        let broken = directory.join("notes-backup-broken.json");
+        fs::write(&broken, b"{incomplete").unwrap();
+        fs::create_dir(directory.join("notes-backup-directory.json")).unwrap();
+        let listed = db.list_backups(&directory).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, healthy.id);
+        assert_eq!(fs::read(broken).unwrap(), b"{incomplete");
+        assert!(
+            db.preview_backup(&directory, "notes-backup-broken.json")
+                .is_err()
+        );
     }
 
     #[test]
@@ -994,7 +1100,7 @@ mod tests {
             .code,
             ErrorCode::Conflict
         );
-        assert_eq!(db.list("").unwrap().len(), 2);
+        assert_eq!(search(&db, "").total, 2);
         db.change_notes(
             vec![NoteVersion {
                 id: first.id,
@@ -1014,7 +1120,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(db.get(first.id).unwrap().version, 3);
-        assert_eq!(db.list("").unwrap().len(), 2);
+        assert_eq!(search(&db, "").total, 2);
     }
 
     #[test]

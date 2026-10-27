@@ -178,14 +178,14 @@ fn read_gallery(app: &tauri::AppHandle) -> NativeResult<GallerySnapshot> {
 fn render_gallery(
     snapshot: GallerySnapshot,
     permit: &ServicePermit,
-    mut preview: impl FnMut(&str) -> Option<String>,
+    mut preview: impl FnMut(&str) -> NativeResult<Option<String>>,
 ) -> NativeResult<Value> {
     // 快照来自已结束的提交临界区，逐图解码和缩略图编码不能占用窗口生命周期锁。
     permit.check()?;
     let mut items = Vec::with_capacity(snapshot.images.len());
     for entry in snapshot.images {
         permit.check()?;
-        let data_url = preview(&entry.data_url);
+        let data_url = preview(&entry.data_url)?;
         permit.check()?;
         let active = snapshot.active_id.as_deref() == Some(entry.id.as_str());
         items.push(json!({"id":entry.id,"name":entry.name,"dataUrl":data_url,"active":active}));
@@ -193,15 +193,24 @@ fn render_gallery(
     permit.check()?;
     Ok(json!({"revision":snapshot.revision,"items":items,"limit":24}))
 }
-fn gallery_preview(data_url: &str) -> Option<String> {
-    let (header, encoded) = data_url.split_once(',')?;
+fn gallery_preview(data_url: &str) -> NativeResult<Option<String>> {
+    let Some((header, encoded)) = data_url.split_once(',') else {
+        return Ok(None);
+    };
     let mime = match header {
         "data:image/jpeg;base64" => "image/jpeg",
         "data:image/webp;base64" => "image/webp",
-        _ => return None,
+        _ => return Ok(None),
     };
-    let bytes = STANDARD.decode(encoded).ok()?;
-    bounded_render_image(&bytes, mime, true).ok()
+    let Ok(bytes) = STANDARD.decode(encoded) else {
+        return Ok(None);
+    };
+    match bounded_render_image(&bytes, mime, true) {
+        Ok(preview) => Ok(Some(preview)),
+        // 繁忙是临时状态，不能成功返回空预览，让前端误认为图片已经损坏。
+        Err(error) if error.code == ErrorCode::ExtensionBusy => Err(error),
+        Err(_) => Ok(None),
+    }
 }
 fn next_settings(settings: &Value, image: Option<&Wallpaper>, fit: &str) -> NativeResult<Value> {
     if future_settings_schema(settings) {
@@ -248,34 +257,77 @@ fn remove_image(
     library: &WallpaperStore,
     id: &str,
     expected_revision: i32,
-) -> NativeResult<Option<crate::storage::SettingsSnapshot>> {
+) -> NativeResult<(crate::storage::SettingsSnapshot, NativeResult<()>)> {
     let snapshot = settings.snapshot()?;
-    let entry = library
-        .list(legacy(&snapshot.settings))?
-        .into_iter()
-        .find(|entry| entry.id == id);
+    remove_image_from_snapshot(settings, library, id, expected_revision, snapshot)
+}
+fn remove_image_from_snapshot(
+    settings: &SettingsStore,
+    library: &WallpaperStore,
+    id: &str,
+    expected_revision: i32,
+    snapshot: crate::storage::SettingsSnapshot,
+) -> NativeResult<(crate::storage::SettingsSnapshot, NativeResult<()>)> {
+    if future_settings_schema(&snapshot.settings) {
+        return Err(invalid("Future settings schema is read-only"));
+    }
     if snapshot.revision != expected_revision {
         return Err(NativeError::new(
             ErrorCode::SettingsConflict,
             "Settings changed; refresh the gallery before removing",
         ));
     }
-    let changed = if entry.as_ref().is_some_and(|entry| {
+    let entry = library
+        .list(legacy(&snapshot.settings))?
+        .into_iter()
+        .find(|entry| entry.id == id);
+    let next = if entry.as_ref().is_some_and(|entry| {
         snapshot
             .settings
             .pointer("/customBackground/dataUrl")
             .and_then(Value::as_str)
             == Some(entry.data_url.as_str())
     }) {
-        Some(settings.save(
-            next_settings(&snapshot.settings, None, "cover")?,
-            expected_revision,
-        )?)
+        next_settings(&snapshot.settings, None, "cover")?
     } else {
-        None
+        snapshot.settings
     };
-    library.remove(id)?;
-    Ok(changed)
+    // Even an inactive removal advances the revision. A settings save that
+    // selected this image from an older snapshot must conflict after removal.
+    settings.save_and(next, expected_revision, || library.remove(id))
+}
+fn rename_image(
+    settings: &SettingsStore,
+    library: &WallpaperStore,
+    id: &str,
+    name: String,
+) -> NativeResult<(Option<crate::storage::SettingsSnapshot>, NativeResult<()>)> {
+    let snapshot = settings.snapshot()?;
+    if future_settings_schema(&snapshot.settings) {
+        return Err(invalid("Future settings schema is read-only"));
+    }
+    let entry = library
+        .list(legacy(&snapshot.settings))?
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Wallpaper no longer exists"))?;
+    if snapshot
+        .settings
+        .pointer("/customBackground/dataUrl")
+        .and_then(Value::as_str)
+        != Some(entry.data_url.as_str())
+    {
+        return Ok((None, library.rename(id, name).map(|_| ())));
+    }
+    let mut next = snapshot.settings;
+    next.get_mut("customBackground")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| invalid("Invalid custom background settings"))?
+        .insert("name".into(), json!(name));
+    let (updated, renamed) = settings.save_and(next, snapshot.revision, || {
+        library.rename(id, name).map(|_| ())
+    })?;
+    Ok((Some(updated), renamed))
 }
 fn broadcast_settings(app: &tauri::AppHandle, snapshot: &crate::storage::SettingsSnapshot) {
     if let Err(error) = app.emit(SETTINGS_EVENT, snapshot) {
@@ -394,10 +446,19 @@ pub(crate) async fn request(
         }
         Request::Rename { id, name } => {
             blocking::run(move || {
-                let snapshot = permit.commit(|| {
-                    app.state::<WallpaperStore>().rename(&id, name)?;
-                    Ok(read_gallery(&app))
+                let ((updated, renamed), snapshot) = permit.commit(|| {
+                    let updated = rename_image(
+                        &app.state::<SettingsStore>(),
+                        &app.state::<WallpaperStore>(),
+                        &id,
+                        name,
+                    )?;
+                    Ok((updated, read_gallery(&app)))
                 })?;
+                if let Some(updated) = updated {
+                    broadcast_settings(&app, &updated);
+                }
+                renamed?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
                 render_gallery(snapshot?, &permit, gallery_preview)
             })
@@ -408,7 +469,7 @@ pub(crate) async fn request(
             expected_revision,
         } => {
             blocking::run(move || {
-                let (updated, snapshot) = permit.commit(|| {
+                let ((updated, removed), snapshot) = permit.commit(|| {
                     let updated = remove_image(
                         &app.state::<SettingsStore>(),
                         &app.state::<WallpaperStore>(),
@@ -417,9 +478,9 @@ pub(crate) async fn request(
                     )?;
                     Ok((updated, read_gallery(&app)))
                 })?;
-                if let Some(updated) = updated {
-                    broadcast_settings(&app, &updated);
-                }
+                // The settings write succeeded even when the later deletion failed.
+                broadcast_settings(&app, &updated);
+                removed?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
                 render_gallery(snapshot?, &permit, gallery_preview)
             })
@@ -531,14 +592,64 @@ mod tests {
             .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
             .unwrap();
         let stored = render_image(&bytes, "image/png", false).unwrap();
-        let preview = gallery_preview(&stored).unwrap();
+        let preview = gallery_preview(&stored).unwrap().unwrap();
         let (_, encoded) = preview.split_once(',').unwrap();
         let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
         assert!(decoded.width() <= 320);
         assert!(decoded.height() <= 320);
         assert!(preview.len() <= 24 * 1024);
-        assert!(gallery_preview("data:image/jpeg;base64,YmFk").is_none());
-        assert!(gallery_preview("https://untrusted.test/x.jpg").is_none());
+        assert!(
+            gallery_preview("data:image/jpeg;base64,YmFk")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            gallery_preview("https://untrusted.test/x.jpg")
+                .unwrap()
+                .is_none()
+        );
+    }
+    #[test]
+    fn busy_previews_do_not_replace_a_valid_gallery_with_missing_images() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let mut bytes = Vec::new();
+        image::DynamicImage::new_rgb8(64, 36)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let saved = library
+            .add(WallpaperInput {
+                name: "保留图片".into(),
+                data_url: render_image(&bytes, "image/png", false).unwrap(),
+            })
+            .unwrap();
+        let failed = render_gallery(
+            capture_gallery(&settings, &library).unwrap(),
+            &permit,
+            |_| {
+                Err(NativeError::new(
+                    ErrorCode::ExtensionBusy,
+                    "Image processing is busy",
+                ))
+            },
+        );
+        assert_eq!(failed.unwrap_err().code, ErrorCode::ExtensionBusy);
+        assert_eq!(library.list(None).unwrap(), vec![saved]);
+        let retried = render_gallery(
+            capture_gallery(&settings, &library).unwrap(),
+            &permit,
+            gallery_preview,
+        )
+        .unwrap();
+        assert!(retried["items"][0]["dataUrl"].as_str().is_some());
     }
     #[test]
     fn applying_gallery_image_uses_real_settings_cas_without_overwriting_other_preferences() {
@@ -584,6 +695,67 @@ mod tests {
         );
     }
     #[test]
+    fn renaming_the_current_image_syncs_only_its_name_and_other_images_leave_settings_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let images = [("Current", 64), ("Other", 80)]
+            .into_iter()
+            .map(|(name, width)| {
+                let mut bytes = Vec::new();
+                image::DynamicImage::new_rgb8(width, 36)
+                    .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+                    .unwrap();
+                library
+                    .add(WallpaperInput {
+                        name: name.into(),
+                        data_url: render_image(&bytes, "image/png", false).unwrap(),
+                    })
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let original = settings
+            .save(
+                json!({"schemaVersion":3,"accent":"rose","language":"en"}),
+                0,
+            )
+            .unwrap();
+        let active = apply_settings(
+            &settings,
+            &library,
+            &images[0].id,
+            original.revision,
+            "contain",
+        )
+        .unwrap();
+        let (updated, renamed) =
+            rename_image(&settings, &library, &images[0].id, "New current".into()).unwrap();
+        renamed.unwrap();
+        let updated = updated.unwrap();
+        let mut expected = active.settings;
+        expected["customBackground"]["name"] = json!("New current");
+        assert_eq!(updated.revision, active.revision + 1);
+        assert_eq!(updated.settings, expected);
+        assert_eq!(settings.snapshot().unwrap(), updated);
+        assert_eq!(library.list(None).unwrap()[0].name, "New current");
+        let persisted = std::fs::read(&settings_path).unwrap();
+        let (unchanged, renamed) =
+            rename_image(&settings, &library, &images[1].id, "New other".into()).unwrap();
+        renamed.unwrap();
+        assert!(unchanged.is_none());
+        assert_eq!(settings.snapshot().unwrap(), updated);
+        assert_eq!(std::fs::read(&settings_path).unwrap(), persisted);
+        assert_eq!(library.list(None).unwrap()[1].name, "New other");
+        assert_eq!(
+            SettingsStore::open(settings_path)
+                .unwrap()
+                .snapshot()
+                .unwrap(),
+            updated
+        );
+    }
+    #[test]
     fn removing_current_gallery_image_requires_current_revision_and_restores_plain_background() {
         let directory = tempfile::tempdir().unwrap();
         let settings_path = directory.path().join("settings.json");
@@ -613,9 +785,9 @@ mod tests {
         );
         assert_eq!(std::fs::read(&settings_path).unwrap(), persisted);
         assert_eq!(library.list(None).unwrap().len(), 1);
-        let cleared = remove_image(&settings, &library, &entry.id, active.revision)
-            .unwrap()
-            .unwrap();
+        let (cleared, removed) =
+            remove_image(&settings, &library, &entry.id, active.revision).unwrap();
+        removed.unwrap();
         assert_eq!(cleared.settings["background"], "plain");
         assert_eq!(cleared.settings["customBackground"], Value::Null);
         assert_eq!(cleared.settings["accent"], "rose");
@@ -628,6 +800,246 @@ mod tests {
             cleared
         );
         assert!(next_settings(&json!({"schemaVersion":99}), None, "cover").is_err());
+    }
+    #[test]
+    fn stale_inactive_removal_cannot_delete_an_image_applied_after_its_snapshot() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings =
+            Arc::new(SettingsStore::open(directory.path().join("settings.json")).unwrap());
+        let library = Arc::new(WallpaperStore::new(
+            directory.path().join("wallpapers.json"),
+        ));
+        let mut bytes = Vec::new();
+        image::DynamicImage::new_rgb8(64, 36)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let entry = library
+            .add(WallpaperInput {
+                name: "Concurrently selected wallpaper".into(),
+                data_url: render_image(&bytes, "image/png", false).unwrap(),
+            })
+            .unwrap();
+        let original = settings
+            .save(json!({"schemaVersion":3,"accent":"rose"}), 0)
+            .unwrap();
+        let captured = Arc::new(std::sync::Barrier::new(2));
+        let applied = Arc::new(std::sync::Barrier::new(2));
+        let remover = {
+            let settings = settings.clone();
+            let library = library.clone();
+            let captured = captured.clone();
+            let applied = applied.clone();
+            let id = entry.id.clone();
+            std::thread::spawn(move || {
+                let snapshot = settings.snapshot().unwrap();
+                captured.wait();
+                applied.wait();
+                remove_image_from_snapshot(&settings, &library, &id, original.revision, snapshot)
+            })
+        };
+        captured.wait();
+        // Ordinary settings writes do not hold the extension service window lock.
+        let active = settings
+            .save(
+                next_settings(&original.settings, Some(&entry), "cover").unwrap(),
+                original.revision,
+            )
+            .unwrap();
+        applied.wait();
+        let removed = remover.join().unwrap();
+        assert_eq!(
+            removed
+                .expect_err("A stale removal must not delete the newly selected image")
+                .code,
+            ErrorCode::SettingsConflict,
+        );
+        assert_eq!(settings.snapshot().unwrap(), active);
+        assert_eq!(library.list(None).unwrap(), vec![entry]);
+    }
+    #[test]
+    fn inactive_removal_advances_revision_and_rejects_a_waiting_old_settings_save() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let mut bytes = Vec::new();
+        image::DynamicImage::new_rgb8(64, 36)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let entry = library
+            .add(WallpaperInput {
+                name: "Inactive image".into(),
+                data_url: render_image(&bytes, "image/png", false).unwrap(),
+            })
+            .unwrap();
+        let original = settings
+            .save(
+                json!({"schemaVersion":3,"accent":"rose","background":"plain"}),
+                0,
+            )
+            .unwrap();
+        let (updated, removed) =
+            remove_image(&settings, &library, &entry.id, original.revision).unwrap();
+        removed.unwrap();
+        assert_eq!(updated.revision, original.revision + 1);
+        assert_eq!(updated.settings, original.settings);
+        assert!(library.list(None).unwrap().is_empty());
+        assert_eq!(
+            settings
+                .save(
+                    next_settings(&original.settings, Some(&entry), "cover").unwrap(),
+                    original.revision,
+                )
+                .unwrap_err()
+                .code,
+            ErrorCode::SettingsConflict,
+        );
+        assert_eq!(settings.snapshot().unwrap(), updated);
+        assert_eq!(
+            SettingsStore::open(settings_path)
+                .unwrap()
+                .snapshot()
+                .unwrap(),
+            updated
+        );
+    }
+    #[test]
+    fn a_settings_observer_during_removal_cannot_reapply_the_deleted_image() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings =
+            Arc::new(SettingsStore::open(directory.path().join("settings.json")).unwrap());
+        let library = Arc::new(WallpaperStore::new(
+            directory.path().join("wallpapers.json"),
+        ));
+        let mut bytes = Vec::new();
+        image::DynamicImage::new_rgb8(64, 36)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let entry = library
+            .add(WallpaperInput {
+                name: "Not yet removed".into(),
+                data_url: render_image(&bytes, "image/png", false).unwrap(),
+            })
+            .unwrap();
+        let original = settings
+            .save(json!({"schemaVersion":3,"background":"plain"}), 0)
+            .unwrap();
+        let started = Arc::new(std::sync::Barrier::new(2));
+        let resume = Arc::new(std::sync::Barrier::new(2));
+        let removing = {
+            let settings = settings.clone();
+            let library = library.clone();
+            let started = started.clone();
+            let resume = resume.clone();
+            let id = entry.id.clone();
+            std::thread::spawn(move || {
+                settings.save_and(original.settings, original.revision, || {
+                    started.wait();
+                    resume.wait();
+                    library.remove(&id)
+                })
+            })
+        };
+        started.wait();
+        // A newly opened settings page can still see the image before deletion.
+        let observed = settings.snapshot().unwrap();
+        assert_eq!(library.list(None).unwrap(), vec![entry.clone()]);
+        let applying = {
+            let settings = settings.clone();
+            std::thread::spawn(move || {
+                settings.save(
+                    next_settings(&observed.settings, Some(&entry), "cover").unwrap(),
+                    observed.revision,
+                )
+            })
+        };
+        resume.wait();
+        let (updated, removed) = removing.join().unwrap().unwrap();
+        removed.unwrap();
+        assert_eq!(
+            applying
+                .join()
+                .unwrap()
+                .expect_err(
+                    "A revision published before deletion must not authorize reapplying the image"
+                )
+                .code,
+            ErrorCode::SettingsConflict,
+        );
+        assert!(library.list(None).unwrap().is_empty());
+        assert_eq!(settings.snapshot().unwrap(), updated);
+    }
+    #[test]
+    fn failed_settings_save_keeps_the_image_and_the_last_committed_snapshot() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let archived_path = directory.path().join("saved-settings.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let mut bytes = Vec::new();
+        image::DynamicImage::new_rgb8(64, 36)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let entry = library
+            .add(WallpaperInput {
+                name: "Kept on I/O failure".into(),
+                data_url: render_image(&bytes, "image/png", false).unwrap(),
+            })
+            .unwrap();
+        let original = settings
+            .save(json!({"schemaVersion":3,"accent":"rose"}), 0)
+            .unwrap();
+        std::fs::rename(&settings_path, &archived_path).unwrap();
+        std::fs::create_dir(&settings_path).unwrap();
+        assert_eq!(
+            remove_image(&settings, &library, &entry.id, original.revision)
+                .unwrap_err()
+                .code,
+            ErrorCode::StorageIo,
+        );
+        assert_eq!(settings.snapshot().unwrap(), original);
+        assert_eq!(library.list(None).unwrap(), vec![entry]);
+        std::fs::remove_dir(&settings_path).unwrap();
+        std::fs::rename(&archived_path, &settings_path).unwrap();
+        assert_eq!(
+            SettingsStore::open(settings_path)
+                .unwrap()
+                .snapshot()
+                .unwrap(),
+            original
+        );
+    }
+    #[test]
+    fn future_settings_and_corrupt_libraries_are_not_changed_by_removal() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let library_path = directory.path().join("wallpapers.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(library_path.clone());
+        let original = settings
+            .save(json!({"schemaVersion":99,"future":true}), 0)
+            .unwrap();
+        let persisted = std::fs::read(&settings_path).unwrap();
+        assert_eq!(
+            remove_image(&settings, &library, &"a".repeat(64), original.revision)
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidArgument,
+        );
+        assert!(!library_path.exists());
+        assert_eq!(std::fs::read(&settings_path).unwrap(), persisted);
+        let current = settings
+            .save(json!({"schemaVersion":3}), original.revision)
+            .unwrap();
+        std::fs::write(&library_path, b"{broken").unwrap();
+        assert_eq!(
+            remove_image(&settings, &library, &"a".repeat(64), current.revision)
+                .unwrap_err()
+                .code,
+            ErrorCode::StorageCorrupt,
+        );
+        assert_eq!(settings.snapshot().unwrap(), current);
+        assert_eq!(std::fs::read(library_path).unwrap(), b"{broken");
     }
     #[test]
     fn preview_work_does_not_hold_commit_lock_or_reply_to_a_closed_window_after_a_saved_write() {
@@ -670,7 +1082,7 @@ mod tests {
             closed_rx
                 .recv_timeout(std::time::Duration::from_secs(2))
                 .unwrap();
-            Some("预览完成".into())
+            Ok(Some("预览完成".into()))
         });
         closer.join().unwrap();
         assert_eq!(result.unwrap_err().code, ErrorCode::ExtensionUnavailable);

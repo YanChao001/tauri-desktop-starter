@@ -18,6 +18,7 @@ use std::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 #[path = "extension_recovery.rs"]
@@ -67,6 +68,8 @@ pub enum ExtensionPermission {
     NetworkSystemProxy,
     #[serde(rename = "links:open")]
     LinksOpen,
+    #[serde(rename = "window:control")]
+    WindowControl,
     #[serde(rename = "storage")]
     Storage,
     #[serde(rename = "messaging:lan")]
@@ -114,9 +117,31 @@ pub struct ExtensionCommand {
     pub function: String,
     pub input_format: ExtensionInputFormat,
     pub result_format: ExtensionResultFormat,
+    #[serde(default, skip_serializing_if = "ExtensionExecutionBudget::is_standard")]
+    #[specta(optional)]
+    pub execution_budget: ExtensionExecutionBudget,
     #[serde(default)]
     pub ui: Option<ExtensionUi>,
     pub permissions: Vec<ExtensionPermission>,
+}
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExtensionExecutionBudget {
+    #[default]
+    Standard,
+    Compute,
+}
+impl ExtensionExecutionBudget {
+    fn is_standard(&self) -> bool {
+        *self == Self::Standard
+    }
+
+    pub(crate) const fn fuel(self) -> u64 {
+        match self {
+            Self::Standard => 100_000_000,
+            Self::Compute => 10_000_000_000,
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -132,6 +157,15 @@ pub struct ExtensionUi {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub document: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub window_size: Option<ExtensionWindowSize>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionWindowSize {
+    pub width: u32,
+    pub height: u32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -278,8 +312,8 @@ struct Package {
     #[serde(default)]
     ui_documents: std::collections::BTreeMap<String, String>,
 }
-struct Bundle {
-    preview: ExtensionPreview,
+pub(crate) struct Bundle {
+    pub(crate) preview: ExtensionPreview,
     binary: Vec<u8>,
     ui_documents: std::collections::BTreeMap<String, String>,
 }
@@ -308,6 +342,13 @@ struct ActiveRun {
     digest: String,
     stop: Arc<AtomicBool>,
     phase: ExtensionRunPhase,
+    preparation: bool,
+    background: bool,
+}
+#[derive(Default)]
+struct PreparationFlight {
+    result: Mutex<Option<NativeResult<()>>>,
+    finished: Condvar,
 }
 #[derive(Default)]
 struct WindowSession {
@@ -321,6 +362,7 @@ pub struct WindowRunToken {
 }
 #[derive(Default)]
 struct CacheCleanupState {
+    pending: bool,
     running: bool,
     requested: bool,
 }
@@ -335,6 +377,7 @@ struct StoreInner {
     services: Mutex<HashMap<String, usize>>,
     windows: Mutex<HashMap<String, WindowSession>>,
     cache_cleanup: Mutex<CacheCleanupState>,
+    preparation: Mutex<Option<Arc<PreparationFlight>>>,
     #[cfg(test)]
     cleanup_workers: AtomicU32,
 }
@@ -528,11 +571,25 @@ impl ExtensionManifest {
                 "Image resources, external links and system proxies require minHostVersion 0.1.6 or newer",
             ));
         }
+        if declared.contains(&ExtensionPermission::WindowControl)
+            && version(&self.min_host_version)? < (0, 1, 7)
+        {
+            return Err(invalid(
+                "Own-window controls require minHostVersion 0.1.7 or newer",
+            ));
+        }
         if self.commands.is_empty() || self.commands.len() > 32 {
             return Err(invalid("Declare one to thirty-two commands"));
         }
         let mut ids = HashSet::new();
         for command in &self.commands {
+            if command.execution_budget == ExtensionExecutionBudget::Compute
+                && version(&self.min_host_version)? < (0, 1, 7)
+            {
+                return Err(invalid(
+                    "Compute execution budgets require minHostVersion 0.1.7 or newer",
+                ));
+            }
             if command.id.is_empty()
                 || command.id.len() > 80
                 || !command
@@ -581,6 +638,23 @@ impl ExtensionManifest {
                 return Err(invalid(
                     "UI document IDs must be bounded lowercase identifiers",
                 ));
+            }
+            if let Some(ui) = &command.ui
+                && let Some(size) = ui.window_size
+            {
+                if !ui.window
+                    || !(360..=1920).contains(&size.width)
+                    || !(480..=1440).contains(&size.height)
+                {
+                    return Err(invalid(
+                        "UI window sizes require a window entry, width 360–1920 and height 480–1440 logical pixels",
+                    ));
+                }
+                if version(&self.min_host_version)? < (0, 1, 7) {
+                    return Err(invalid(
+                        "UI window sizes require minHostVersion 0.1.7 or newer",
+                    ));
+                }
             }
             if command.input_format == ExtensionInputFormat::Text
                 && command.permissions.iter().any(|permission| {
@@ -707,15 +781,32 @@ fn promote_runs(runs: &mut VecDeque<ActiveRun>) {
         .map(|run| run.owner.clone())
         .collect();
     let mut active = owners.len();
-    // FIFO among runnable owners. A busy owner cannot block unrelated windows.
-    for run in runs.iter_mut() {
-        if active == MAX_ACTIVE_RUNS {
-            break;
+    for run in runs
+        .iter()
+        .filter(|run| run.phase == ExtensionRunPhase::Running && run.background)
+    {
+        let foreground_waiting = runs.iter().any(|queued| {
+            queued.phase == ExtensionRunPhase::Queued
+                && !queued.background
+                && (queued.owner == run.owner
+                    || (active == MAX_ACTIVE_RUNS && !owners.contains(&queued.owner)))
+        });
+        if foreground_waiting {
+            run.stop.store(true, Ordering::Release);
         }
-        if run.phase == ExtensionRunPhase::Queued && !owners.contains(&run.owner) {
-            run.phase = ExtensionRunPhase::Running;
-            owners.insert(run.owner.clone());
-            active += 1;
+    }
+    // FIFO among runnable owners. A busy owner cannot block unrelated windows.
+    // Startup preparation yields to foreground work, including activation preparation.
+    for background in [false, true] {
+        for run in runs.iter_mut().filter(|run| run.background == background) {
+            if active == MAX_ACTIVE_RUNS {
+                break;
+            }
+            if run.phase == ExtensionRunPhase::Queued && !owners.contains(&run.owner) {
+                run.phase = ExtensionRunPhase::Running;
+                owners.insert(run.owner.clone());
+                active += 1;
+            }
         }
     }
 }
@@ -742,7 +833,7 @@ fn validate_wasm(bytes: &[u8]) -> NativeResult<()> {
     }
     Ok(())
 }
-fn package(content: &str) -> NativeResult<Bundle> {
+pub(crate) fn package(content: &str) -> NativeResult<Bundle> {
     bounded_text(content, PACKAGE_LIMIT, "Wasm extension package")?;
     let package: Package = serde_json::from_str(content.trim_start_matches('\u{feff}'))
         .map_err(|_| invalid("Invalid Wasm extension package JSON"))?;
@@ -801,6 +892,252 @@ pub fn bundled_package(id: &str) -> NativeResult<String> {
     }).to_string())
 }
 impl ExtensionStore {
+    // Called while holding `writing`: identity checks and admission are atomic with revoke.
+    fn compilation_lease(&self, id: &str, hash: &str, background: bool) -> NativeResult<RunLease> {
+        let mut runs = self
+            .0
+            .runs
+            .lock()
+            .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+        if self.0.isolated
+            || self.0.shutting_down.load(Ordering::SeqCst)
+            || self.0.pauses.load(Ordering::SeqCst) > 0
+        {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionUnavailable,
+                "Extension preparation is paused",
+            ));
+        }
+        if runs
+            .iter()
+            .filter(|run| run.phase == ExtensionRunPhase::Queued)
+            .count()
+            >= MAX_QUEUED_RUNS
+        {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionBusy,
+                "Extension queue is full; retry preparation later",
+            ));
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        runs.push_back(ActiveRun {
+            id: id.into(),
+            owner: "\0extension-preparation".into(),
+            digest: hash.into(),
+            stop: stop.clone(),
+            phase: ExtensionRunPhase::Queued,
+            preparation: true,
+            background,
+        });
+        promote_runs(&mut runs);
+        self.0.run_changed.notify_all();
+        Ok(RunLease {
+            store: self.clone(),
+            stop,
+        })
+    }
+
+    fn compile_leased(
+        &self,
+        lease: &RunLease,
+        module: &[u8],
+        manifest: &ExtensionManifest,
+        started: Instant,
+    ) -> NativeResult<()> {
+        let mut runs = self
+            .0
+            .runs
+            .lock()
+            .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+        loop {
+            if lease.stop.load(Ordering::Acquire) {
+                return Err(NativeError::new(
+                    ErrorCode::UserCancelled,
+                    "Extension preparation stopped",
+                ));
+            }
+            let remaining = crate::extension_runtime::TIMEOUT
+                .checked_sub(started.elapsed())
+                .ok_or_else(|| {
+                    NativeError::new(
+                        ErrorCode::ExtensionTimeout,
+                        "Extension preparation exceeded its time budget",
+                    )
+                })?;
+            if runs.iter().any(|run| {
+                Arc::ptr_eq(&run.stop, &lease.stop) && run.phase == ExtensionRunPhase::Running
+            }) {
+                break;
+            }
+            let (next, _) = self
+                .0
+                .run_changed
+                .wait_timeout(runs, remaining.min(Duration::from_millis(10)))
+                .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+            runs = next;
+        }
+        drop(runs);
+        for budget in [
+            ExtensionExecutionBudget::Standard,
+            ExtensionExecutionBudget::Compute,
+        ] {
+            if manifest
+                .commands
+                .iter()
+                .any(|command| command.execution_budget == budget)
+            {
+                crate::extension_runtime::prepare(module, budget, lease.stop.clone(), started)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// One bounded startup round shared by concurrent windows. A later explicit call retries.
+    pub fn prepare_enabled(&self) -> NativeResult<()> {
+        let (flight, leader) = {
+            let mut active = self
+                .0
+                .preparation
+                .lock()
+                .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+            if let Some(flight) = active.as_ref() {
+                (flight.clone(), false)
+            } else {
+                let flight = Arc::new(PreparationFlight::default());
+                *active = Some(flight.clone());
+                (flight, true)
+            }
+        };
+        if !leader {
+            let mut result = flight
+                .result
+                .lock()
+                .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+            while result.is_none() {
+                result = flight
+                    .finished
+                    .wait(result)
+                    .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+            }
+            return result.as_ref().expect("finished preparation").clone();
+        }
+        let result = self.prepare_enabled_round();
+        *flight
+            .result
+            .lock()
+            .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))? =
+            Some(result.clone());
+        flight.finished.notify_all();
+        let mut active = self
+            .0
+            .preparation
+            .lock()
+            .map_err(|_| io("Extension preparation unavailable", "lock poisoned"))?;
+        if active
+            .as_ref()
+            .is_some_and(|active| Arc::ptr_eq(active, &flight))
+        {
+            *active = None;
+        }
+        result
+    }
+
+    fn prepare_enabled_round(&self) -> NativeResult<()> {
+        if self.0.isolated
+            || self.0.shutting_down.load(Ordering::Acquire)
+            || self.0.pauses.load(Ordering::Acquire) > 0
+        {
+            return Ok(());
+        }
+        let mut items: Vec<_> = self
+            .snapshot()?
+            .items
+            .into_iter()
+            .filter(|item| item.enabled)
+            .collect();
+        items.sort_by_key(|item| {
+            !item
+                .package
+                .manifest
+                .commands
+                .iter()
+                .any(|command| command.result_format == ExtensionResultFormat::View)
+        });
+        let mut failed = 0;
+        for item in items
+            .into_iter()
+            .take(crate::extension_runtime::CACHE_ENTRIES)
+        {
+            let started = Instant::now();
+            let preparation = (|| {
+                let _guard = self
+                    .0
+                    .writing
+                    .lock()
+                    .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+                let registry = self.read()?;
+                if !registry.extensions.iter().any(|current| {
+                    current.enabled
+                        && current.generation == item.generation
+                        && current.package.sha256 == item.package.sha256
+                        && current.package.manifest.id == item.package.manifest.id
+                }) {
+                    return Ok(None);
+                }
+                let module = read_binary(&self.asset(&item.package.sha256)?)?;
+                if digest(&module) != item.package.sha256 {
+                    return Err(NativeError::new(
+                        ErrorCode::StorageCorrupt,
+                        "Installed module changed; preparation preserved the original data",
+                    ));
+                }
+                Ok(Some((
+                    module,
+                    self.compilation_lease(&item.package.manifest.id, &item.package.sha256, true)?,
+                )))
+            })();
+            let result = match preparation {
+                Ok(Some((module, lease))) => {
+                    self.compile_leased(&lease, &module, &item.package.manifest, started)
+                }
+                Ok(None) => continue,
+                Err(error) => Err(error),
+            };
+            match result {
+                Ok(()) => {}
+                Err(error)
+                    if matches!(
+                        error.code,
+                        ErrorCode::UserCancelled
+                            | ErrorCode::ExtensionUnavailable
+                            | ErrorCode::ExtensionBusy
+                    ) =>
+                {
+                    break;
+                }
+                Err(error) => {
+                    failed += 1;
+                    log::warn!(
+                        "Could not prepare extension {}: {}",
+                        item.package.manifest.id,
+                        error
+                    );
+                }
+            }
+        }
+        if failed == 0 {
+            Ok(())
+        } else {
+            Err(NativeError {
+                code: ErrorCode::ExtensionRunFailed,
+                message: format!(
+                    "Could not prepare {failed} enabled extension(s). Enabled state is unchanged; retry preparation or open the extension."
+                ),
+                retryable: true,
+            })
+        }
+    }
+
     pub fn new(root: PathBuf, isolated: bool) -> Self {
         Self(Arc::new(StoreInner {
             root,
@@ -813,6 +1150,7 @@ impl ExtensionStore {
             services: Mutex::new(HashMap::new()),
             windows: Mutex::new(HashMap::new()),
             cache_cleanup: Mutex::new(CacheCleanupState::default()),
+            preparation: Mutex::new(None),
             #[cfg(test)]
             cleanup_workers: AtomicU32::new(0),
         }))
@@ -951,23 +1289,26 @@ impl ExtensionStore {
         }
         Ok(registry)
     }
-    fn snapshot_of(&self, registry: &Registry) -> NativeResult<ExtensionSnapshot> {
-        let runs = self
+    pub fn run_status(&self) -> NativeResult<Vec<ExtensionRunStatus>> {
+        Ok(self
             .0
             .runs
             .lock()
             .map_err(|_| io("Extension execution unavailable", "lock poisoned"))?
             .iter()
+            .filter(|run| !run.preparation)
             .map(|run| ExtensionRunStatus {
                 id: run.id.clone(),
                 owner: run.owner.clone(),
                 phase: run.phase,
             })
-            .collect();
+            .collect())
+    }
+    fn snapshot_of(&self, registry: &Registry) -> NativeResult<ExtensionSnapshot> {
         Ok(ExtensionSnapshot {
             revision: registry.revision,
             items: registry.extensions.clone(),
-            runs,
+            runs: self.run_status()?,
         })
     }
 
@@ -994,9 +1335,6 @@ impl ExtensionStore {
     fn cleanup(&self, registry: &Registry) {
         self.cleanup_ui(registry);
         let packages = self.0.root.join("packages");
-        if directory(&packages, false) != Ok(true) {
-            return;
-        }
         let mut used: HashSet<_> = registry
             .extensions
             .iter()
@@ -1010,7 +1348,14 @@ impl ExtensionStore {
                 .map(|package| package.sha256.clone()),
         );
         if let Ok(runs) = self.0.runs.lock() {
+            // 只有已失去安装记录、仍被执行租约引用的模块需要在租约结束后回收。
+            if let Ok(mut cleanup) = self.0.cache_cleanup.lock() {
+                cleanup.pending = runs.iter().any(|run| !used.contains(&run.digest));
+            }
             used.extend(runs.iter().map(|run| run.digest.clone()));
+        }
+        if directory(&packages, false) != Ok(true) {
+            return;
         }
         let Ok(entries) = fs::read_dir(&packages) else {
             return;
@@ -1033,6 +1378,9 @@ impl ExtensionStore {
         let Ok(mut cleanup) = self.0.cache_cleanup.lock() else {
             return;
         };
+        if !cleanup.pending {
+            return;
+        }
         cleanup.requested = true;
         if cleanup.running {
             return;
@@ -1222,6 +1570,37 @@ impl ExtensionStore {
             .ok_or_else(conflict)?;
         operation(item)
     }
+    /// 外部系统调用不得占用注册表锁；同插件维护租约覆盖操作和最终身份复核。
+    pub(crate) fn with_current_entry_external<T>(
+        &self,
+        maintenance: &crate::extension_services::ServiceMutation,
+        id: &str,
+        expected_hash: &str,
+        expected_generation: i32,
+        operation: impl FnOnce(&ExtensionInfo) -> NativeResult<T>,
+    ) -> NativeResult<T> {
+        maintenance.check_identity(id)?;
+        let item = self.current_entry(id, expected_hash, expected_generation)?;
+        let result = operation(&item)?;
+        self.current_entry(id, expected_hash, expected_generation)?;
+        Ok(result)
+    }
+
+    /// 调用方重新持有写锁后复核；外部清理不自动重放，也不覆盖期间的注册表变更。
+    fn registry_after_cleanup(&self, previous: &Registry, id: &str) -> NativeResult<Registry> {
+        let current = self.read()?;
+        let identity = |registry: &Registry| {
+            registry
+                .extensions
+                .iter()
+                .find(|item| item.package.manifest.id == id)
+                .map(|item| (item.generation, item.package.sha256.clone()))
+        };
+        if current.revision != previous.revision || identity(&current) != identity(previous) {
+            return Err(conflict());
+        }
+        Ok(current)
+    }
     pub fn check_permission(
         &self,
         id: &str,
@@ -1283,7 +1662,7 @@ impl ExtensionStore {
         if let Some(consent) = &consent {
             consent.validate(&bundle.preview.manifest)?;
         }
-        let _guard = self
+        let mut guard = self
             .0
             .writing
             .lock()
@@ -1308,9 +1687,8 @@ impl ExtensionStore {
         } else if registry.extensions.len() >= MAX_EXTENSIONS {
             return Err(invalid("At most 64 extensions can be installed"));
         }
-        self.cache_bundle(&bundle, &registry)?;
-        let previous = position.map(|index| &registry.extensions[index]);
-        let preserve_grants = previous.is_some_and(|old| {
+        let previous = position.map(|index| registry.extensions[index].clone());
+        let preserve_grants = previous.as_ref().is_some_and(|old| {
             let old_version = version(&old.package.manifest.version).ok();
             let new_version = version(&bundle.preview.manifest.version).ok();
             old.enabled
@@ -1335,6 +1713,7 @@ impl ExtensionStore {
                 })
         });
         let grants = previous
+            .as_ref()
             .filter(|_| preserve_grants)
             .map_or_else(Vec::new, |old| {
                 old.granted_permissions
@@ -1343,10 +1722,43 @@ impl ExtensionStore {
                     .filter(|grant| bundle.preview.manifest.has_permission(*grant))
                     .collect()
             });
-        if let Some(previous) = previous {
-            before_replace(previous, &origin)?;
-        }
         let enabled = consent.is_some() || preserve_grants;
+        if enabled {
+            let started = Instant::now();
+            let lease = self.compilation_lease(&id, expected_hash, false)?;
+            drop(guard);
+            let prepared =
+                self.compile_leased(&lease, &bundle.binary, &bundle.preview.manifest, started);
+            drop(lease);
+            prepared?;
+            guard = self
+                .0
+                .writing
+                .lock()
+                .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+            registry = self.read()?;
+            if registry.revision != expected_revision {
+                return Err(conflict());
+            }
+        }
+        self.cache_bundle(&bundle, &registry)?;
+        // Keyring 可以等待系统服务；此阶段只持同插件维护门闩，其他插件仍可读取或运行。
+        if let Some(previous) = previous {
+            drop(guard);
+            before_replace(&previous, &origin)?;
+            guard = self
+                .0
+                .writing
+                .lock()
+                .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+            registry = self.registry_after_cleanup(&registry, &id)?;
+            // 其他插件的维护可能回收尚未安装的候选缓存；提交时重新确认资源存在。
+            self.cache_bundle(&bundle, &registry)?;
+        }
+        let position = registry
+            .extensions
+            .iter()
+            .position(|item| item.package.manifest.id == id);
         let grants = consent.map_or(grants, |consent| consent.granted_permissions);
         let item = ExtensionInfo {
             package: bundle.preview,
@@ -1365,6 +1777,7 @@ impl ExtensionStore {
         self.stop_id(&id);
         let result = self.write(&mut registry)?;
         self.cleanup(&registry);
+        drop(guard);
         Ok(result)
     }
     #[cfg(test)]
@@ -1423,6 +1836,7 @@ impl ExtensionStore {
             before_replace,
         )
     }
+    #[cfg(test)]
     pub(crate) fn install_reviewed(
         &self,
         content: &str,
@@ -1431,13 +1845,23 @@ impl ExtensionStore {
         consent: ExtensionConsent,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
-        self.install_bundle(
+        self.install_prepared_reviewed(
             package(content)?,
             condition,
             origin,
-            Some(consent),
+            consent,
             before_replace,
         )
+    }
+    pub(crate) fn install_prepared_reviewed(
+        &self,
+        bundle: Bundle,
+        condition: InstallCondition<'_>,
+        origin: ExtensionOrigin,
+        consent: ExtensionConsent,
+        before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
+    ) -> NativeResult<ExtensionSnapshot> {
+        self.install_bundle(bundle, condition, origin, Some(consent), before_replace)
     }
     pub fn rollback(&self, id: &str, revision: i32) -> NativeResult<ExtensionSnapshot> {
         self.rollback_with_cleanup(id, revision, |_| Ok(()))
@@ -1448,7 +1872,7 @@ impl ExtensionStore {
         revision: i32,
         before_rollback: impl FnOnce(&ExtensionInfo) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
-        let _guard = self
+        let guard = self
             .0
             .writing
             .lock()
@@ -1481,7 +1905,20 @@ impl ExtensionStore {
                 "Previous extension module changed",
             ));
         }
-        before_rollback(item)?;
+        let old = item.clone();
+        drop(guard);
+        before_rollback(&old)?;
+        let _guard = self
+            .0
+            .writing
+            .lock()
+            .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+        registry = self.registry_after_cleanup(&registry, id)?;
+        let item = registry
+            .extensions
+            .iter_mut()
+            .find(|item| item.package.manifest.id == id)
+            .ok_or_else(conflict)?;
         item.previous_package = Some(std::mem::replace(&mut item.package, previous.clone()));
         item.previous_origin = Some(std::mem::replace(&mut item.origin, previous_origin));
         item.generation = generation;
@@ -1499,52 +1936,7 @@ impl ExtensionStore {
         revision: i32,
         trusted: bool,
     ) -> NativeResult<ExtensionSnapshot> {
-        let _guard = self
-            .0
-            .writing
-            .lock()
-            .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
-        let mut registry = self.read()?;
-        if registry.revision != revision {
-            return Err(conflict());
-        }
-        let item = registry
-            .extensions
-            .iter_mut()
-            .find(|item| item.package.manifest.id == id)
-            .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Extension not found"))?;
-        if enabled {
-            item.package.manifest.validate()?;
-            ExtensionConsent {
-                trusted,
-                granted_permissions: grants.clone(),
-            }
-            .validate(&item.package.manifest)?;
-        }
-        let changed_grants = item.granted_permissions.len() != grants.len()
-            || item
-                .granted_permissions
-                .iter()
-                .any(|grant| !grants.contains(grant));
-
-        item.enabled = enabled;
-        item.granted_permissions = if enabled { grants } else { vec![] };
-        if !enabled || changed_grants {
-            self.stop_id(id);
-        }
-        let result = self.write(&mut registry)?;
-        Ok(result)
-    }
-    pub fn uninstall(&self, id: &str, revision: i32) -> NativeResult<ExtensionSnapshot> {
-        self.uninstall_with_cleanup(id, revision, |_| Ok(()))
-    }
-    pub(crate) fn uninstall_with_cleanup(
-        &self,
-        id: &str,
-        revision: i32,
-        before_uninstall: impl FnOnce(&ExtensionInfo) -> NativeResult<()>,
-    ) -> NativeResult<ExtensionSnapshot> {
-        let _guard = self
+        let mut guard = self
             .0
             .writing
             .lock()
@@ -1558,7 +1950,88 @@ impl ExtensionStore {
             .iter()
             .find(|item| item.package.manifest.id == id)
             .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Extension not found"))?;
-        before_uninstall(item)?;
+        if enabled {
+            item.package.manifest.validate()?;
+            ExtensionConsent {
+                trusted,
+                granted_permissions: grants.clone(),
+            }
+            .validate(&item.package.manifest)?;
+            let started = Instant::now();
+            let module = read_binary(&self.asset(&item.package.sha256)?)?;
+            if digest(&module) != item.package.sha256 {
+                return Err(NativeError::new(
+                    ErrorCode::StorageCorrupt,
+                    "Installed module changed; reinstall the trusted package",
+                ));
+            }
+            let lease = self.compilation_lease(id, &item.package.sha256, false)?;
+            drop(guard);
+            let prepared = self.compile_leased(&lease, &module, &item.package.manifest, started);
+            drop(lease);
+            prepared?;
+            guard = self
+                .0
+                .writing
+                .lock()
+                .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+            registry = self.read()?;
+            if registry.revision != revision {
+                return Err(conflict());
+            }
+        }
+        let item = registry
+            .extensions
+            .iter_mut()
+            .find(|item| item.package.manifest.id == id)
+            .ok_or_else(conflict)?;
+        let changed_grants = item.granted_permissions.len() != grants.len()
+            || item
+                .granted_permissions
+                .iter()
+                .any(|grant| !grants.contains(grant));
+
+        item.enabled = enabled;
+        item.granted_permissions = if enabled { grants } else { vec![] };
+        if !enabled || changed_grants {
+            self.stop_id(id);
+        }
+        let result = self.write(&mut registry)?;
+        drop(guard);
+        Ok(result)
+    }
+    pub fn uninstall(&self, id: &str, revision: i32) -> NativeResult<ExtensionSnapshot> {
+        self.uninstall_with_cleanup(id, revision, |_| Ok(()))
+    }
+    pub(crate) fn uninstall_with_cleanup(
+        &self,
+        id: &str,
+        revision: i32,
+        before_uninstall: impl FnOnce(&ExtensionInfo) -> NativeResult<()>,
+    ) -> NativeResult<ExtensionSnapshot> {
+        let guard = self
+            .0
+            .writing
+            .lock()
+            .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+        let mut registry = self.read()?;
+        if registry.revision != revision {
+            return Err(conflict());
+        }
+        let item = registry
+            .extensions
+            .iter()
+            .find(|item| item.package.manifest.id == id)
+            .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Extension not found"))?;
+        let old = item.clone();
+        drop(guard);
+        before_uninstall(&old)?;
+        let _guard = self
+            .0
+            .writing
+            .lock()
+            .map_err(|_| io("Extension registry unavailable", "lock poisoned"))?;
+        registry = self.registry_after_cleanup(&registry, id)?;
         registry
             .extensions
             .retain(|item| item.package.manifest.id != id);
@@ -1789,6 +2262,8 @@ impl ExtensionStore {
                 digest: expected_hash.into(),
                 stop: stop.clone(),
                 phase: ExtensionRunPhase::Queued,
+                preparation: false,
+                background: false,
             });
             promote_runs(&mut runs);
             if runs
@@ -1887,6 +2362,250 @@ mod tests {
             std::thread::yield_now();
         }
     }
+    fn occupied_slot(store: &ExtensionStore, owner: &str) -> RunLease {
+        let stop = Arc::new(AtomicBool::new(false));
+        store.0.runs.lock().unwrap().push_back(ActiveRun {
+            id: "tests.occupied".into(),
+            owner: owner.into(),
+            digest: "a".repeat(64),
+            stop: stop.clone(),
+            phase: ExtensionRunPhase::Running,
+            preparation: false,
+            background: false,
+        });
+        RunLease {
+            store: store.clone(),
+            stop,
+        }
+    }
+    fn wait_for_preparation(store: &ExtensionStore) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !store
+            .0
+            .runs
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|run| run.preparation)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "Preparation did not reach admission"
+            );
+            std::thread::yield_now();
+        }
+    }
+    #[test]
+    fn compilation_leases_are_internal_and_follow_revoke_pause_and_shutdown() {
+        let (_directory, store) = store();
+        let lease = store
+            .compilation_lease("tests.prepare", &"a".repeat(64), true)
+            .unwrap();
+        assert!(store.run_status().unwrap().is_empty());
+        assert!(store.is_running());
+        store.stop_id("tests.prepare");
+        assert!(lease.stop.load(Ordering::Acquire));
+        drop(lease);
+        assert!(!store.is_running());
+        let lease = store
+            .compilation_lease("tests.prepare", &"a".repeat(64), true)
+            .unwrap();
+        let pause = store.pause();
+        assert!(lease.stop.load(Ordering::Acquire));
+        assert!(
+            store
+                .compilation_lease("tests.prepare", &"a".repeat(64), true)
+                .is_err()
+        );
+        drop(lease);
+        pause.wait_stopped();
+        drop(pause);
+        let lease = store
+            .compilation_lease("tests.prepare", &"a".repeat(64), true)
+            .unwrap();
+        store.begin_shutdown();
+        assert!(lease.stop.load(Ordering::Acquire));
+        assert!(
+            store
+                .compilation_lease("tests.prepare", &"a".repeat(64), false)
+                .is_err()
+        );
+        drop(lease);
+        store.wait_stopped();
+    }
+    #[test]
+    fn foreground_work_cancels_background_preparation_when_both_slots_are_needed() {
+        let (_directory, store) = store();
+        let background = store
+            .compilation_lease("tests.prepare", &"a".repeat(64), true)
+            .unwrap();
+        let first = occupied_slot(&store, "main");
+        let stop = Arc::new(AtomicBool::new(false));
+        {
+            let mut runs = store.0.runs.lock().unwrap();
+            runs.push_back(ActiveRun {
+                id: "tests.foreground".into(),
+                owner: "secondary".into(),
+                digest: "a".repeat(64),
+                stop: stop.clone(),
+                phase: ExtensionRunPhase::Queued,
+                preparation: false,
+                background: false,
+            });
+            promote_runs(&mut runs);
+        }
+        assert!(background.stop.load(Ordering::Acquire));
+        drop(background);
+        assert!(store.0.runs.lock().unwrap().iter().any(|run| Arc::ptr_eq(&run.stop, &stop) && run.phase == ExtensionRunPhase::Running));
+        drop(RunLease {
+            store: store.clone(),
+            stop,
+        });
+        drop(first);
+    }
+    #[test]
+    fn activation_preparation_preempts_the_shared_background_owner() {
+        let (_directory, store) = store();
+        let background = store
+            .compilation_lease("tests.background", &"a".repeat(64), true)
+            .unwrap();
+        let activation = store
+            .compilation_lease("tests.activation", &"b".repeat(64), false)
+            .unwrap();
+        assert!(background.stop.load(Ordering::Acquire));
+        drop(background);
+        assert!(store.0.runs.lock().unwrap().iter().any(|run| Arc::ptr_eq(
+            &run.stop,
+            &activation.stop
+        ) && run.phase
+            == ExtensionRunPhase::Running));
+        drop(activation);
+    }
+    #[test]
+    fn startup_preparation_shares_inflight_work_and_can_retry_after_failure() {
+        let (_directory, store) = store();
+        let snapshot = enable(&store, &install(&store));
+        let first = occupied_slot(&store, "main");
+        let second = occupied_slot(&store, "secondary");
+        let leader_store = store.clone();
+        let leader = std::thread::spawn(move || leader_store.prepare_enabled());
+        wait_for_preparation(&store);
+        let waiter_store = store.clone();
+        let waiter = std::thread::spawn(move || waiter_store.prepare_enabled());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !store
+            .0
+            .preparation
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|flight| Arc::strong_count(flight) >= 3)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "Second window did not share the preparation round"
+            );
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            store
+                .0
+                .runs
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|run| run.preparation)
+                .count(),
+            1
+        );
+        drop(first);
+        drop(second);
+        leader.join().unwrap().unwrap();
+        waiter.join().unwrap().unwrap();
+        let path = store.asset(&snapshot.items[0].package.sha256).unwrap();
+        let original = fs::read(&path).unwrap();
+        fs::write(&path, b"changed").unwrap();
+        let error = store.prepare_enabled().unwrap_err();
+        assert_eq!(error.code, ErrorCode::ExtensionRunFailed);
+        assert!(error.retryable);
+        assert_eq!(store.snapshot().unwrap().revision, snapshot.revision);
+        assert!(store.snapshot().unwrap().items[0].enabled);
+        fs::write(&path, original).unwrap();
+        store.prepare_enabled().unwrap();
+    }
+    #[test]
+    fn enabling_compiles_without_holding_registry_lock_and_rechecks_revision() {
+        let (_directory, store) = store();
+        let snapshot = install(&store);
+        let item = snapshot.items[0].clone();
+        let first = occupied_slot(&store, "main");
+        let second = occupied_slot(&store, "secondary");
+        let enabling_store = store.clone();
+        let enable = std::thread::spawn(move || {
+            enabling_store.set_enabled(
+                &item.package.manifest.id,
+                true,
+                item.package.manifest.permissions,
+                snapshot.revision,
+                true,
+            )
+        });
+        wait_for_preparation(&store);
+        let unchanged = store.snapshot().unwrap();
+        assert!(!unchanged.items[0].enabled);
+        let mut other: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        other["manifest"]["id"] = "tests.other".into();
+        let content = other.to_string();
+        let preview = preview_package(&content).unwrap();
+        let changed = store
+            .install(&content, unchanged.revision, false, &preview.sha256)
+            .unwrap();
+        drop(first);
+        drop(second);
+        assert_eq!(
+            enable.join().unwrap().unwrap_err().code,
+            ErrorCode::Conflict
+        );
+        let after = store.snapshot().unwrap();
+        assert_eq!(after.revision, changed.revision);
+        assert!(!after.items[0].enabled);
+    }
+    #[test]
+    fn run_status_reads_only_live_admission_state_even_with_a_corrupt_registry() {
+        let (_temporary, store) = store();
+        fs::create_dir(&store.0.root).unwrap();
+        let registry = store.0.root.join("registry.json");
+        fs::write(&registry, b"invalid registry").unwrap();
+        store.0.runs.lock().unwrap().push_back(ActiveRun {
+            id: "tests.status".into(),
+            owner: "main".into(),
+            digest: "a".repeat(64),
+            stop: Arc::new(AtomicBool::new(false)),
+            phase: ExtensionRunPhase::Running,
+            preparation: false,
+            background: false,
+        });
+        let status = store.run_status().unwrap();
+        assert_eq!(status.len(), 1);
+        assert_eq!(status[0].id, "tests.status");
+        assert_eq!(status[0].owner, "main");
+        assert_eq!(status[0].phase, ExtensionRunPhase::Running);
+        assert_eq!(fs::read(&registry).unwrap(), b"invalid registry");
+    }
+
+    #[test]
+    fn ordinary_run_release_does_not_schedule_package_cache_cleanup() {
+        let (_temporary, store) = store();
+        let snapshot = enable(&store, &install(&store));
+        let item = &snapshot.items[0];
+        let run = store
+            .prepare(&item.package.manifest.id, &item.package.sha256)
+            .unwrap();
+        drop(run);
+        assert_eq!(store.0.cleanup_workers.load(Ordering::Relaxed), 0);
+        assert!(store.asset(&item.package.sha256).unwrap().exists());
+    }
+
     #[test]
     fn reviewed_install_validates_consent_before_mutating_and_enables_in_one_revision() {
         let (dir, store) = store();
@@ -2471,6 +3190,207 @@ mod tests {
         );
     }
     #[test]
+    fn external_cleanup_keeps_other_plugins_available_and_rechecks_registry_before_commit() {
+        for action in ["replace", "rollback", "uninstall"] {
+            let (_directory, store) = store();
+            let initial = enable(&store, &install(&store));
+            let id = initial.items[0].package.manifest.id.clone();
+            let hash = initial.items[0].package.sha256.clone();
+            let mut update: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+            update["manifest"]["version"] = "1.0.1".into();
+            let update = update.to_string();
+            if action == "rollback" {
+                let upgraded = store
+                    .install(&update, initial.revision, true, &hash)
+                    .unwrap();
+                enable(&store, &upgraded);
+            }
+            let mut other: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+            other["manifest"]["id"] = "tests.other".into();
+            let snapshot = store
+                .install(
+                    &other.to_string(),
+                    store.snapshot().unwrap().revision,
+                    false,
+                    &hash,
+                )
+                .unwrap();
+            let snapshot = store
+                .set_enabled(
+                    "tests.other",
+                    true,
+                    vec![ExtensionPermission::TextRead],
+                    snapshot.revision,
+                    true,
+                )
+                .unwrap();
+            let old = snapshot
+                .items
+                .iter()
+                .find(|item| item.package.manifest.id == id)
+                .unwrap()
+                .clone();
+            let revision = snapshot.revision;
+            let (entered_send, entered_recv) = std::sync::mpsc::channel();
+            let (release_send, release_recv) = std::sync::mpsc::channel();
+            let mutation = {
+                let store = store.clone();
+                let id = id.clone();
+                let hash = hash.clone();
+                std::thread::spawn(move || {
+                    let cleanup = || {
+                        entered_send.send(()).unwrap();
+                        let _ = release_recv.recv();
+                        Ok(())
+                    };
+                    match action {
+                        "replace" => store.install_with_origin_and_cleanup(
+                            &update,
+                            revision,
+                            true,
+                            &hash,
+                            ExtensionOrigin::Local,
+                            |_, _| cleanup(),
+                        ),
+                        "rollback" => store.rollback_with_cleanup(&id, revision, |_| cleanup()),
+                        _ => store.uninstall_with_cleanup(&id, revision, |_| cleanup()),
+                    }
+                })
+            };
+            entered_recv
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            let (completed_send, completed_recv) = std::sync::mpsc::channel();
+            let unrelated = {
+                let store = store.clone();
+                let hash = hash.clone();
+                std::thread::spawn(move || {
+                    let snapshot = store.snapshot()?;
+                    let run =
+                        store.prepare_in_window("tests.other", &hash, "other-window".into())?;
+                    drop(run);
+                    store.set_enabled("tests.other", false, vec![], snapshot.revision, false)?;
+                    completed_send.send(()).unwrap();
+                    NativeResult::Ok(())
+                })
+            };
+            let independent = completed_recv.recv_timeout(std::time::Duration::from_secs(2));
+            release_send.send(()).unwrap();
+            let result = mutation.join().unwrap();
+            unrelated.join().unwrap().unwrap();
+            independent.expect("Unrelated plugin waited for external cleanup");
+            assert_eq!(result.unwrap_err().code, ErrorCode::Conflict, "{action}");
+            let retained = store
+                .current_entry(&id, &old.package.sha256, old.generation)
+                .unwrap();
+            assert_eq!(
+                retained.package.manifest.version, old.package.manifest.version,
+                "{action}"
+            );
+            assert_eq!(retained.enabled, old.enabled, "{action}");
+            assert_eq!(store.snapshot().unwrap().revision, revision + 1, "{action}");
+        }
+    }
+    #[test]
+    fn command_execution_budgets_default_safely_and_gate_compute_on_the_host_version() {
+        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        assert_eq!(
+            manifest.commands[0].execution_budget,
+            ExtensionExecutionBudget::Standard
+        );
+        assert!(
+            serde_json::to_value(&manifest).unwrap()["commands"][0]
+                .get("executionBudget")
+                .is_none()
+        );
+        manifest.min_host_version = "0.1.6".into();
+        manifest.validate().unwrap();
+        manifest.commands[0].execution_budget = ExtensionExecutionBudget::Compute;
+        assert!(manifest.validate().is_err());
+        manifest.min_host_version = "0.1.7".into();
+        manifest.validate().unwrap();
+        let encoded = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(encoded["commands"][0]["executionBudget"], "compute");
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(2_000_000_000u64),
+            serde_json::json!("unlimited"),
+            serde_json::json!({"fuel":2_000_000_000u64}),
+        ] {
+            let mut invalid = encoded.clone();
+            invalid["commands"][0]["executionBudget"] = value;
+            assert!(serde_json::from_value::<ExtensionManifest>(invalid).is_err());
+        }
+        let mut standard = encoded;
+        standard["commands"][0]["executionBudget"] = serde_json::json!("standard");
+        let standard: ExtensionManifest = serde_json::from_value(standard).unwrap();
+        assert_eq!(
+            standard.commands[0].execution_budget,
+            ExtensionExecutionBudget::Standard
+        );
+    }
+
+    #[test]
+    fn own_window_controls_require_a_current_host_and_a_declared_permission() {
+        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        manifest
+            .optional_permissions
+            .push(ExtensionPermission::WindowControl);
+        manifest.min_host_version = "0.1.6".into();
+        assert!(manifest.validate().is_err());
+        manifest.min_host_version = "0.1.7".into();
+        manifest.validate().unwrap();
+    }
+
+    #[test]
+    fn window_size_is_bounded_and_requires_a_declared_window_and_current_host() {
+        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        manifest.min_host_version = "0.1.7".into();
+        manifest.commands[0].input_format = ExtensionInputFormat::Json;
+        manifest.commands[0].result_format = ExtensionResultFormat::View;
+        manifest.commands[0].ui = Some(ExtensionUi {
+            sidebar: true,
+            window: true,
+            document: None,
+            window_size: Some(ExtensionWindowSize {
+                width: 1100,
+                height: 820,
+            }),
+        });
+        manifest.validate().unwrap();
+        for (width, height, valid) in [
+            (360, 480, true),
+            (1920, 1440, true),
+            (359, 820, false),
+            (1100, 479, false),
+            (1921, 820, false),
+            (1100, 1441, false),
+        ] {
+            manifest.commands[0].ui.as_mut().unwrap().window_size =
+                Some(ExtensionWindowSize { width, height });
+            assert_eq!(manifest.validate().is_ok(), valid, "{width}×{height}");
+        }
+        manifest.commands[0].ui.as_mut().unwrap().window_size = Some(ExtensionWindowSize {
+            width: 1100,
+            height: 820,
+        });
+        manifest.commands[0].ui.as_mut().unwrap().window = false;
+        assert!(manifest.validate().is_err());
+        manifest.commands[0].ui.as_mut().unwrap().window = true;
+        manifest.min_host_version = "0.1.6".into();
+        assert!(manifest.validate().is_err());
+        let encoded = serde_json::to_value(&manifest).unwrap();
+        let mut fractional = encoded.clone();
+        fractional["commands"][0]["ui"]["windowSize"]["width"] = serde_json::json!(1100.5);
+        assert!(serde_json::from_value::<ExtensionManifest>(fractional).is_err());
+        let mut unknown = encoded;
+        unknown["commands"][0]["ui"]["windowSize"]["url"] =
+            serde_json::json!("https://example.com");
+        assert!(serde_json::from_value::<ExtensionManifest>(unknown).is_err());
+    }
+
+    #[test]
     fn manifest_supports_mixed_commands_and_rejects_ambiguous_network_or_host_versions() {
         let mut manifest = preview_package(&demo_package()).unwrap().manifest;
         manifest.optional_permissions = vec![
@@ -2492,6 +3412,7 @@ mod tests {
         manifest.commands[1].permissions = vec![ExtensionPermission::NetworkHttps];
         manifest.commands[1].ui = Some(ExtensionUi {
             document: None,
+            window_size: None,
             sidebar: true,
             window: true,
         });
@@ -2609,16 +3530,14 @@ mod tests {
         let content = bundled_package("starter.extension-lab").unwrap();
         let preview = preview_package(&content).unwrap();
         let mut snapshot = store.install(&content, 0, false, &preview.sha256).unwrap();
+        // Capacity and default registration do not depend on each filler carrying the lab UI.
+        let filler = demo_package();
+        let filler_hash = preview_package(&filler).unwrap().sha256;
         for index in 1..MAX_EXTENSIONS {
-            let mut value: serde_json::Value = serde_json::from_str(&content).unwrap();
+            let mut value: serde_json::Value = serde_json::from_str(&filler).unwrap();
             value["manifest"]["id"] = serde_json::json!(format!("example.plugin-{index}"));
             snapshot = store
-                .install(
-                    &value.to_string(),
-                    snapshot.revision,
-                    false,
-                    &preview.sha256,
-                )
+                .install(&value.to_string(), snapshot.revision, false, &filler_hash)
                 .unwrap();
         }
         store.initialize_bundled().unwrap();

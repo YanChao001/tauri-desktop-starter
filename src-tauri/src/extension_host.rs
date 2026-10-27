@@ -11,9 +11,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use specta::Type;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, Mutex, Weak, atomic::AtomicBool},
     time::Instant,
 };
 
@@ -162,7 +162,7 @@ struct HostInner {
     service: String,
     storage: ExtensionStorageStore,
     credential_metadata: ExtensionStorageStore,
-    credential_writing: Mutex<()>,
+    credential_locks: Mutex<HashMap<String, Weak<Mutex<()>>>>,
     credential_lookups: Arc<tokio::sync::Semaphore>,
     credentials: Arc<dyn Credentials>,
 }
@@ -188,7 +188,7 @@ impl ExtensionHostStore {
                 root.join("credential-slots"),
                 isolated,
             ),
-            credential_writing: Mutex::new(()),
+            credential_locks: Mutex::default(),
             credential_lookups: Arc::new(tokio::sync::Semaphore::new(2)),
             credentials,
         }))
@@ -259,6 +259,23 @@ impl ExtensionHostStore {
             "extension:{id}:{:x}",
             Sha256::digest(format!("{origin}\0{alias}").as_bytes())
         )
+    }
+    fn credential_lock(&self, id: &str) -> NativeResult<Arc<Mutex<()>>> {
+        if !valid_id(id) {
+            return Err(invalid("Invalid extension identity"));
+        }
+        let mut locks = self
+            .0
+            .credential_locks
+            .lock()
+            .map_err(|_| credential_error("Extension credential store is unavailable"))?;
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(id).and_then(Weak::upgrade) {
+            return Ok(lock);
+        }
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(id.into(), Arc::downgrade(&lock));
+        Ok(lock)
     }
     fn read_slots(&self, id: &str) -> NativeResult<(i32, Vec<ExtensionCredentialSlot>)> {
         let snapshot = self.0.credential_metadata.snapshot(id)?;
@@ -333,9 +350,8 @@ impl ExtensionHostStore {
                 "Extension credential must be nonempty without control characters",
             ));
         }
-        let _guard = self
-            .0
-            .credential_writing
+        let lock = self.credential_lock(&manifest.id)?;
+        let _guard = lock
             .lock()
             .map_err(|_| credential_error("Extension credential store is unavailable"))?;
         let (revision, mut slots) = self.read_slots(&manifest.id)?;
@@ -371,9 +387,8 @@ impl ExtensionHostStore {
         if !valid_id(&manifest.id) {
             return Err(invalid("Invalid extension identity"));
         }
-        let _guard = self
-            .0
-            .credential_writing
+        let lock = self.credential_lock(&manifest.id)?;
+        let _guard = lock
             .lock()
             .map_err(|_| credential_error("Extension credential store is unavailable"))?;
         let (revision, mut slots) = self.read_slots(&manifest.id)?;
@@ -401,9 +416,8 @@ impl ExtensionHostStore {
         if !valid_id(&manifest.id) {
             return Err(invalid("Invalid extension identity"));
         }
-        let _guard = self
-            .0
-            .credential_writing
+        let lock = self.credential_lock(&manifest.id)?;
+        let _guard = lock
             .lock()
             .map_err(|_| credential_error("Extension credential store is unavailable"))?;
         let (revision, slots) = self.read_slots(&manifest.id)?;
@@ -426,9 +440,8 @@ impl ExtensionHostStore {
     ) -> NativeResult<String> {
         credential_origin(manifest, origin)?;
         credential_alias(alias)?;
-        let _guard = self
-            .0
-            .credential_writing
+        let lock = self.credential_lock(&manifest.id)?;
+        let _guard = lock
             .lock()
             .map_err(|_| credential_error("Extension credential store is unavailable"))?;
         let (_, slots) = self.read_slots(&manifest.id)?;
@@ -447,6 +460,7 @@ impl ExtensionHostStore {
 
     pub async fn execute_effect(
         &self,
+        settings: &crate::storage::SettingsStore,
         manifest: &ExtensionManifest,
         grants: &[ExtensionPermission],
         effect: ExtensionEffect,
@@ -462,8 +476,12 @@ impl ExtensionHostStore {
             match effect {
                 ExtensionEffect::Http { request, .. } => {
                     let deadline = Instant::now() + extension_network::HTTP_TIMEOUT;
-                    let validated =
-                        extension_network::validate_request(manifest, grants, &request)?;
+                    let validated = extension_network::validate_request(
+                        manifest,
+                        grants,
+                        &request,
+                        settings.network_mode()?,
+                    )?;
                     let credential = match request.credential {
                         Some(alias) => {
                             let host = self.clone();
@@ -581,6 +599,281 @@ mod tests {
             Ok(())
         }
     }
+    struct CredentialPause {
+        prefix: String,
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+    #[derive(Default)]
+    struct BlockingCredentials {
+        memory: MemoryCredentials,
+        pause: Mutex<Option<CredentialPause>>,
+    }
+    impl BlockingCredentials {
+        fn pause(&self, id: &str) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+            let (entered_send, entered_recv) = std::sync::mpsc::channel();
+            let (release_send, release_recv) = std::sync::mpsc::channel();
+            *self.pause.lock().unwrap() = Some(CredentialPause {
+                prefix: format!("extension:{id}:"),
+                entered: entered_send,
+                release: release_recv,
+            });
+            (entered_recv, release_send)
+        }
+        fn wait(&self, account: &str) {
+            let pause = {
+                let mut pause = self.pause.lock().unwrap();
+                if pause
+                    .as_ref()
+                    .is_some_and(|pause| account.starts_with(&pause.prefix))
+                {
+                    pause.take()
+                } else {
+                    None
+                }
+            };
+            if let Some(pause) = pause {
+                pause.entered.send(()).unwrap();
+                // 测试失败也随发送端释放，避免把后续测试留在 keyring 等待中。
+                let _ = pause.release.recv();
+            }
+        }
+    }
+    impl Credentials for BlockingCredentials {
+        fn set(&self, service: &str, account: &str, secret: &str) -> NativeResult<()> {
+            self.wait(account);
+            self.memory.set(service, account, secret)
+        }
+        fn get(&self, service: &str, account: &str) -> NativeResult<String> {
+            self.wait(account);
+            self.memory.get(service, account)
+        }
+        fn delete(&self, service: &str, account: &str) -> NativeResult<()> {
+            self.wait(account);
+            self.memory.delete(service, account)
+        }
+    }
+
+    fn install_credential_fixture(
+        store: &crate::extensions::ExtensionStore,
+        id: &str,
+    ) -> crate::extensions::ExtensionInfo {
+        use crate::extensions::{ExtensionConsent, ExtensionOrigin, InstallCondition};
+        let mut content: Value = serde_json::from_str(&crate::extensions::demo_package()).unwrap();
+        content["manifest"]["id"] = id.into();
+        content["manifest"]["optionalPermissions"] = serde_json::json!(["network:https"]);
+        content["manifest"]["network"] = serde_json::json!([
+            {"origin":"https://example.com", "methods":["GET"]}
+        ]);
+        let content = content.to_string();
+        let preview = crate::extensions::preview_package(&content).unwrap();
+        store
+            .install_reviewed(
+                &content,
+                InstallCondition {
+                    revision: store.snapshot().unwrap().revision,
+                    replace: false,
+                    sha256: &preview.sha256,
+                },
+                ExtensionOrigin::Local,
+                ExtensionConsent {
+                    trusted: true,
+                    granted_permissions: vec![ExtensionPermission::TextRead],
+                },
+                |_, _| Ok(()),
+            )
+            .unwrap()
+            .items
+            .into_iter()
+            .find(|item| item.package.manifest.id == id)
+            .unwrap()
+    }
+
+    #[test]
+    fn blocked_keyring_does_not_serialize_another_plugins_credentials() {
+        let directory = crate::extension_paths::temporary_directory();
+        let backend = Arc::new(BlockingCredentials::default());
+        let host = ExtensionHostStore::with_credentials(
+            directory.path().to_owned(),
+            false,
+            "test.service".into(),
+            backend.clone(),
+        );
+        let (entered, release) = backend.pause("tests.first");
+        let blocked = {
+            let host = host.clone();
+            std::thread::spawn(move || {
+                host.set_credential(
+                    &manifest("tests.first"),
+                    "https://example.com",
+                    "primary",
+                    "first-secret",
+                )
+            })
+        };
+        entered
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let (completed_send, completed_recv) = std::sync::mpsc::channel();
+        let unrelated = std::thread::spawn(move || {
+            host.set_credential(
+                &manifest("tests.second"),
+                "https://example.com",
+                "primary",
+                "second-secret",
+            )?;
+            host.delete_credential(&manifest("tests.second"), "https://example.com", "primary")?;
+            completed_send.send(()).unwrap();
+            NativeResult::Ok(())
+        });
+        let independent = completed_recv.recv_timeout(std::time::Duration::from_secs(2));
+        release.send(()).unwrap();
+        blocked.join().unwrap().unwrap();
+        unrelated.join().unwrap().unwrap();
+        independent.expect("Another plugin waited for the blocked keyring operation");
+    }
+
+    #[test]
+    fn blocked_credential_management_keeps_registry_snapshots_and_other_runs_available() {
+        let directory = crate::extension_paths::temporary_directory();
+        let store =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let first = install_credential_fixture(&store, "tests.first");
+        let second = install_credential_fixture(&store, "tests.second");
+        let backend = Arc::new(BlockingCredentials::default());
+        let host = ExtensionHostStore::with_credentials(
+            directory.path().join("extension-data"),
+            false,
+            "test.service".into(),
+            backend.clone(),
+        );
+        let services = crate::extension_services::ExtensionServices::default();
+        let maintenance = tauri::async_runtime::block_on(services.mutation("tests.first")).unwrap();
+        let (entered, release) = backend.pause("tests.first");
+        let blocked = {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                store.with_current_entry_external(
+                    &maintenance,
+                    &first.package.manifest.id,
+                    &first.package.sha256,
+                    first.generation,
+                    |item| {
+                        host.set_credential(
+                            &item.package.manifest,
+                            "https://example.com",
+                            "primary",
+                            "secret",
+                        )
+                    },
+                )
+            })
+        };
+        entered
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let (completed_send, completed_recv) = std::sync::mpsc::channel();
+        let unrelated = {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                store.snapshot()?;
+                let prepared = store.prepare_in_window(
+                    &second.package.manifest.id,
+                    &second.package.sha256,
+                    "other-window".into(),
+                )?;
+                drop(prepared);
+                completed_send.send(()).unwrap();
+                NativeResult::Ok(())
+            })
+        };
+        let independent = completed_recv.recv_timeout(std::time::Duration::from_secs(2));
+        release.send(()).unwrap();
+        blocked.join().unwrap().unwrap();
+        unrelated.join().unwrap().unwrap();
+        independent.expect("A registry read or another plugin run waited for keyring");
+    }
+
+    #[tokio::test]
+    async fn queued_credential_write_cannot_recreate_credentials_after_uninstall() {
+        let directory = crate::extension_paths::temporary_directory();
+        let store =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let item = install_credential_fixture(&store, "tests.first");
+        let backend = Arc::new(BlockingCredentials::default());
+        let host = ExtensionHostStore::with_credentials(
+            directory.path().join("extension-data"),
+            false,
+            "test.service".into(),
+            backend.clone(),
+        );
+        host.set_credential(
+            &item.package.manifest,
+            "https://example.com",
+            "primary",
+            "original",
+        )
+        .unwrap();
+        let services = Arc::new(crate::extension_services::ExtensionServices::default());
+        let maintenance = services.mutation("tests.first").await.unwrap();
+        let revision = store.snapshot().unwrap().revision;
+        let (entered, release) = backend.pause("tests.first");
+        let uninstall = {
+            let store = store.clone();
+            let host = host.clone();
+            std::thread::spawn(move || {
+                let _maintenance = maintenance;
+                store.uninstall_with_cleanup("tests.first", revision, |old| {
+                    host.clear_credentials(&old.package.manifest)
+                })
+            })
+        };
+        entered
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let queued = {
+            let services = services.clone();
+            let store = store.clone();
+            let host = host.clone();
+            let item = item.clone();
+            tokio::spawn(async move {
+                let maintenance = services.mutation("tests.first").await?;
+                blocking::run(move || {
+                    store.with_current_entry_external(
+                        &maintenance,
+                        "tests.first",
+                        &item.package.sha256,
+                        item.generation,
+                        |entry| {
+                            host.set_credential(
+                                &entry.package.manifest,
+                                "https://example.com",
+                                "primary",
+                                "late-secret",
+                            )
+                        },
+                    )
+                })
+                .await
+            })
+        };
+        tokio::task::yield_now().await;
+        assert!(!queued.is_finished());
+        // 等待 OS 调用时注册表仍然可读；卸载完成后旧身份的排队写入必须被拒绝。
+        assert_eq!(store.snapshot().unwrap().items.len(), 1);
+        release.send(()).unwrap();
+        uninstall.join().unwrap().unwrap();
+        assert_eq!(queued.await.unwrap().unwrap_err().code, ErrorCode::Conflict);
+        assert!(
+            host.credential_slots(&item.package.manifest)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            host.credential_value(&item.package.manifest, "https://example.com", "primary")
+                .is_err()
+        );
+    }
     fn manifest(id: &str) -> ExtensionManifest {
         serde_json::from_value(serde_json::json!({"formatVersion":3,"apiVersion":2,"minHostVersion":"0.1.4",
             "id":id,"version":"1.0.0","name":"Host test","author":"Tests","description":"Host effects test",
@@ -685,6 +978,8 @@ mod tests {
     fn storage_effects_require_grants_and_report_conflicts_with_the_effect_id() {
         tauri::async_runtime::block_on(async {
             let temp = crate::extension_paths::temporary_directory();
+            let settings =
+                crate::storage::SettingsStore::open(temp.path().join("settings.json")).unwrap();
             let host =
                 ExtensionHostStore::new(temp.path().to_owned(), false, "test.service".to_owned());
             let manifest = manifest("tests.first");
@@ -697,7 +992,13 @@ mod tests {
                 )]),
             };
             let denied = host
-                .execute_effect(&manifest, &[], effect(), Arc::new(AtomicBool::new(false)))
+                .execute_effect(
+                    &settings,
+                    &manifest,
+                    &[],
+                    effect(),
+                    Arc::new(AtomicBool::new(false)),
+                )
                 .await;
             assert_eq!(denied.id, "save-note");
             assert_eq!(denied.error.unwrap().code, ErrorCode::InvalidArgument);
@@ -709,6 +1010,7 @@ mod tests {
             );
             let saved = host
                 .execute_effect(
+                    &settings,
                     &manifest,
                     &[ExtensionPermission::Storage],
                     effect(),
@@ -719,6 +1021,7 @@ mod tests {
             assert_eq!(saved.value.unwrap()["revision"], 1);
             let conflict = host
                 .execute_effect(
+                    &settings,
                     &manifest,
                     &[ExtensionPermission::Storage],
                     effect(),
@@ -743,6 +1046,8 @@ mod tests {
     fn stopped_effects_do_not_commit_storage() {
         tauri::async_runtime::block_on(async {
             let temp = crate::extension_paths::temporary_directory();
+            let settings =
+                crate::storage::SettingsStore::open(temp.path().join("settings.json")).unwrap();
             let host =
                 ExtensionHostStore::new(temp.path().to_owned(), false, "test.service".to_owned());
             let manifest = manifest("tests.first");
@@ -753,6 +1058,7 @@ mod tests {
             };
             let result = host
                 .execute_effect(
+                    &settings,
                     &manifest,
                     &[ExtensionPermission::Storage],
                     effect,
