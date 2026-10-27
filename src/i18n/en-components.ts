@@ -31,6 +31,8 @@ export const enComponents = {
   "playground.glowDescription": "Add a little atmospheric light to the canvas.",
   "playground.showAuthor": "Show the creator credit",
   "playground.livePreview": "Live preview",
+  "playground.pauseMotion": "Pause preview animation",
+  "playground.resumeMotion": "Resume preview animation",
   "playground.defaultName": "The next spark",
   "playground.defaultDescription":
     "Start with a little curiosity. Give the idea room to grow.",

@@ -42,8 +42,18 @@ vi.mock("@/components/window-background", () => ({
   WindowBackground: () => null,
 }));
 vi.mock("@/components/app-sidebar", () => ({
-  AppSidebar: ({ routes }: { routes: readonly AppRoute[] }) => (
+  AppSidebar: ({
+    routes,
+    onWidthPreview,
+  }: {
+    routes: readonly AppRoute[];
+    onWidthPreview: (width: number | null) => void;
+  }) => (
     <nav aria-label="Test sidebar">
+      <button onClick={() => onWidthPreview(280)}>Preview sidebar width</button>
+      <button onClick={() => onWidthPreview(null)}>
+        Cancel sidebar resize
+      </button>
       {routes.map(({ path }) => (
         <Link key={path} to={path}>
           {path}
@@ -149,6 +159,20 @@ describe("应用内容导航", () => {
     expect(screen.getByRole("textbox", { name: "Page input" })).toHaveFocus();
   });
 
+  it("侧栏拖动预览同步内容区留白，取消后恢复持久宽度", () => {
+    renderShell();
+    const shell = screen.getByRole("main").closest(".app-shell");
+    expect(shell).toHaveStyle({ "--app-sidebar-width": "224px" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview sidebar width" }),
+    );
+    expect(shell).toHaveStyle({ "--app-sidebar-width": "280px" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel sidebar resize" }),
+    );
+    expect(shell).toHaveStyle({ "--app-sidebar-width": "224px" });
+  });
+
   it("扩展正文不显示导航标识行，普通页面保留位置上下文", () => {
     renderShell("/extensions/app/example.lab/open");
     expect(screen.getByRole("heading", { name: "Page content" })).toBeVisible();
@@ -211,7 +235,9 @@ describe("应用内容导航", () => {
     expect(
       screen.queryByRole("link", { name: "/bridge" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "/desktop" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "/desktop" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "/settings" })).toBeInTheDocument();
   });
 

@@ -83,7 +83,7 @@ test("workspace supports keyboard trees, context actions, resizing, drag moves a
   await seed(page);
   await page.goto("./#/components");
   await page.getByRole("tab", { name: /Workspace/ }).click();
-  const tree = page.getByRole("tree", { name: "Sample resource tree" });
+  const tree = page.getByRole("tree", { name: "Sample file list" });
   await tree
     .getByRole("treeitem", { name: "Creative assets", exact: true })
     .focus();
@@ -193,6 +193,16 @@ test("media sections load charts on demand and keep the local Markdown edit", as
   await page.goto("./#/media");
   const source = page.locator("#markdown-source");
   await source.fill("# Keep this local edit");
+  const mediaHelp = page.getByRole("button", {
+    name: "Local media preview · Help",
+    exact: true,
+  });
+  await mediaHelp.scrollIntoViewIfNeeded();
+  await mediaHelp.focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Tabs keep this page’s state.",
+  );
+  await page.keyboard.press("Escape");
   await page
     .getByRole("tab", { name: "Data visualization", exact: true })
     .click();
@@ -210,18 +220,11 @@ test("media sections load charts on demand and keep the local Markdown edit", as
   await page
     .getByRole("tab", { name: "Live connections", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Live connections · Help", exact: true })
-    .focus();
-  await expect(page.getByRole("tooltip")).toContainText(
-    "Tabs keep this page’s state.",
-  );
-  await page.keyboard.press("Escape");
   await expect(
     page.getByRole("button", { name: "Connect", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Run controlled worker", exact: true }),
+    page.getByRole("button", { name: "Convert to uppercase", exact: true }),
   ).toBeVisible();
   expect(
     (

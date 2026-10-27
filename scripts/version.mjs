@@ -9,10 +9,10 @@ const SEMVER =
 
 export function validateVersion(version, config) {
   const match = typeof version === "string" && version.match(SEMVER);
-  if (!match) throw new Error(`无效的 SemVer 版本号：${version}`);
+  if (!match) throw new Error(`Invalid SemVer version: ${version}`);
   const core = match.slice(1, 4).map(BigInt);
   if (core.some((part) => part > 18446744073709551615n)) {
-    throw new Error("版本号超出 Cargo 支持的整数范围");
+    throw new Error("Version exceeds the integer range supported by Cargo");
   }
   const bundle = config.bundle;
   if (bundle?.active === false) return;
@@ -23,7 +23,7 @@ export function validateVersion(version, config) {
     targets.includes("all") ||
     targets.includes(target);
   if (includes("nsis") && core.some((part) => part > 65535n)) {
-    throw new Error("NSIS 版本号各段不能大于 65535");
+    throw new Error("NSIS version components must not exceed 65535");
   }
   if (includes("msi")) {
     const wixVersion = bundle?.windows?.wix?.version;
@@ -41,14 +41,14 @@ export function validateVersion(version, config) {
           )
       ) {
         throw new Error(
-          "bundle.windows.wix.version 必须是有效的 MSI 版本：major.minor.patch[.build]（255.255.65535[.65535]）",
+          "bundle.windows.wix.version must be a valid MSI version: major.minor.patch[.build] (255.255.65535[.65535])",
         );
       }
       return;
     }
     if (core[0] > 255n || core[1] > 255n || core[2] > 65535n) {
       throw new Error(
-        "MSI 版本号必须满足 major <= 255、minor <= 255、patch <= 65535",
+        "MSI version must satisfy major <= 255, minor <= 255, patch <= 65535",
       );
     }
     // Tauri 优先使用构建元数据，再使用预发布标识作为 MSI 可选的第四段。
@@ -56,7 +56,7 @@ export function validateVersion(version, config) {
     const fourth = match[5] ?? match[4];
     if (fourth && (!/^\d+$/.test(fourth) || BigInt(fourth) > 65535n)) {
       throw new Error(
-        "MSI 的预发布标识或构建元数据必须是 <= 65535 的整数；文本预发布请配置 bundle.windows.wix.version 或仅构建 NSIS",
+        "MSI prerelease identifiers or build metadata must be integers <= 65535; for text prereleases, configure bundle.windows.wix.version or build NSIS only",
       );
     }
   }
@@ -66,7 +66,7 @@ function tomlValue(content, key, label) {
   const match = content.match(
     new RegExp(`^\\s*${key}\\s*=\\s*"([^"\\r\\n]+)"\\s*(?:#.*)?$`, "m"),
   );
-  if (!match) throw new Error(`${label} 里没有找到 ${key}`);
+  if (!match) throw new Error(`${key} was not found in ${label}`);
   return match[1];
 }
 
@@ -87,7 +87,7 @@ export function readVersionFiles(root) {
   const packageSection = manifest.match(
     /^\[package\][^\S\r\n]*(?:#.*)?\r?\n([\s\S]*?)(?=^\[|(?![\s\S]))/m,
   );
-  if (!packageSection) throw new Error("Cargo.toml 里没有找到 [package]");
+  if (!packageSection) throw new Error("[package] was not found in Cargo.toml");
   const packageName = tomlValue(packageSection[1], "name", manifestPath);
   const cargoVersion = tomlValue(packageSection[1], "version", manifestPath);
   const files = [
@@ -110,7 +110,9 @@ export function readVersionFiles(root) {
       !/^\s*source\s*=/m.test(section[1]),
   );
   if (ownPackages.length !== 1) {
-    throw new Error(`Cargo.lock 中必须恰好有一个本地包 ${packageName}`);
+    throw new Error(
+      `Cargo.lock must contain exactly one local package named ${packageName}`,
+    );
   }
   files.push({
     path: lockPath,
@@ -122,21 +124,25 @@ export function readVersionFiles(root) {
   return { config, files };
 }
 
-export function checkVersions(root, tag) {
-  const { config, files } = readVersionFiles(root);
+export function checkVersionValues(config, files, tag) {
   const version = files[0].version;
   validateVersion(version, config);
   for (const file of files) {
     if (file.version !== version) {
       throw new Error(
-        `${file.path} 版本 ${file.version} 与 package.json 的 ${version} 不一致`,
+        `${file.path} version ${file.version} does not match package.json version ${version}`,
       );
     }
   }
   if (tag !== undefined && tag !== `v${version}`) {
-    throw new Error(`tag ${tag} 与项目版本 v${version} 不一致`);
+    throw new Error(`tag ${tag} does not match project version v${version}`);
   }
   return version;
+}
+
+export function checkVersions(root, tag) {
+  const { config, files } = readVersionFiles(root);
+  return checkVersionValues(config, files, tag);
 }
 
 export function prepareVersionUpdates(root, next) {
@@ -164,7 +170,7 @@ export function prepareVersionUpdates(root, next) {
 
 async function runCli(args) {
   const usage =
-    "用法: node scripts/version.mjs check [tag] | set <version>\n也可使用 pnpm version:check [tag] 或 pnpm version:set <version>。";
+    "Usage: node scripts/version.mjs check [tag] | set <version>\nYou can also use pnpm version:check [tag] or pnpm version:set <version>.";
   const [mode, value] = args;
   const help = (argument) => ["--help", "-h"].includes(argument);
   if (
@@ -193,7 +199,7 @@ async function runCli(args) {
         `version=${version}\nprerelease=${version.split("+")[0].includes("-")}\n`,
       );
     }
-    console.log(`项目版本一致：${version}${tag ? `（${tag}）` : ""}`);
+    console.log(`Project versions match: ${version}${tag ? ` (${tag})` : ""}`);
     return;
   }
 
@@ -209,10 +215,10 @@ async function runCli(args) {
     });
   }
   applyFileChanges({ root, changes: updates });
-  console.log(`版本号已更新: ${updates[0].previous} -> ${value}`);
+  console.log(`Version updated: ${updates[0].previous} -> ${value}`);
   for (const { path } of updates) console.log(`  ${path}`);
   console.log(
-    `\n下一步：提交后打 tag（git tag -a v${value} -m "v${value}"）并推送。`,
+    `\nNext: commit the changes, create a tag (git tag -a v${value} -m "v${value}"), and push.`,
   );
 }
 

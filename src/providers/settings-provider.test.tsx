@@ -269,4 +269,46 @@ describe("settings provider persistence", () => {
       language: "en",
     });
   });
+
+  it("accepts native revisions without overwriting the theme transition's old DOM frame", async () => {
+    vi.mocked(desktop.isTauri).mockReturnValue(true);
+    let receive: ((snapshot: desktop.SettingsSnapshot) => void) | undefined;
+    vi.mocked(desktop.onSettingsChanged).mockImplementation(async (handler) => {
+      receive = handler;
+      return vi.fn<() => void>();
+    });
+    vi.mocked(desktop.loadSettingsSnapshot).mockResolvedValue({
+      revision: 1,
+      settings: settingsDocument({ ...DEFAULT_SETTINGS, theme: "light" }),
+    });
+    const root = document.documentElement;
+    root.classList.remove("dark");
+    root.classList.add("light");
+    root.style.colorScheme = "light";
+    const { result } = renderHook(useSettings, { wrapper });
+    await waitFor(() => expect(result.current.persistence).toBe("saved"));
+    act(() =>
+      receive?.({
+        revision: 2,
+        settings: settingsDocument({
+          ...DEFAULT_SETTINGS,
+          theme: "dark",
+          accent: "rose",
+        }),
+      }),
+    );
+    expect(result.current.settings.theme).toBe("dark");
+    expect(root).toHaveClass("light");
+    expect(root).not.toHaveClass("dark");
+    expect(root.style.colorScheme).toBe("light");
+    expect(root.dataset.accent).toBe("rose");
+    act(() =>
+      receive?.({
+        revision: 1,
+        settings: settingsDocument({ ...DEFAULT_SETTINGS, theme: "light" }),
+      }),
+    );
+    expect(result.current.settings.theme).toBe("dark");
+    expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
+  });
 });

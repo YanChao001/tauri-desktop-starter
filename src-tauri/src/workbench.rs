@@ -156,6 +156,9 @@ pub struct WorkbenchTaskEntry {
     pub bytes: f64,
     pub sha256: Option<String>,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub failure: Option<NativeError>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -172,6 +175,15 @@ pub struct WorkbenchTask {
     pub started_at: String,
     pub finished_at: Option<String>,
     pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub failure: Option<NativeError>,
+    #[serde(default)]
+    #[specta(optional)]
+    pub unreadable_entries: i32,
+    #[serde(default)]
+    #[specta(optional)]
+    pub report_unavailable: bool,
     pub results: Vec<WorkbenchTaskEntry>,
     pub truncated: bool,
     pub attempt_of: Option<String>,
@@ -322,6 +334,7 @@ impl WorkbenchState {
                 task.message = Some(
                     "Application stopped before this task finished; retry starts a new task".into(),
                 );
+                task.failure = None;
             }
         }
         let mut state = Self {
@@ -467,15 +480,15 @@ impl WorkbenchState {
         expected_revision: &str,
     ) -> NativeResult<WorkbenchDocument> {
         bounded_text(content, TEXT_LIMIT, "Document")?;
-        let current = self.load(id)?;
-        if current.kind == WorkbenchFileKind::Image {
+        let path = self.resource(id, false)?;
+        let kind = file_kind(&path)?;
+        if kind == WorkbenchFileKind::Image {
             return Err(invalid("Image attachments are read-only"));
         }
-        if current.kind == WorkbenchFileKind::Json {
+        if kind == WorkbenchFileKind::Json {
             serde_json::from_str::<serde_json::Value>(content)
                 .map_err(|_| invalid("Fix invalid JSON before saving"))?;
         }
-        let path = self.resource(id, false)?;
         let _write = self
             .writing
             .lock()
@@ -547,6 +560,9 @@ impl WorkbenchState {
             started_at: now(),
             finished_at: None,
             message: None,
+            failure: None,
+            unreadable_entries: 0,
+            report_unavailable: false,
             results: vec![],
             truncated: false,
             attempt_of,
@@ -651,6 +667,9 @@ impl WorkbenchState {
                         task.total = report.total;
                         task.bytes = report.entries.iter().map(|entry| entry.bytes).sum();
                         task.truncated = report.truncated;
+                        task.unreadable_entries = report.unreadable_entries;
+                        task.report_unavailable = report_path.is_none();
+                        task.failure = None;
                         task.message = match (report.message, report_path.is_some()) {
                             (message, true) => message,
                             (message, false) => Some(format!(
@@ -667,7 +686,8 @@ impl WorkbenchState {
                     }
                     Err(error) => {
                         task.status = WorkbenchTaskStatus::Failed;
-                        task.message = Some(error.message);
+                        task.message = Some(error.message.clone());
+                        task.failure = Some(error);
                     }
                 }
             }
@@ -1105,11 +1125,13 @@ fn pick_save_path(app: &tauri::AppHandle, default_name: &str) -> NativeResult<Op
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TaskReport {
     total: i32,
     entries: Vec<WorkbenchTaskEntry>,
     truncated: bool,
     message: Option<String>,
+    unreadable_entries: i32,
 }
 fn run_directory_task(
     root: &Path,
@@ -1171,6 +1193,10 @@ fn run_directory_task(
                 bytes: 0.,
                 sha256: None,
                 error: Some("Path exceeds the 1024-byte report limit; file was skipped".into()),
+                failure: Some(NativeError::new(
+                    ErrorCode::InputTooLong,
+                    "Path exceeds the 1024-byte report limit; file was skipped",
+                )),
             });
             continue;
         }
@@ -1185,7 +1211,10 @@ fn run_directory_task(
                 return Ok((size as f64, None));
             }
             if size > MAX_HASH_FILE {
-                return Err(invalid("File exceeds the 512MiB hashing limit"));
+                return Err(NativeError::new(
+                    ErrorCode::InputTooLong,
+                    "File exceeds the 512MiB hashing limit",
+                ));
             }
             let mut file = File::open(&canonical).map_err(io_error)?;
             let mut hasher = Sha256::new();
@@ -1193,7 +1222,7 @@ fn run_directory_task(
             let mut read_bytes = 0u64;
             loop {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err(invalid("Task cancelled"));
+                    return Err(NativeError::new(ErrorCode::UserCancelled, "Task cancelled"));
                 }
                 let length = file.read(&mut buffer).map_err(io_error)?;
                 if length == 0 {
@@ -1201,7 +1230,10 @@ fn run_directory_task(
                 }
                 read_bytes += length as u64;
                 if read_bytes > MAX_HASH_FILE {
-                    return Err(invalid("File grew beyond the 512MiB hashing limit"));
+                    return Err(NativeError::new(
+                        ErrorCode::InputTooLong,
+                        "File grew beyond the 512MiB hashing limit",
+                    ));
                 }
                 hasher.update(&buffer[..length]);
             }
@@ -1225,6 +1257,7 @@ fn run_directory_task(
                     bytes: size,
                     sha256,
                     error: None,
+                    failure: None,
                 });
             }
             Err(error) => {
@@ -1233,7 +1266,8 @@ fn run_directory_task(
                     path: relative,
                     bytes: 0.,
                     sha256: None,
-                    error: Some(error.message),
+                    error: Some(error.message.clone()),
+                    failure: Some(error),
                 });
             }
         }
@@ -1249,6 +1283,7 @@ fn run_directory_task(
         truncated,
         message: (errors > 0)
             .then(|| format!("{errors} entries could not be read; see exported results")),
+        unreadable_entries: errors,
     })
 }
 
@@ -1281,10 +1316,84 @@ mod tests {
             started_at: now(),
             finished_at: None,
             message: None,
+            failure: None,
+            unreadable_entries: 0,
+            report_unavailable: false,
             results: vec![],
             truncated: false,
             attempt_of: None,
         }
+    }
+
+    #[test]
+    fn legacy_task_history_retains_diagnostics_and_defaults_new_notice_fields() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("workbench");
+        fs::create_dir(&root).unwrap();
+        let mut legacy =
+            serde_json::to_value(task("task-legacy", WorkbenchTaskStatus::Failed)).unwrap();
+        let fields = legacy.as_object_mut().unwrap();
+        fields.remove("failure");
+        fields.remove("unreadableEntries");
+        fields.remove("reportUnavailable");
+        fields.insert("message".into(), "Historical task diagnostic".into());
+        fields.insert(
+            "results".into(),
+            serde_json::json!([{
+                "path": "old.txt", "bytes": 0, "sha256": null,
+                "error": "Historical file diagnostic"
+            }]),
+        );
+        fs::write(
+            root.join("history.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "recent": [], "tasks": [legacy]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let state = WorkbenchState::open(root).unwrap();
+        let snapshot = state.snapshot().unwrap();
+        let restored = &snapshot.tasks[0];
+        assert_eq!(
+            restored.message.as_deref(),
+            Some("Historical task diagnostic")
+        );
+        assert_eq!(
+            restored.results[0].error.as_deref(),
+            Some("Historical file diagnostic")
+        );
+        assert!(restored.failure.is_none());
+        assert!(restored.results[0].failure.is_none());
+        assert_eq!(restored.unreadable_entries, 0);
+        assert!(!restored.report_unavailable);
+    }
+
+    #[test]
+    fn task_reports_keep_structured_file_errors_and_total_unreadable_count() {
+        let temporary = tempfile::tempdir().unwrap();
+        File::create(temporary.path().join("oversized.bin"))
+            .unwrap()
+            .set_len(MAX_HASH_FILE + 1)
+            .unwrap();
+        let report = run_directory_task(
+            temporary.path(),
+            &WorkbenchTaskKind::Sha256,
+            &AtomicBool::new(false),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert_eq!(report.unreadable_entries, 1);
+        let failure = report.entries[0].failure.as_ref().unwrap();
+        assert_eq!(failure.code, ErrorCode::InputTooLong);
+        assert_eq!(
+            report.entries[0].error.as_deref(),
+            Some(failure.message.as_str())
+        );
+        let persisted = serde_json::to_vec(&report.entries[0]).unwrap();
+        let restored: WorkbenchTaskEntry = serde_json::from_slice(&persisted).unwrap();
+        assert_eq!(restored.failure, report.entries[0].failure);
     }
     #[test]
     fn bounded_queue_preserves_fifo_slots_and_cancels_waiting_work() {
@@ -1419,6 +1528,7 @@ mod tests {
                         entries: vec![],
                         truncated: false,
                         message: None,
+                        unreadable_entries: 0,
                     },
                 )
                 .is_err()
@@ -1437,12 +1547,14 @@ mod tests {
             bytes: 1.,
             sha256: None,
             error: None,
+            failure: None,
         };
         let report = TaskReport {
             total: MAX_TASK_FILES as i32,
             entries: vec![entry.clone(); MAX_TASK_FILES],
             truncated: false,
             message: None,
+            unreadable_entries: 0,
         };
         state.persist_report("task-large", &report).unwrap();
         assert!(fs::metadata(root.join("task-large.json")).unwrap().len() > DIALOG_LIMIT as u64);
@@ -1519,7 +1631,8 @@ mod tests {
                 path: "file.txt".into(),
                 bytes: 1.,
                 sha256: None,
-                error: None
+                error: None,
+                failure: None,
             };
             251
         ];

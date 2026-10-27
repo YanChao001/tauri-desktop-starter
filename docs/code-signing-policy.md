@@ -1,58 +1,45 @@
 # 代码签名策略（Code signing policy）
 
-已申请 [SignPath Foundation](https://signpath.org/) 的开源签名服务，本次申请未获批准；当前未获得该基金会的免费签名资格。
+本文公开 Windows SignPath 签名的资格、范围、审批和隐私约定。接入命令与其他签名方式见 [构建与发布](./build-release.md#代码签名)。
 
 ## 状态
 
-截至 2026-10-22，维护者反馈本次申请因项目知名度 / 可验证信誉不足未获批准。仓库保留可选 SignPath 集成，本页记录获批后拟启用的策略；后续资格变化与某次产物的签名状态，以服务配置、发布记录及实际签名验证为准，不从工作流存在推断签名已启用。
+截至 2026-10-22，维护者反馈本次 [SignPath Foundation](https://signpath.org/) 申请因项目知名度 / 可验证信誉不足未获批准，当前未获得其免费签名资格。仓库保留可选集成，下述 SignPath 策略仅在获批并配置后启用；后续资格与具体产物状态以服务配置、发布记录和实际验签为准，不能从 workflow 存在推断已签名。
 
-仓库默认不提供签名凭据。其他 Windows 签名方式及其配置边界见 [构建与发布](./build-release.md#代码签名)。
-
-启用前按 [SignPath Foundation 条款](https://signpath.org/terms) 在仓库首页和下载 / Release 页面提供名为 “Code signing policy” 的入口，并在本页注明实际服务提供方：“Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)”。这是启用前的署名要求，不表示当前已获得服务。
+仓库不提供签名凭据。启用前按 [服务条款](https://signpath.org/terms) 在首页和下载 / Release 页面公开名为 “Code signing policy” 的入口，并注明实际服务提供方：“Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)”。此为启用条件，不表示当前已获得服务。
 
 ## 签名范围
 
-- Windows x64 的 **NSIS 安装包**：`<产品名>_<version>_x64-setup.exe`，产品名由 [`app.config.json`](../app.config.json) 的 `name` 定义；
-- 当前配置只签 NSIS 安装包外层，安装后的应用二进制与 MSI 不在此签名范围；需要嵌套签名时须一并修改 artifact 配置、工作流产物收集和验证；
-- WebView2、Rust / npm 依赖等第三方组件不使用本项目的签名额度。
+- Windows x64 NSIS 安装包：`<产品名>_<version>_x64-setup.exe`，产品名来自 [`app.config.json`](../app.config.json)。
+- 仅签安装包外层，安装后的 exe、MSI 及第三方组件不在此额度与配置范围。新增嵌套签名须同步 artifact 配置、收集和验证。
+- 当前 SignPath 后签不能与更新签名组合，限制与签名顺序见 [更新服务端与签名顺序](./build-release.md#更新服务端与签名顺序)。
 
 ## 角色与审批
 
-单维护者项目，三种角色均由仓库所有者担任：
+单维护者项目的作者、评审和签名审批均由仓库所有者 [YanChao001](https://github.com/YanChao001) 担任。外部 PR 经其评审后合并；每次签名请求在 SignPath 门户人工批准。
 
-- 作者 / 提交者：[YanChao001](https://github.com/YanChao001)
-- 评审：外部 PR 必须由 [YanChao001](https://github.com/YanChao001) 评审后合并
-- 签名审批：[YanChao001](https://github.com/YanChao001)，每次签名请求在 SignPath 门户人工批准
-
-签名服务启用前，维护者必须确认 SignPath 与 GitHub 账号均启用 MFA；账号设置不由本地仓库配置。
+启用前维护者确认 SignPath 与 GitHub 账号均启用 MFA，门户来源约束和账号设置不由本地仓库自动完成。
 
 ## 构建与签名流程
 
-1. 在已合入 `main` 的发布提交打 tag（`v<version>`），触发 [`.github/workflows/release.yml`](../.github/workflows/release.yml)；手动触发的 ref 与版本要求见 [CI 多平台构建](./build-release.md#ci-多平台构建)；
-2. GitHub Actions 在 `windows-latest` 上从选定 ref 的源码构建，产物进入 **draft Release**；
-3. 构建任务直接上传未签名安装包 artifact；配置 SignPath 后，`sign-windows` job 使用本次运行的 artifact ID 提交签名请求并等待人工批准；
-4. 用 `Get-AuthenticodeSignature` 校验签名有效后，重新生成签名文件清单并上传 `signed-installers-x86_64-pc-windows-msvc`；再次核对目标 tag 与 draft 状态后覆盖 draft 的未签名资产，已公开 Release 拒绝覆盖；
-5. 人工确认 draft 内容后发布。
+发布触发、草稿、任务条件和失败恢复统一见 [CI 多平台构建](./build-release.md#ci-多平台构建)。SignPath 另须满足：
 
-启用服务时须配置 SignPath 的 GitHub connector，校验仓库、工作流和 commit 的构建来源。签名请求只接受本仓库 GitHub Actions 的产物，不接受本地构建；门户配置由维护者核对，不由本地工作流文件自动完成。
+1. 通过 GitHub connector 约束本仓库、工作流与 commit，只接受本仓库 Actions 构建产物，不接受本地提交的包。
+2. `sign-windows` 使用本次运行的 artifact ID 请求签名并等待人工审批；校验签名后重建清单，上传 `signed-installers-x86_64-pc-windows-msvc`，并仅替换同 tag 的 draft 资产。
+3. 所有必要任务成功后自动公开 Release；签名失败 / 取消保留草稿，已公开版本拒绝覆盖。
 
-build job 的 `build-installers-<target>` 是 SignPath 处理前的归档；最终 SignPath 签名文件以签名 job 的归档和更新后的 Release 为准。
+`build-installers-<target>` 是 SignPath 前的归档，最终签名文件以签名 job 归档和完成签名后的 Release 为准。自动公开不替代门户签名审批，也不代表正式安装和升级已在所有平台验收；实际证据与限制随发布说明记录。
 
 ## 元数据约束
 
-`.signpath/artifact-configuration.xml` 强制安装包满足：
-
-- `ProductName` 与 [`app.config.json`](../app.config.json) 的 `name` 一致，初始化时同步到 artifact 配置
-- `ProductVersion` 与 `FileVersion` 等于本次 tag 的版本号
-
-版本号不一致时 SignPath 拒绝签名，避免签错包。
+[artifact-configuration.xml](../.signpath/artifact-configuration.xml) 要求 `ProductName` 匹配品牌名称，`ProductVersion` 和 `FileVersion` 匹配本次 tag 版本；初始化同步名称，签名请求传入版本参数。不匹配时拒签，避免签错包。
 
 ## 隐私
 
-应用没有遥测，日志只写本地系统日志目录，位置见 [排障手册](./troubleshooting.md#先看日志)。诊断信息由用户主动复制，外链由用户触发后交给系统浏览器。
+应用没有遥测上传，日志只写本地，位置见 [排障手册](./troubleshooting.md#先看日志)；诊断由用户主动复制，反馈前须复核脱敏。外链交给系统浏览器。网络演示、市场和获授权插件可访问对应来源，LAN 为明文服务，范围与限制见 [扩展指南](./extensions.md#网络凭据与私有数据) 和 [安全规范](./security.md)。
 
-更新功能使用本项目独立生成的更新密钥，与 SignPath 的 Windows 发布者签名分别配置。默认启用启动检查，主窗口就绪后访问 GitHub Releases 更新端点；用户可在更新页关闭该偏好，下载和安装始终由用户确认。公钥未配置或受控部署显式禁用时不请求网络。配置与验签策略见 [自动更新](./build-release.md#自动更新)，服务的数据处理见 [GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)。WebView2 运行时由 Microsoft 提供，其数据处理见 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
+更新使用独立密钥，与 Windows 发布者签名分别配置。默认启用启动检查，由主窗口就绪后请求 GitHub Releases；可在设置关闭，端点 / 公钥缺失或受控部署禁用时不联网，下载 / 安装须用户确认，详见 [自动更新](./build-release.md#自动更新)。服务数据处理见 [GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)；WebView2 由 Microsoft 提供，见 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
 
 ## 变更
 
-本策略随仓库一起评审；签名范围或流程变化时，在同一 PR 中更新本页。
+本策略与仓库一起评审；签名资格、范围、服务提供方或流程变化时，在同一 PR 更新。

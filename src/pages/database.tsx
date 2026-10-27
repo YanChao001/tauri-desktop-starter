@@ -11,6 +11,7 @@ import { useSearchParams } from "react-router-dom";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { BackupPanel } from "@/components/database/backup-panel";
 import { ConflictPanel } from "@/components/database/conflict-panel";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -144,6 +145,7 @@ export default function Database() {
   const [offset, setOffset] = useState(0);
   const [sort, setSort] = useState("updated-desc");
   const [trash, setTrash] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
   const load = useCallback(
     () => queryNotes({ search, offset, limit: 50, sort, trash }),
@@ -386,6 +388,12 @@ export default function Database() {
       return;
     }
     applyDraft(next);
+    setCreating(next.id === null);
+    if (next.id === null) {
+      setTrash(false);
+      setOffset(0);
+      setSelected(new Set());
+    }
     setRemote(null);
   }
   async function save(asCopy = false, signal?: AbortSignal): Promise<void> {
@@ -418,6 +426,7 @@ export default function Database() {
                 expectedVersion: current.version,
               });
         applyDraft(note);
+        if (mounted.current) setCreating(false);
         setRemote(null);
         signal?.throwIfAborted();
         await persistDraft(signal);
@@ -460,6 +469,7 @@ export default function Database() {
     changeEditor({ pending: true });
     try {
       applyDraft(editor.original);
+      if (mounted.current) setCreating(false);
       setRemote(null);
       await persistDraft(signal);
       signal?.throwIfAborted();
@@ -485,6 +495,7 @@ export default function Database() {
         "trash",
       );
       applyDraft(blank());
+      if (mounted.current) setCreating(false);
       await persistDraft();
       if (mounted.current) {
         setConfirmDelete(false);
@@ -517,6 +528,7 @@ export default function Database() {
       await changeNotes(items, action);
       if (items.some((item) => item.id === editor.draft.id)) {
         applyDraft(blank());
+        if (mounted.current) setCreating(false);
         await persistDraft();
       }
       setSelected(new Set());
@@ -533,6 +545,14 @@ export default function Database() {
     mutationError !== null &&
     "code" in mutationError &&
     (mutationError.code === "CONFLICT" || mutationError.code === "NOT_FOUND");
+  const showWorkspace =
+    !page ||
+    !draftReady ||
+    page.total > 0 ||
+    creating ||
+    draft.id !== null ||
+    dirty ||
+    pending;
   useEffect(() => {
     if (draftReady && mutationError)
       toast.error(nativeErrorText(mutationError, latest), {
@@ -582,338 +602,397 @@ export default function Database() {
           }}
         />
       ) : null}
-      <div className="space-y-1">
-        <div className="flex flex-wrap gap-2">
-          <Input
-            type="search"
-            maxLength={200}
-            className="min-w-48 flex-1"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("database.searchPlaceholder")}
+      <div className="@container/notes space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            className="grid min-w-0 flex-1 basis-80 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2"
+            role="group"
             aria-label={t("database.search")}
-            aria-invalid={searchTooLong}
-            aria-describedby={searchTooLong ? "note-search-error" : undefined}
+          >
+            <Input
+              type="search"
+              maxLength={200}
+              className="min-w-0"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("database.searchPlaceholder")}
+              aria-label={t("database.search")}
+              aria-invalid={searchTooLong}
+              aria-describedby={searchTooLong ? "note-search-error" : undefined}
+            />
+            <Button
+              disabled={pending || !draftReady}
+              onClick={() => select(blank())}
+            >
+              <PlusIcon />
+              {t("database.new")}
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={loading}
+              onClick={() => void reload()}
+              aria-label={t("common.refresh")}
+            >
+              <RefreshCwIcon />
+            </Button>
+          </div>
+          <BackupPanel
+            dirty={dirty}
+            pending={pending || !draftReady}
+            flushDraft={persistDraft}
+            lockEditor={(locked) => changeEditor({ pending: locked })}
+            afterRestore={async () => {
+              setDraftReady(false);
+              applyDraft(blank());
+              setCreating(false);
+              setRemote(null);
+              setOffset(0);
+              setSelected(new Set());
+              try {
+                await readRecoveredDraft();
+              } finally {
+                await reload();
+              }
+            }}
           />
-          <Button
-            variant="outline"
-            disabled={pending || !draftReady}
-            onClick={() => select(blank())}
-          >
-            <PlusIcon />
-            {t("database.new")}
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={loading}
-            onClick={() => void reload()}
-            aria-label={t("common.refresh")}
-          >
-            <RefreshCwIcon />
-          </Button>
         </div>
-        <p
-          id="note-search-error"
-          role={searchTooLong ? "alert" : undefined}
-          className="h-5 truncate text-xs text-destructive"
-        >
-          {searchTooLong ? t("errors.INPUT_TOO_LONG") : null}
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant={!trash ? "default" : "outline"}
-          aria-pressed={!trash}
-          onClick={() => {
-            setTrash(false);
-            setOffset(0);
-            setSelected(new Set());
-          }}
-        >
-          {t("data.active")}
-        </Button>
-        <Button
-          size="sm"
-          variant={trash ? "default" : "outline"}
-          aria-pressed={trash}
-          onClick={() => {
-            setTrash(true);
-            setOffset(0);
-            setSelected(new Set());
-          }}
-        >
-          {t("data.trash")}
-        </Button>
-        <div className="ml-auto flex items-center gap-2 text-sm">
-          <Label htmlFor="notes-sort">{t("data.sort")}</Label>
-          <Select
-            value={sort}
-            onValueChange={(value) => {
-              setSort(value);
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={!trash ? "default" : "outline"}
+            aria-pressed={!trash}
+            onClick={() => {
+              setTrash(false);
               setOffset(0);
               setSelected(new Set());
             }}
           >
-            <SelectTrigger id="notes-sort">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              <SelectItem value="updated-desc">{t("data.newest")}</SelectItem>
-              <SelectItem value="updated-asc">{t("data.oldest")}</SelectItem>
-              <SelectItem value="title-asc">{t("data.byTitle")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="flex min-h-8 flex-wrap items-center gap-2">
-        <span className="text-sm">
-          {t("data.selected", { count: selected.size })}
-        </span>
-        {trash ? (
-          <>
-            <Button
-              size="sm"
-              disabled={pending || !selected.size}
-              onClick={() => setBulkAction("restore")}
-            >
-              {t("data.restoreSelected")}
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={pending || !selected.size}
-              onClick={() => setBulkAction("purge")}
-            >
-              {t("data.purge")}
-            </Button>
-          </>
-        ) : (
+            {t("data.active")}
+          </Button>
           <Button
             size="sm"
-            variant="destructive"
-            disabled={pending || !selected.size}
-            onClick={() => setBulkAction("trash")}
+            variant={trash ? "default" : "outline"}
+            aria-pressed={trash}
+            onClick={() => {
+              setTrash(true);
+              setOffset(0);
+              setSelected(new Set());
+            }}
           >
-            {t("data.trashSelected")}
+            {t("data.trash")}
           </Button>
-        )}
-      </div>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(0,2fr)]">
-        <Card>
-          <CardContent className="max-h-[28rem] space-y-1 overflow-y-auto p-3">
-            {loading && !notes ? (
-              <p className="p-3 text-xs text-muted-foreground">
-                {t("common.loading")}
-              </p>
-            ) : !notes?.length ? (
-              <p className="p-3 text-sm text-muted-foreground">
-                {t(search ? "database.noResults" : "database.empty")}
-              </p>
-            ) : (
-              <ul className="space-y-1">
-                {notes.map((note) => (
-                  <li key={note.id} className="flex items-center gap-1">
-                    <Checkbox
-                      className="ml-2"
-                      aria-label={t("data.selectNote", { title: note.title })}
-                      checked={selected.has(note.id)}
-                      disabled={pending}
-                      onCheckedChange={(checked) =>
-                        setSelected((current) => {
-                          const next = new Set(current);
-                          if (checked === true) next.add(note.id);
-                          else next.delete(note.id);
-                          return next;
+          <p
+            id="note-search-error"
+            role={searchTooLong ? "alert" : undefined}
+            className="min-w-0 flex-1 truncate text-xs text-destructive"
+          >
+            {searchTooLong ? t("errors.INPUT_TOO_LONG") : null}
+          </p>
+          {searchTooLong ? (
+            <HelpTooltip label={`${t("database.search")} · ${t("title.help")}`}>
+              {t("errors.INPUT_TOO_LONG")}
+            </HelpTooltip>
+          ) : null}
+          <div className="ml-auto flex items-center gap-2 text-sm">
+            <Label htmlFor="notes-sort">{t("data.sort")}</Label>
+            <Select
+              value={sort}
+              onValueChange={(value) => {
+                setSort(value);
+                setOffset(0);
+                setSelected(new Set());
+              }}
+            >
+              <SelectTrigger id="notes-sort" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="updated-desc">{t("data.newest")}</SelectItem>
+                <SelectItem value="updated-asc">{t("data.oldest")}</SelectItem>
+                <SelectItem value="title-asc">{t("data.byTitle")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {showWorkspace ? (
+          <div className="grid items-stretch gap-3 @min-[46rem]/notes:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)]">
+            <Card className="min-h-0 min-w-0" data-testid="notes-list">
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+                <div className="flex min-h-7 flex-wrap items-center gap-2">
+                  <h3 className="mr-auto text-sm font-medium">
+                    {t(trash ? "data.trash" : "data.active")}
+                  </h3>
+                  <span className="text-xs text-muted-foreground">
+                    {t("data.selected", { count: selected.size })}
+                  </span>
+                  {selected.size > 0 ? (
+                    trash ? (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => setBulkAction("restore")}
+                        >
+                          {t("data.restoreSelected")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={pending}
+                          onClick={() => setBulkAction("purge")}
+                        >
+                          {t("data.purge")}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={pending}
+                        onClick={() => setBulkAction("trash")}
+                      >
+                        {t("data.trashSelected")}
+                      </Button>
+                    )
+                  ) : null}
+                </div>
+                <div className="max-h-72 min-h-20 flex-1 overflow-y-auto">
+                  {loading && !notes ? (
+                    <p className="p-3 text-xs text-muted-foreground">
+                      {t("common.loading")}
+                    </p>
+                  ) : !notes?.length ? (
+                    <p className="p-3 text-sm text-muted-foreground">
+                      {t(search ? "database.noResults" : "database.empty")}
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {notes.map((note) => (
+                        <li key={note.id} className="flex items-center gap-1">
+                          <Checkbox
+                            className="ml-2"
+                            aria-label={t("data.selectNote", {
+                              title: note.title,
+                            })}
+                            checked={selected.has(note.id)}
+                            disabled={pending}
+                            onCheckedChange={(checked) =>
+                              setSelected((current) => {
+                                const next = new Set(current);
+                                if (checked === true) next.add(note.id);
+                                else next.delete(note.id);
+                                return next;
+                              })
+                            }
+                          />
+                          <button
+                            type="button"
+                            disabled={pending}
+                            aria-pressed={draft.id === note.id}
+                            onClick={() => editNote(note)}
+                            className={cn(
+                              "min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted",
+                              draft.id === note.id && "bg-primary/10",
+                            )}
+                          >
+                            <span className="block truncate text-sm font-medium">
+                              {note.title}
+                            </span>
+                            <span className="mt-1 block truncate text-[11px] text-muted-foreground">
+                              {new Date(note.updatedAt).toLocaleString(
+                                language === "zh" ? "zh-CN" : "en",
+                              )}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-xs">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={offset === 0 || loading}
+                    onClick={() => {
+                      setOffset(Math.max(0, offset - 50));
+                      setSelected(new Set());
+                    }}
+                  >
+                    {t("data.previous")}
+                  </Button>
+                  <span>
+                    {t("data.pageCount", {
+                      from: page?.total ? offset + 1 : 0,
+                      to: Math.min(offset + 50, page?.total ?? 0),
+                      total: page?.total ?? 0,
+                    })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading || offset + 50 >= (page?.total ?? 0)}
+                    onClick={() => {
+                      setOffset(offset + 50);
+                      setSelected(new Set());
+                    }}
+                  >
+                    {t("data.next")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="min-w-0" data-testid="note-editor">
+              <CardContent className="space-y-3">
+                <form
+                  className="space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void save().catch(() => {});
+                  }}
+                  aria-busy={pending}
+                >
+                  <div className="space-y-1.5">
+                    <Label htmlFor="note-title">
+                      {t("database.titleLabel")}
+                    </Label>
+                    <Input
+                      id="note-title"
+                      data-testid="note-title"
+                      maxLength={200}
+                      required
+                      value={draft.title}
+                      disabled={pending || !draftReady || trash}
+                      onChange={(event) =>
+                        editDraft({
+                          ...editor.draft,
+                          title: event.target.value,
                         })
                       }
+                      placeholder={t("database.titlePlaceholder")}
                     />
-                    <button
-                      type="button"
-                      disabled={pending}
-                      aria-pressed={draft.id === note.id}
-                      onClick={() => editNote(note)}
-                      className={cn(
-                        "min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted",
-                        draft.id === note.id && "bg-primary/10",
-                      )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex min-h-6 min-w-0 items-center gap-2">
+                      <Label htmlFor="note-body" className="shrink-0">
+                        {t("database.bodyLabel")}
+                      </Label>
+                      <p
+                        id="note-body-error"
+                        role={bodyTooLong ? "alert" : undefined}
+                        className="min-w-0 truncate text-xs text-destructive"
+                      >
+                        {bodyTooLong ? t("errors.INPUT_TOO_LONG") : null}
+                      </p>
+                      {bodyTooLong ? (
+                        <HelpTooltip
+                          label={`${t("database.bodyLabel")} · ${t("title.help")}`}
+                        >
+                          {t("errors.INPUT_TOO_LONG")}
+                        </HelpTooltip>
+                      ) : null}
+                    </div>
+                    <Textarea
+                      id="note-body"
+                      data-testid="note-body"
+                      maxLength={65536}
+                      aria-invalid={bodyTooLong}
+                      aria-describedby={
+                        bodyTooLong ? "note-body-error" : undefined
+                      }
+                      rows={12}
+                      value={draft.body}
+                      disabled={pending || !draftReady || trash}
+                      onChange={(event) =>
+                        editDraft({ ...editor.draft, body: event.target.value })
+                      }
+                      placeholder={t("database.bodyPlaceholder")}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="submit"
+                      disabled={
+                        pending ||
+                        trash ||
+                        !draftReady ||
+                        !draft.title.trim() ||
+                        !dirty ||
+                        bodyTooLong
+                      }
                     >
-                      <span className="block truncate text-sm font-medium">
-                        {note.title}
-                      </span>
-                      <span className="mt-1 block truncate text-[11px] text-muted-foreground">
-                        {new Date(note.updatedAt).toLocaleString(
-                          language === "zh" ? "zh-CN" : "en",
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="flex items-center justify-between gap-2 border-t pt-3 text-xs">
+                      <SaveIcon />
+                      {t("common.save")}
+                    </Button>
+                    {draft.id !== null && !trash ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => setConfirmDelete(true)}
+                      >
+                        <TrashIcon />
+                        {t("common.delete")}
+                      </Button>
+                    ) : null}
+                    {dirty ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() =>
+                          void discard().catch((reason) =>
+                            changeEditor({ error: reason }),
+                          )
+                        }
+                      >
+                        {t("data.discardEdits")}
+                      </Button>
+                    ) : null}
+                    {dirty ? (
+                      <Badge variant="outline">{t("database.unsaved")}</Badge>
+                    ) : null}
+                    <span
+                      role="status"
+                      className="h-5 min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                    >
+                      {draftNotice && dirty
+                        ? t(
+                            draftNotice === "recovered"
+                              ? "data.draftRecovered"
+                              : "data.draftSaved",
+                          )
+                        : draft.version
+                          ? t("database.version", { version: draft.version })
+                          : null}
+                    </span>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 py-6 text-center">
+              <PlusIcon
+                className="size-8 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-muted-foreground">
+                {t(search || trash ? "database.noResults" : "database.empty")}
+              </p>
               <Button
-                variant="outline"
-                size="sm"
-                disabled={offset === 0 || loading}
-                onClick={() => {
-                  setOffset(Math.max(0, offset - 50));
-                  setSelected(new Set());
-                }}
+                disabled={pending || !draftReady}
+                onClick={() => select(blank())}
               >
-                {t("data.previous")}
+                <PlusIcon />
+                {t("database.createNote")}
               </Button>
-              <span>
-                {t("data.pageCount", {
-                  from: page?.total ? offset + 1 : 0,
-                  to: Math.min(offset + 50, page?.total ?? 0),
-                  total: page?.total ?? 0,
-                })}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={loading || offset + 50 >= (page?.total ?? 0)}
-                onClick={() => {
-                  setOffset(offset + 50);
-                  setSelected(new Set());
-                }}
-              >
-                {t("data.next")}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="space-y-4 pt-5">
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void save().catch(() => {});
-              }}
-              aria-busy={pending}
-            >
-              <div className="space-y-1.5">
-                <Label htmlFor="note-title">{t("database.titleLabel")}</Label>
-                <Input
-                  id="note-title"
-                  data-testid="note-title"
-                  maxLength={200}
-                  required
-                  value={draft.title}
-                  disabled={pending || !draftReady || trash}
-                  onChange={(event) =>
-                    editDraft({ ...editor.draft, title: event.target.value })
-                  }
-                  placeholder={t("database.titlePlaceholder")}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="note-body">{t("database.bodyLabel")}</Label>
-                <Textarea
-                  id="note-body"
-                  data-testid="note-body"
-                  maxLength={65536}
-                  aria-invalid={bodyTooLong}
-                  aria-describedby={bodyTooLong ? "note-body-error" : undefined}
-                  rows={12}
-                  value={draft.body}
-                  disabled={pending || !draftReady || trash}
-                  onChange={(event) =>
-                    editDraft({ ...editor.draft, body: event.target.value })
-                  }
-                  placeholder={t("database.bodyPlaceholder")}
-                />
-                <p
-                  id="note-body-error"
-                  role={bodyTooLong ? "alert" : undefined}
-                  className="h-5 truncate text-xs text-destructive"
-                >
-                  {bodyTooLong ? t("errors.INPUT_TOO_LONG") : null}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="submit"
-                  disabled={
-                    pending ||
-                    trash ||
-                    !draftReady ||
-                    !draft.title.trim() ||
-                    !dirty ||
-                    bodyTooLong
-                  }
-                >
-                  <SaveIcon />
-                  {t("common.save")}
-                </Button>
-                {draft.id !== null && !trash ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => setConfirmDelete(true)}
-                  >
-                    <TrashIcon />
-                    {t("common.delete")}
-                  </Button>
-                ) : null}
-                {dirty ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() =>
-                      void discard().catch((reason) =>
-                        changeEditor({ error: reason }),
-                      )
-                    }
-                  >
-                    {t("data.discardEdits")}
-                  </Button>
-                ) : null}
-                {dirty ? (
-                  <Badge variant="outline">{t("database.unsaved")}</Badge>
-                ) : null}
-                <span
-                  role="status"
-                  className="h-5 min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                >
-                  {draftNotice && dirty
-                    ? t(
-                        draftNotice === "recovered"
-                          ? "data.draftRecovered"
-                          : "data.draftSaved",
-                      )
-                    : draft.version
-                      ? t("database.version", { version: draft.version })
-                      : null}
-                </span>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
-      <BackupPanel
-        dirty={dirty}
-        pending={pending || !draftReady}
-        flushDraft={persistDraft}
-        lockEditor={(locked) => changeEditor({ pending: locked })}
-        afterRestore={async () => {
-          setDraftReady(false);
-          applyDraft(blank());
-          setRemote(null);
-          setOffset(0);
-          setSelected(new Set());
-          try {
-            await readRecoveredDraft();
-          } finally {
-            await reload();
-          }
-        }}
-      />
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent closeLabel={t("common.close")}>
           <DialogHeader>
@@ -1008,7 +1087,15 @@ export default function Database() {
                 const next = nextDraft.current;
                 void discard()
                   .then(() => {
-                    if (next) applyDraft(next);
+                    if (next) {
+                      applyDraft(next);
+                      setCreating(next.id === null);
+                      if (next.id === null) {
+                        setTrash(false);
+                        setOffset(0);
+                        setSelected(new Set());
+                      }
+                    }
                     nextDraft.current = null;
                     if (mounted.current) setDiscardOpen(false);
                   })

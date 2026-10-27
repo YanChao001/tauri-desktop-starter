@@ -15,7 +15,7 @@ export const enWorkbench = {
   "workbench.saved": "File saved",
   "workbench.importNote": "Import a note copy",
   "workbench.imported":
-    "Saved the current content as a SQLite note. The original file and unsaved edits are preserved.",
+    "Saved the current content as a local note. The original file and unsaved edits are preserved.",
   "workbench.openNotes": "Open notes",
   "workbench.noteLimit":
     "Note content is limited to 64 KiB. Reduce the content or save it as a file.",
@@ -54,13 +54,13 @@ export const enWorkbench = {
   "workbench.localDraft": "New unsaved file",
   "tasks.title": "Background task center",
   "tasks.description":
-    "Scan a selected directory or calculate SHA-256 hashes in Rust. Tasks continue when you navigate away or hide the window.",
+    "List files in a folder or calculate file checksums. Tasks continue when you navigate away or hide the window.",
   "tasks.pickDirectory": "Choose directory",
   "tasks.directory": "Task directory",
   "tasks.noDirectory": "Choose a local directory first",
   "tasks.kind": "Task type",
   "tasks.scan": "Scan file inventory",
-  "tasks.sha256": "Calculate SHA-256",
+  "tasks.sha256": "Calculate file checksums (SHA-256)",
   "tasks.start": "Start task",
   "tasks.cancel": "Request cancellation",
   "tasks.retry": "Run again",
@@ -68,23 +68,38 @@ export const enWorkbench = {
   "tasks.exported": "Task results exported",
   "tasks.results": "Show results",
   "tasks.hideResults": "Hide results",
-  "tasks.active": "Running {count} / 2 tasks",
-  "tasks.queued": "Waiting {count} / 10 tasks",
-  "tasks.waiting": "Waiting for an execution slot",
+  "tasks.active": "Running {count} / 2",
+  "tasks.queued": "Queued {count} / 10",
+  "tasks.waiting": "Waiting for earlier tasks to finish",
   "tasks.capacity":
     "Two tasks run at once; up to ten more wait in submission order. Waiting tasks can be cancelled.",
   "tasks.empty":
-    "No tasks yet. Choose a directory, then scan it or calculate hashes.",
+    "No tasks yet. Choose a folder, then list its files or calculate checksums.",
+  "tasks.loading": "Loading tasks…",
+  "tasks.countUnavailable": "Task counts are unavailable",
+  "tasks.interruptedHint":
+    "The app stopped before this task finished. Running it again creates a new task.",
+  "tasks.unreadableEntries":
+    "{count} entries could not be read. View the results or export the complete report.",
+  "tasks.reportUnavailable":
+    "The complete report could not be saved. Export the full results held in memory before closing the app.",
+  "tasks.legacyNotice":
+    "This saved task includes additional diagnostics. Expand the results to read the original record.",
+  "tasks.entryLimit":
+    "This file or path exceeds the task limits and was skipped.",
+  "tasks.entryFailed":
+    "This file could not be processed. Expand the original diagnostic for details.",
+  "tasks.diagnostics": "Original diagnostic",
   "tasks.progress": "Processed {processed} / {total} files",
   "tasks.discovering": "Discovering files…",
   "tasks.history": "Recent tasks",
   "tasks.historyHint":
     "The latest 30 tasks are retained. Unfinished tasks become interrupted after restart and can be run again. Cancellation keeps completed results.",
   "tasks.limits":
-    "Up to 5000 files and 32 directory levels per scan; symbolic links are not followed. Hashing is limited to 512MiB per file.",
+    "Up to 5000 files and 32 folder levels per scan. Links to other locations are not followed. Checksums are calculated only for files up to 512MiB.",
   "tasks.path": "Relative path",
   "tasks.bytes": "Bytes",
-  "tasks.hash": "SHA-256 / result",
+  "tasks.hash": "File checksum / result",
   "tasks.noResults": "No completed file results.",
   "tasks.previewLimit":
     "The page previews up to 200 entries. Export includes all files processed by this task.",

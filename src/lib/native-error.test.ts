@@ -31,10 +31,31 @@ describe("native error presentation", () => {
       en["errors.INTERNAL"],
     );
   });
+  it("presents retry guidance for native HTTP timeouts in both languages", () => {
+    const error = {
+      code: "HTTP_TIMEOUT",
+      message: "native details",
+      retryable: true,
+    };
+    expect(nativeErrorText(error, createTranslator(en))).toBe(
+      en["nativeError.httpTimeout"],
+    );
+    expect(nativeErrorText(error, createTranslator(zhCN))).toBe(
+      zhCN["nativeError.httpTimeout"],
+    );
+  });
   it.each([
     ["MARKET_INCOMPATIBLE", "ext.market.incompatible"],
     ["MARKET_EXPIRED", "ext.market.expired"],
     ["MARKET_INVALID", "ext.market.invalid"],
+    ["EXTENSION_NETWORK_BLOCKED", "ext.error.networkBlocked"],
+    ["EXTENSION_IMAGE_REDIRECT", "ext.error.imageRedirect"],
+    ["EXTENSION_IMAGE_SOURCE_REJECTED", "ext.error.imageSourceRejected"],
+    ["EXTENSION_IMAGE_INVALID", "ext.error.imageInvalid"],
+    ["EXTENSION_IMAGE_TOO_LARGE", "ext.error.imageTooLarge"],
+    ["EXTENSION_ATTACHMENT_TOO_LARGE", "ext.error.attachmentTooLarge"],
+    ["EXTENSION_ATTACHMENT_CACHE_FULL", "ext.error.attachmentCacheFull"],
+    ["EXTENSION_TRANSFER_INTERRUPTED", "ext.error.transferInterrupted"],
   ] as const)(
     "presents %s without exposing catalog or package contents",
     (code, key) => {

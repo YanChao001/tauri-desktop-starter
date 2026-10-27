@@ -9,6 +9,7 @@ use specta::Type;
 use std::collections::{BTreeMap, HashSet};
 pub const MAX_VIEW_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_VIEW_STATE_BYTES: usize = 256 * 1024;
+pub const MAX_VIEW_FIELDS: usize = 32;
 pub const DEFAULT_FIELD_BYTES: usize = 64 * 1024;
 pub const MAX_FIELD_BYTES: usize = 256 * 1024;
 pub const MAX_FORM_BYTES: usize = 1024 * 1024;
@@ -250,7 +251,7 @@ fn valid_number(value: &str) -> bool {
 impl ExtensionViewRequest {
     pub fn validate(&self) -> NativeResult<()> {
         if self.version != 2
-            || self.fields.len() > 24
+            || self.fields.len() > MAX_VIEW_FIELDS
             || self.results.len() > 16
             || !["zh-CN", "en"].contains(&self.locale.as_str())
         {
@@ -432,7 +433,7 @@ impl ExtensionView {
             bounded_text(output, MAX_VIEW_BYTES, "View response")?;
             let view: Self = serde_json::from_str(output).map_err(|_| invalid())?;
             if view.version != 2
-                || view.fields.len() > 24
+                || view.fields.len() > MAX_VIEW_FIELDS
                 || view.groups.len() > 16
                 || view.tabs.len() > 12
                 || view.blocks.len() > 24
@@ -713,8 +714,8 @@ mod tests {
     #[test]
     fn lab_analyzes_unicode_transforms_and_reports_host_data_in_real_wasm() {
         let view = step("", None, serde_json::json!({}), None);
-        assert_eq!(view.tabs.len(), 4);
-        assert_eq!(view.display, "文本工具");
+        assert_eq!(view.tabs.len(), 5);
+        assert_eq!(view.display, "交互工作台");
         let view = step(&view.state, Some("tab-text"), serde_json::json!({}), None);
         assert_eq!(view.fields.len(), 2);
         let view = step(
@@ -830,6 +831,49 @@ mod tests {
             .fields
             .insert("input".into(), "x".repeat(MAX_FIELD_BYTES + 1));
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn view_fields_accept_32_and_reject_33_without_expanding_byte_budgets() {
+        let mut request = ExtensionViewRequest {
+            version: 2,
+            action: None,
+            state: String::new(),
+            fields: (0..32)
+                .map(|index| (format!("field{index}"), "x".repeat(MAX_FORM_BYTES / 32)))
+                .collect(),
+            locale: "en".into(),
+            host: None,
+            results: Vec::new(),
+        };
+        assert!(request.validate().is_ok());
+        let mut view = serde_json::json!({
+            "version": 2, "state": "", "display": "Form", "description": "",
+            "fields": request.fields.iter().map(|(id, value)| {
+                serde_json::json!({"id": id, "label": id, "value": value})
+            }).collect::<Vec<_>>(),
+            "groups": []
+        });
+        assert!(ExtensionView::parse(&view.to_string()).is_ok());
+
+        request.fields.get_mut("field0").unwrap().push('x');
+        assert!(request.validate().is_err());
+        view["fields"][0]["value"] = serde_json::json!("x".repeat(MAX_FORM_BYTES / 32 + 1));
+        assert!(ExtensionView::parse(&view.to_string()).is_err());
+
+        for value in request.fields.values_mut() {
+            value.clear();
+        }
+        request.fields.insert("field32".into(), String::new());
+        assert!(request.validate().is_err());
+        view["fields"] = serde_json::json!(
+            request
+                .fields
+                .keys()
+                .map(|id| { serde_json::json!({"id": id, "label": id, "value": ""}) })
+                .collect::<Vec<_>>()
+        );
+        assert!(ExtensionView::parse(&view.to_string()).is_err());
     }
 
     #[test]

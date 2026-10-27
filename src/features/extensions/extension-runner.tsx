@@ -7,6 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -131,7 +137,7 @@ export function ExtensionRunner({
     if (!selected) setSelected(choice.key);
   }, [choice, selected]);
   const item = choice?.item;
-  const phase = useExtensionPhase(runs, item?.package.manifest.id ?? "");
+  const phase = useExtensionPhase(runs, item?.package.manifest.id ?? "", busy);
   const grants = item?.grantedPermissions ?? [];
   const hasText = grants.includes("text:read");
   const hasFiles = grants.includes("files:read");
@@ -168,11 +174,6 @@ export function ExtensionRunner({
         ).catch(() => {});
     };
   }, []);
-  useEffect(() => {
-    if (!busy) return;
-    const timer = window.setInterval(() => void onSettled(), 750);
-    return () => window.clearInterval(timer);
-  }, [busy, onSettled]);
   function selectCommand(key: string) {
     lastOutput.current = null;
     latestFiles.current = [];
@@ -390,6 +391,16 @@ export function ExtensionRunner({
       });
     selection.current = pending;
   }
+  const runStatus = showProgress
+    ? t(
+        stopping
+          ? "ext.stopping"
+          : phase === "queued"
+            ? "ext.queued"
+            : "ext.running",
+        { id: current.current?.id ?? "" },
+      )
+    : "";
   return (
     <section
       className="space-y-4 rounded-xl border bg-card p-5"
@@ -421,7 +432,7 @@ export function ExtensionRunner({
             >
               <SelectValue placeholder={t("ext.choose")} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {choices.map((value) => (
                 <SelectItem key={value.key} value={value.key}>
                   {value.item.package.manifest.name} · {value.command.title}
@@ -445,6 +456,7 @@ export function ExtensionRunner({
             className={LOCKED_INPUT_CLASS}
             value={input}
             aria-invalid={tooLong}
+            aria-describedby={tooLong ? `${id}-input-error` : undefined}
             aria-description={t("ext.inputHint")}
             placeholder={t("ext.inputHint")}
             onChange={(event) => {
@@ -452,6 +464,15 @@ export function ExtensionRunner({
               setDirty(true);
             }}
           />
+          {tooLong ? (
+            <p
+              id={`${id}-input-error`}
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {t("ext.inputTooLong")}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {hasFiles ? (
@@ -555,30 +576,31 @@ export function ExtensionRunner({
           {t("ext.stop")}
         </Button>
       </div>
-      <p
-        role="status"
-        aria-label={t("ext.appStatus")}
-        aria-atomic="true"
-        className="min-h-5 truncate text-sm text-muted-foreground"
-      >
-        {showProgress
-          ? t(
-              stopping
-                ? "ext.stopping"
-                : phase === "queued"
-                  ? "ext.queued"
-                  : "ext.running",
-              {
-                id: current.current?.id ?? "",
-              },
-            )
-          : ""}
-      </p>
       <div className="space-y-2">
-        <h4 className="h-5 truncate text-sm font-medium">
-          {t("ext.output")}
-          {output ? ` · ${output.extensionId}` : ""}
-        </h4>
+        <div className="flex h-5 min-w-0 items-center justify-between gap-3">
+          <h4 className="min-w-0 flex-1 truncate text-sm font-medium">
+            {t("ext.output")}
+            {output ? ` · ${output.extensionId}` : ""}
+          </h4>
+          <TooltipProvider delayDuration={650}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p
+                  role="status"
+                  aria-label={t("ext.appStatus")}
+                  aria-atomic="true"
+                  tabIndex={runStatus ? 0 : undefined}
+                  className="max-w-[60%] truncate rounded-sm text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {runStatus}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[min(18rem,var(--radix-tooltip-content-available-width))] break-words">
+                {runStatus}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <ExtensionOutput
           text={output?.text ?? t("ext.noOutput")}
           format={output?.format ?? "text"}
@@ -657,6 +679,7 @@ export function ExtensionRunner({
         }}
       >
         <DialogContent
+          closeLabel={t("common.close")}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             selector.current?.focus();

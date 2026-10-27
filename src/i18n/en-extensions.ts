@@ -1,8 +1,26 @@
 export const enExtensions = {
+  "ext.error.networkBlocked":
+    "The destination resolved to a protected network address. Check the host network setting and proxy permission.",
+  "ext.error.imageRedirect":
+    "The source returned a redirect. Retry or switch image sources.",
+  "ext.error.imageSourceRejected":
+    "The source rejected the image request. Retry later or switch image sources.",
+  "ext.error.imageInvalid":
+    "The image format is unsupported or its contents are damaged. Choose another image.",
+  "ext.error.imageTooLarge":
+    "The image exceeds the size or decoding limit. Choose another image.",
+  "ext.error.attachmentTooLarge":
+    "The attachment exceeds its size limit. Choose a smaller file.",
+  "ext.error.attachmentCacheFull":
+    "The local attachment cache is full. Remove chat history you no longer need and retry.",
+  "ext.error.transferInterrupted":
+    "The attachment transfer was interrupted or failed its integrity check. Check the connection and retry.",
+  "ext.prepareFailedDescription":
+    "Plugin preparation did not finish. You can still open a plugin to compile it on demand.",
   "ext.uiUnavailable":
     "The extension interface is unavailable. Your session has been retained.",
   "ext.recovery.title": "Extension archive recovery",
-  "ext.checkBundledUpdate": "Check bundled workbench for updates",
+  "ext.checkBundledUpdate": "Check built-in updates",
   "ext.bundledCurrent": "The bundled workbench is already up to date.",
   "ext.bundledNewerInstalled":
     "The installed workbench is newer than the bundled version. The installed package was retained.",
@@ -54,7 +72,10 @@ export const enExtensions = {
   "ext.market.installHint": "Review before installing",
   "ext.market.download": "Download and review",
   "ext.market.hostRequired": "Requires app {version} or newer",
-  "ext.market.downloading": "Downloading and verifying…",
+  "ext.market.preparing": "Preparing download…",
+  "ext.market.downloadProgress": "Downloading {percent}%",
+  "ext.market.verifying": "Verifying…",
+  "ext.market.installing": "Installing…",
   "ext.market.update": "Download update",
   "ext.market.updateTo": "Update to {version}",
   "ext.market.installed": "This version is installed",
@@ -77,11 +98,22 @@ export const enExtensions = {
   "ext.installed": "Installed extensions",
   "ext.open": "Open",
   "ext.openNamed": "Open {name}",
-  "ext.details": "Package details and permissions",
+  "ext.details": "About and permissions",
+  "ext.actionsFor": "More actions for {name}",
+  "ext.otherFeatures": "Other features",
+  "ext.permissionNeeded": "Permission needed",
+  "ext.advancedSettings": "Advanced settings",
+  "ext.advancedSettingsFor": "{name} · Advanced settings",
+  "ext.advancedSettingsHint":
+    "Manage this extension’s saved local data or service connections when needed.",
+  "ext.technicalInfo": "Technical information",
+  "ext.identifier": "Extension ID",
+  "ext.technicalCommands": "Function input and output formats",
+  "ext.features": "Features",
   "ext.appSessionHint":
     "Navigation in this window preserves progress. Export a session to restore it later with the same package version. Plugin private storage survives restarts; ending a session clears only its inputs, progress and results.",
   "ext.noPermissions":
-    "No required capabilities. Optional capabilities may be enabled separately.",
+    "No extra permissions are required. Optional access is your choice.",
   "ext.appLoad": "Load app",
   "ext.appWorking": "Working…",
   "ext.appStatus": "Execution status",
@@ -109,21 +141,24 @@ export const enExtensions = {
     "Correct this field's value before running the extension.",
   "nav.extensions": "Extensions",
   "catalog.extensions":
-    "Install Extism Wasm plugins with explicit text, file and network data access. Develop in Rust, JavaScript or TypeScript.",
+    "Add tools and apps, and choose what data and features each plugin can access.",
   "ext.title": "Extensions",
   "ext.description": "Find and manage plugins, then open your tools and apps.",
   "ext.dataBoundary": "Permissions and data",
   "ext.boundary":
-    "Plugins run in Wasm. You control required and optional capabilities; file access uses selected resources, networking is restricted to declared origins and methods, and private storage is isolated per plugin.",
+    "Review and manage each plugin's permissions. Plugins receive only files you confirm, connect only to declared services, and keep their local data separate from other plugins.",
   "ext.installFile": "Choose extension package",
+  "ext.installLocal": "Install a local extension",
+  "ext.openPackageFile": "Open file",
+  "ext.selectedPackageFile": "{name}; choose another file",
   "ext.packageHint":
     "Choose a .starter-extension.json package, up to 24 MiB. Review permissions, then install and enable. Preview, installation and enabling do not execute plugin code.",
-  "ext.docs": "Extension development and packaging",
+  "ext.docs": "Developer docs",
   "ext.host": "Runtime",
   "ext.empty":
-    "No extensions installed. Restore the bundled workbench or import a package built with an Extism PDK.",
+    "No extensions installed. Restore the bundled workbench or install a file from a source you trust.",
   "ext.review": "Review extension package",
-  "ext.author": "Declared author (not signature verified)",
+  "ext.author": "Author (self-reported)",
   "ext.version": "Version",
   "ext.permissions": "Declared capabilities and host data access",
   "ext.hash": "Wasm module SHA-256",
@@ -142,13 +177,13 @@ export const enExtensions = {
   "ext.disabled": "Disabled",
   "ext.enableTitle": "Confirm trust and capabilities",
   "ext.trust":
-    "I consent to sharing authorized data with this plugin and understand that its author has not been authenticated by a signature.",
+    "I trust this extension’s source and agree to share the content I authorize. I understand that its author identity has not been verified.",
   "ext.grantHint":
-    "Approve required capabilities and choose any optional capabilities. Offline commands remain available when optional network access is declined. You can change grants later.",
+    "Review the permissions this extension needs, then choose what you want to allow. You can change permissions later in More actions.",
   "ext.permission.files:read":
-    "Files: receive the contents of files you explicitly select and share, including binary files",
+    "Read files you share: receive only the contents of files you explicitly select and share.",
   "ext.permission.network:https":
-    "HTTPS: call declared public origins and HTTP methods",
+    "Access specified online services: get or send data using the internet services declared by this extension.",
   "ext.allowedHosts": "Declared network origins and methods",
   "ext.uninstall": "Uninstall",
   "ext.uninstallTitle": "Uninstall this extension?",
@@ -161,6 +196,8 @@ export const enExtensions = {
   "ext.choose": "Select an extension command",
   "ext.noEnabled": "Install and enable an extension first.",
   "ext.input": "Input text",
+  "ext.inputTooLong":
+    "Text exceeds 1 MiB in UTF-8. Remove some content to continue.",
   "ext.inputHint":
     "Up to 1 MiB UTF-8, passed as data to the selected Wasm export.",
   "ext.files": "Choose files for this run",
@@ -215,7 +252,7 @@ export const enExtensions = {
   "ext.resultFormat": "Result format",
   "ext.commands": "Extension commands",
   "ext.permission.text:read":
-    "Text: receive the text explicitly submitted for this run",
+    "Read text you share: receive text you enter and submit for this operation.",
   "ext.bundledHint":
     "Local Workbench comes installed. Enable it to open from the sidebar or in a native window. Uninstalling it is permanent until you install it again.",
   "ext.hostData": "Host data · explicit transfer",
@@ -231,17 +268,23 @@ export const enExtensions = {
     "This extension is disabled, uninstalled, or this app command no longer exists. Check its status in the extension center.",
   "ext.restoreLab": "Restore bundled workbench",
   "ext.minHostVersion": "Minimum host version",
-  "ext.requiredPermissions": "Required capabilities",
-  "ext.optionalPermissions": "Optional capabilities",
-  "ext.selectAllOptionalPermissions": "Select all optional capabilities",
+  "ext.requiredPermissions": "Permissions needed to use this extension",
+  "ext.optionalPermissions": "You can choose to allow",
+  "ext.optionalPermissionsHint":
+    "Enable only what you need. Related features stay unavailable without permission, and you can change this later.",
+  "ext.selectAllOptionalPermissions": "Allow all optional permissions",
+  "ext.permissionAllowed": "Allowed",
+  "ext.permissionNotAllowed": "Not allowed",
+  "ext.permissionScopeHint":
+    "Permissions apply to the whole extension. With internet access, it can send content you share to services it is allowed to use.",
   "ext.managePermissions": "Manage permissions",
   "ext.savePermissions": "Save permissions",
   "ext.limitedCommands":
-    "{available} of {total} commands available with current grants.",
+    "{available} of {total} features are available with current permissions.",
   "ext.permission.network:local":
-    "Local network: call explicitly declared loopback or private network services",
+    "Connect to services on this computer: access specified services running here, excluding other devices on your local network.",
   "ext.permission.storage":
-    "Private storage: persist plugin data across restarts",
+    "Save extension data on this computer: keep data across restarts. It is not encrypted and is kept when the extension is uninstalled.",
   "ext.queueSummary": "{count} queued or running operations",
   "ext.queued": "Queued, waiting for a runtime slot…",
   "ext.storage": "Plugin private storage",
@@ -260,6 +303,11 @@ export const enExtensions = {
   "ext.saveCredential": "Save credential",
   "ext.deleteCredential": "Delete credential",
   "ext.deleteCredentialNamed": "Delete credential {alias}",
+  "ext.deleteCredentialHint":
+    "Delete credential {alias} for {origin}? It cannot be recovered here. Enter it again if the extension needs it later.",
+  "ext.disabledPermissionsHint":
+    "Disabled extensions have no active permissions. Enable this extension explicitly before changing its grants.",
+  "ext.viewPermissions": "View permissions",
   "ext.rollback": "Restore version {version}",
   "ext.rollbackTitle": "Restore the previous package?",
   "ext.rollbackHint":
@@ -278,19 +326,27 @@ export const enExtensions = {
   "ext.switchCommand": "Switch command",
   "ext.switchCommandHint":
     "Discard the current command’s unexported inputs and result? Export the session first to keep them.",
-  "ext.source": "Package source",
-  "ext.source.market": "Verified market package (catalog signature)",
-  "ext.source.bundled": "Bundled with the host app",
-  "ext.source.local": "Local package (source not authenticated)",
+  "ext.source": "Source",
+  "ext.source.market": "From the extension market",
+  "ext.source.bundled": "Included with the app",
+  "ext.source.local": "Installed from a file on this computer",
+  "ext.source.marketHint":
+    "Checked against the package published by the market. Author details are supplied by the publisher; this source check is not a safety guarantee.",
+  "ext.source.bundledHint":
+    "This extension comes with the app. Author details are self-reported; allow only the permissions you need.",
+  "ext.source.localHint":
+    "The file source and author identity have not been verified. Only use extensions you trust.",
   "ext.source.key": "Market signing key fingerprint:",
   "ext.permission.messaging:lan":
-    "LAN messaging: listen/connect to private addresses and store chat history (unencrypted)",
+    "Chat on your local network: start or connect manually to exchange text, images and files and save history. You choose files to send or save. Traffic is unencrypted and other users’ identities are not verified.",
   "ext.permission.wallpapers:manage":
-    "Gallery: import images and manage the local library and app background; does not include network access",
+    "Manage the gallery and app background: import, rename or delete local images and change this app’s background. This does not change your desktop wallpaper or include internet access.",
   "ext.permission.network:images":
-    "Public images: download, preview and save images from any public HTTPS source; request URLs can send data to that source",
+    "Download online images: download, preview or save images from any public HTTPS address. The image URL itself can also send information to the website.",
   "ext.permission.network:system-proxy":
-    "System proxy: let authorized public requests use system or environment proxies; proxies may be local or private, and the host cannot verify their final DNS destination",
+    "Use this computer’s proxy settings: route permitted online requests through a proxy. It may be local or on a private network; the app cannot verify its final destination.",
   "ext.permission.links:open":
-    "External links: open public HTTPS web pages in the default browser",
+    "Open web pages in your browser: allow the extension to open public HTTPS pages in your default browser.",
+  "ext.permission.window:control":
+    "Keep the extension window on top: read or change the always-on-top state of this extension’s own separate window.",
 } as const;

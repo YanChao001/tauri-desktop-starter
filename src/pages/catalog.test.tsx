@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { createTranslator } from "@/i18n/translate";
@@ -41,6 +47,10 @@ it.each(["en", "zh"] as const)(
     render(<Catalog />, {
       wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter>,
     });
+    expect(
+      screen.getByText(t("catalog.developerResources")).closest("details"),
+    ).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText(t("catalog.developerResources")));
     for (const [label, path] of [
       ["catalog.guide", "docs/development.md"],
       ["catalog.architecture", "docs/architecture.md"],
@@ -65,12 +75,18 @@ it.each(["en", "zh"] as const)(
 
 it.each(["en", "zh"] as const)(
   "%s 能力目录将混合示例按语言着色并保留完整源码",
-  (language) => {
+  async (language) => {
     locale.current = language;
     const t = createTranslator(language === "en" ? en : zhCN);
     render(<Catalog />, {
       wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter>,
     });
+    const resources = screen
+      .getByText(t("catalog.developerResources"))
+      .closest("details");
+    expect(resources).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText(t("catalog.developerResources")));
+    expect(resources).toHaveAttribute("open");
     for (const [label, grammar, source, keyword, name] of [
       ["catalog.rustExample", "rust", rustIpcExample, "pub", "lab_echo"],
       [
@@ -88,9 +104,15 @@ it.each(["en", "zh"] as const)(
         grammar,
       );
       expect(block.textContent).toBe(source);
-      expect(block.querySelector('[data-token="keyword"]')).toHaveTextContent(
-        keyword,
-      );
+      const expectKeyword = () =>
+        expect(block.querySelector('[data-token="keyword"]')).toHaveTextContent(
+          keyword,
+        );
+      if (grammar === "typescript") {
+        // 等待真实懒加载完成，不让首次语法模块冷加载耗时决定页面断言结果。
+        await act(async () => vi.dynamicImportSettled());
+      }
+      expectKeyword();
       expect(block.querySelector('[data-token="function"]')).toHaveTextContent(
         name,
       );

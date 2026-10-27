@@ -25,13 +25,6 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",
     {
-      "identifier": "http:default",
-      "allow": [
-        { "url": "https://httpbin.org/*" },
-        { "url": "https://jsonplaceholder.typicode.com/*" }
-      ]
-    },
-    {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "http://*" }, { "url": "https://*" }]
     }

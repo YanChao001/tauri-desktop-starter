@@ -136,7 +136,7 @@ test("invalid CLI arguments leave version files and CI outputs unchanged", (t) =
   ]) {
     const result = runVersion(root, args, { GITHUB_OUTPUT: output });
     assert.equal(result.status, 1, JSON.stringify(args));
-    assert.match(result.stderr, /用法/);
+    assert.match(result.stderr, /Usage/);
     assert.deepEqual(versionContents(root), before);
     assert.equal(readFileSync(output, "utf8"), "keep output\n");
   }
@@ -297,7 +297,7 @@ test("release validation rejects tag mismatches and drift in any manifest", (t) 
     const file = join(root, path);
     const previous = readFileSync(file, "utf8");
     writeFileSync(file, previous.replace('"1.0.0"', '"1.0.1"'));
-    assert.throws(() => checkVersions(root), /不一致/);
+    assert.throws(() => checkVersions(root), /does not match/);
     writeFileSync(file, previous);
   }
 });

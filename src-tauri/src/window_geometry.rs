@@ -463,13 +463,20 @@ impl Cache {
         }
     }
 
-    fn reset_saved(&mut self, default: impl Fn(&str) -> LogicalSize) {
+    fn reset_saved(&mut self, default: impl Fn(&str) -> Option<LogicalSize>) {
         // 同时重置未打开窗口的尺寸，防止下次创建窗口时重新载入旧值。
-        for (label, preferred) in &mut self.saved.windows {
-            *preferred = default(label);
-        }
+        self.saved.windows.retain(|label, preferred| {
+            if let Some(size) = default(label) {
+                *preferred = size;
+                true
+            } else {
+                false
+            }
+        });
         for label in self.legacy.keys() {
-            self.saved.windows.insert(label.clone(), default(label));
+            if let Some(size) = default(label) {
+                self.saved.windows.insert(label.clone(), size);
+            }
         }
         self.legacy.clear();
     }
@@ -541,6 +548,12 @@ fn window_error(error: tauri::Error) -> NativeError {
 
 fn configured(app: &tauri::AppHandle, label: &str) -> (LogicalSize, Limits) {
     let extension = label.starts_with("extension-");
+    let extension_size = extension
+        .then(|| {
+            app.try_state::<crate::extension_windows::ExtensionWindows>()
+                .and_then(|state| state.default_size(label))
+        })
+        .flatten();
     let config = app
         .config()
         .app
@@ -550,8 +563,14 @@ fn configured(app: &tauri::AppHandle, label: &str) -> (LogicalSize, Limits) {
         .or_else(|| app.config().app.windows.first());
     (
         LogicalSize {
-            width: config.map_or(1120.0, |config| config.width),
-            height: config.map_or(740.0, |config| config.height),
+            width: extension_size.map_or_else(
+                || config.map_or(1120.0, |config| config.width),
+                |size| f64::from(size.width),
+            ),
+            height: extension_size.map_or_else(
+                || config.map_or(740.0, |config| config.height),
+                |size| f64::from(size.height),
+            ),
         },
         Limits {
             min: LogicalSize {
@@ -787,7 +806,10 @@ pub fn reset(window: tauri::WebviewWindow, center: bool) -> NativeResult<WindowG
             apply_preferred(&native, &copy, default, center)?;
         }
         let mut cache = copy.cache.lock().map_err(|_| geometry_unavailable())?;
-        cache.reset_saved(|label| configured(&handle, label).0);
+        // 动态扩展未必在本次进程打开过；清除尺寸，让下次创建读取其当前清单默认。
+        cache.reset_saved(|label| {
+            (!label.starts_with("extension-")).then(|| configured(&handle, label).0)
+        });
         drop(cache);
         describe(&window.as_ref().window(), &copy)
     })?;
@@ -1936,29 +1958,37 @@ mod tests {
                 windows: HashMap::from([
                     ("main".into(), size(1400.0, 900.0)),
                     ("closed".into(), size(1600.0, 1000.0)),
+                    ("extension-game".into(), size(1500.0, 1100.0)),
                 ]),
             },
-            legacy: HashMap::from([(
-                "legacy".into(),
-                PluginWindowState {
-                    width: 2000,
-                    height: 1200,
-                    ..Default::default()
-                },
-            )]),
+            legacy: HashMap::from([
+                (
+                    "legacy".into(),
+                    PluginWindowState {
+                        width: 2000,
+                        height: 1200,
+                        ..Default::default()
+                    },
+                ),
+                ("extension-legacy".into(), PluginWindowState::default()),
+            ]),
             positions: HashMap::new(),
             entries: HashMap::new(),
         };
         cache.reset_saved(|label| {
-            if label == "closed" {
-                size(960.0, 640.0)
+            if label.starts_with("extension-") {
+                None
+            } else if label == "closed" {
+                Some(size(960.0, 640.0))
             } else {
-                size(1120.0, 740.0)
+                Some(size(1120.0, 740.0))
             }
         });
         assert_eq!(cache.saved.windows["main"], size(1120.0, 740.0));
         assert_eq!(cache.saved.windows["closed"], size(960.0, 640.0));
         assert_eq!(cache.saved.windows["legacy"], size(1120.0, 740.0));
+        assert!(!cache.saved.windows.contains_key("extension-game"));
+        assert!(!cache.saved.windows.contains_key("extension-legacy"));
         assert!(cache.legacy.is_empty());
     }
 }

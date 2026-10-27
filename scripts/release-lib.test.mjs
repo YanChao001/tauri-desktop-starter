@@ -26,14 +26,19 @@ test("one draft is created before builds and its ID is reused on reruns", () => 
   const options = {
     version: "1.2.3-beta.1+build",
     repository,
-    commit: "abc123",
+    commit: "a".repeat(40),
+    git: (args) =>
+      args[1] === "--is-shallow-repository"
+        ? "false"
+        : args[0] === "rev-parse"
+          ? "a".repeat(40)
+          : "",
   };
   const requests = [];
   let draft;
   const request = (args, body) => {
     requests.push(args);
     if (args[0].includes("/commits/")) return [[]];
-    if (args[0].endsWith("/generate-notes")) return { body: "首发" };
     if (!body) return [draft ? [draft] : []];
     assert.equal(body.target_commitish, options.commit);
     assert.equal(body.draft, true);
@@ -45,7 +50,7 @@ test("one draft is created before builds and its ID is reused on reruns", () => 
   draft.body = "人工补充的实际验收限制";
   assert.equal(ensureDraftRelease(options, request), 42);
   assert.equal(draft.body, "人工补充的实际验收限制");
-  assert.equal(requests.filter((args) => args.includes("POST")).length, 2);
+  assert.equal(requests.filter((args) => args.includes("POST")).length, 1);
 });
 
 test("duplicate, published or mismatched-source releases stop before builds or uploads", () => {

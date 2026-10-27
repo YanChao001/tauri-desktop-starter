@@ -5,8 +5,9 @@ const baseURL = "http://127.0.0.1:1435/desktop-demo/";
 export default defineConfig({
   testDir: "./e2e/browser",
   testMatch: "**/*.spec.ts",
+  // 不同文件并行执行；同一文件内的场景仍按顺序运行。
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   timeout: 30000,

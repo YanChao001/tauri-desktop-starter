@@ -35,6 +35,7 @@ declare global {
         errorAfterIdle?: boolean;
       };
       sessionViewValidationBoundaryMockCalls: number;
+      startupPreparationBoundaryMockCalls: number;
       permissionGrantBoundaryMock: boolean;
     };
   }
@@ -51,12 +52,16 @@ window.__extensionUiTest = {
   viewDelayMs: 0,
   transportTiming: { busyMs: 0, errorMs: 0 },
   sessionViewValidationBoundaryMockCalls: 0,
+  startupPreparationBoundaryMockCalls: 0,
   permissionGrantBoundaryMock: false,
 };
 const configuration = (await fetch(
   `/fixture/config?${new URLSearchParams({
     wallpaperPermissions:
       new URLSearchParams(location.search).get("wallpaperPermissions") ?? "all",
+    calculatorPermissions:
+      new URLSearchParams(location.search).get("calculatorPermissions") ??
+      "all",
   })}`,
 ).then((response) => response.json())) as { snapshot: ExtensionSnapshot };
 // A separate host-data dialog case grants only this declared optional permission.
@@ -91,7 +96,13 @@ export const extensionSnapshot = async () => {
     );
   return structuredClone(configuration.snapshot);
 };
+export const extensionRunStatus = async () =>
+  structuredClone(configuration.snapshot.runs);
 export const onExtensionsChanged = async () => () => {};
+// 此浏览器宿主替换启动编译 IPC；真实预编译由原生测试覆盖，不据此声明命中缓存。
+export const prepareEnabledExtensions = async () => {
+  window.__extensionUiTest.startupPreparationBoundaryMockCalls++;
+};
 export const getCurrentWindowLabel = async () => "fixture";
 export const isWindowMaximized = async () => false;
 export const onWindowResized = async () => () => {};
@@ -106,7 +117,7 @@ export const openExtensionCenter = async () => {
   window.__extensionUiTest.commands.push("open-extension-center");
 };
 export const extensionMarketSnapshot = async () => ({
-  hostVersion: "0.1.6",
+  hostVersion: "0.1.7",
   incompatibleEntries: [],
   catalog: {
     schemaVersion: 2,
@@ -225,6 +236,16 @@ export const requestExtensionService = (
     response: undefined as unknown,
   };
   window.__extensionUiTest.serviceCalls.push(call);
+  if (service === "window") {
+    call.completed = true;
+    return Promise.reject(
+      new NativeBridgeError({
+        code: "EXTENSION_UNAVAILABLE",
+        message: "Window services require a native extension window",
+        retryable: false,
+      }),
+    );
+  }
   return request<unknown>("service", {
     id,
     expectedSha256,

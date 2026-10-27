@@ -200,13 +200,16 @@ export function ExtensionRecovery({
           </p>
           <p className="text-sm text-muted-foreground">
             {t("ext.recovery.afterArchive")}
+            <span role="status" className="ml-2">
+              {reloading ? t("common.loading") : ""}
+            </span>
           </p>
-          <div
-            tabIndex={failure ? 0 : undefined}
-            className="h-24 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {failureMessage}
-            {failure ? (
+          {failure ? (
+            <div
+              tabIndex={0}
+              className="h-24 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {failureMessage}
               <Button
                 variant="outline"
                 size="sm"
@@ -215,10 +218,8 @@ export function ExtensionRecovery({
               >
                 {t("common.retry")}
               </Button>
-            ) : (
-              <p role="status">{reloading ? t("common.loading") : ""}</p>
-            )}
-          </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <>
@@ -271,6 +272,7 @@ export function ExtensionRecovery({
                 </DialogTrigger>
               ) : null}
               <DialogContent
+                closeLabel={t("common.close")}
                 onCloseAutoFocus={(event) => {
                   event.preventDefault();
                   const target =

@@ -1,4 +1,15 @@
-import type { ExtensionCommand, ExtensionInfo } from "@/lib/tauri";
+import type {
+  ExtensionCommand,
+  ExtensionInfo,
+  ExtensionView,
+} from "@/lib/tauri";
+
+export const EXTENSION_FIELD_BYTES = 64 * 1024;
+export function extensionFieldBytes(
+  field: ExtensionView["fields"][number],
+): number {
+  return field.maxBytes ?? EXTENSION_FIELD_BYTES;
+}
 
 /** Commands with optional capabilities stay unavailable until those grants exist. */
 export function canRunExtensionCommand(

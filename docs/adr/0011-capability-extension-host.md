@@ -1,6 +1,7 @@
 # 11. 通过能力宿主组合扩展贡献与受控效果
 
 - 状态：已采纳
+- 局部取代：仅由宿主绘制界面的限制被 [0012](./0012-extension-ui-surfaces.md) 取代；Wasm 运行时、能力授权、调度和市场信任决策继续生效。
 - 日期：2026-10-24
 - 决策者：仓库维护者（授权开发阶段重构）、编码智能体（实现自审）
 - 相关：[扩展指南](../extensions.md)、[0007](./0007-extism-extensions.md)、[0009](./0009-extension-surfaces.md)、[0010](./0010-curated-extension-market.md)

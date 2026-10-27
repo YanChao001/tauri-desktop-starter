@@ -14,6 +14,7 @@ mod blocking;
 mod commands;
 mod data_commands;
 mod database;
+mod demo_http;
 mod desktop;
 mod diagnostics;
 mod error;
@@ -36,6 +37,8 @@ mod extension_worker;
 pub mod extensions;
 mod file_commands;
 mod lifecycle;
+mod network;
+mod network_commands;
 mod recovery;
 mod redaction;
 mod storage;
@@ -114,6 +117,7 @@ pub fn run() {
     };
     let builder = tauri::Builder::default()
         .manage(desktop::DesktopState::default())
+        .manage(demo_http::DemoHttpState::default())
         .manage(extension_windows::ExtensionWindows::default())
         .manage(extensions::ui::ExtensionUiStore::default())
         .manage(lifecycle::LifecycleState::default())
@@ -278,6 +282,10 @@ pub fn run() {
                 workbench::handle_drop(window.app_handle(), window.label(), paths.clone());
             }
             if let tauri::WindowEvent::Destroyed = event {
+                window
+                    .app_handle()
+                    .state::<demo_http::DemoHttpState>()
+                    .cancel_window(window.label());
                 window
                     .app_handle()
                     .state::<extensions::ui::ExtensionUiStore>()

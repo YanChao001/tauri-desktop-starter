@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { isDeepStrictEqual } from "node:util";
 import { parse as parseToml } from "smol-toml";
-import { checkVersions } from "./version.mjs";
+import { checkVersionValues, checkVersions } from "./version.mjs";
 import { applyFileChanges, projectFile } from "./fs-utils.mjs";
 
 const FIELDS = new Set([
@@ -308,6 +309,181 @@ function html(value) {
     .replaceAll('"', "&quot;");
 }
 
+function nativeMetadata(config, file, current, next) {
+  if (config.productName === current.name) config.productName = next.name;
+  if (config.identifier === current.identifier)
+    config.identifier = next.identifier;
+  if (file === "tauri.conf.json") {
+    config.productName = next.name;
+    config.identifier = next.identifier;
+    config.bundle ??= {};
+    config.bundle.shortDescription = next.description;
+    config.bundle.publisher = next.author;
+    config.bundle.homepage = next.homepageUrl;
+    if (current.author !== next.author || !config.bundle.copyright)
+      config.bundle.copyright = `© ${new Date().getUTCFullYear()} ${next.author}`;
+  } else if (file === "tauri.e2e.conf.json") {
+    config.identifier = `${next.identifier}.e2e`;
+    config.productName = `${next.shortName} E2E`;
+  }
+  if (file === "tauri.conf.json" || config.plugins?.["deep-link"]?.desktop) {
+    config.plugins ??= {};
+    config.plugins["deep-link"] ??= {};
+    const desktop = config.plugins["deep-link"].desktop ?? {};
+    if (
+      !object(desktop) ||
+      (desktop.schemes !== undefined && !Array.isArray(desktop.schemes))
+    )
+      throw new Error("deep-link.desktop 必须使用含 schemes 数组的对象配置");
+    config.plugins["deep-link"].desktop = {
+      ...desktop,
+      schemes: [
+        ...new Set([
+          ...(desktop.schemes ?? []).map((scheme) =>
+            scheme === current.integration.deepLinkScheme
+              ? next.integration.deepLinkScheme
+              : scheme,
+          ),
+          next.integration.deepLinkScheme,
+        ]),
+      ],
+    };
+  }
+  if (file === "tauri.conf.json" || config.bundle?.fileAssociations) {
+    config.bundle ??= {};
+    const associations = config.bundle.fileAssociations ?? [];
+    const previous = associations.find((entry) =>
+      entry.ext?.includes(current.integration.fileExtension),
+    );
+    const association = {
+      ...previous,
+      ext: [
+        ...new Set([
+          ...(previous?.ext ?? []).map((extension) =>
+            extension === current.integration.fileExtension
+              ? next.integration.fileExtension
+              : extension,
+          ),
+          next.integration.fileExtension,
+        ]),
+      ],
+      name: `${next.name} Document`,
+      description: `UTF-8 ${next.name} document`,
+      role: "Editor",
+      mimeType: `application/x-${next.integration.fileExtension}`,
+    };
+    config.bundle.fileAssociations = previous
+      ? associations.map((entry) => (entry === previous ? association : entry))
+      : [...associations, association];
+  }
+  if (Array.isArray(config.app?.windows))
+    for (const window of config.app.windows)
+      if (window.label === "main") window.title = next.name;
+  return config;
+}
+
+function packageMetadata(pkg, next) {
+  pkg.name = next.packageName;
+  pkg.description = next.description;
+  pkg.author = next.author;
+  pkg.repository = { type: "git", url: next.repositoryUrl };
+  pkg.homepage = next.homepageUrl;
+  return pkg;
+}
+
+const ENTRY_POINTS = [
+  ["src-tauri/src/main.rs", "run"],
+  ["src-tauri/src/bin/export-bindings.rs", "bindings::export"],
+  ["src-tauri/src/bin/verify-updater.rs", "update_signature::verify_manifest"],
+];
+const nativeConfigs = (root) =>
+  readdirSync(join(root, "src-tauri")).filter((name) =>
+    /^tauri(?:\.[a-z0-9-]+)?\.conf\.json$/.test(name),
+  );
+
+/** 只比较解析后的配置值；不要求文件满足初始化重写器的文本格式。 */
+export function checkInitialization(root) {
+  root = realpathSync(root);
+  const read = (path) => readFileSync(projectFile(root, path), "utf8");
+  const brand = validateAppConfig(JSON.parse(read("app.config.json")));
+  const differences = [];
+  const compare = (path, actual, expected) => {
+    if (!isDeepStrictEqual(actual, expected)) differences.push(path);
+  };
+  const pkg = JSON.parse(read("package.json"));
+  compare("package.json", pkg, packageMetadata(structuredClone(pkg), brand));
+  const manifest = parseToml(read("src-tauri/Cargo.toml"));
+  const lock = parseToml(read("src-tauri/Cargo.lock"));
+  const own = (lock.package ?? []).filter(
+    (entry) =>
+      entry.name === manifest.package?.name && entry.source === undefined,
+  );
+  if (own.length !== 1) throw new Error("Cargo.lock 必须恰有一个本地应用包");
+  const nextLib = `${brand.packageName.replaceAll("-", "_")}_lib`;
+  compare(
+    "src-tauri/Cargo.toml",
+    {
+      name: manifest.package?.name,
+      description: manifest.package?.description,
+      authors: manifest.package?.authors,
+      library: manifest.lib?.name,
+    },
+    {
+      name: brand.packageName,
+      description: brand.description,
+      authors: [brand.author],
+      library: nextLib,
+    },
+  );
+  const configs = new Map(
+    nativeConfigs(root).map((file) => [
+      file,
+      JSON.parse(read(`src-tauri/${file}`)),
+    ]),
+  );
+  const config = configs.get("tauri.conf.json");
+  checkVersionValues(config, [
+    { path: "package.json", version: pkg.version },
+    { path: "src-tauri/tauri.conf.json", version: config.version },
+    { path: "src-tauri/Cargo.toml", version: manifest.package?.version },
+    { path: "src-tauri/Cargo.lock", version: own[0].version },
+  ]);
+  for (const [file, value] of configs)
+    compare(
+      `src-tauri/${file}`,
+      value,
+      nativeMetadata(structuredClone(value), file, brand, brand),
+    );
+  for (const [path, call] of ENTRY_POINTS) {
+    if (path !== "src-tauri/src/main.rs" && !existsSync(join(root, path)))
+      continue;
+    const reference = new RegExp(`\\b${nextLib}::${call}\\(`, "g");
+    if ([...read(path).matchAll(reference)].length !== 1)
+      differences.push(path);
+  }
+  const index = read("index.html");
+  const titles = [...index.matchAll(/<title>[\s\S]*?<\/title>/g)];
+  if (titles.length !== 1) throw new Error("index.html 必须恰有一个 title");
+  compare("index.html", titles[0][0], `<title>${html(brand.name)}</title>`);
+  for (const path of ["README.md", "README.en.md"]) {
+    if (!existsSync(join(root, path))) continue;
+    const content = read(path);
+    compare(
+      path,
+      content,
+      content.replace(/^# [^\r\n]+/, () => `# ${brand.name}`),
+    );
+  }
+  const signpath = ".signpath/artifact-configuration.xml";
+  if (existsSync(join(root, signpath))) {
+    const matches = [...read(signpath).matchAll(/\bproduct-name="[^"]*"/g)];
+    if (matches.length !== 1)
+      throw new Error("SignPath 配置必须恰有一个 product-name 限制");
+    compare(signpath, matches[0][0], `product-name="${html(brand.name)}"`);
+  }
+  return differences;
+}
+
 /** 先解析、校验所有目标，再生成有限位置的变更；不会全局替换源码。 */
 export function prepareInitialization(
   root,
@@ -383,12 +559,7 @@ export function prepareInitialization(
   });
   const outputs = new Map([["app.config.json", json(next)]]);
   const pkg = JSON.parse(read("package.json"));
-  pkg.name = next.packageName;
-  pkg.description = next.description;
-  pkg.author = next.author;
-  pkg.repository = { type: "git", url: next.repositoryUrl };
-  pkg.homepage = next.homepageUrl;
-  outputs.set("package.json", json(pkg, "package.json"));
+  outputs.set("package.json", json(packageMetadata(pkg, next), "package.json"));
   const manifest = read("src-tauri/Cargo.toml");
   parseToml(manifest);
   const packageSection = section(manifest, "package");
@@ -435,105 +606,19 @@ export function prepareInitialization(
     "src-tauri/Cargo.lock",
     lock.replace(own[0][0], replaceField(own[0][0], "name", next.packageName)),
   );
-  const main = read("src-tauri/src/main.rs");
-  const entry = new RegExp(`\\b${oldLib}::run\\(\\)`, "g");
-  if ([...main.matchAll(entry)].length !== 1)
-    throw new Error("main.rs 必须恰有一个当前库的 run() 入口");
-  outputs.set(
-    "src-tauri/src/main.rs",
-    main.replace(entry, `${nextLib}::run()`),
-  );
-  for (const [binPath, call] of [
-    ["src-tauri/src/bin/export-bindings.rs", "bindings::export"],
-    [
-      "src-tauri/src/bin/verify-updater.rs",
-      "update_signature::verify_manifest",
-    ],
-  ]) {
-    if (!existsSync(join(root, binPath))) continue;
-    const exporter = read(binPath);
+  for (const [path, call] of ENTRY_POINTS) {
+    if (path !== "src-tauri/src/main.rs" && !existsSync(join(root, path)))
+      continue;
+    const content = read(path);
     const reference = new RegExp(`\\b${oldLib}::${call}\\(`, "g");
-    if ([...exporter.matchAll(reference)].length !== 1)
-      throw new Error(`${binPath} 必须恰有一个当前库的 ${call}() 入口`);
-    outputs.set(binPath, exporter.replace(reference, `${nextLib}::${call}(`));
+    if ([...content.matchAll(reference)].length !== 1)
+      throw new Error(`${path} 必须恰有一个当前库的 ${call}() 入口`);
+    outputs.set(path, content.replace(reference, `${nextLib}::${call}(`));
   }
-  for (const file of readdirSync(join(root, "src-tauri")).filter((name) =>
-    /^tauri(?:\.[a-z0-9-]+)?\.conf\.json$/.test(name),
-  )) {
+  for (const file of nativeConfigs(root)) {
     const path = `src-tauri/${file}`;
     const config = JSON.parse(read(path));
-    if (config.productName === current.name) config.productName = next.name;
-    if (config.identifier === current.identifier)
-      config.identifier = next.identifier;
-    if (file === "tauri.conf.json") {
-      config.productName = next.name;
-      config.identifier = next.identifier;
-      config.bundle ??= {};
-      config.bundle.shortDescription = next.description;
-      config.bundle.publisher = next.author;
-      config.bundle.homepage = next.homepageUrl;
-      if (current.author !== next.author || !config.bundle.copyright)
-        config.bundle.copyright = `© ${new Date().getUTCFullYear()} ${next.author}`;
-    } else if (file === "tauri.e2e.conf.json") {
-      config.identifier = `${next.identifier}.e2e`;
-      config.productName = `${next.shortName} E2E`;
-    }
-    if (file === "tauri.conf.json" || config.plugins?.["deep-link"]?.desktop) {
-      config.plugins ??= {};
-      config.plugins["deep-link"] ??= {};
-      const desktop = config.plugins["deep-link"].desktop ?? {};
-      if (
-        !object(desktop) ||
-        (desktop.schemes !== undefined && !Array.isArray(desktop.schemes))
-      )
-        throw new Error("deep-link.desktop 必须使用含 schemes 数组的对象配置");
-      config.plugins["deep-link"].desktop = {
-        ...desktop,
-        schemes: [
-          ...new Set([
-            ...(desktop.schemes ?? []).map((scheme) =>
-              scheme === current.integration.deepLinkScheme
-                ? next.integration.deepLinkScheme
-                : scheme,
-            ),
-            next.integration.deepLinkScheme,
-          ]),
-        ],
-      };
-    }
-    if (file === "tauri.conf.json" || config.bundle?.fileAssociations) {
-      config.bundle ??= {};
-      const associations = config.bundle.fileAssociations ?? [];
-      const previous = associations.find((entry) =>
-        entry.ext?.includes(current.integration.fileExtension),
-      );
-      const association = {
-        ...previous,
-        ext: [
-          ...new Set([
-            ...(previous?.ext ?? []).map((extension) =>
-              extension === current.integration.fileExtension
-                ? next.integration.fileExtension
-                : extension,
-            ),
-            next.integration.fileExtension,
-          ]),
-        ],
-        name: `${next.name} Document`,
-        description: `UTF-8 ${next.name} document`,
-        role: "Editor",
-        mimeType: `application/x-${next.integration.fileExtension}`,
-      };
-      config.bundle.fileAssociations = previous
-        ? associations.map((entry) =>
-            entry === previous ? association : entry,
-          )
-        : [...associations, association];
-    }
-    if (Array.isArray(config.app?.windows))
-      for (const window of config.app.windows)
-        if (window.label === "main") window.title = next.name;
-    outputs.set(path, json(config));
+    outputs.set(path, json(nativeMetadata(config, file, current, next)));
   }
   const index = read("index.html");
   if ([...index.matchAll(/<title>[\s\S]*?<\/title>/g)].length !== 1)

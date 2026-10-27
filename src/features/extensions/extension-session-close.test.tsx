@@ -51,7 +51,6 @@ function renderClose(
         disabled={false}
         onSave={onSave}
         onClose={onClose}
-        showTrigger={false}
         returnFocusRef={returnFocusRef}
         {...props}
       />
@@ -128,36 +127,6 @@ it.each([
     expect(onClose).not.toHaveBeenCalled();
   },
 );
-
-it("prefers the external focus target when the original close button is also present", async () => {
-  const { tools } = renderClose({ dirty: true, showTrigger: true });
-  fireEvent.click(screen.getByRole("button", { name: "End session" }));
-
-  fireEvent.click(screen.getByRole("button", { name: /^Close$/ }));
-
-  await waitFor(() =>
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-  );
-  await waitFor(() => expect(tools).toHaveFocus());
-});
-
-it("retains the default close button and restores its focus without an external target", async () => {
-  render(
-    <ExtensionSessionClose
-      dirty
-      busy={false}
-      disabled={false}
-      onSave={vi.fn().mockResolvedValue(undefined)}
-      onClose={vi.fn().mockResolvedValue(undefined)}
-    />,
-  );
-  const trigger = screen.getByRole("button", { name: "End session" });
-  fireEvent.click(trigger);
-
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-  await waitFor(() => expect(trigger).toHaveFocus());
-});
 
 it("waits for the export before ending and ignores repeated requests while saving", async () => {
   const saving = deferred();

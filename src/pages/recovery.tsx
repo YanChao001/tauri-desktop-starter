@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { HelpTooltip } from "@/components/help-tooltip";
@@ -28,16 +29,36 @@ import {
   stageRecovery,
   relaunchApp,
   getDiagnosticsReport,
-  type BackupInfo,
+  isTauri,
   type BackupPreview,
 } from "@/lib/tauri";
 
-export default function Recovery() {
+function RecoveryRedirect() {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set("section", "recovery");
+  return <Navigate to={`/diagnostics?${params.toString()}`} replace />;
+}
+
+export function RecoveryContent({
+  standalone = false,
+}: {
+  standalone?: boolean;
+}) {
   const { t, language } = useI18n();
   const latest = useLatestTranslator();
   const load = useCallback(() => recoveryStatus(), []);
   const { data: status, error: statusError, reload } = useNativeResource(load);
-  const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const loadBackups = useCallback(
+    () => (status?.active ? listRecoveryBackups() : Promise.resolve(null)),
+    [status?.active],
+  );
+  const {
+    data: backups,
+    error: backupsError,
+    loading: backupsLoading,
+    reload: reloadBackups,
+  } = useNativeResource(loadBackups);
   const [preview, setPreview] = useState<BackupPreview | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [recoveryError, setRecoveryError] = useState<unknown>(null);
@@ -70,20 +91,6 @@ export default function Recovery() {
       mounted.current = false;
     };
   }, []);
-  useEffect(() => {
-    if (!status?.active) return;
-    let stopped = false;
-    void listRecoveryBackups()
-      .then((items) => {
-        if (!stopped) setBackups(items);
-      })
-      .catch((reason) => {
-        if (!stopped) reportError(reason);
-      });
-    return () => {
-      stopped = true;
-    };
-  }, [status?.active, reportError]);
   async function run(action: () => Promise<void>) {
     if (running.current) return;
     running.current = true;
@@ -98,18 +105,18 @@ export default function Recovery() {
       if (mounted.current) setBusy(false);
     }
   }
-  return (
-    <NativePage
-      title={t("recovery.title")}
-      description={t("recovery.description")}
-    >
+  if (standalone && (!isTauri() || (status && !status.active)))
+    return <RecoveryRedirect />;
+
+  const content = (
+    <>
       <ResourceError
         error={status ? null : statusError}
         retry={() => void reload()}
       />
       {status ? (
         <Card>
-          <CardContent className="space-y-4 pt-5">
+          <CardContent className="space-y-3">
             <h3 className="font-semibold">
               {t(status.active ? "recovery.isolated" : "recovery.healthy")}
             </h3>
@@ -151,27 +158,30 @@ export default function Recovery() {
                 {t("recovery.archive", { id: status.archiveId })}
               </p>
             ) : null}
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await copyText(
-                    JSON.stringify(await getDiagnosticsReport(), null, 2),
-                  );
-                  if (mounted.current) toast.success(latest("recovery.copied"));
-                })
-              }
-            >
-              {t("recovery.diagnostics")}
-            </Button>
+            {status.active ? (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await copyText(
+                      JSON.stringify(await getDiagnosticsReport(), null, 2),
+                    );
+                    if (mounted.current)
+                      toast.success(latest("recovery.copied"));
+                  })
+                }
+              >
+                {t("recovery.diagnostics")}
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
       {status?.active ? (
         <>
           <Card>
-            <CardContent className="space-y-4 pt-5">
+            <CardContent className="space-y-3">
               <h3 className="flex items-center gap-2 font-semibold">
                 {t("recovery.choose")}
                 <HelpTooltip
@@ -194,48 +204,79 @@ export default function Recovery() {
               >
                 {t("recovery.import")}
               </Button>
-              <ul className="max-h-72 space-y-2 overflow-y-auto">
-                {backups.map((backup) => (
-                  <li
-                    key={backup.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"
+              <div
+                className="min-h-20 space-y-2"
+                role="region"
+                aria-label={t("recovery.backups")}
+                aria-busy={backupsLoading || (!backups && !backupsError)}
+              >
+                <ResourceError
+                  error={backupsError}
+                  retry={() => void reloadBackups()}
+                />
+                {!backups && !backupsError ? (
+                  <p
+                    role="status"
+                    className="py-3 text-sm text-muted-foreground"
                   >
-                    <div className="min-w-0 text-sm">
-                      <p>
-                        {new Date(backup.createdAt).toLocaleString(
-                          language === "zh" ? "zh-CN" : "en",
-                        )}
-                      </p>
-                      <p className="text-xs break-all text-muted-foreground">
-                        {backup.id}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("data.backupCount", {
-                          notes: backup.notes,
-                          trashed: backup.trashed,
-                          drafts: backup.drafts,
-                        })}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || status.pending}
-                      onClick={() =>
-                        void run(async () => {
-                          const value = await previewRecoveryBackup(backup.id);
-                          if (mounted.current) {
-                            setPreview(value);
-                            setRecoveryError(null);
+                    {t("recovery.backupsLoading")}
+                  </p>
+                ) : backups?.length ? (
+                  <ul className="max-h-72 space-y-2 overflow-y-auto">
+                    {backups.map((backup) => (
+                      <li
+                        key={backup.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"
+                      >
+                        <div className="min-w-0 text-sm">
+                          <p>
+                            {new Date(backup.createdAt).toLocaleString(
+                              language === "zh" ? "zh-CN" : "en",
+                            )}
+                          </p>
+                          <p className="text-xs break-all text-muted-foreground">
+                            {backup.id}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {t("data.backupCount", {
+                              notes: backup.notes,
+                              trashed: backup.trashed,
+                              drafts: backup.drafts,
+                            })}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy || status.pending}
+                          onClick={() =>
+                            void run(async () => {
+                              const value = await previewRecoveryBackup(
+                                backup.id,
+                              );
+                              if (mounted.current) {
+                                setPreview(value);
+                                setRecoveryError(null);
+                              }
+                            })
                           }
-                        })
-                      }
-                    >
-                      {t("recovery.preview")}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+                        >
+                          {t("recovery.preview")}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : backups && !backupsError ? (
+                  <p className="py-3 text-sm text-muted-foreground">
+                    {t("recovery.backupsEmpty")}
+                  </p>
+                ) : null}
+                {backupsLoading && backups ? (
+                  <p role="status" className="sr-only">
+                    {t("recovery.backupsLoading")}
+                  </p>
+                ) : null}
+              </div>
               {preview ? (
                 <section
                   className="space-y-3 rounded-lg border p-3"
@@ -278,24 +319,30 @@ export default function Recovery() {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="space-y-4 pt-5">
-              <h3 className="flex items-center gap-2 font-semibold">
-                {t("recovery.schedule")}
-                <HelpTooltip
-                  label={`${t("recovery.schedule")} · ${t("title.help")}`}
+            <CardContent className="space-y-3">
+              <div className="flex min-h-6 min-w-0 items-center gap-3">
+                <h3 className="flex shrink-0 items-center gap-2 font-semibold">
+                  {t("recovery.schedule")}
+                  <HelpTooltip
+                    label={`${t("recovery.schedule")} · ${t("title.help")}`}
+                  >
+                    {t("recovery.scheduleHint")}
+                  </HelpTooltip>
+                </h3>
+                <p
+                  role="status"
+                  tabIndex={status.restored || status.pending ? 0 : undefined}
+                  className="h-5 min-w-0 flex-1 overflow-auto text-sm"
                 >
-                  {t("recovery.scheduleHint")}
-                </HelpTooltip>
-              </h3>
-              <div
-                role="status"
-                tabIndex={status.restored || status.pending ? 0 : undefined}
-                className="h-24 space-y-2 overflow-y-auto text-sm"
-              >
-                {status.restored ? (
-                  <p>{t("recovery.recordCount", { count: status.notes })}</p>
-                ) : null}
-                {status.pending ? <p>{t("recovery.pending")}</p> : null}
+                  {[
+                    status.restored
+                      ? t("recovery.recordCount", { count: status.notes })
+                      : null,
+                    status.pending ? t("recovery.pending") : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
               </div>
               <label className="flex items-start gap-3 text-sm">
                 <Checkbox
@@ -382,6 +429,20 @@ export default function Recovery() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </NativePage>
+    </>
   );
+  return standalone ? (
+    <NativePage
+      title={t("diagnostics.title")}
+      description={t("diagnostics.description")}
+    >
+      {content}
+    </NativePage>
+  ) : (
+    content
+  );
+}
+
+export default function Recovery() {
+  return <RecoveryContent standalone />;
 }

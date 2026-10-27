@@ -161,7 +161,13 @@ fn check_fixture(
                 }
             });
         }
-        let result = extension_runtime::run(module, &command.function, &input, stop);
+        let result = extension_runtime::run_with_budget(
+            module,
+            &command.function,
+            &input,
+            stop,
+            command.execution_budget,
+        );
         let _ = done.send(());
         result
     });

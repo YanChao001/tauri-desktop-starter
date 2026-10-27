@@ -62,6 +62,9 @@ export type AppNavigationItem = Pick<
 export function extensionPath(id: string, command: string, window = false) {
   return `${window ? "/extension-window" : "/extensions/app"}/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
 }
+function loadExtensionPage() {
+  return import("@/pages/extension-app");
+}
 export function extensionNavigation(
   items: readonly ExtensionInfo[],
   currentPath?: string,
@@ -91,6 +94,9 @@ export function extensionNavigation(
         icon: resolveExtensionIcon(manifest.icon),
         group: "extensions" as const,
         exact: true,
+        preload: () => {
+          void loadExtensionPage().catch(() => {});
+        },
       }));
   });
 }
@@ -130,10 +136,11 @@ export const APP_ROUTES: AppRoute[] = [
   },
   {
     path: "/recovery",
-    labelKey: "recovery.title",
+    labelKey: "nav.diagnostics",
     group: "system",
     icon: ActivityIcon,
     ...lazyPage(() => import("@/pages/recovery")),
+    hidden: true,
   },
   {
     path: "/workbench",
@@ -169,7 +176,7 @@ export const APP_ROUTES: AppRoute[] = [
     labelKey: "ext.title",
     group: "extensions",
     icon: PuzzleIcon,
-    ...lazyPage(() => import("@/pages/extension-app")),
+    ...lazyPage(loadExtensionPage),
     hidden: true,
   },
   {
@@ -213,10 +220,11 @@ export const APP_ROUTES: AppRoute[] = [
   },
   {
     path: "/desktop",
-    labelKey: "nav.desktop",
+    labelKey: "nav.settings",
     group: "capabilities",
     icon: MonitorIcon,
     ...lazyPage(() => import("@/pages/desktop")),
+    hidden: true,
   },
   {
     path: "/database",
@@ -242,10 +250,11 @@ export const APP_ROUTES: AppRoute[] = [
   },
   {
     path: "/updates",
-    labelKey: "nav.updates",
+    labelKey: "nav.settings",
     group: "system",
     icon: DownloadIcon,
     ...lazyPage(() => import("@/pages/updates")),
+    hidden: true,
   },
   {
     path: "/settings",

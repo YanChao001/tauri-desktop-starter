@@ -11,6 +11,8 @@ pub fn builder() -> Builder<tauri::Wry> {
             crate::file_commands::save_text_export,
             extension_commands::save_extension_session,
             extension_commands::extension_snapshot,
+            extension_commands::extension_run_status,
+            extension_commands::prepare_enabled_extensions,
             crate::extension_services::request_extension_service,
             extension_commands::preview_extension_archive,
             extension_commands::archive_legacy_extensions,
@@ -39,16 +41,16 @@ pub fn builder() -> Builder<tauri::Wry> {
             crate::extensions::ui::open_extension_ui,
             crate::extensions::ui::close_extension_ui,
             commands::greet,
+            crate::network_commands::request_demo_http,
+            crate::network_commands::cancel_demo_http,
             wallpaper_commands::list_wallpapers,
             wallpaper_commands::add_wallpaper,
             wallpaper_commands::rename_wallpaper,
             wallpaper_commands::remove_wallpaper,
             commands::load_settings_snapshot,
             commands::save_settings_snapshot,
-            commands::list_notes,
             commands::create_note,
             commands::update_note,
-            commands::delete_note,
             commands::open_secondary_window,
             commands::complete_frontend_startup,
             commands::get_window_geometry,
@@ -111,6 +113,8 @@ pub fn builder() -> Builder<tauri::Wry> {
         .typ::<crate::updater::UpdateProgress>()
         .typ::<crate::lifecycle::LifecycleRequest>()
         .typ::<crate::workbench::WorkbenchDrop>()
+        .typ::<crate::extension_windows::ExtensionWindowRequest>()
+        .typ::<crate::extension_windows::ExtensionWindowState>()
 }
 
 pub fn export(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {

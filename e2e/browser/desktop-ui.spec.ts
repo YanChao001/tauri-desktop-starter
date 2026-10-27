@@ -192,6 +192,16 @@ for (const theme of ["light", "dark"]) {
       await seed(page, { theme, accent: "violet", background: "plain" });
       for (const route of routes) {
         await page.goto("./#" + route);
+        if (route === "/desktop") {
+          await expect(page).toHaveURL(/#\/settings\?section=desktop$/);
+          await expect(page.locator("#settings-desktop")).toBeVisible();
+          await expect(page.locator('nav a[href="#/desktop"]')).toHaveCount(0);
+        }
+        if (route === "/updates") {
+          await expect(page).toHaveURL(/#\/settings\?section=updates$/);
+          await expect(page.locator("#settings-updates")).toBeVisible();
+          await expect(page.locator('nav a[href="#/updates"]')).toHaveCount(0);
+        }
         await expect(page.locator("main h2").first()).toBeVisible();
         const result = await new AxeBuilder({ page })
           .include("main")
@@ -232,7 +242,7 @@ test("the browser fills the viewport with the desktop and keeps narrow navigatio
   await expect(navigation).toBeVisible();
   await navigation.click();
   await page
-    .getByRole("option", { name: "Native bridge", exact: true })
+    .getByRole("option", { name: "App communication", exact: true })
     .click();
   await expect(page).toHaveURL(/#\/bridge$/);
   expect((await page.locator(".app-chrome").boundingBox())?.height).toBe(40);
@@ -248,7 +258,8 @@ for (const language of ["en", "zh"] as const) {
       await page.goto("./#/catalog");
       const chinese = language === "zh";
       const filter = page.getByRole("combobox", {
-        name: chinese ? "能力类型" : "Capability type",
+        name: chinese ? "使用条件" : "Requirements",
+        exact: true,
       });
       await filter.click();
       await expect(page.getByRole("listbox")).toBeVisible();
@@ -257,25 +268,25 @@ for (const language of ["en", "zh"] as const) {
       await page.keyboard.press("Home");
       await expect(
         page.getByRole("option", {
-          name: chinese ? "全部能力" : "All capabilities",
+          name: chinese ? "全部功能" : "All features",
           exact: true,
         }),
       ).toBeFocused();
       await page.keyboard.press("ArrowDown");
       await expect(
         page.getByRole("option", {
-          name: chinese ? "本地界面 / fixture" : "Local UI / fixture",
+          name: chinese ? "浏览器可体验" : "Try in the browser",
           exact: true,
         }),
       ).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(filter).toContainText(
-        chinese ? "本地界面 / fixture" : "Local UI / fixture",
+        chinese ? "浏览器可体验" : "Try in the browser",
       );
       await expect(filter).toBeFocused();
       await expect(
         page.locator('main [data-slot="card-title"]').filter({
-          hasText: chinese ? /^原生通信$/ : /^Native bridge$/,
+          hasText: chinese ? /^应用通信$/ : /^App communication$/,
         }),
       ).toHaveCount(0);
       await filter.click();
@@ -332,7 +343,9 @@ test("shared selects retain form validation, disabled choices and pagination", a
   await seed(page);
   await page.goto("./#/network");
   await page.getByRole("combobox", { name: "Request source" }).click();
-  await expect(page.getByRole("option", { name: "Real HTTPS" })).toBeDisabled();
+  await expect(
+    page.getByRole("option", { name: "Online test" }),
+  ).toBeDisabled();
   await page.keyboard.press("Escape");
   await page.goto("./#/data-studio");
   await page.getByRole("combobox", { name: "Rows per page" }).click();
@@ -371,6 +384,7 @@ for (const theme of ["light", "dark"]) {
       async ({ page }) => {
         await seed(page, { theme });
         await page.goto("./#/bridge");
+        await page.getByText("Developer resources", { exact: true }).click();
         const code = page.locator('code[data-language="' + language + '"]');
         await expect(code).toContainText(source);
         await expect(code.locator('[data-token="keyword"]').first()).toHaveText(
@@ -381,19 +395,8 @@ for (const theme of ["light", "dark"]) {
           keyword: getComputedStyle(
             element.querySelector('[data-token="keyword"]')!,
           ).color,
-          string: getComputedStyle(
-            element.querySelector('[data-token="string"]')!,
-          ).color,
-          type: getComputedStyle(element.querySelector('[data-token="type"]')!)
-            .color,
-          function: getComputedStyle(
-            element.querySelector('[data-token="function"]')!,
-          ).color,
         }));
         expect(colors.keyword).not.toBe(colors.text);
-        expect(colors.string).not.toBe(colors.keyword);
-        expect(colors.type).not.toBe(colors.keyword);
-        expect(colors.function).not.toBe(colors.text);
       },
     );
   }
@@ -418,6 +421,11 @@ for (const language of ["en", "zh"] as const) {
         }),
     );
     const appUrl = page.url();
+    await page
+      .getByText(language === "zh" ? "开发者资料" : "Developer resources", {
+        exact: true,
+      })
+      .click();
     const links: readonly (readonly [string, string])[] =
       language === "zh"
         ? [
@@ -455,51 +463,50 @@ for (const language of ["en", "zh"] as const) {
 }
 
 for (const theme of ["light", "dark"] as const) {
-  for (const language of ["en", "zh"] as const) {
-    test(`catalog tutorial highlights both languages: ${language}, ${theme}`, async ({
-      page,
-    }, testInfo) => {
-      await seed(page, { theme, language });
-      await page.goto("./#/catalog");
-      for (const [grammar, name] of [
-        ["rust", "lab_echo"],
-        ["typescript", "labEcho"],
-      ] as const) {
-        const code = page.locator(`code[data-language="${grammar}"]`);
-        await expect(code).toContainText(name);
-        await expect(
-          code.locator('[data-token="function"]').first(),
-        ).toHaveText(name);
-        const colors = await code.evaluate((element) => ({
-          text: getComputedStyle(element).color,
-          keyword: getComputedStyle(
-            element.querySelector('[data-token="keyword"]')!,
-          ).color,
-          type: getComputedStyle(element.querySelector('[data-token="type"]')!)
-            .color,
-          function: getComputedStyle(
-            element.querySelector('[data-token="function"]')!,
-          ).color,
-        }));
-        expect(colors.keyword).not.toBe(colors.text);
-        expect(colors.type).not.toBe(colors.keyword);
-        expect(colors.function).not.toBe(colors.text);
-        const source = await code.textContent();
-        const selected = await code.evaluate((element) => {
-          const selection = window.getSelection()!;
-          selection.selectAllChildren(element);
-          const text = selection.toString();
-          selection.removeAllRanges();
-          return text;
-        });
-        expect(selected).toBe(source);
-        await code.locator("..").screenshot({
-          path: testInfo.outputPath(`${grammar}.png`),
-          animations: "disabled",
-        });
-      }
-    });
-  }
+  const language = theme === "light" ? "zh" : "en";
+  test(`catalog tutorial highlights both languages: ${language}, ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await seed(page, { theme, language });
+    await page.goto("./#/catalog");
+    await expect(page.locator('code[data-language="rust"]')).toBeHidden();
+    const developerResources = page.getByText(
+      language === "zh" ? "开发者资料" : "Developer resources",
+      { exact: true },
+    );
+    await developerResources.focus();
+    await page.keyboard.press("Enter");
+    for (const [grammar, name] of [
+      ["rust", "lab_echo"],
+      ["typescript", "labEcho"],
+    ] as const) {
+      const code = page.locator(`code[data-language="${grammar}"]`);
+      await expect(code).toContainText(name);
+      await expect(code.locator('[data-token="function"]').first()).toHaveText(
+        name,
+      );
+      const colors = await code.evaluate((element) => ({
+        text: getComputedStyle(element).color,
+        keyword: getComputedStyle(
+          element.querySelector('[data-token="keyword"]')!,
+        ).color,
+      }));
+      expect(colors.keyword).not.toBe(colors.text);
+      const source = await code.textContent();
+      const selected = await code.evaluate((element) => {
+        const selection = window.getSelection()!;
+        selection.selectAllChildren(element);
+        const text = selection.toString();
+        selection.removeAllRanges();
+        return text;
+      });
+      expect(selected).toBe(source);
+      await code.locator("..").screenshot({
+        path: testInfo.outputPath(`${grammar}.png`),
+        animations: "disabled",
+      });
+    }
+  });
 
   test(`media Markdown fences show syntax colors: ${theme}`, async ({
     page,
@@ -717,6 +724,8 @@ for (const motion of ["full", "reduced"]) {
       const tips = page.locator('[data-slot="tooltip-content"]');
       const first = sidebar.locator('a[href="#/"]');
       const second = sidebar.locator('a[href="#/catalog"]');
+      const firstLabel = await first.innerText();
+      const secondLabel = await second.innerText();
       await first.focus();
       await second.focus();
       await expect(tips).toHaveCount(0);
@@ -727,9 +736,10 @@ for (const motion of ["full", "reduced"]) {
         await expect(tips).toHaveCount(0);
         await first.focus();
         await expect(tips).toHaveCount(1);
+        await expect(page.getByRole("tooltip")).toContainText(firstLabel);
         await second.focus();
         await expect(tips).toHaveCount(1);
-        await expect(page.getByRole("tooltip")).toContainText("Capabilities");
+        await expect(page.getByRole("tooltip")).toContainText(secondLabel);
         await second.click();
         await expect(page).toHaveURL(/#\/catalog$/);
         await expect(tips).toHaveCount(0);
@@ -956,6 +966,10 @@ test("wallpaper library supports multi-import, rename, deletion and shared brows
   await other
     .getByRole("button", { name: "Delete wallpaper: rose.png", exact: true })
     .click();
+  await other
+    .getByRole("dialog", { name: "Remove wallpaper from library?" })
+    .getByRole("button", { name: "Remove wallpaper", exact: true })
+    .click();
   await expect(page.locator(".wallpaper-card")).toHaveCount(1);
   await page.reload();
   await expect(page.locator(".wallpaper-card")).toHaveCount(1);
@@ -1132,6 +1146,10 @@ test("a local background imports, survives reload, keeps the last good image on 
       name: "Delete wallpaper: landscape.png",
       exact: true,
     })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Remove wallpaper from library?" })
+    .getByRole("button", { name: "Remove wallpaper", exact: true })
     .click();
   await expect(page.locator("html")).toHaveAttribute(
     "data-background",

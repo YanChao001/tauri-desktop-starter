@@ -357,6 +357,10 @@ fn response(status: u16, content_type: &str, body: String) -> tauri::http::Respo
         .expect("Static UI response headers")
 }
 
+fn sdk_initialization_script() -> String {
+    SDK.replacen("__STARTER_NATIVE_CONTEXT_MENU__", "true", 1)
+}
+
 pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     // Tauri documents main-frame-only initialization as unsupported on WebView2.
     // Use its supported custom transport hook to withhold the invoke key from all
@@ -369,7 +373,7 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
         .invoke_system(ipc)
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("extension-ui")
-                .js_init_script_on_all_frames(SDK)
+                .js_init_script_on_all_frames(sdk_initialization_script())
                 .build(),
         )
         .register_asynchronous_uri_scheme_protocol("extension-ui", |context, request, responder| {
@@ -399,6 +403,25 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_ui_initialization_enables_document_policy_before_the_bridge_url_guard() {
+        let marker = "__STARTER_NATIVE_CONTEXT_MENU__";
+        assert_eq!(SDK.matches(marker).count(), 1);
+        assert!(SDK.contains(
+            "const nativeContextMenu = \"__STARTER_NATIVE_CONTEXT_MENU__\" === \"true\";"
+        ));
+        let initialized = sdk_initialization_script();
+        assert!(!initialized.contains(marker));
+        assert!(initialized.contains("const nativeContextMenu = \"true\" === \"true\";"));
+        assert!(initialized.contains("if (window === window.top) return;"));
+        let policy = initialized.find("installDesktopContextMenu();").unwrap();
+        let bridge_guard = initialized
+            .find("location.protocol !== \"extension-ui:\"")
+            .unwrap();
+        assert!(policy < bridge_guard);
+        assert!(initialized.contains("location.hostname !== \"extension-ui.localhost\""));
+    }
+
     fn fixture() -> (tempfile::TempDir, ExtensionStore, ExtensionInfo, String) {
         let dir = crate::extension_paths::temporary_directory();
         let store = ExtensionStore::new(dir.path().join("extensions"), false);

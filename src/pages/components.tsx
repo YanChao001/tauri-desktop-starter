@@ -1,10 +1,5 @@
 import { useRef, useState } from "react";
-import {
-  BellRingIcon,
-  LayersIcon,
-  SlidersHorizontalIcon,
-  SparklesIcon,
-} from "lucide-react";
+import { BellRingIcon, LayersIcon, SlidersHorizontalIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProjectStudio } from "@/components/showcase/project-studio";
 import { FeedbackStudio } from "@/components/showcase/feedback-studio";
@@ -38,11 +33,7 @@ export default function Components() {
       data-active={active}
       data-reduced={reduced}
     >
-      <header className="playground-heading">
-        <p className="playground-eyebrow">
-          <SparklesIcon aria-hidden="true" />
-          {t("playground.eyebrow")}
-        </p>
+      <header className="studio-intro playground-heading">
         <h2>{t("playground.title")}</h2>
         <p>{t("playground.description")}</p>
       </header>

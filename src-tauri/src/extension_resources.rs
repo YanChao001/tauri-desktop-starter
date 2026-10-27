@@ -2,7 +2,7 @@
 use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult},
-    extension_network::{ExtensionNetworkMode, fetch_public_image},
+    extension_network::{ExtensionNetworkMode, fetch_public_image, resolve_network_mode},
     extension_services::ServicePermit,
     extensions::{ExtensionInfo, ExtensionPermission, valid_id},
 };
@@ -17,6 +17,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 pub(crate) const IMAGE_LIMIT: usize = 16 * 1024 * 1024;
@@ -50,7 +51,7 @@ enum Request {
     FetchImage {
         url: String,
         #[serde(default, rename = "networkMode")]
-        network_mode: ExtensionNetworkMode,
+        network_mode: Option<ExtensionNetworkMode>,
     },
     Preview {
         #[serde(rename = "resourceId")]
@@ -207,8 +208,11 @@ impl ResourceCache {
             .retain(|entry| !owners.contains(entry.owner.as_str()));
     }
 
-    fn retain_authorized(&mut self, items: &[ExtensionInfo]) {
+    fn retain_authorized(&mut self, id: &str, items: &[ExtensionInfo]) {
         self.entries.retain(|entry| {
+            if entry.identity.id != id {
+                return true;
+            }
             items.iter().any(|item| {
                 item.enabled
                     && item.package.manifest.id == entry.identity.id
@@ -256,18 +260,27 @@ fn image_capacity() -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
 }
 
 pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::DynamicImage> {
-    if bytes.is_empty() || bytes.len() > IMAGE_LIMIT {
-        return Err(invalid("图片必须非空且不超过 16 MiB"));
+    if bytes.is_empty() {
+        return Err(NativeError::new(
+            ErrorCode::ExtensionImageInvalid,
+            "图片内容为空",
+        ));
     }
-    let format = image::guess_format(bytes).map_err(|_| invalid("图片内容无效"))?;
+    if bytes.len() > IMAGE_LIMIT {
+        return Err(NativeError::new(
+            ErrorCode::ExtensionImageTooLarge,
+            "图片不超过 16 MiB",
+        ));
+    }
+    let format = image::guess_format(bytes).map_err(|_| image_decode_error("图片内容无效"))?;
     let expected = match format {
         ImageFormat::Jpeg => "image/jpeg",
         ImageFormat::Png => "image/png",
         ImageFormat::WebP => "image/webp",
-        _ => return Err(invalid("仅支持 JPEG、PNG 与 WebP 图片")),
+        _ => return Err(image_decode_error("仅支持 JPEG、PNG 与 WebP 图片")),
     };
     if !mime.is_empty() && mime != expected {
-        return Err(invalid("图片 MIME 与实际内容不一致"));
+        return Err(image_decode_error("图片 MIME 与实际内容不一致"));
     }
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
@@ -277,18 +290,38 @@ pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::Dyna
     metadata_reader.limits(limits.clone());
     let (width, height) = metadata_reader
         .into_dimensions()
-        .map_err(|_| invalid("无法在额度内读取图片尺寸"))?;
+        .map_err(|error| image_reader_error(error, "无法读取图片尺寸"))?;
     if width == 0
         || height == 0
         || width > 8192
         || height > 8192
         || u64::from(width) * u64::from(height) > MAX_PIXELS
     {
-        return Err(invalid("图片每边最多 8192 像素，总计最多 1600 万像素"));
+        return Err(NativeError::new(
+            ErrorCode::ExtensionImageTooLarge,
+            "图片每边最多 8192 像素，总计最多 1600 万像素",
+        ));
     }
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits);
-    reader.decode().map_err(|_| invalid("无法在额度内解码图片"))
+    reader
+        .decode()
+        .map_err(|error| image_reader_error(error, "无法解码图片"))
+}
+
+fn image_decode_error(message: &str) -> NativeError {
+    NativeError::new(ErrorCode::ExtensionImageInvalid, message)
+}
+
+fn image_reader_error(error: image::ImageError, message: &str) -> NativeError {
+    NativeError::new(
+        if matches!(error, image::ImageError::Limits(_)) {
+            ErrorCode::ExtensionImageTooLarge
+        } else {
+            ErrorCode::ExtensionImageInvalid
+        },
+        message,
+    )
 }
 
 /// 调用方已经持有处理名额时使用；本机文件和图库应调用有界入口。
@@ -385,10 +418,10 @@ fn save_name(resource: &Resource, name: Option<&str>) -> NativeResult<String> {
     if name.is_empty()
         || name.len() > 100
         || name.starts_with('.')
-        || name.ends_with('.')
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+        || name.ends_with(['.', ' '])
+        || name
+            .chars()
+            .any(|character| character.is_control() || r#"/\:<>"|?*"#.contains(character))
         || !suffixes.contains(&suffix.as_str())
         || [
             "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
@@ -397,7 +430,7 @@ fn save_name(resource: &Resource, name: Option<&str>) -> NativeResult<String> {
         .contains(&stem.as_str())
     {
         return Err(invalid(
-            "图片文件名最多 100 个 ASCII 字符，且后缀必须匹配图片格式",
+            "图片文件名最多 100 字节，不得包含路径或保留字符，且后缀必须匹配图片格式",
         ));
     }
     Ok(name.to_owned())
@@ -406,10 +439,11 @@ fn save_name(resource: &Resource, name: Option<&str>) -> NativeResult<String> {
 pub(crate) async fn request(
     app: tauri::AppHandle,
     owner: &str,
-    identity: ResourceIdentity,
+    item: ExtensionInfo,
     value: Value,
     permit: ServicePermit,
 ) -> NativeResult<Value> {
+    let identity = ResourceIdentity::from(&item);
     validate_owner(owner, &identity)?;
     if serde_json::to_vec(&value).map_or(true, |bytes| bytes.len() > 8192) {
         return Err(invalid("图片资源请求超过额度"));
@@ -419,6 +453,14 @@ pub(crate) async fn request(
     permit.check()?;
     match request {
         Request::FetchImage { url, network_mode } => {
+            let network_mode = resolve_network_mode(
+                &item.package.manifest,
+                &item.granted_permissions,
+                app.state::<crate::storage::SettingsStore>()
+                    .network_mode()?,
+                network_mode,
+                false,
+            )?;
             let capacity = image_capacity()?;
             let (bytes, mime) = fetch_public_image(&url, network_mode).await?;
             permit.check()?;
@@ -495,8 +537,8 @@ pub(crate) fn close_owners(owners: &[String]) -> NativeResult<()> {
     Ok(())
 }
 
-pub(crate) fn retain_authorized(items: &[ExtensionInfo]) -> NativeResult<()> {
-    lock_cache()?.retain_authorized(items);
+pub(crate) fn retain_authorized(id: &str, items: &[ExtensionInfo]) -> NativeResult<()> {
+    lock_cache()?.retain_authorized(id, items);
     Ok(())
 }
 
@@ -550,6 +592,7 @@ mod tests {
                         function: "main".into(),
                         input_format: ExtensionInputFormat::Json,
                         result_format: ExtensionResultFormat::View,
+                        execution_budget: Default::default(),
                         ui: None,
                         permissions: vec![ExtensionPermission::NetworkImages],
                     }],
@@ -665,7 +708,7 @@ mod tests {
                 5 => current.package.manifest.permissions.clear(),
                 _ => {}
             }
-            cache.retain_authorized(&[current]);
+            cache.retain_authorized("tests.images", &[current]);
             assert_eq!(cache.entries.len(), usize::from(mutate == 0));
         }
         let mut cache = ResourceCache::default();
@@ -675,7 +718,7 @@ mod tests {
                 now,
             )
             .unwrap();
-        cache.retain_authorized(&[]);
+        cache.retain_authorized("tests.images", &[]);
         assert!(cache.entries.is_empty());
     }
 
@@ -766,6 +809,100 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires explicitly supplied public image URLs and live network access"]
+    fn live_public_images_fetch_preview_and_release() {
+        #[derive(Clone, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Sample {
+            provider: String,
+            url: String,
+        }
+        let input = std::env::var_os("STARTER_IMAGE_TEST_INPUT")
+            .expect("set STARTER_IMAGE_TEST_INPUT to a JSON sample file");
+        let samples: Vec<Sample> = serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
+        assert!(!samples.is_empty() && samples.len() <= 48);
+        let mode = match std::env::var("STARTER_IMAGE_TEST_MODE").as_deref() {
+            Ok("system") => ExtensionNetworkMode::System,
+            Ok("direct") | Err(_) => ExtensionNetworkMode::Direct,
+            _ => panic!("STARTER_IMAGE_TEST_MODE must be direct or system"),
+        };
+        let cache = Arc::new(Mutex::new(ResourceCache::default()));
+        let failures = tauri::async_runtime::block_on(async {
+            let mut failures = 0;
+            for batch in samples.chunks(2) {
+                let mut tasks = Vec::new();
+                for sample in batch.iter().cloned() {
+                    let cache = cache.clone();
+                    tasks.push(tokio::spawn(async move {
+                        let origin = crate::extension_network::approved_public_url(&sample.url)
+                            .unwrap().origin().ascii_serialization();
+                        let started = Instant::now();
+                        let result = async {
+                            let capacity = image_capacity()?;
+                            let (bytes, mime) = fetch_public_image(&sample.url, mode).await?;
+                            blocking::run(move || {
+                                let _capacity = capacity;
+                                let resource = prepare_resource("live@1".into(), identity(), bytes, mime)?;
+                                let resource_id = resource.resource_id.clone();
+                                cache.lock().unwrap().insert(resource, Instant::now())?;
+                                let resource = cache.lock().unwrap().lookup("live@1", &identity(), &resource_id, Instant::now())?;
+                                let preview = render_image(&resource.bytes, &resource.mime, true);
+                                cache.lock().unwrap().release("live@1", &identity(), &resource_id, Instant::now())?;
+                                preview.map(|preview| (resource.bytes.len(), resource.width, resource.height, preview.len()))
+                            }).await
+                        }.await;
+                        match result {
+                            Ok((bytes, width, height, preview)) => {
+                                eprintln!("{} {origin} {mode:?}: {bytes} bytes {width}x{height}, {preview} preview bytes, {:?}", sample.provider, started.elapsed());
+                                false
+                            }
+                            Err(error) => {
+                                eprintln!("{} {origin} {mode:?}: {:?}, retryable={}, {}, {:?}", sample.provider, error.code, error.retryable, error.message, started.elapsed());
+                                true
+                            }
+                        }
+                    }));
+                }
+                for task in tasks {
+                    failures += usize::from(task.await.unwrap());
+                }
+            }
+            failures
+        });
+        assert!(cache.lock().unwrap().entries.is_empty());
+        assert_eq!(
+            failures, 0,
+            "live image samples failed; see per-origin result"
+        );
+    }
+
+    #[test]
+    fn image_validation_reports_content_and_quota_failures_separately() {
+        for (bytes, mime, code) in [
+            (Vec::new(), "image/png", ErrorCode::ExtensionImageInvalid),
+            (
+                b"broken".to_vec(),
+                "image/png",
+                ErrorCode::ExtensionImageInvalid,
+            ),
+            (png(2, 3), "image/jpeg", ErrorCode::ExtensionImageInvalid),
+            (png(8193, 1), "image/png", ErrorCode::ExtensionImageTooLarge),
+            (
+                png(4001, 4000),
+                "image/png",
+                ErrorCode::ExtensionImageTooLarge,
+            ),
+            (
+                vec![0; IMAGE_LIMIT + 1],
+                "image/png",
+                ErrorCode::ExtensionImageTooLarge,
+            ),
+        ] {
+            assert_eq!(decode_image(&bytes, mime).unwrap_err().code, code);
+        }
+    }
+
+    #[test]
     fn invalid_images_never_become_resources_and_previews_are_reencoded_within_budget() {
         let bytes = png(2, 3);
         for (bytes, mime) in [
@@ -824,6 +961,9 @@ mod tests {
             save_name(&entry, Some("sample-1.PNG")).unwrap(),
             "sample-1.PNG"
         );
+        for name in ["image file.png", "图片.png"] {
+            assert_eq!(save_name(&entry, Some(name)).unwrap(), name);
+        }
         for name in [
             "",
             "../image.png",
@@ -834,8 +974,7 @@ mod tests {
             "image.png.",
             "CON.png",
             "lpt9.png",
-            "image file.png",
-            "图片.png",
+            "image.png ",
             "image.png\0",
         ] {
             assert!(save_name(&entry, Some(name)).is_err(), "{name}");
@@ -848,7 +987,7 @@ mod tests {
         assert!(matches!(
             valid,
             Request::FetchImage {
-                network_mode: ExtensionNetworkMode::Direct,
+                network_mode: None,
                 ..
             }
         ));
@@ -861,6 +1000,20 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<Request>(request).is_err());
         }
+    }
+
+    #[test]
+    fn reconciling_one_extension_preserves_other_extensions_resources() {
+        let now = Instant::now();
+        let mut cache = ResourceCache::default();
+        let first = resource("main@1", 1, Arc::from([1_u8].as_slice()), now);
+        let mut second = resource("other@1", 2, Arc::from([2_u8].as_slice()), now);
+        second.identity.id = "tests.other".into();
+        cache.insert(first, now).unwrap();
+        cache.insert(second, now).unwrap();
+        cache.retain_authorized("tests.images", &[]);
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.entries[0].identity.id, "tests.other");
     }
 
     #[test]

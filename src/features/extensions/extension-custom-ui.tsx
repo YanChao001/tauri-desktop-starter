@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/providers/i18n";
 import { useSettings, type Motion } from "@/providers/settings";
 import { THEME_REVEAL_EVENT, type ThemeReveal } from "@/hooks/use-theme-switch";
@@ -17,6 +16,8 @@ import {
   ExtensionUiBridge,
   type ExtensionUiRequest,
 } from "./extension-ui-bridge";
+import { ExtensionLoading } from "./extension-loading";
+import { useExtensionActivity } from "./extension-activity";
 
 const TOKENS = [
   "--background",
@@ -39,6 +40,8 @@ const TOKENS = [
   "--destructive-foreground",
   "--ring",
   "--radius",
+  "--control-input-font-size",
+  "--control-input-line-height",
   "--chart-1",
   "--chart-2",
   "--chart-3",
@@ -82,6 +85,7 @@ export function ExtensionCustomUi({
   execute: (request: ExtensionUiRequest) => Promise<unknown>;
 }) {
   const { t, language } = useI18n();
+  const active = useExtensionActivity();
   const { resolvedTheme } = useTheme();
   const { settings } = useSettings();
   const grantsIdentity = [...item.grantedPermissions].sort().join(",");
@@ -101,11 +105,16 @@ export function ExtensionCustomUi({
   hasView.current = view !== null;
   const [palette, setPalette] = useState(0);
   useEffect(() => {
+    if (!active) return;
     let scheduled = 0;
-    const observer = new MutationObserver(() => {
+    const schedule = () => {
       cancelAnimationFrame(scheduled);
       scheduled = requestAnimationFrame(() => setPalette((value) => value + 1));
-    });
+    };
+    const observer = new MutationObserver(schedule);
+    // Match the host CSS breakpoint; resizing within a range does not resend the font payload.
+    const inputBreakpoint = window.matchMedia("(min-width: 48rem)");
+    inputBreakpoint.addEventListener("change", schedule);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: [
@@ -120,15 +129,26 @@ export function ExtensionCustomUi({
     });
     return () => {
       observer.disconnect();
+      inputBreakpoint.removeEventListener("change", schedule);
       cancelAnimationFrame(scheduled);
     };
-  }, []);
+  }, [active]);
   const [theme, setTheme] = useState(() => readTheme(settings.motion));
   // Synchronize external root attributes once per palette change, rather than on each field edit.
-  useLayoutEffect(
-    () => setTheme(readTheme(settings.motion)),
-    [palette, resolvedTheme, settings.motion],
-  );
+  useLayoutEffect(() => {
+    if (!active) return;
+    const next = readTheme(settings.motion);
+    // 回到缓存页面时重新读取外观；值未变则沿用引用，避免重新复制字体与主题。
+    setTheme((current) =>
+      current.mode === next.mode &&
+      current.motion === next.motion &&
+      Object.entries(next.tokens).every(
+        ([name, value]) => current.tokens[name] === value,
+      )
+        ? current
+        : next,
+    );
+  }, [active, palette, resolvedTheme, settings.motion]);
   const uiCheckpoint = useMemo(
     () => (checkpoint === null ? null : (JSON.parse(checkpoint) as unknown)),
     [checkpoint],
@@ -141,18 +161,30 @@ export function ExtensionCustomUi({
       checkpoint: uiCheckpoint,
       busy,
       dirty,
+      active,
       locale: language === "zh" ? "zh-CN" : "en",
       grantedPermissions: item.grantedPermissions,
       theme,
     },
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     bridge.current?.send(snapshot.current);
-  }, [view, fields, checkpoint, busy, dirty, language, theme, grantsIdentity]);
+  }, [
+    active,
+    view,
+    fields,
+    checkpoint,
+    busy,
+    dirty,
+    language,
+    theme,
+    grantsIdentity,
+  ]);
   useEffect(() => {
     const prepare = (event: Event) => {
       const detail = (event as CustomEvent<ThemeReveal>).detail;
-      if (!detail || !frame.current || settings.motion === "reduced") return;
+      if (!active || !detail || !frame.current || settings.motion === "reduced")
+        return;
       const rectangle = frame.current.getBoundingClientRect();
       bridge.current?.send({
         type: "theme-transition",
@@ -165,7 +197,7 @@ export function ExtensionCustomUi({
     };
     window.addEventListener(THEME_REVEAL_EVENT, prepare);
     return () => window.removeEventListener(THEME_REVEAL_EVENT, prepare);
-  }, [settings.motion]);
+  }, [active, settings.motion]);
   useEffect(() => {
     let disposed = false,
       token: string | undefined;
@@ -210,9 +242,6 @@ export function ExtensionCustomUi({
     if (!lease) return;
     let disposed = false,
       accepted = false;
-    const timer = window.setTimeout(() => {
-      if (!accepted) setError(new Error("Extension UI did not connect"));
-    }, 10000);
     const listener = (event: MessageEvent<unknown>) => {
       if (
         event.source !== frame.current?.contentWindow ||
@@ -231,7 +260,6 @@ export function ExtensionCustomUi({
       )
         return;
       if (data.type === "starter:failed") {
-        window.clearTimeout(timer);
         bridge.current?.close();
         setError(new Error("Extension UI could not initialize"));
         return;
@@ -243,7 +271,6 @@ export function ExtensionCustomUi({
       if (accepted) return;
       accepted = true;
       setHandshakeReady(true);
-      window.clearTimeout(timer);
       const channel = new MessageChannel();
       bridge.current = new ExtensionUiBridge(
         channel.port1,
@@ -262,7 +289,6 @@ export function ExtensionCustomUi({
     window.addEventListener("message", listener);
     return () => {
       disposed = true;
-      window.clearTimeout(timer);
       window.removeEventListener("message", listener);
       bridge.current?.close();
       bridge.current = null;
@@ -270,7 +296,13 @@ export function ExtensionCustomUi({
   }, [lease]);
   const initialViewReady = view !== null;
   useEffect(() => {
-    if (!lease || !handshakeReady || !initialViewReady || connected || error)
+    if (
+      !active ||
+      !lease ||
+      (handshakeReady && !initialViewReady) ||
+      connected ||
+      error
+    )
       return;
     let timer: number | undefined;
     const visible = () => {
@@ -289,15 +321,23 @@ export function ExtensionCustomUi({
         window.clearTimeout(timer);
         timer = undefined;
       } else if (timer === undefined) {
-        // This budget starts after Wasm supplied a view. Background/offscreen
-        // frames may suspend rAF; give them a fresh budget when visible again.
-        timer = window.setTimeout(() => {
-          timer = undefined;
-          if (visible()) {
-            bridge.current?.close();
-            setError(new Error("Extension UI did not finish initializing"));
-          }
-        }, 15000);
+        // 后台和缓存页面可能暂停文档初始化；重新可见时给握手 / 首绘完整预算。
+        timer = window.setTimeout(
+          () => {
+            timer = undefined;
+            if (visible()) {
+              bridge.current?.close();
+              setError(
+                new Error(
+                  handshakeReady
+                    ? "Extension UI did not finish initializing"
+                    : "Extension UI did not connect",
+                ),
+              );
+            }
+          },
+          handshakeReady ? 15000 : 10000,
+        );
       }
     };
     const observer =
@@ -312,8 +352,9 @@ export function ExtensionCustomUi({
       observer?.disconnect();
       document.removeEventListener("visibilitychange", check);
     };
-  }, [lease, handshakeReady, initialViewReady, connected, error]);
+  }, [active, lease, handshakeReady, initialViewReady, connected, error]);
   useLayoutEffect(() => {
+    if (!active) return;
     const node = frame.current;
     if (!node) return;
     const region = node.closest<HTMLElement>(".app-main");
@@ -358,11 +399,12 @@ export function ExtensionCustomUi({
       window.removeEventListener("resize", schedule);
       cancelAnimationFrame(scheduled);
     };
-  }, [lease, connected, error, palette]);
+  }, [active, lease, connected, error, palette]);
   return (
     <div
       data-extension-custom-ui
-      className={`relative min-w-0 bg-background${!lease && !error ? " min-h-64" : ""}`}
+      data-extension-active={active}
+      className="relative min-w-0 bg-background"
     >
       {error ? (
         <div role="alert" className="space-y-3 rounded-lg border p-4">
@@ -380,17 +422,16 @@ export function ExtensionCustomUi({
         </div>
       ) : null}
       {!error && !connected ? (
-        <div className="pointer-events-none absolute inset-0 z-10 space-y-5 bg-background p-4">
-          <p role="status" className="sr-only">
-            {t("common.loading")}
-          </p>
-          <div aria-hidden="true" className="space-y-5">
-            <Skeleton className="h-6 w-40" />
-            <div className="flex gap-2">
-              <Skeleton className="h-8 w-24" />
-              <Skeleton className="h-8 w-24" />
-            </div>
-            <Skeleton className="h-44 w-full" />
+        <div
+          data-extension-loading-layout
+          className={
+            lease
+              ? "pointer-events-none absolute inset-0 z-10 bg-background"
+              : "bg-background"
+          }
+        >
+          <div className="app-page-content">
+            <ExtensionLoading />
           </div>
         </div>
       ) : null}

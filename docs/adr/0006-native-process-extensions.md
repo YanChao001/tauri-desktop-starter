@@ -1,11 +1,11 @@
 # 6. 通过独立进程接入可安装原生扩展
 
-- 状态：被 0007 取代
+- 状态：被 [0007](./0007-extism-extensions.md) 取代
 - 日期：2026-10-23
 - 决策依据：用户明确选择允许 Rust / 系统命令以及按需开放文件、网络能力的原生方案
-- 相关：[原生扩展](../extensions.md)、[架构说明](../architecture.md)、[安全规范](../security.md)
+- 相关：[扩展指南](../extensions.md)、[架构说明](../architecture.md)、[安全规范](../security.md)
 
-本文保留未发布原生原型的历史决策；当前实现见 [ADR 0007](./0007-extism-extensions.md)。
+本文保留未发布原生原型的历史决策。Extism 替代方案见 [ADR 0007](./0007-extism-extensions.md)，后续能力宿主重构见 [ADR 0011](./0011-capability-extension-host.md)；当前契约由[扩展指南](../extensions.md)维护。
 
 ## 背景与影响
 

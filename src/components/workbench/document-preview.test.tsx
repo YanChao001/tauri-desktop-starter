@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DocumentPreview, MarkdownPreview } from "./document-preview";
 
@@ -25,17 +25,19 @@ describe("safe Markdown preview", () => {
   });
   it.each(["ts", "typescript", "TypeScript filename=bridge.ts"])(
     "%s 围栏复用 TypeScript 高亮",
-    (language) => {
+    async (language) => {
       const { container } = render(
         <MarkdownPreview
           content={"```" + language + "\nexport const ready = true;\n```"}
         />,
       );
-      expect(
-        container.querySelector(
-          'code[data-language="typescript"] [data-token="keyword"]',
-        ),
-      ).toHaveTextContent("export");
+      await waitFor(() =>
+        expect(
+          container.querySelector(
+            'code[data-language="typescript"] [data-token="keyword"]',
+          ),
+        ).toHaveTextContent("export"),
+      );
     },
   );
   it("带文件名的 rs 围栏按 Rust 高亮，保留换行与缩进", () => {
@@ -56,7 +58,7 @@ describe("safe Markdown preview", () => {
   });
   it.each(["bridge.ts", "bridge.MTS", "bridge.cts"])(
     "%s 文件使用 TypeScript 高亮",
-    (name) => {
+    async (name) => {
       const content = 'const message: string = "你好";';
       const { container } = render(
         <DocumentPreview
@@ -77,9 +79,11 @@ describe("safe Markdown preview", () => {
         container.querySelector('code[data-language="typescript"]')
           ?.textContent,
       ).toBe(content);
-      expect(
-        container.querySelector('[data-token="keyword"]'),
-      ).toHaveTextContent("const");
+      await waitFor(() =>
+        expect(
+          container.querySelector('[data-token="keyword"]'),
+        ).toHaveTextContent("const"),
+      );
     },
   );
   it(".rs 文件按 Rust 着色，预览保留完整文本", () => {

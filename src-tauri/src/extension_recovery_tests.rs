@@ -240,6 +240,8 @@ fn execution_pause_shutdown_and_startup_isolation_prevent_archive_mutation() {
         digest: digest(b"legacy module"),
         stop: stop.clone(),
         phase: ExtensionRunPhase::Running,
+        preparation: false,
+        background: false,
     });
     assert_eq!(
         store.archive_legacy(&fingerprint).unwrap_err().code,

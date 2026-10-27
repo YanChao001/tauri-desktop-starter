@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
+import { useExtensionActivity } from "./extension-activity";
 
 export type ExtensionSessionCloseHandle = {
   requestClose: () => void;
@@ -31,7 +32,6 @@ export function ExtensionSessionClose({
   onSave,
   onClose,
   ref,
-  showTrigger = true,
   returnFocusRef,
 }: {
   dirty: boolean;
@@ -40,25 +40,32 @@ export function ExtensionSessionClose({
   onSave: (signal: AbortSignal) => Promise<void>;
   onClose: (signal: AbortSignal) => Promise<void>;
   ref?: Ref<ExtensionSessionCloseHandle>;
-  showTrigger?: boolean;
-  returnFocusRef?: RefObject<HTMLButtonElement | null>;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useI18n();
+  const active = useExtensionActivity();
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const operation = useRef<AbortController | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
   const alive = useRef(false);
   const focusTrigger = useCallback(() => {
-    const target = [returnFocusRef?.current, trigger.current].find(
-      (button) => button && !button.disabled,
-    );
+    if (!active) return false;
+    const target = returnFocusRef.current;
+    if (target?.disabled) return false;
     target?.focus();
     return Boolean(target);
-  }, [returnFocusRef]);
+  }, [active, returnFocusRef]);
   useImperativeHandle(ref, () => ({ requestClose }));
+  useEffect(() => {
+    if (!active) {
+      operation.current?.abort();
+      setOpen(false);
+      setError(null);
+      restoreFocus.current = false;
+    }
+  }, [active]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -73,7 +80,7 @@ export function ExtensionSessionClose({
   }, [open, disabled, working, focusTrigger]);
 
   function requestClose() {
-    if (disabled || working || operation.current) return;
+    if (!active || disabled || working || operation.current) return;
     if (dirty || busy) setOpen(true);
     else void finish(false);
   }
@@ -107,62 +114,47 @@ export function ExtensionSessionClose({
     }
   }
   return (
-    <>
-      {showTrigger ? (
-        <Button
-          ref={trigger}
-          variant="outline"
-          disabled={disabled || working}
-          title={t("ext.appCloseHint")}
-          onClick={requestClose}
-        >
-          {t("ext.appClose")}
-        </Button>
-      ) : null}
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next) dismiss();
+    <Dialog
+      open={active && open}
+      onOpenChange={(next) => {
+        if (!next) dismiss();
+      }}
+    >
+      <DialogContent
+        closeLabel={t("common.close")}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          restoreFocus.current = !focusTrigger();
         }}
       >
-        <DialogContent
-          closeLabel={t("common.close")}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            restoreFocus.current = !focusTrigger();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{t("ext.appCloseTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("ext.appCloseDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          {error ? (
-            <p role="alert" className="sr-only">
-              {nativeErrorText(error, t)}
-            </p>
-          ) : null}
-          <DialogFooter className="sm:flex-wrap">
-            <Button variant="outline" onClick={dismiss}>
-              {t("ext.cancel")}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={disabled || working}
-              onClick={() => void finish(false)}
-            >
-              {t("ext.appDiscardClose")}
-            </Button>
-            <Button
-              disabled={disabled || working}
-              onClick={() => void finish(true)}
-            >
-              {t("ext.appSaveClose")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+        <DialogHeader>
+          <DialogTitle>{t("ext.appCloseTitle")}</DialogTitle>
+          <DialogDescription>{t("ext.appCloseDescription")}</DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <p role="alert" className="sr-only">
+            {nativeErrorText(error, t)}
+          </p>
+        ) : null}
+        <DialogFooter className="sm:flex-wrap">
+          <Button variant="outline" onClick={dismiss}>
+            {t("ext.cancel")}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={disabled || working}
+            onClick={() => void finish(false)}
+          >
+            {t("ext.appDiscardClose")}
+          </Button>
+          <Button
+            disabled={disabled || working}
+            onClick={() => void finish(true)}
+          >
+            {t("ext.appSaveClose")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -55,17 +55,19 @@ export function RouteErrorBoundary({
   children,
   onBack,
   backLabel = "common.backHome",
+  resetKey,
 }: {
   children: ReactNode;
   onBack?: () => void;
   backLabel?: MessageKey;
+  resetKey?: string;
 }) {
   const { key } = useLocation();
   const navigate = useNavigate();
   const { t } = useI18n();
   return (
     <PageBoundary
-      key={key}
+      key={resetKey ?? key}
       t={t}
       onBack={onBack ?? (() => navigate("/"))}
       backLabel={backLabel}

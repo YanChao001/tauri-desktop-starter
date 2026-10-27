@@ -161,11 +161,17 @@ function request(module, operation) {
   return { module: Buffer.from(module).toString("base64"), operation };
 }
 
-function run(module = ECHO, input = "Hello 世界", function_ = "run") {
+function run(
+  module = ECHO,
+  input = "Hello 世界",
+  function_ = "run",
+  executionBudget = "standard",
+) {
   return request(module, {
     action: "run",
     function: function_,
     input: Buffer.from(input).toString("base64"),
+    executionBudget,
   });
 }
 
@@ -193,6 +199,32 @@ await test("固定 worker 复用进程、隔离实例并承载完整 4 MiB 输�
   assert.equal((await session.exited()).code, 0);
 });
 
+await test("编译预热不执行初始化，后续调用仍使用隔离实例", async (t) => {
+  const session = worker();
+  t.after(() => session.close());
+  const initializer = `(module (func $init unreachable) (start $init)
+    (func (export "run") (result i32) (i32.const 0)))`;
+  session.send(request(initializer, { action: "prepare" }));
+  assert.deepEqual(await session.reply(), { Ok: "" });
+  session.send(run(initializer));
+  assert.match((await session.reply()).Err.message, /initialize/);
+
+  const counter = `(module (global $count (mut i32) (i32.const 0))
+    (func (export "run") (result i32)
+      (global.set $count (i32.add (global.get $count) (i32.const 1)))
+      (i32.sub (global.get $count) (i32.const 1))))`;
+  session.send(request(counter, { action: "prepare" }));
+  assert.deepEqual(await session.reply(), { Ok: "" });
+  for (let invocation = 0; invocation < 2; invocation += 1) {
+    session.send(run(counter, ""));
+    assert.deepEqual(await session.reply(), { Ok: "" });
+  }
+  session.send(request("not wasm", { action: "prepare" }));
+  assert.match((await session.reply()).Err.message, /compile/);
+  session.send(run());
+  assert.deepEqual(await session.reply(), { Ok: "Hello 世界" });
+});
+
 await test("预检不执行初始化，并提供脱敏的编译、导出及 fuel 诊断", async (t) => {
   const session = worker();
   t.after(() => session.close());
@@ -210,6 +242,30 @@ await test("预检不执行初始化，并提供脱敏的编译、导出及 fuel
     run(`(module (func (export "run") (result i32)
       (loop $spin (br $spin)) (i32.const 0)))`),
   );
+  assert.match((await session.reply()).Err.message, /fuel/);
+  session.send(run());
+  assert.deepEqual(await session.reply(), { Ok: "Hello 世界" });
+});
+
+await test("compute 预算支持有界重放，后续 standard 不继承放大的 fuel", async (t) => {
+  const session = worker();
+  t.after(() => session.close());
+  const module = `(module
+    (func (export "run") (result i32) (local $remaining i32)
+      (local.set $remaining (i32.const 20000000))
+      (loop $work
+        (local.set $remaining (i32.sub (local.get $remaining) (i32.const 1)))
+        (br_if $work (local.get $remaining)))
+      (i32.const 0)))`;
+  session.send(
+    request(module, { action: "prepare", executionBudget: "compute" }),
+  );
+  assert.deepEqual(await session.reply(), { Ok: "" });
+  session.send(run(module, ""));
+  assert.match((await session.reply()).Err.message, /fuel/);
+  session.send(run(module, "", "run", "compute"));
+  assert.deepEqual(await session.reply(), { Ok: "" });
+  session.send(run(module, ""));
   assert.match((await session.reply()).Err.message, /fuel/);
   session.send(run());
   assert.deepEqual(await session.reply(), { Ok: "Hello 世界" });
@@ -233,6 +289,17 @@ await test("异常、超长和未定义协议帧立即退出，不启动桌面�
     operation: { action: "shell", command: "never-run" },
   });
   assert.equal((await session.exited()).code, 2);
+  const unknownBudget = worker();
+  t.after(() => unknownBudget.close());
+  unknownBudget.send(
+    request(ECHO, {
+      action: "run",
+      function: "run",
+      input: "",
+      executionBudget: "unlimited",
+    }),
+  );
+  assert.equal((await unknownBudget.exited()).code, 2);
 });
 
 await test("父进程关闭输入管道时中止正在处理的模块", async (t) => {
@@ -254,8 +321,20 @@ await test("CLI 取消回收宿主 worker 并核验错误，不继承 WASI 输�
     );
     manifest.commands = [
       { ...manifest.commands[0], id: "run", function: "run" },
-      { ...manifest.commands[0], id: "spin", function: "spin" },
+      {
+        ...manifest.commands[0],
+        id: "warm-compute",
+        function: "run",
+        executionBudget: "compute",
+      },
+      {
+        ...manifest.commands[0],
+        id: "spin",
+        function: "spin",
+        executionBudget: "compute",
+      },
     ];
+    manifest.minHostVersion = "0.1.7";
     const manifestPath = join(directory, "extension.json");
     const modulePath = join(directory, "plugin.wasm");
     const fixturePath = join(directory, "fixture.json");
@@ -269,10 +348,13 @@ await test("CLI 取消回收宿主 worker 并核验错误，不继承 WASI 输�
       fixturePath,
       JSON.stringify([
         { command: "run", input: "before", expectOutput: "before" },
+        { command: "warm-compute", input: "ready", expectOutput: "ready" },
         {
           command: "spin",
           input: "",
-          cancelAfterMs: 1,
+          // Warm the exact compute variant before testing cancellation while
+          // its spin runs; a standard compilation has a different cache key.
+          cancelAfterMs: 150,
           expectError: "USER_CANCELLED",
         },
         { command: "run", input: "after", expectOutput: "after" },
@@ -314,10 +396,11 @@ await test("CLI 取消回收宿主 worker 并核验错误，不继承 WASI 输�
       }
     }
     const sequence = (await fixture()).smoke;
-    assert.equal(sequence.length, 3);
+    assert.equal(sequence.length, 4);
     assert.ok(sequence.every((result) => result.passed));
-    assert.equal(sequence[1].error.code, "USER_CANCELLED");
-    assert.equal(sequence[2].output, "after");
+    assert.equal(sequence[1].output, "ready");
+    assert.equal(sequence[2].error.code, "USER_CANCELLED");
+    assert.equal(sequence[3].output, "after");
     // fd_write 不能把 guest 输出注入 worker 的长度帧或 CLI JSON。
     manifest.commands.pop();
     await writeFile(manifestPath, JSON.stringify(manifest));

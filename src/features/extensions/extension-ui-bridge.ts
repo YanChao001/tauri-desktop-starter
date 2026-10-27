@@ -12,13 +12,18 @@ export type ExtensionUiRequest =
     }
   | {
       method: "service";
-      service: "lan" | "wallpaper" | "resources" | "links";
+      service: "lan" | "wallpaper" | "resources" | "links" | "window";
       request: Record<string, unknown>;
     };
 export const UI_CHECKPOINT_BYTES = 256 * 1024;
 export const UI_NOTIFICATION_BYTES = 2048;
+export const EXTENSION_MAX_FIELDS = 32;
 const MESSAGE_BYTES = 2 * 1024 * 1024;
 const STATE_BYTES = 12 * 1024 * 1024;
+const REQUESTS_PER_SECOND = 60;
+// A 24-image page uses fetch / preview / release, including fast cache hits.
+const REQUEST_BURST = 96;
+const OVERLOAD_TOLERANCE = 16;
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -33,7 +38,8 @@ function invalid(): never {
   });
 }
 function fields(value: unknown): Record<string, string> {
-  if (!record(value) || Object.keys(value).length > 24) invalid();
+  if (!record(value) || Object.keys(value).length > EXTENSION_MAX_FIELDS)
+    invalid();
   let bytes = 0;
   for (const [key, text] of Object.entries(value)) {
     if (
@@ -145,8 +151,20 @@ export function parseUiRequest(message: unknown): {
         (params.service !== "lan" &&
           params.service !== "wallpaper" &&
           params.service !== "resources" &&
-          params.service !== "links") ||
+          params.service !== "links" &&
+          params.service !== "window") ||
         !record(params.request)
+      )
+        invalid();
+      if (
+        params.service === "window" &&
+        !(
+          (params.request.action === "get-state" &&
+            keys(params.request, "action")) ||
+          (params.request.action === "set-always-on-top" &&
+            typeof params.request.enabled === "boolean" &&
+            keys(params.request, "action,enabled"))
+        )
       )
         invalid();
       request = {
@@ -166,9 +184,11 @@ export class ExtensionUiBridge {
   private closed = false;
   private lastId = 0;
   private inFlight = 0;
-  private tick = 0;
-  private count = 0;
+  private rateTick: number | undefined;
+  private requestTokens = REQUEST_BURST;
+  private consecutiveOverloads = 0;
   private pendingState: unknown = undefined;
+  private lastState: Record<string, unknown> | undefined;
   private stateScheduled = false;
   constructor(
     private port: MessagePort,
@@ -192,18 +212,39 @@ export class ExtensionUiBridge {
       )
         invalid();
       ({ id, request } = parseUiRequest(value));
-      const now = performance.now();
-      if (now - this.tick >= 1000) {
-        this.tick = now;
-        this.count = 0;
-      }
-      if (++this.count > 60 || id <= this.lastId || this.inFlight >= 4)
-        invalid();
+      if (id <= this.lastId) invalid();
       this.lastId = id;
     } catch {
       this.fail();
       return;
     }
+    const now = performance.now();
+    this.requestTokens = Math.min(
+      REQUEST_BURST,
+      this.requestTokens +
+        (Math.max(0, now - (this.rateTick ?? now)) * REQUESTS_PER_SECOND) /
+          1000,
+    );
+    this.rateTick = now;
+    const hasToken = this.requestTokens >= 1;
+    if (hasToken) this.requestTokens--;
+    if (!hasToken || this.inFlight >= 4) {
+      // A peer may back off after a busy receipt; an unbounded flood is revoked.
+      if (++this.consecutiveOverloads > OVERLOAD_TOLERANCE) {
+        this.fail();
+        return;
+      }
+      this.send({
+        id,
+        error: {
+          code: "EXTENSION_BUSY",
+          message: "Extension bridge is busy",
+          retryable: true,
+        },
+      });
+      return;
+    }
+    this.consecutiveOverloads = 0;
     this.inFlight++;
     try {
       const result = await this.execute(request);
@@ -240,7 +281,17 @@ export class ExtensionUiBridge {
     this.stateScheduled = false;
     const state = this.pendingState;
     this.pendingState = undefined;
-    if (state !== undefined) this.post(state);
+    if (record(state) && record(state.value)) {
+      // 按已发送快照比较，避免字段编辑反复编码和复制未变化的大视图与主题。
+      const previous = this.lastState;
+      const value = Object.fromEntries(
+        Object.entries(state.value).filter(
+          ([key, value]) => !previous || !Object.is(previous[key], value),
+        ),
+      );
+      this.lastState = state.value;
+      if (Object.keys(value).length) this.post({ ...state, value });
+    } else if (state !== undefined) this.post(state);
   }
   private post(value: unknown) {
     if (this.closed) return;
@@ -258,6 +309,7 @@ export class ExtensionUiBridge {
     this.port.postMessage({ type: "closed" });
     this.closed = true;
     this.pendingState = undefined;
+    this.lastState = undefined;
     this.port.onmessage = null;
     this.port.onmessageerror = null;
     this.port.close();

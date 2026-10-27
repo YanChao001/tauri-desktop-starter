@@ -4,7 +4,12 @@ use crate::extension_view::{ExtensionViewRequest, MAX_VIEW_STATE_BYTES};
 use serde_json::{Value, json};
 use std::fmt::Write;
 
-fn storage_run() -> (tempfile::TempDir, PreparedRun, ExtensionHostStore) {
+fn storage_run() -> (
+    tempfile::TempDir,
+    PreparedRun,
+    ExtensionHostStore,
+    crate::storage::SettingsStore,
+) {
     let temp = crate::extension_paths::temporary_directory();
     let store = ExtensionStore::new(temp.path().join("extensions"), false);
     store.initialize_bundled().unwrap();
@@ -31,7 +36,8 @@ fn storage_run() -> (tempfile::TempDir, PreparedRun, ExtensionHostStore) {
         false,
         "tests.effect-driver".into(),
     );
-    (temp, prepared, host)
+    let settings = crate::storage::SettingsStore::open(temp.path().join("settings.json")).unwrap();
+    (temp, prepared, host, settings)
 }
 fn request(action: Option<&str>, state: &str, fields: Value) -> Value {
     json!({"version":2,"action":action,"state":state,"fields":fields,"locale":"en","host":null,"results":[]})
@@ -92,7 +98,7 @@ fn fixed_views(first: &Value, second: &Value, first_request_bytes: usize) -> Vec
 #[test]
 fn real_lab_driver_finishes_storage_effects_and_persists_across_host_reopen() {
     tauri::async_runtime::block_on(async {
-        let (temp, prepared, host) = storage_run();
+        let (temp, prepared, host, settings) = storage_run();
         assert_eq!(prepared.grants, vec![ExtensionPermission::Storage]);
         let function = &prepared
             .package
@@ -104,8 +110,10 @@ fn real_lab_driver_finishes_storage_effects_and_persists_across_host_reopen() {
             .function;
         let initial = drive_view(
             &host,
+            &settings,
             &prepared,
             function,
+            ExtensionExecutionBudget::Standard,
             request(Some("tab-todo"), "", json!({})),
             "en",
         )
@@ -113,8 +121,10 @@ fn real_lab_driver_finishes_storage_effects_and_persists_across_host_reopen() {
         .unwrap();
         let completed = drive_view(
             &host,
+            &settings,
             &prepared,
             function,
+            ExtensionExecutionBudget::Standard,
             request(
                 Some("todo-add"),
                 &initial.state,
@@ -158,7 +168,7 @@ fn real_lab_driver_finishes_storage_effects_and_persists_across_host_reopen() {
 #[test]
 fn repeated_effect_in_a_later_batch_prevents_every_write_in_that_batch() {
     tauri::async_runtime::block_on(async {
-        let (_temp, mut prepared, host) = storage_run();
+        let (_temp, mut prepared, host, settings) = storage_run();
         let first = view("first complete", vec![storage_effect("old", 0, "old")]);
         let second = view(
             "second pending",
@@ -174,9 +184,17 @@ fn repeated_effect_in_a_later_batch_prevents_every_write_in_that_batch() {
         )
         .unwrap();
         prepared.module = fixed_views(&first, &second, encode(&initial).unwrap().len());
-        let error = drive_view(&host, &prepared, "fixture", initial, "en")
-            .await
-            .unwrap_err();
+        let error = drive_view(
+            &host,
+            &settings,
+            &prepared,
+            "fixture",
+            ExtensionExecutionBudget::Standard,
+            initial,
+            "en",
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error.code, ErrorCode::ExtensionRunFailed);
         let snapshot = host
             .storage_snapshot(&prepared.package.manifest.id)
@@ -193,7 +211,7 @@ fn repeated_effect_in_a_later_batch_prevents_every_write_in_that_batch() {
 #[test]
 fn escaped_state_and_fields_are_preflighted_before_the_first_effect_commits() {
     tauri::async_runtime::block_on(async {
-        let (_temp, mut prepared, host) = storage_run();
+        let (_temp, mut prepared, host, settings) = storage_run();
         let mut output = view(
             &"\u{1}".repeat(MAX_VIEW_STATE_BYTES),
             vec![
@@ -215,8 +233,10 @@ fn escaped_state_and_fields_are_preflighted_before_the_first_effect_commits() {
         prepared.module = fixed_views(&output, &output, MAX_VIEW_BYTES);
         let error = drive_view(
             &host,
+            &settings,
             &prepared,
             "fixture",
+            ExtensionExecutionBudget::Standard,
             request(None, "", json!({})),
             "en",
         )
@@ -233,7 +253,7 @@ fn escaped_state_and_fields_are_preflighted_before_the_first_effect_commits() {
 
 #[test]
 fn large_completed_http_receipt_is_explicit_and_preserves_other_results_and_context() {
-    let (_temp, prepared, host) = storage_run();
+    let (_temp, prepared, host, _settings) = storage_run();
     let mut output = view(
         &"\u{1}".repeat(MAX_VIEW_STATE_BYTES),
         vec![

@@ -91,8 +91,8 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
       external.push(request.url());
   });
   await page.goto("./#/network");
-  await page.getByRole("button", { name: "Run GET", exact: true }).click();
-  const result = page.getByRole("region", { name: "Validated response" });
+  await page.getByRole("button", { name: "Get content", exact: true }).click();
+  const result = page.getByRole("region", { name: "Returned content" });
   await expect(result).toContainText('"source": "fixture"');
   const json = result.locator('code[data-language="json"]');
   await expect(
@@ -102,29 +102,29 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
     json.locator('[data-token="string"]').filter({ hasText: /^"fixture"$/ }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Read cache / fetch", exact: true })
+    .getByRole("button", { name: "View or refresh result", exact: true })
     .click();
   await expect(
     page
       .locator("[data-sonner-toast]")
-      .filter({ hasText: "Used fresh cached data without a new request." }),
+      .filter({ hasText: "Showing the recent result without a new request." }),
   ).toBeVisible();
-  const message = page.getByRole("textbox", { name: "POST content" });
+  const message = page.getByRole("textbox", { name: "Content to send" });
   await message.fill("Keyboard fixture request");
   await message.press("Enter");
   await expect(result).toContainText("Keyboard fixture request");
   await page.getByRole("checkbox", { name: "Simulate offline" }).check();
   await expect(
-    page.getByRole("button", { name: "Run GET", exact: true }),
+    page.getByRole("button", { name: "Get content", exact: true }),
   ).toBeDisabled();
   await page
-    .getByRole("button", { name: "Read cache / fetch", exact: true })
+    .getByRole("button", { name: "View or refresh result", exact: true })
     .click();
   await expect(result).toContainText('"method": "GET"');
   await expect(
     page.locator("[data-sonner-toast]").filter({
       hasText:
-        "Read the last cached response offline. It may be stale; no request was made.",
+        "Showing the last result offline. It may be out of date; no request was made.",
     }),
   ).toBeVisible();
   expect(external).toEqual([]);
@@ -145,7 +145,7 @@ test("virtual scrolling reaches the last of 10,000 records with a bounded DOM an
   page,
 }) => {
   await page.goto("./#/data-studio");
-  await page.getByRole("checkbox", { name: "Virtual scrolling" }).check();
+  await page.getByRole("checkbox", { name: "Continuous scrolling" }).check();
   const table = page.getByRole("region", { name: "Demo records" });
   await expect(table.getByRole("table")).toHaveAttribute(
     "aria-rowcount",
@@ -192,7 +192,7 @@ test("records a reproducible production navigation and table performance sample"
         );
       }),
   );
-  await page.getByRole("checkbox", { name: "Virtual scrolling" }).check();
+  await page.getByRole("checkbox", { name: "Continuous scrolling" }).check();
   const scrollStart = await table.evaluate((element) => {
     const start = performance.now();
     element.scrollTop = element.scrollHeight;

@@ -36,6 +36,12 @@ import {
   SessionPanel,
 } from "@/features/network/session-panel";
 import { HelpTooltip } from "@/components/help-tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 function NetworkLab() {
   const { t } = useI18n();
@@ -179,22 +185,15 @@ function NetworkLab() {
     }
   }
   return (
-    <div className="studio-page space-y-5">
+    <div className="studio-page">
       <div className="studio-intro">
-        <span className="studio-eyebrow">{t("labs.eyebrow")}</span>
-        <h2 className="flex items-center gap-2">
-          {t("labs.network.title")}
-          <HelpTooltip
-            label={`${t("labs.network.title")} · ${t("title.help")}`}
-          >
-            {t("labs.network.description")}
-          </HelpTooltip>
-        </h2>
+        <h2>{t("labs.network.title")}</h2>
+        <p>{t("labs.network.description")}</p>
       </div>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            GET / POST
+            {t("labs.network.requests")}
             <HelpTooltip
               label={`${t("labs.network.mode")} · ${t("title.help")}`}
             >
@@ -206,8 +205,8 @@ function NetworkLab() {
             </HelpTooltip>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+        <CardContent className="@container/requests space-y-4">
+          <div className="grid gap-3 @min-[34rem]/requests:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="request-mode">{t("labs.network.mode")}</Label>
               <Select
@@ -277,7 +276,19 @@ function NetworkLab() {
                   mutation.reset();
                 }}
                 aria-invalid={!validTimeout}
+                aria-describedby={
+                  !validTimeout ? "request-timeout-error" : undefined
+                }
               />
+              {!validTimeout ? (
+                <p
+                  id="request-timeout-error"
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {t("labs.network.invalidTimeout")}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -308,18 +319,22 @@ function NetworkLab() {
             >
               {t("labs.network.get")}
             </Button>
-            <Button
-              variant="outline"
-              disabled={busy || !validTimeout || (offline && !query.data)}
-              onClick={() => void readCache()}
-            >
-              {t("labs.network.cache")}
-            </Button>
-            <HelpTooltip
-              label={`${t("labs.network.cache")} · ${t("title.help")}`}
-            >
-              {t("labs.network.cacheHint")}
-            </HelpTooltip>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={busy || !validTimeout || (offline && !query.data)}
+                    onClick={() => void readCache()}
+                  >
+                    {t("labs.network.cache")}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs">
+                  {t("labs.network.cacheHint")}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <Button
               variant="outline"
               disabled={!busy}
@@ -377,18 +392,20 @@ function NetworkLab() {
               {t("labs.network.post")}
             </Button>
           </form>
-          <p role="status" className="h-5 truncate text-sm">
-            {statusText}
-            {mutation.status === "idle" && query.failureCount > 0 ? (
-              <span className="ml-2 text-xs text-muted-foreground">
-                {t("labs.network.attempts", { count: query.failureCount })}
-              </span>
-            ) : null}
-          </p>
           <section aria-label={t("labs.network.response")}>
-            <h3 className="mb-2 text-sm font-medium">
-              {t("labs.network.response")}
-            </h3>
+            <div className="mb-2 flex h-6 min-w-0 items-center gap-3">
+              <h3 className="shrink-0 text-sm font-medium">
+                {t("labs.network.response")}
+              </h3>
+              <p role="status" className="min-w-0 flex-1 truncate text-xs">
+                {statusText}
+                {mutation.status === "idle" && query.failureCount > 0 ? (
+                  <span className="ml-2 text-muted-foreground">
+                    {t("labs.network.attempts", { count: query.failureCount })}
+                  </span>
+                ) : null}
+              </p>
+            </div>
             <CodeBlock
               code={JSON.stringify(
                 mutation.data ?? query.data ?? null,
@@ -401,7 +418,7 @@ function NetworkLab() {
           </section>
         </CardContent>
       </Card>
-      <div className="grid items-start gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] items-start gap-3">
         <SessionPanel />
         <CredentialPanel />
       </div>

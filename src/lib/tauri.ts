@@ -12,11 +12,13 @@ import type {
   ExtensionArchiveResult,
   ExtensionPreview,
   ExtensionRunInput,
+  ExtensionRunStatus,
   ExtensionSnapshot,
   ExtensionService,
   ExtensionView,
   ExtensionViewInput,
   MarketDownload,
+  MarketDownloadProgress,
   MarketSnapshot,
   MarketSource,
   NativeError as NativeFailure,
@@ -51,6 +53,7 @@ export type {
   MarketIncompatibleEntry,
   MarketSnapshot,
   MarketDownload,
+  MarketDownloadProgress,
   ExtensionCommand,
   ExtensionResultFormat,
   ExtensionPermission,
@@ -81,6 +84,12 @@ export type {
 export function extensionSnapshot(): Promise<ExtensionSnapshot> {
   return callNative((commands) => commands.extensionSnapshot());
 }
+export function extensionRunStatus(): Promise<ExtensionRunStatus[]> {
+  return callNative((commands) => commands.extensionRunStatus());
+}
+export async function prepareEnabledExtensions(): Promise<void> {
+  await callNative((commands) => commands.prepareEnabledExtensions());
+}
 export function previewExtensionArchive(): Promise<ExtensionArchivePreview> {
   return callNative((commands) => commands.previewExtensionArchive());
 }
@@ -96,13 +105,24 @@ export function extensionMarketSnapshot(
 ): Promise<MarketSnapshot> {
   return callNative((commands) => commands.extensionMarketSnapshot(refresh));
 }
-export function downloadMarketExtension(
+export async function downloadMarketExtension(
   id: string,
   expectedPackageSha256: string,
+  onProgress: (progress: MarketDownloadProgress) => void,
 ): Promise<MarketDownload> {
-  return callNative((commands) =>
-    commands.downloadMarketExtension(id, expectedPackageSha256),
-  );
+  return callNative(async (commands) => {
+    const { Channel } = await import("@tauri-apps/api/core");
+    const progress = new Channel<MarketDownloadProgress>(onProgress);
+    try {
+      return await commands.downloadMarketExtension(
+        id,
+        expectedPackageSha256,
+        progress,
+      );
+    } finally {
+      progress.onmessage = () => {};
+    }
+  });
 }
 export function previewExtension(content: string): Promise<ExtensionPreview> {
   return callNative((commands) => commands.previewExtension(content));
@@ -633,20 +653,12 @@ export function onUpdateProgress(
   return onNativeEvent("app://update-progress", handler);
 }
 
-export function listNotes(search = ""): Promise<Note[]> {
-  return callNative((commands) => commands.listNotes(search));
-}
-
 export function createNote(input: NoteInput): Promise<Note> {
   return callNative((commands) => commands.createNote(input));
 }
 
 export function updateNote(input: NoteUpdate): Promise<Note> {
   return callNative((commands) => commands.updateNote(input));
-}
-
-export async function deleteNote(id: number): Promise<void> {
-  await callNative((commands) => commands.deleteNote(id));
 }
 
 export async function openSecondaryWindow(): Promise<void> {
@@ -665,6 +677,12 @@ export function setAutostartEnabled(enabled: boolean): Promise<boolean> {
   return callNative((commands) => commands.setAutostartEnabled(enabled));
 }
 
+function diagnosticText(value: string, limit: number): string {
+  // encodeInto 的 read 以 UTF-16 计数，且不会在 UTF-8 字符中间截断。
+  const { read } = new TextEncoder().encodeInto(value, new Uint8Array(limit));
+  return value.slice(0, read);
+}
+
 export async function recordFrontendError(error: {
   message: string;
   stack?: string;
@@ -673,12 +691,10 @@ export async function recordFrontendError(error: {
   if (!isTauri()) return;
   await callNative((commands) =>
     commands.recordFrontendError({
-      message: Array.from(error.message).slice(0, 1000).join(""),
-      stack: error.stack
-        ? Array.from(error.stack).slice(0, 2000).join("")
-        : null,
+      message: diagnosticText(error.message, 4096),
+      stack: error.stack ? diagnosticText(error.stack, 8192) : null,
       componentStack: error.componentStack
-        ? Array.from(error.componentStack).slice(0, 2000).join("")
+        ? diagnosticText(error.componentStack, 8192)
         : null,
     }),
   );
@@ -1034,18 +1050,49 @@ export async function registerGlobalShortcut(
   return () => plugin.unregister(shortcut);
 }
 
-export type HttpDemoRequest = {
-  url: string;
-  method: "GET" | "POST";
-  headers?: Record<string, string>;
-  body?: string;
-  timeoutMs?: number;
-};
-export type HttpDemoResponse = {
-  status: number;
-  headers: Record<string, string>;
-  body: string;
-};
+export type HttpDemoRequest = import("./generated/bindings").HttpDemoRequest;
+export type HttpDemoResponse = import("./generated/bindings").HttpDemoResponse;
+
+async function desktopHttpRequest(
+  input: HttpDemoRequest,
+  signal: AbortSignal,
+): Promise<HttpDemoResponse> {
+  const { Channel } = await import("@tauri-apps/api/core");
+  signal.throwIfAborted();
+  const requestId = crypto.randomUUID();
+  let registered = false;
+  let cancellationSent = false;
+  const cancel = () => {
+    if (!registered || cancellationSent) return;
+    cancellationSent = true;
+    void callNative((commands) => commands.cancelDemoHttp(requestId)).catch(
+      console.error,
+    );
+  };
+  const onStarted = new Channel<null>(() => {
+    registered = true;
+    if (signal.aborted) cancel();
+  });
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    const response = await callNative((commands) => {
+      // 动态导入期间可能已取消；已发送请求则等原生注册 ACK 后再取消。
+      signal.throwIfAborted();
+      return commands.requestDemoHttp(requestId, input, onStarted);
+    });
+    signal.throwIfAborted();
+    return response;
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    if (error instanceof NativeBridgeError && error.code === "HTTP_TIMEOUT")
+      throw new DOMException(error.message, "TimeoutError");
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    onStarted.onmessage = () => {};
+  }
+}
+
 export async function nativeHttpRequest(
   input: HttpDemoRequest,
   signal?: AbortSignal,
@@ -1061,7 +1108,7 @@ export async function nativeHttpRequest(
     throw new Error("Choose one of the allowed HTTPS demo endpoints");
   if (
     !["GET", "POST"].includes(input.method) ||
-    (input.body?.length ?? 0) > 65536
+    new TextEncoder().encode(input.body ?? "").byteLength > 65536
   )
     throw new Error("Unsupported request method or body size");
   const controller = new AbortController();
@@ -1074,12 +1121,20 @@ export async function nativeHttpRequest(
     Math.min(30000, Math.max(100, input.timeoutMs ?? 10000)),
   );
   try {
-    const fetcher = isTauri()
-      ? (await import("@tauri-apps/plugin-http")).fetch
-      : window.fetch.bind(window);
-    const response = await fetcher(url.href, {
+    if (isTauri())
+      return await desktopHttpRequest(
+        {
+          ...input,
+          url: url.href,
+          timeoutMs: Math.trunc(
+            Math.min(30000, Math.max(100, input.timeoutMs ?? 10000)),
+          ),
+        },
+        controller.signal,
+      );
+    const response = await window.fetch(url.href, {
       method: input.method,
-      headers: input.headers,
+      headers: input.headers ?? undefined,
       body: input.method === "POST" ? input.body : undefined,
       signal: controller.signal,
       credentials: "omit",
@@ -1117,6 +1172,24 @@ export async function nativeHttpRequest(
   }
 }
 
+type WebSocketErrorCode =
+  | "WEBSOCKET_ENDPOINT"
+  | "WEBSOCKET_TIMEOUT"
+  | "WEBSOCKET_CONNECTION"
+  | "WEBSOCKET_SEND";
+
+/** 浏览器传输错误独立于 Rust IPC 错误契约。 */
+class WebSocketError extends Error {
+  constructor(
+    readonly code: WebSocketErrorCode,
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "WebSocketError";
+  }
+}
+
 /** WSS 使用标准 WebSocket，并由 CSP 限制端点；浏览器与桌面共享同一行为。 */
 export async function websocketConnect(
   url: string,
@@ -1134,13 +1207,23 @@ export async function websocketConnect(
     target.username ||
     target.password
   )
-    throw new Error("Choose the allowed WSS demo endpoint");
+    throw new WebSocketError(
+      "WEBSOCKET_ENDPOINT",
+      "Choose the allowed WSS demo endpoint",
+      false,
+    );
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(target.href);
     let opened = false;
     const timer = window.setTimeout(() => {
       socket.close();
-      reject(new Error("WebSocket connection timed out"));
+      reject(
+        new WebSocketError(
+          "WEBSOCKET_TIMEOUT",
+          "WebSocket connection timed out",
+          true,
+        ),
+      );
     }, 10000);
     socket.onmessage = (event) => {
       if (typeof event.data === "string" && event.data.length <= 65536)
@@ -1150,14 +1233,22 @@ export async function websocketConnect(
     socket.onerror = () => {
       clearTimeout(timer);
       reject(
-        new Error("WebSocket connection failed. Retry or use the local demo."),
+        new WebSocketError(
+          "WEBSOCKET_CONNECTION",
+          "WebSocket connection failed. Retry or use the local demo.",
+          true,
+        ),
       );
     };
     socket.onclose = () => {
       clearTimeout(timer);
       if (!opened)
         reject(
-          new Error("WebSocket closed before the connection was established"),
+          new WebSocketError(
+            "WEBSOCKET_CONNECTION",
+            "WebSocket closed before the connection was established",
+            true,
+          ),
         );
       onClose?.();
     };
@@ -1167,7 +1258,11 @@ export async function websocketConnect(
       resolve({
         send: async (text) => {
           if (socket.readyState !== WebSocket.OPEN || text.length > 65536)
-            throw new Error("Socket closed or message exceeds the demo limit");
+            throw new WebSocketError(
+              "WEBSOCKET_SEND",
+              "Socket closed or message exceeds the demo limit",
+              false,
+            );
           socket.send(text);
         },
         close: async () => {

@@ -2,6 +2,11 @@
   container-type: inline-size;
   min-width: 0;
 }
+.catalog-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0.75rem;
+}
 .experience-heading {
   display: flex;
   flex-wrap: wrap;
@@ -11,7 +16,6 @@
   margin-bottom: 1.2rem;
 }
 .experience-heading h3 {
-  margin-top: 0.45rem;
   font-size: clamp(1.25rem, 3cqi, 1.65rem);
   font-weight: 600;
   letter-spacing: -0.04em;
@@ -83,7 +87,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
 }
 .experience-route-bottom svg {
@@ -171,15 +175,17 @@
   min-width: 0;
   gap: 1.25rem;
 }
-.demo-page-tabs > [data-slot="tabs-list"] {
+.demo-page-tabs [data-slot="tabs-list"] {
   max-width: 100%;
   height: auto;
-  min-height: 2.5rem;
+  min-height: 2rem;
+  flex-shrink: 0;
   flex-wrap: wrap;
 }
 .demo-page-tabs [data-slot="tabs-trigger"] {
-  min-height: 2rem;
-  white-space: normal;
+  height: calc(2rem - 6px);
+  flex: none;
+  white-space: nowrap;
 }
 .demo-tab-panel[hidden] {
   display: none;
@@ -213,10 +219,11 @@
   font-weight: 500;
   line-height: 1.7;
 }
-.native-journey-preview {
+.studio-native-preview.native-journey-preview {
   container-type: inline-size;
   display: block;
   min-height: 0;
+  padding: 1.25rem;
 }
 .demo-resize-handle {
   position: relative;

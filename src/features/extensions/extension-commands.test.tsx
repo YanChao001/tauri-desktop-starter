@@ -20,6 +20,10 @@ vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   extensionSnapshot: vi.fn(),
   onExtensionsChanged: vi.fn(),
+  prepareEnabledExtensions: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/providers/i18n", () => ({
+  useI18n: () => ({ t: (key: string) => key }),
 }));
 const snapshot: ExtensionSnapshot = {
   revision: 1,

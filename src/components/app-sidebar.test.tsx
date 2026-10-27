@@ -104,6 +104,7 @@ describe("persisted application sidebar", () => {
   });
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
   it("preserves navigation layout classes through the Radix tooltip slot", () => {
@@ -181,16 +182,21 @@ describe("persisted application sidebar", () => {
     fireEvent.keyDown(separator, { key: "ArrowRight" });
     expect(separator).toHaveAttribute("aria-valuenow", "232");
     fireEvent.keyDown(separator, { key: "End" });
+    const write = vi.spyOn(Storage.prototype, "setItem");
     fireEvent.keyDown(separator, { key: "ArrowRight" });
+    expect(write).not.toHaveBeenCalled();
     expect(separator).toHaveAttribute("aria-valuenow", "360");
     fireEvent.keyDown(separator, { key: "Home" });
+    write.mockClear();
     fireEvent.keyDown(separator, { key: "ArrowLeft" });
+    expect(write).not.toHaveBeenCalled();
     expect(separator).toHaveAttribute("aria-valuenow", "180");
     fireEvent.keyDown(separator, { key: "Enter" });
     expect(separator).toHaveAttribute("aria-valuenow", "224");
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).sidebarWidth).toBe(
       224,
     );
+    write.mockRestore();
   });
   it("preloads the intended page on pointer entry and keyboard focus without navigating", () => {
     const preload = vi.fn();
@@ -278,7 +284,7 @@ describe("persisted application sidebar", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("marks active pointer resizing for immediate width updates and clears it after release", () => {
+  it("拖动仅预览宽度，释放后只持久化最终宽度，并处理取消和捕获丢失", () => {
     vi.stubGlobal(
       "PointerEvent",
       class extends MouseEvent {
@@ -290,6 +296,7 @@ describe("persisted application sidebar", () => {
       },
     );
     renderSidebar();
+    const write = vi.spyOn(Storage.prototype, "setItem");
     const sidebar = screen.getByRole("complementary");
     const separator = screen.getByRole("separator");
     separator.setPointerCapture = vi.fn();
@@ -299,9 +306,38 @@ describe("persisted application sidebar", () => {
     expect(sidebar).toHaveAttribute("data-resizing", "true");
     fireEvent.pointerMove(separator, { pointerId: 2, clientX: 264 });
     expect(sidebar).toHaveStyle({ width: "264px" });
+    fireEvent.pointerMove(separator, { pointerId: 2, clientX: 284 });
+    expect(sidebar).toHaveStyle({ width: "284px" });
+    expect(write).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).sidebarWidth).toBe(
+      224,
+    );
     fireEvent.pointerUp(separator, { pointerId: 2 });
     expect(sidebar).toHaveAttribute("data-resizing", "false");
     expect(separator.releasePointerCapture).toHaveBeenCalledWith(2);
+    expect(write).toHaveBeenCalledOnce();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).sidebarWidth).toBe(
+      284,
+    );
+
+    write.mockClear();
+    fireEvent.pointerDown(separator, { button: 0, pointerId: 3, clientX: 284 });
+    fireEvent.pointerMove(separator, { pointerId: 3, clientX: 344 });
+    expect(sidebar).toHaveStyle({ width: "344px" });
+    fireEvent.pointerCancel(separator, { pointerId: 3 });
+    expect(sidebar).toHaveStyle({ width: "284px" });
+    expect(write).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(separator, { button: 0, pointerId: 4, clientX: 284 });
+    fireEvent.pointerMove(separator, { pointerId: 4, clientX: 900 });
+    expect(sidebar).toHaveStyle({ width: "360px" });
+    fireEvent.lostPointerCapture(separator, { pointerId: 4 });
+    expect(sidebar).toHaveAttribute("data-resizing", "false");
+    expect(write).toHaveBeenCalledOnce();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).sidebarWidth).toBe(
+      360,
+    );
+    write.mockRestore();
   });
 
   it("keeps text in place for fading and exposes reduced-motion preference", () => {

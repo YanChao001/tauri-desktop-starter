@@ -169,7 +169,7 @@ test("sync rejects destination directory links outside the project", (t) => {
     join(root, "docs/assets"),
     process.platform === "win32" ? "junction" : "dir",
   );
-  assert.throws(() => updateReadmePreviews(root), /项目外文件/);
+  assert.throws(() => updateReadmePreviews(root), /files outside the project/);
   for (const [, name] of FILES)
     assert.deepEqual(readFileSync(join(outside, name)), OLD);
 });

@@ -5,10 +5,12 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   MemoryRouter,
+  Link,
   Outlet,
   Route,
   Routes,
@@ -29,6 +31,7 @@ vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
   isTauri: () => true,
   extensionSnapshot: vi.fn(),
+  prepareEnabledExtensions: vi.fn().mockResolvedValue(undefined),
   onExtensionsChanged: vi.fn(),
   viewExtension: vi.fn(),
   openExtensionWindow: vi.fn(),
@@ -150,6 +153,14 @@ function workspace(standalone = false) {
                   element={<ExtensionPage standalone={standalone} />}
                 />
                 <Route path="/settings" element={<h2>Other page</h2>} />
+                <Route
+                  path="/extensions"
+                  element={
+                    <Link to="/extensions/app/example.lab/open">
+                      Return to lab
+                    </Link>
+                  }
+                />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -164,13 +175,18 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   const link = screen.getByRole("link", { name: "Lab app" });
   expect(link).toHaveAttribute("aria-current", "page");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Draft"), {
+  const draft = await screen.findByLabelText("Draft");
+  fireEvent.change(draft, {
     target: { value: "Keep this edit" },
   });
   fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   await screen.findByRole("heading", { name: "Other page" });
+  expect(draft).toBeInTheDocument();
+  expect(draft).not.toBeVisible();
+  expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Lab app"]);
   fireEvent.click(link);
   expect(await screen.findByLabelText("Draft")).toHaveValue("Keep this edit");
+  expect(screen.getByLabelText("Draft")).toBe(draft);
   expect(native.viewExtension).toHaveBeenCalledOnce();
   expect(document.querySelector(".app-route-context")).toBeNull();
   expect(document.querySelector("[data-extension-surface] header")).toBeNull();
@@ -316,4 +332,105 @@ it("keeps an edited session mounted and exportable when a snapshot refresh fails
   );
   expect(screen.getByLabelText("Draft")).toBe(draft);
   expect(native.viewExtension).toHaveBeenCalledOnce();
+});
+
+it("retains the draft after standalone close fails and retries only after another explicit decision", async () => {
+  vi.mocked(native.closeWindow).mockRejectedValueOnce(
+    new Error("Close failed"),
+  );
+  workspace(true);
+  const draft = await screen.findByLabelText("Draft");
+  const sessionElement = draft.closest("section");
+  fireEvent.change(draft, { target: { value: "Keep after close failure" } });
+  fireEvent.keyDown(screen.getByRole("button", { name: "Extension tools" }), {
+    key: "ArrowDown",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "End session" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Discard and end" }),
+  );
+  await within(dialog).findByRole("alert");
+  expect(native.closeWindow).toHaveBeenCalledOnce();
+  expect(draft).toHaveValue("Keep after close failure");
+  expect(draft.closest("section")).not.toHaveAttribute("hidden");
+  await waitFor(() =>
+    expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Lab app"]),
+  );
+  snapshot = { ...snapshot, revision: 2 };
+  await act(async () => changed());
+  expect(native.closeWindow).toHaveBeenCalledOnce();
+  expect(draft).toHaveValue("Keep after close failure");
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Discard and end" }),
+  );
+  await waitFor(() => expect(native.closeWindow).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(sessionElement).toHaveAttribute("hidden"));
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+});
+
+it("keeps the draft when an in-flight standalone close decision is aborted", async () => {
+  let finishClose!: () => void;
+  vi.mocked(native.closeWindow).mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finishClose = resolve;
+    }),
+  );
+  workspace(true);
+  const draft = await screen.findByLabelText("Draft");
+  fireEvent.change(draft, { target: { value: "Keep after aborted close" } });
+  fireEvent.keyDown(screen.getByRole("button", { name: "Extension tools" }), {
+    key: "ArrowDown",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "End session" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Discard and end" }),
+  );
+  await waitFor(() => expect(native.closeWindow).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(native.setWindowWorkState).toHaveBeenLastCalledWith([]),
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await act(async () => finishClose());
+  expect(draft).toHaveValue("Keep after aborted close");
+  expect(draft.closest("section")).not.toHaveAttribute("hidden");
+  await waitFor(() =>
+    expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Lab app"]),
+  );
+  expect(native.closeWindow).toHaveBeenCalledOnce();
+});
+
+it("clears the confirmed embedded session before navigation unmounts its unsaved-work registration", async () => {
+  workspace();
+  fireEvent.change(await screen.findByLabelText("Draft"), {
+    target: { value: "Discard this embedded session" },
+  });
+  await waitFor(() =>
+    expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Lab app"]),
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: "Extension tools" }), {
+    key: "ArrowDown",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "End session" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Discard and end" }),
+    );
+  });
+  const back = await screen.findByRole("link", { name: "Return to lab" });
+  await waitFor(() =>
+    expect(native.setWindowWorkState).toHaveBeenLastCalledWith([]),
+  );
+  fireEvent.click(back);
+  expect(await screen.findByLabelText("Draft")).toHaveValue("initial");
+  expect(native.viewExtension).toHaveBeenCalledTimes(2);
+  expect(native.closeWindow).not.toHaveBeenCalled();
 });

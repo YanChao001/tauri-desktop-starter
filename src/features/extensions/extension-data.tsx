@@ -1,9 +1,9 @@
 import {
   useEffect,
   useId,
-  useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type RefObject,
 } from "react";
 import { Button } from "@/components/ui/button";
@@ -19,9 +19,13 @@ import {
   type ExtensionViewDataInput,
 } from "@/lib/tauri";
 import { extensionNetworkOrigins } from "./extension-model";
-import type { ExtensionSession } from "./extensions-provider";
+import type {
+  ExtensionSession,
+  ExtensionSessionState,
+} from "./extension-session-cache";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 import { ExtensionHelp } from "./extension-help";
+import { useExtensionActivity } from "./extension-activity";
 import {
   Dialog,
   DialogContent,
@@ -34,30 +38,27 @@ export function ExtensionData({
   item,
   blocked,
   session,
-  onDirty,
-  onPickingChange,
   onSend,
-  presentation = "details",
-  open = false,
+  open,
   onOpenChange,
   returnFocusRef,
 }: {
   item: ExtensionInfo;
   blocked: boolean;
   session: ExtensionSession;
-  onDirty: () => void;
-  onPickingChange: (picking: boolean) => void;
   onSend: (input: ExtensionViewDataInput) => void;
-  presentation?: "details" | "dialog";
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useI18n();
+  const active = useExtensionActivity();
+  const activity = useRef(active);
+  activity.current = active;
   const id = useId();
-  const { inputText, url, files } = session.draft;
-  const [, refresh] = useReducer((revision: number) => revision + 1, 0);
-  const [picking, setPicking] = useState(session.selecting !== null);
+  const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const { inputText, url, files } = state.draft;
+  const picking = state.selecting !== null;
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     if (error)
@@ -70,16 +71,6 @@ export function ExtensionData({
     },
     [],
   );
-  useEffect(() => {
-    let stopped = false;
-    if (session.selecting)
-      void session.selecting.then(() => {
-        if (!stopped) setPicking(false);
-      });
-    return () => {
-      stopped = true;
-    };
-  }, [session]);
   const grants = item.grantedPermissions;
   const hasText = grants.includes("text:read");
   const hasFiles = grants.includes("files:read");
@@ -93,11 +84,11 @@ export function ExtensionData({
     (hasFiles && files.length) ||
     (hasNetwork && url.trim()),
   );
-  function draft(patch: Partial<ExtensionSession["draft"]>) {
-    session.draft = { ...session.draft, ...patch };
-    refresh();
-    session.dirty = true;
-    onDirty();
+  function draft(patch: Partial<ExtensionSessionState["draft"]>) {
+    session.update({
+      draft: { ...session.getSnapshot().draft, ...patch },
+      dirty: true,
+    });
   }
   const content = (
     <div className="min-w-0 space-y-3">
@@ -119,8 +110,18 @@ export function ExtensionData({
               draft({ inputText: e.target.value });
             }}
             aria-invalid={tooLong}
+            aria-describedby={tooLong ? `${id}-text-error` : undefined}
             aria-description={t("ext.inputHint")}
           />
+          {tooLong ? (
+            <p
+              id={`${id}-text-error`}
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {t("ext.inputTooLong")}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {hasFiles ? (
@@ -133,10 +134,8 @@ export function ExtensionData({
               className={LOCKED_CONTROL_CLASS}
               aria-description={t("ext.filesHint")}
               onClick={() => {
-                if (blocked || session.selecting) return;
+                if (blocked || session.getSnapshot().selecting) return;
                 const request = ++generation.current;
-                setPicking(true);
-                onPickingChange(true);
                 setError(null);
                 const selecting = pickExtensionFiles()
                   .then((result) => {
@@ -161,14 +160,10 @@ export function ExtensionData({
                     if (request === generation.current) setError(reason);
                   })
                   .finally(() => {
-                    if (session.selecting === selecting)
-                      session.selecting = null;
-                    if (request === generation.current) {
-                      setPicking(false);
-                      onPickingChange(false);
-                    }
+                    if (session.getSnapshot().selecting === selecting)
+                      session.update({ selecting: null });
                   });
-                session.selecting = selecting;
+                session.update({ selecting });
               }}
             >
               {t("ext.files")}
@@ -244,7 +239,7 @@ export function ExtensionData({
       </Button>
     </div>
   );
-  return presentation === "dialog" ? (
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         closeLabel={t("common.close")}
@@ -259,9 +254,12 @@ export function ExtensionData({
           }
         }}
         onCloseAutoFocus={(event) => {
-          if (returnFocusRef?.current) {
+          if (returnFocusRef) {
             event.preventDefault();
-            returnFocusRef.current.focus();
+            // 关闭回调可能晚于导航或缓存页恢复；保留用户已选择的新焦点。
+            if (!activity.current || document.activeElement !== document.body)
+              return;
+            returnFocusRef.current?.focus();
           }
         }}
       >
@@ -272,12 +270,5 @@ export function ExtensionData({
         {content}
       </DialogContent>
     </Dialog>
-  ) : (
-    <details className="min-w-0 rounded-lg border bg-card p-3">
-      <summary className="cursor-pointer font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {t("ext.hostData")}
-      </summary>
-      <div className="mt-3">{content}</div>
-    </details>
   );
 }

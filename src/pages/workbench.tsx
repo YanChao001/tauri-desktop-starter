@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -22,9 +24,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DocumentPreview } from "@/components/workbench/document-preview";
-import { TextDiff } from "@/components/text-diff";
 import { HelpTooltip } from "@/components/help-tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { workbenchEditor } from "@/components/workbench/editor-store";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { nativeErrorText } from "@/lib/native-error";
@@ -46,6 +52,17 @@ import { useRegisterCommands } from "@/providers/commands";
 import { useUnsavedWork } from "@/providers/unsaved-work";
 import type { AppCommand } from "@/commands/types";
 
+const DocumentPreview = lazy(() =>
+  import("@/components/workbench/document-preview").then((module) => ({
+    default: module.DocumentPreview,
+  })),
+);
+const TextDiff = lazy(() =>
+  import("@/components/text-diff").then((module) => ({
+    default: module.TextDiff,
+  })),
+);
+
 export default function Workbench() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -63,6 +80,13 @@ export default function Workbench() {
   const dirty = selected
     ? selected.draft !== (selected.document.content ?? "")
     : false;
+  const documentBytes = useMemo(
+    () =>
+      selected?.document.kind === "image"
+        ? (selected.document.bytes ?? 0)
+        : new TextEncoder().encode(selected?.draft ?? "").byteLength,
+    [selected],
+  );
   const [recent, setRecent] = useState<RecentWorkbenchFile[]>([]);
   const [error, setError] = useState<unknown>(null);
   const pending = state.pending;
@@ -323,16 +347,31 @@ export default function Workbench() {
     if (entry && entry.draft !== (entry.document.content ?? "")) setCloseId(id);
     else workbenchEditor.close(id);
   }
+  const previewLoading = (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t("common.loading")}
+    </p>
+  );
   return (
     <NativePage
       title={t("workbench.title")}
       description={t("workbench.description")}
     >
       <div className="flex flex-wrap gap-2">
-        <Button disabled={pending} onClick={() => void open()}>
-          <FolderOpenIcon />
-          {t("workbench.open")}
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button disabled={pending} onClick={() => void open()}>
+                <FolderOpenIcon />
+                {t("workbench.open")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              <p>{t("workbench.drop")}</p>
+              <p>{t("workbench.limits")}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <Button
           variant="outline"
           disabled={pending}
@@ -390,10 +429,6 @@ export default function Workbench() {
         >
           {t("workbench.sample")}
         </Button>
-        <HelpTooltip label={t("workbench.drop")}>
-          <p>{t("workbench.drop")}</p>
-          <p>{t("workbench.limits")}</p>
-        </HelpTooltip>
       </div>
       {error && conflict ? (
         <p
@@ -427,47 +462,49 @@ export default function Workbench() {
       ) : null}
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(12rem,1fr)_minmax(0,4fr)]">
         <aside className="space-y-4">
-          <div className="rounded-lg border bg-card p-3">
-            <h3 className="mb-2 text-sm font-medium">
-              {t("workbench.documents")}
-            </h3>
-            <ul className="space-y-1">
-              {state.entries.map((entry) => (
-                <li
-                  key={entry.document.id}
-                  className="flex min-w-0 items-center gap-1"
-                >
-                  <Button
-                    variant={
-                      entry.document.id === state.selectedId
-                        ? "secondary"
-                        : "ghost"
-                    }
-                    className="min-w-0 flex-1 justify-start"
-                    disabled={pending}
-                    aria-pressed={entry.document.id === state.selectedId}
-                    onClick={() => workbenchEditor.select(entry.document.id)}
+          {state.entries.length ? (
+            <div className="rounded-lg border bg-card p-3">
+              <h3 className="mb-2 text-sm font-medium">
+                {t("workbench.documents")}
+              </h3>
+              <ul className="space-y-1">
+                {state.entries.map((entry) => (
+                  <li
+                    key={entry.document.id}
+                    className="flex min-w-0 items-center gap-1"
                   >
-                    <span className="truncate">
-                      {entry.document.name}
-                      {entry.draft !== (entry.document.content ?? "")
-                        ? " *"
-                        : ""}
-                    </span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={pending}
-                    aria-label={`${t("workbench.close")} ${entry.document.name}`}
-                    onClick={() => close(entry.document.id)}
-                  >
-                    <XIcon />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
+                    <Button
+                      variant={
+                        entry.document.id === state.selectedId
+                          ? "secondary"
+                          : "ghost"
+                      }
+                      className="min-w-0 flex-1 justify-start"
+                      disabled={pending}
+                      aria-pressed={entry.document.id === state.selectedId}
+                      onClick={() => workbenchEditor.select(entry.document.id)}
+                    >
+                      <span className="truncate">
+                        {entry.document.name}
+                        {entry.draft !== (entry.document.content ?? "")
+                          ? " *"
+                          : ""}
+                      </span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={pending}
+                      aria-label={`${t("workbench.close")} ${entry.document.name}`}
+                      onClick={() => close(entry.document.id)}
+                    >
+                      <XIcon />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <details className="rounded-lg border bg-card p-3" open>
             <summary className="cursor-pointer text-sm font-medium">
               {t("workbench.recent")}
@@ -506,24 +543,35 @@ export default function Workbench() {
             aria-busy={pending}
           >
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="min-w-0 flex-1 truncate font-medium">
+              <h3 className="min-w-0 flex-1 basis-40 truncate font-medium">
                 {selected.document.name}
               </h3>
-              {dirty ? (
-                <Badge variant="outline">{t("workbench.dirty")}</Badge>
+              {!selected.document.path || dirty ? (
+                <Badge variant="outline">
+                  {t(
+                    selected.document.path
+                      ? "workbench.dirty"
+                      : "workbench.localDraft",
+                  )}
+                </Badge>
               ) : null}
               <span className="text-xs text-muted-foreground">
-                {(selected.document.bytes ?? 0).toLocaleString()} B
+                {documentBytes.toLocaleString()} B
               </span>
             </div>
-            <div className="flex h-6 min-w-0 items-center gap-2">
-              <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                {selected.document.path || t("workbench.localDraft")}
-              </p>
-              <HelpTooltip label={selected.document.name}>
-                {selected.document.path || t("workbench.localDraft")}
-              </HelpTooltip>
-            </div>
+            {selected.document.path ? (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                  {selected.document.path}
+                </p>
+                <HelpTooltip
+                  className="shrink-0"
+                  label={`${selected.document.name} · ${t("title.help")}`}
+                >
+                  {selected.document.path}
+                </HelpTooltip>
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {selected.document.kind !== "image" ? (
                 <>
@@ -583,9 +631,25 @@ export default function Workbench() {
             ) : null}
             {selected.document.kind !== "image" ? (
               <div className="space-y-2">
-                <Label htmlFor="workbench-editor">
-                  {t("workbench.editor")}
-                </Label>
+                <div className="flex min-h-6 min-w-0 items-center gap-2">
+                  <Label htmlFor="workbench-editor" className="shrink-0">
+                    {t("workbench.editor")}
+                  </Label>
+                  <p
+                    id="workbench-json-error"
+                    role={jsonError ? "alert" : undefined}
+                    className="min-w-0 truncate text-xs text-destructive"
+                  >
+                    {jsonError ? t("workbench.invalidJson") : null}
+                  </p>
+                  {jsonError ? (
+                    <HelpTooltip
+                      label={`${t("workbench.editor")} · ${t("title.help")}`}
+                    >
+                      {t("workbench.invalidJson")}
+                    </HelpTooltip>
+                  ) : null}
+                </div>
                 <Textarea
                   id="workbench-editor"
                   rows={14}
@@ -603,25 +667,20 @@ export default function Workbench() {
                   }
                   className="font-mono"
                 />
-                <p
-                  id="workbench-json-error"
-                  role={jsonError ? "alert" : undefined}
-                  className="h-10 overflow-auto text-xs text-destructive"
-                >
-                  {jsonError ? t("workbench.invalidJson") : null}
-                </p>
               </div>
             ) : null}
             <div className="min-w-0 space-y-2 border-t pt-4">
               <h4 className="text-sm font-medium">{t("workbench.preview")}</h4>
-              <DocumentPreview
-                document={selected.document}
-                content={selected.draft}
-              />
+              <Suspense fallback={previewLoading}>
+                <DocumentPreview
+                  document={selected.document}
+                  content={selected.draft}
+                />
+              </Suspense>
             </div>
           </section>
         ) : (
-          <p className="rounded-xl border bg-card p-8 text-sm text-muted-foreground">
+          <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
             {t("workbench.empty")}
           </p>
         )}
@@ -644,25 +703,29 @@ export default function Workbench() {
           </DialogHeader>
           {remote ? (
             <div className="space-y-4">
-              <DocumentPreview
-                document={remote}
-                content={remote.content ?? ""}
-              />
+              <Suspense fallback={previewLoading}>
+                <DocumentPreview
+                  document={remote}
+                  content={remote.content ?? ""}
+                />
+              </Suspense>
               {selected &&
               selected.document.id === remote.id &&
               remote.kind !== "image" ? (
-                <TextDiff
-                  local={selected.draft}
-                  remote={remote.content ?? ""}
-                  disabled={pending}
-                  onApply={(content) => {
-                    workbenchEditor.accept(remote);
-                    workbenchEditor.edit(remote.id, content);
-                    setRemote(null);
-                    setConflict(false);
-                    setError(null);
-                  }}
-                />
+                <Suspense fallback={previewLoading}>
+                  <TextDiff
+                    local={selected.draft}
+                    remote={remote.content ?? ""}
+                    disabled={pending}
+                    onApply={(content) => {
+                      workbenchEditor.accept(remote);
+                      workbenchEditor.edit(remote.id, content);
+                      setRemote(null);
+                      setConflict(false);
+                      setError(null);
+                    }}
+                  />
+                </Suspense>
               ) : null}
             </div>
           ) : null}

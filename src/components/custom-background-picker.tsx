@@ -79,6 +79,8 @@ export function CustomBackgroundPicker() {
   const { settings, update, persistence } = useSettings();
   const id = useId();
   const fileInput = useRef<HTMLInputElement>(null);
+  const importButton = useRef<HTMLButtonElement>(null);
+  const restoreAfterRemoval = useRef(false);
   const generation = useRef(0);
   const readGeneration = useRef(0);
   const busy = useRef(false);
@@ -91,6 +93,7 @@ export function CustomBackgroundPicker() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [retry, setRetry] = useState(0);
   const [renaming, setRenaming] = useState<Wallpaper | null>(null);
+  const [removing, setRemoving] = useState<Wallpaper | null>(null);
   const [name, setName] = useState("");
   const image = settings.customBackground;
   const active = settings.background === "custom";
@@ -255,6 +258,8 @@ export function CustomBackgroundPicker() {
           customBackground: null,
           ...(current.background === "custom" ? { background: "plain" } : {}),
         });
+      restoreAfterRemoval.current = true;
+      setRemoving(null);
       toast.success(translateLatest("settings.wallpaperRemoved"));
     } catch (reason) {
       if (attempt === generation.current)
@@ -313,6 +318,7 @@ export function CustomBackgroundPicker() {
             })}
           </span>
           <Button
+            ref={importButton}
             type="button"
             variant="outline"
             size="sm"
@@ -424,13 +430,16 @@ export function CustomBackgroundPicker() {
                           <PencilIcon className="size-3" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="destructive"
                           size="icon-sm"
                           disabled={pending}
                           aria-label={t("settings.deleteWallpaper", {
                             name: entry.name,
                           })}
-                          onClick={() => void remove(entry)}
+                          onClick={() => {
+                            restoreAfterRemoval.current = false;
+                            setRemoving(entry);
+                          }}
                         >
                           <Trash2Icon className="size-3" />
                         </Button>
@@ -518,6 +527,49 @@ export function CustomBackgroundPicker() {
           {t(loading ? "common.loading" : "settings.imageProcessing")}
         </p>
       ) : null}
+      <Dialog
+        open={!!removing}
+        onOpenChange={(open) => {
+          if (!open && !pending) setRemoving(null);
+        }}
+      >
+        <DialogContent
+          closeLabel={t("common.close")}
+          onCloseAutoFocus={(event) => {
+            if (!restoreAfterRemoval.current) return;
+            event.preventDefault();
+            restoreAfterRemoval.current = false;
+            importButton.current?.focus({ preventScroll: true });
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("settings.deleteWallpaperTitle")}</DialogTitle>
+            <DialogDescription className="break-words">
+              {t("settings.deleteWallpaperDescription", {
+                name: removing?.name ?? "",
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => setRemoving(null)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => {
+                if (removing) void remove(removing);
+              }}
+            >
+              {t("settings.removeWallpaper")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={showFailures} onOpenChange={setShowFailures}>
         <DialogContent closeLabel={t("common.close")}>
           <DialogHeader>

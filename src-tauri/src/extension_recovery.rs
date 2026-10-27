@@ -153,6 +153,7 @@ impl LegacyRegistry {
                         function: command.function,
                         input_format: old.input_format,
                         result_format: old.result_format,
+                        execution_budget: Default::default(),
                         ui: old.ui.clone(),
                         permissions: old.permissions.clone(),
                     })

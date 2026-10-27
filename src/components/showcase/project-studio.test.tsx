@@ -1,4 +1,10 @@
-import { act, cleanup, render } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectStudio } from "./project-studio";
 
@@ -114,6 +120,33 @@ describe("创意画布动画活动范围", () => {
     });
     preferences.motion = "reduced";
     view.rerender(<ProjectStudio active />);
+    expect(artwork).toHaveAttribute("data-active", "false");
+  });
+
+  it("本地暂停保留表单交互与暂停偏好，减少动态时禁用播放控制", () => {
+    const view = render(<ProjectStudio active />);
+    const artwork = view.container.querySelector(".studio-art")!;
+    const name = screen.getByLabelText("playground.name");
+    fireEvent.click(
+      screen.getByRole("button", { name: "playground.pauseMotion" }),
+    );
+    expect(artwork).toHaveAttribute("data-active", "false");
+    fireEvent.change(name, { target: { value: "Paused draft" } });
+    expect(screen.getByTestId("studio-preview-title")).toHaveTextContent(
+      "Paused draft",
+    );
+    view.rerender(<ProjectStudio active={false} />);
+    view.rerender(<ProjectStudio active />);
+    expect(artwork).toHaveAttribute("data-active", "false");
+    fireEvent.click(
+      screen.getByRole("button", { name: "playground.resumeMotion" }),
+    );
+    expect(artwork).toHaveAttribute("data-active", "true");
+    preferences.motion = "reduced";
+    view.rerender(<ProjectStudio active />);
+    expect(
+      screen.getByRole("button", { name: "playground.pauseMotion" }),
+    ).toBeDisabled();
     expect(artwork).toHaveAttribute("data-active", "false");
   });
 });

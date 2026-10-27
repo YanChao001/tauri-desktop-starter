@@ -8,36 +8,61 @@
       main {
         max-width: 1080px;
         margin: auto;
-        padding: 20px;
+        padding: 18px;
       }
       .app-header {
-        margin-bottom: 24px;
+        margin-bottom: 18px;
       }
       #app-name {
-        margin: 0 0 12px;
-        color: var(--muted-foreground);
-        font-size: 0.85em;
+        margin: 0 0 16px;
       }
       nav {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        display: flex;
+        flex-wrap: wrap;
         gap: 6px;
       }
       nav button {
-        white-space: normal;
+        flex: 1 0 auto;
+        white-space: nowrap;
+      }
+      main[data-motion="full"] nav button {
+        transition:
+          background-color 150ms ease,
+          color 150ms ease,
+          border-color 150ms ease;
+      }
+      nav [data-pending="true"] {
+        border-color: var(--primary);
+        cursor: progress;
       }
       nav [aria-selected="true"] {
         background: var(--primary);
         color: var(--primary-foreground);
       }
+      /* 切工具只临时锁定交互，保持旧内容亮度；真正不可用的操作仍显示禁用样式。 */
+      #scene-tools[data-switching="true"]
+        [aria-disabled="true"]:not([data-disabled="true"]),
+      #scene-tools[data-switching="true"] #tools-to-lens {
+        opacity: 1;
+      }
       h1 {
         margin: 0;
-        font-size: 1.55em;
+        font-size: 1.6em;
         line-height: 1.3;
       }
       h2 {
-        font-size: 1.1em;
+        font-size: 1.15em;
         margin: 0 0 10px;
+      }
+      #heading {
+        margin: 0;
+        flex: 0 0 auto;
+      }
+      .tool-heading {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
       }
       h3 {
         font-size: 1em;
@@ -49,8 +74,8 @@
       .layout {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-        gap: 24px;
-        margin-top: 22px;
+        gap: 18px;
+        margin-top: 16px;
         align-items: start;
       }
       .layout.single {
@@ -77,7 +102,7 @@
       }
       input:not([type="checkbox"]),
       select,
-      textarea {
+      #scene-tools textarea {
         width: 100%;
       }
       textarea {
@@ -229,7 +254,12 @@
       #operation-status {
         color: var(--muted-foreground);
         font-size: 0.85em;
-        margin: 10px 0 0;
+        margin: 0;
+        min-width: 0;
+        max-width: 50%;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
       #error {
         margin-top: 14px;
@@ -238,39 +268,1905 @@
         main {
           padding: 14px;
         }
-        nav {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
         .layout {
           grid-template-columns: 1fr;
-          gap: 24px;
+          gap: 18px;
         }
-        textarea {
+        #scene-tools textarea {
           min-height: 210px;
+        }
+      }
+      body {
+        padding: 0;
+      }
+      .studio-app {
+        --art-violet: #7760dd;
+        --art-cyan: #219caf;
+        --art-rose: #ce658f;
+        --art-orange: #bc7838;
+        --studio-line: color-mix(in oklab, var(--primary) 10%, var(--border));
+        --studio-soft: color-mix(
+          in oklab,
+          var(--art-violet) 3%,
+          var(--background)
+        );
+        --studio-radius: calc(var(--radius, 0.625rem) + 0.5rem);
+        container: workbench-studio / inline-size;
+        width: 100%;
+        max-width: 1280px;
+        min-width: 0;
+        margin: 0 auto;
+        padding: 24px;
+        color: var(--foreground);
+      }
+      .dark .studio-app {
+        --art-violet: #b0a0ff;
+        --art-cyan: #62c8dc;
+        --art-rose: #f3a0c2;
+        --art-orange: #e8ad76;
+      }
+      .studio-app *,
+      .studio-app *::before,
+      .studio-app *::after {
+        box-sizing: border-box;
+      }
+      .studio-app :is(h1, h2, h3, p) {
+        margin: 0;
+      }
+      .studio-app :is(button, input, textarea, select):focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 3px;
+      }
+      .studio-app button {
+        cursor: pointer;
+      }
+      .studio-app button:disabled {
+        cursor: default;
+      }
+      .studio-app svg {
+        flex-shrink: 0;
+      }
+      .studio-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        padding: 0.25rem 0 1.5rem;
+      }
+      .studio-heading h1 {
+        font-size: clamp(1.65rem, 3.2cqi, 2rem);
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: -0.05em;
+      }
+      .studio-heading p {
+        max-width: 68ch;
+        margin-top: 0.65rem;
+        color: var(--muted-foreground);
+        font-size: 0.875rem;
+        line-height: 1.8;
+      }
+      .studio-emblem {
+        position: relative;
+        width: 4.5rem;
+        height: 4.5rem;
+        margin-right: 0.5rem;
+        flex: 0 0 auto;
+        transform: rotate(-20deg);
+      }
+      .studio-emblem i {
+        position: absolute;
+        inset: 1rem 0.15rem;
+        border: 1px solid var(--art-violet);
+        border-radius: 50%;
+      }
+      .studio-emblem i:nth-child(2) {
+        border-color: var(--art-cyan);
+        transform: rotate(60deg);
+      }
+      .studio-emblem i:nth-child(3) {
+        border-color: var(--art-rose);
+        transform: rotate(120deg);
+      }
+      .studio-emblem::after {
+        content: "";
+        position: absolute;
+        width: 0.5rem;
+        height: 0.5rem;
+        top: 1.3rem;
+        right: 0.6rem;
+        border-radius: 50%;
+        background: var(--art-cyan);
+        box-shadow: 0 0 0 0.3rem
+          color-mix(in oklab, var(--art-cyan) 10%, transparent);
+      }
+      .studio-nav {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.6rem;
+        margin-bottom: 1.5rem;
+      }
+      .studio-nav > button {
+        --nav-tone: var(--art-violet);
+        position: relative;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        min-width: 0;
+        height: auto;
+        min-height: 4.5rem;
+        padding: 0.8rem 0.9rem;
+        gap: 0.7rem;
+        white-space: normal;
+        text-align: left;
+        color: var(--foreground);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--studio-radius);
+        transition:
+          border-color 160ms,
+          background 160ms,
+          box-shadow 160ms,
+          transform 180ms;
+      }
+      .studio-nav > button:nth-child(2) {
+        --nav-tone: var(--art-cyan);
+      }
+      .studio-nav > button:nth-child(3) {
+        --nav-tone: var(--art-rose);
+      }
+      .studio-nav > button:nth-child(4) {
+        --nav-tone: var(--art-orange);
+      }
+      .studio-nav > button:hover {
+        background: color-mix(in oklab, var(--nav-tone) 4%, var(--card));
+        border-color: color-mix(in oklab, var(--nav-tone) 45%, var(--border));
+        transform: translateY(-2px);
+      }
+      .studio-nav > button[aria-selected="true"] {
+        background: color-mix(in oklab, var(--nav-tone) 9%, var(--card));
+        border-color: color-mix(in oklab, var(--nav-tone) 60%, var(--border));
+        box-shadow: inset 0 -2px 0
+          color-mix(in oklab, var(--nav-tone) 60%, transparent);
+      }
+      .nav-icon {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid
+          color-mix(in oklab, var(--nav-tone) 20%, var(--border));
+        background: color-mix(in oklab, var(--nav-tone) 7%, var(--background));
+        border-radius: calc(var(--radius, 0.625rem) + 0.125rem);
+        color: var(--nav-tone);
+      }
+      .nav-icon svg {
+        width: 1rem;
+        height: 1rem;
+      }
+      .nav-copy {
+        display: block;
+        min-width: 0;
+      }
+      .nav-copy strong {
+        display: block;
+        font-size: 0.8125rem;
+        line-height: 1.4;
+        font-weight: 550;
+      }
+      .nav-copy small {
+        display: block;
+        margin-top: 0.25rem;
+        color: var(--muted-foreground);
+        font-size: 0.6875rem;
+        line-height: 1.4;
+      }
+      .nav-index {
+        margin-left: auto;
+        align-self: flex-start;
+        color: var(--muted-foreground);
+        font:
+          0.625rem/1.5 ui-monospace,
+          monospace;
+      }
+      .studio-scene {
+        min-width: 0;
+      }
+      .studio-scene[hidden] {
+        display: none;
+      }
+      .studio-emblem b {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 1.6rem;
+        color: var(--art-violet);
+      }
+      .stage-coordinate {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        font-size: 0.65rem;
+        letter-spacing: 0.12em;
+        color: var(--muted-foreground);
+      }
+      .lens-chart {
+        height: 250px;
+        min-width: 0;
+      }
+      .lens-chart > svg {
+        width: 100%;
+        height: 100%;
+      }
+      .data-editor {
+        padding: 1rem 1.25rem;
+        border-top: 1px solid var(--border);
+      }
+      .data-editor .scene-actions {
+        margin-top: 0.75rem;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      .studio-app .app-header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .scene-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 0;
+        border-bottom: 1px solid var(--studio-line);
+      }
+      .studio-heading #app-name {
+        margin: 0;
+      }
+      .inspector #node-detail {
+        min-height: 5rem;
+        height: 5rem;
+        max-height: 9rem;
+        font-family: inherit;
+      }
+      .chart-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      #lens-source {
+        min-height: 10rem;
+        font-family: ui-monospace, monospace;
+      }
+      .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: var(--art-violet);
+        font-size: 0.625rem;
+        line-height: 1.4;
+        letter-spacing: 0.14em;
+        font-weight: 550;
+        text-transform: uppercase;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 0.35rem;
+        height: 0.35rem;
+        background: currentColor;
+        border-radius: 50%;
+      }
+      .scene-heading h2 {
+        margin-top: 0.5rem;
+        font-size: 1.2rem;
+        letter-spacing: -0.035em;
+        line-height: 1.4;
+        font-weight: 600;
+      }
+      .scene-heading p {
+        max-width: 65ch;
+        margin-top: 0.45rem;
+        font-size: 0.8125rem;
+        line-height: 1.75;
+        color: var(--muted-foreground);
+      }
+      .scene-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .scene-actions button,
+      .scene-footer button,
+      .side-panel button,
+      .inspector > button {
+        min-height: 2rem;
+      }
+      .scene-actions button svg,
+      .scene-footer button svg,
+      .side-panel button svg {
+        width: 0.875rem;
+        height: 0.875rem;
+      }
+      .studio-console {
+        border: 1px solid var(--studio-line);
+        border-radius: calc(var(--studio-radius) + 0.25rem);
+        overflow: clip;
+        background: var(--card);
+      }
+      .canvas-grid,
+      .lens-grid,
+      .flow-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 240px;
+        min-width: 0;
+      }
+      .lens-grid,
+      .flow-grid {
+        grid-template-columns: minmax(0, 1fr) 260px;
+      }
+      .node-stage {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        min-height: var(--canvas-height, 390px);
+        min-width: 0;
+        background-color: var(--studio-soft);
+        background-image:
+          linear-gradient(
+            color-mix(in oklab, var(--art-violet) 6%, transparent) 1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            90deg,
+            color-mix(in oklab, var(--art-violet) 6%, transparent) 1px,
+            transparent 1px
+          );
+        background-size: 28px 28px;
+      }
+      .node-stage::before,
+      .chart-stage::before {
+        content: "";
+        position: absolute;
+        inset: 1rem;
+        border: 1px solid
+          color-mix(in oklab, var(--art-violet) 11%, transparent);
+        border-radius: calc(var(--radius, 0.625rem) * 0.75);
+        pointer-events: none;
+      }
+      .stage-label {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        z-index: 1;
+        color: var(--muted-foreground);
+        font:
+          0.625rem/1.5 ui-monospace,
+          monospace;
+        letter-spacing: 0.06em;
+      }
+      .stage-hint {
+        position: absolute;
+        bottom: 1.1rem;
+        left: 1.25rem;
+        right: 1.25rem;
+        color: var(--muted-foreground);
+        text-align: center;
+        font-size: 0.6875rem;
+        line-height: 1.6;
+        pointer-events: none;
+      }
+      .node-links {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        pointer-events: none;
+      }
+      .node-links path {
+        fill: none;
+        stroke: color-mix(in oklab, var(--art-violet) 34%, var(--border));
+        stroke-width: 1.6;
+        vector-effect: non-scaling-stroke;
+      }
+      .node-links .flow-pulse {
+        stroke: var(--art-cyan);
+        stroke-width: 2;
+        stroke-dasharray: 10 20;
+        animation: studio-link-flow 1.4s linear infinite;
+        animation-play-state: paused;
+        opacity: 0.8;
+      }
+      .node-links circle {
+        fill: var(--card);
+        stroke: var(--art-violet);
+        stroke-width: 1.5;
+      }
+      .canvas-node {
+        --node-tone: var(--art-violet);
+        position: absolute;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        width: 21%;
+        max-width: 190px;
+        min-width: 0;
+        height: 8rem;
+        gap: 0.35rem;
+        padding: 0.8rem;
+        transform: translate(-50%, -50%);
+        white-space: normal;
+        text-align: left;
+        color: var(--foreground);
+        background: var(--card);
+        border: 1px solid
+          color-mix(in oklab, var(--node-tone) 28%, var(--border));
+        border-radius: calc(var(--radius, 0.625rem) + 0.25rem);
+        box-shadow: 0 6px 16px -12px
+          color-mix(in oklab, var(--foreground) 30%, transparent);
+        transition:
+          border-color 160ms,
+          box-shadow 180ms,
+          background 160ms;
+      }
+      .canvas-node[data-tone="cyan"] {
+        --node-tone: var(--art-cyan);
+      }
+      .canvas-node[data-tone="rose"] {
+        --node-tone: var(--art-rose);
+      }
+      .canvas-node[data-tone="orange"] {
+        --node-tone: var(--art-orange);
+      }
+      .canvas-node:hover {
+        background: color-mix(in oklab, var(--node-tone) 5%, var(--card));
+        border-color: var(--node-tone);
+        box-shadow: 0 8px 20px -10px
+          color-mix(in oklab, var(--node-tone) 30%, transparent);
+      }
+      .canvas-node[aria-pressed="true"],
+      .canvas-node[data-selected="true"] {
+        border-color: var(--node-tone);
+        box-shadow:
+          0 0 0 3px color-mix(in oklab, var(--node-tone) 11%, transparent),
+          0 8px 20px -12px
+            color-mix(in oklab, var(--node-tone) 25%, transparent);
+        background: color-mix(in oklab, var(--node-tone) 5%, var(--card));
+      }
+      .node-icon {
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        width: 1.6rem;
+        height: 1.6rem;
+        color: var(--node-tone);
+        border-radius: calc(var(--radius, 0.625rem) * 0.65);
+        background: color-mix(
+          in oklab,
+          var(--node-tone) 10%,
+          var(--background)
+        );
+      }
+      .node-icon svg {
+        width: 0.9rem;
+        height: 0.9rem;
+      }
+      .node-title {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        flex-shrink: 0;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 0.8125rem;
+        font-weight: 550;
+        line-height: 1.4;
+      }
+      .node-detail {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--muted-foreground);
+        font-size: 0.625rem;
+        line-height: 1.4;
+      }
+      .node-port {
+        position: absolute;
+        top: 50%;
+        right: -0.25rem;
+        width: 0.5rem;
+        height: 0.5rem;
+        border: 1px solid var(--node-tone);
+        border-radius: 50%;
+        background: var(--card);
+      }
+      .inspector,
+      .side-panel {
+        min-width: 0;
+        padding: 1.25rem;
+        border-left: 1px solid var(--studio-line);
+        background: var(--card);
+      }
+      .inspector h3,
+      .side-panel h3 {
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1.5;
+      }
+      .inspector > p,
+      .side-panel > p {
+        margin-top: 0.5rem;
+        color: var(--muted-foreground);
+        font-size: 0.75rem;
+        line-height: 1.8;
+      }
+      .control-field {
+        display: block;
+        min-width: 0;
+        margin-top: 1.25rem;
+      }
+      .inspector .control-field {
+        margin-top: 0.75rem;
+      }
+      .inspector > button {
+        width: 100%;
+        margin-top: 0.5rem;
+      }
+      .inspector .mini-stats {
+        margin-top: 0;
+      }
+      .control-field > span,
+      .control-field > label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        color: var(--muted-foreground);
+        font-size: 0.75rem;
+        line-height: 1.5;
+      }
+      .control-field output {
+        color: var(--foreground);
+        font:
+          0.75rem/1.5 ui-monospace,
+          monospace;
+      }
+      .control-field :is(input, select) {
+        font-size: 0.75rem;
+      }
+      .control-field input[type="range"] {
+        height: 1.5rem;
+        margin: 0;
+      }
+      .inspector-summary {
+        margin-top: 1.25rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+      }
+      .inspector-summary > strong {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 550;
+      }
+      .inspector-summary p {
+        margin-top: 0.5rem;
+        color: var(--muted-foreground);
+        font-size: 0.75rem;
+        line-height: 1.8;
+      }
+      .mini-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin-top: 1rem;
+      }
+      .stat {
+        min-width: 0;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius, 0.625rem);
+        background: var(--background);
+      }
+      .stat strong {
+        display: block;
+        font-size: 1.1rem;
+        line-height: 1.2;
+        font-weight: 550;
+        letter-spacing: -0.04em;
+      }
+      .stat span,
+      .stat small {
+        display: block;
+        margin-top: 0.35rem;
+        color: var(--muted-foreground);
+        font-size: 0.625rem;
+        line-height: 1.5;
+      }
+      .scene-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.65rem 1rem;
+        padding: 0.8rem 1.25rem;
+        border-top: 1px solid var(--studio-line);
+        background: var(--card);
+      }
+      .scene-footer > p,
+      .scene-footer > span {
+        margin: 0;
+        color: var(--muted-foreground);
+        font-size: 0.6875rem;
+        line-height: 1.7;
+      }
+      .scene-footer > div {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .status-dot {
+        display: inline-block;
+        width: 0.35rem;
+        height: 0.35rem;
+        margin-right: 0.4rem;
+        vertical-align: middle;
+        border-radius: 50%;
+        background: var(--art-cyan);
+      }
+      .capability-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+      .capability-card {
+        --capability-tone: var(--art-violet);
+        position: relative;
+        min-width: 0;
+        padding: 1.1rem;
+        border: 1px solid var(--border);
+        border-radius: var(--studio-radius);
+        background: var(--card);
+      }
+      .capability-card:nth-child(2) {
+        --capability-tone: var(--art-cyan);
+      }
+      .capability-card:nth-child(3) {
+        --capability-tone: var(--art-rose);
+      }
+      .capability-icon {
+        display: grid;
+        place-items: center;
+        width: 1.8rem;
+        height: 1.8rem;
+        margin-bottom: 0.8rem;
+        border: 1px solid
+          color-mix(in oklab, var(--capability-tone) 20%, var(--border));
+        border-radius: calc(var(--radius, 0.625rem) * 0.85);
+        color: var(--capability-tone);
+        background: color-mix(
+          in oklab,
+          var(--capability-tone) 6%,
+          var(--background)
+        );
+      }
+      .capability-icon svg {
+        width: 0.95rem;
+        height: 0.95rem;
+      }
+      .capability-card h3 {
+        font-size: 0.8125rem;
+        font-weight: 550;
+        line-height: 1.5;
+      }
+      .capability-card p {
+        margin-top: 0.4rem;
+        color: var(--muted-foreground);
+        font-size: 0.75rem;
+        line-height: 1.8;
+      }
+      .chart-stage {
+        position: relative;
+        min-height: 330px;
+        min-width: 0;
+        padding: 1.25rem 1.5rem;
+        background: var(--studio-soft);
+      }
+      .bar-chart {
+        position: relative;
+        display: flex;
+        align-items: stretch;
+        justify-content: space-around;
+        gap: clamp(0.5rem, 1.8cqi, 1.25rem);
+        height: 100%;
+        padding: 1.3rem 0.25rem 1.9rem;
+        background-image: repeating-linear-gradient(
+          to top,
+          color-mix(in oklab, var(--art-cyan) 11%, transparent) 0 1px,
+          transparent 1px 25%
+        );
+        border-bottom: 1px solid var(--studio-line);
+      }
+      .bar-column {
+        --bar-tone: var(--art-violet);
+        position: relative;
+        display: flex;
+        flex: 1;
+        align-items: flex-end;
+        justify-content: center;
+        min-width: 0;
+        height: 100%;
+        max-width: 4rem;
+      }
+      .bar-column:nth-child(3n + 2) {
+        --bar-tone: var(--art-cyan);
+      }
+      .bar-column:nth-child(3n) {
+        --bar-tone: var(--art-rose);
+      }
+      .bar-fill {
+        position: relative;
+        width: 100%;
+        height: var(--bar-height, 50%);
+        min-height: 2px;
+        border: 1px solid color-mix(in oklab, var(--bar-tone) 55%, transparent);
+        border-radius: 0.5rem 0.5rem 0.15rem 0.15rem;
+        background: linear-gradient(
+          180deg,
+          color-mix(in oklab, var(--bar-tone) 70%, var(--card)),
+          color-mix(in oklab, var(--bar-tone) 20%, var(--card))
+        );
+        transition:
+          height 380ms cubic-bezier(0.22, 1, 0.36, 1),
+          filter 160ms;
+      }
+      .bar-column:hover .bar-fill {
+        filter: brightness(1.08);
+      }
+      .bar-value {
+        position: absolute;
+        left: 50%;
+        top: -0.3rem;
+        transform: translate(-50%, -100%);
+        color: var(--foreground);
+        font:
+          0.6875rem/1.5 ui-monospace,
+          monospace;
+        white-space: nowrap;
+      }
+      .bar-label {
+        position: absolute;
+        left: 50%;
+        top: calc(100% + 0.55rem);
+        transform: translateX(-50%);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--muted-foreground);
+        font-size: 0.625rem;
+        white-space: nowrap;
+      }
+      .chart-stage > svg,
+      .chart-stage > canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .data-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        padding: 1rem 1.25rem;
+        border-top: 1px solid var(--studio-line);
+      }
+      .data-summary .stat {
+        border: 0;
+        border-radius: 0;
+        padding: 0.15rem 0.75rem 0.15rem 0;
+        background: none;
+      }
+      .data-summary .stat + .stat {
+        border-left: 1px solid var(--border);
+        padding-left: 1rem;
+      }
+      .data-summary .stat strong {
+        font-size: 1.35rem;
+      }
+      .data-table-wrapper {
+        max-height: 240px;
+        overflow: auto;
+        border-top: 1px solid var(--studio-line);
+      }
+      .data-table-wrapper:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: -2px;
+      }
+      .data-table-wrapper table {
+        width: 100%;
+        font-size: 0.75rem;
+        border-collapse: collapse;
+      }
+      .data-table-wrapper :is(th, td) {
+        padding: 0.7rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      .data-table-wrapper th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        color: var(--muted-foreground);
+        background: var(--card);
+      }
+      .data-table-wrapper tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      .data-table-wrapper tbody tr:hover {
+        background: color-mix(in oklab, var(--primary) 3%, var(--card));
+      }
+      .data-table-wrapper td {
+        font-variant-numeric: tabular-nums;
+      }
+      .pipeline-stage {
+        display: grid;
+        align-content: center;
+        gap: 0;
+        min-width: 0;
+        min-height: 390px;
+        padding: 2rem clamp(1rem, 4cqi, 3rem);
+        background: var(--studio-soft);
+      }
+      .pipeline-node {
+        --step-tone: var(--art-violet);
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        min-width: 0;
+        min-height: 4.3rem;
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--studio-line);
+        border-radius: calc(var(--radius, 0.625rem) + 0.25rem);
+        background: var(--card);
+        transition:
+          border-color 180ms,
+          background 180ms,
+          box-shadow 180ms;
+      }
+      .pipeline-node[data-state="done"] {
+        --step-tone: var(--art-cyan);
+        border-color: color-mix(in oklab, var(--art-cyan) 35%, var(--border));
+      }
+      .pipeline-node[data-state="running"] {
+        border-color: var(--art-violet);
+        background: color-mix(in oklab, var(--art-violet) 5%, var(--card));
+        box-shadow: 0 0 0 3px
+          color-mix(in oklab, var(--art-violet) 8%, transparent);
+      }
+      .step-number {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid
+          color-mix(in oklab, var(--step-tone) 24%, var(--border));
+        border-radius: 50%;
+        color: var(--foreground);
+        background: color-mix(in oklab, var(--step-tone) 6%, var(--background));
+        font:
+          0.75rem/1 ui-monospace,
+          monospace;
+      }
+      .step-copy {
+        flex: 1;
+        min-width: 0;
+      }
+      .step-copy strong {
+        display: block;
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        font-weight: 550;
+      }
+      .step-copy p,
+      .step-copy small {
+        display: block;
+        margin-top: 0.25rem;
+        color: var(--muted-foreground);
+        font-size: 0.6875rem;
+        line-height: 1.6;
+      }
+      .step-state {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        color: var(--muted-foreground);
+        font-size: 0.625rem;
+        white-space: nowrap;
+      }
+      .pipeline-node[data-state="running"] .step-state {
+        color: var(--foreground);
+      }
+      .pipeline-node[data-state="done"] .step-state {
+        color: var(--foreground);
+      }
+      .step-state svg {
+        width: 0.85rem;
+        height: 0.85rem;
+      }
+      .pipeline-connector {
+        position: relative;
+        width: 1px;
+        height: 1.25rem;
+        margin-left: 2rem;
+        background: color-mix(in oklab, var(--art-violet) 30%, var(--border));
+      }
+      .pipeline-connector::after {
+        content: "";
+        position: absolute;
+        left: -2px;
+        bottom: 2px;
+        width: 5px;
+        height: 5px;
+        border-right: 1px solid var(--art-violet);
+        border-bottom: 1px solid var(--art-violet);
+        transform: rotate(45deg);
+      }
+      .flow-results {
+        margin-top: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--studio-line);
+        border-radius: var(--radius, 0.625rem);
+        background: var(--background);
+      }
+      .flow-results strong {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 550;
+      }
+      .flow-results p {
+        margin-top: 0.4rem;
+        color: var(--muted-foreground);
+        font-size: 0.75rem;
+        line-height: 1.8;
+      }
+      .flow-results pre {
+        max-height: 8rem;
+        overflow: auto;
+        margin: 0.75rem 0 0;
+        color: var(--muted-foreground);
+        font:
+          0.6875rem/1.7 ui-monospace,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .orbit-dot {
+        animation: studio-orbit 8s linear infinite;
+        animation-play-state: paused;
+        transform-origin: center;
+      }
+      html[data-playing="true"] .flow-pulse,
+      .studio-app[data-playing="true"] .flow-pulse,
+      html[data-playing="true"] .orbit-dot,
+      .studio-app[data-playing="true"] .orbit-dot {
+        animation-play-state: running;
+      }
+      .studio-app [hidden] {
+        display: none;
+      }
+      @keyframes studio-scene-in {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes studio-link-flow {
+        to {
+          stroke-dashoffset: -30;
+        }
+      }
+      @keyframes studio-orbit {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @container workbench-studio (max-width: 980px) {
+        .studio-nav {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .studio-nav > button {
+          height: 4rem;
+        }
+      }
+      @container workbench-studio (max-width: 780px) {
+        .canvas-grid,
+        .lens-grid,
+        .flow-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .inspector,
+        .side-panel {
+          border-left: 0;
+          border-top: 1px solid var(--studio-line);
+        }
+        .inspector {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1rem;
+          align-items: start;
+        }
+        .inspector > h3,
+        .inspector > p {
+          grid-column: 1/-1;
+        }
+        .inspector > p {
+          margin-top: -0.65rem;
+        }
+        .inspector .control-field,
+        .inspector .mini-stats {
+          margin-top: 0;
+        }
+        .inspector .inspector-summary {
+          grid-column: 1/-1;
+          margin-top: 0;
+          padding-top: 0.8rem;
+        }
+        .side-panel .control-field {
+          margin-top: 1rem;
+        }
+        .capability-card {
+          padding: 1rem;
+        }
+      }
+      @container workbench-studio (max-width: 580px) {
+        .studio-heading {
+          gap: 0.75rem;
+        }
+        .studio-heading h1 {
+          font-size: 1.65rem;
+        }
+        .studio-heading p {
+          font-size: 0.8125rem;
+        }
+        .studio-emblem {
+          width: 3.5rem;
+          height: 3.5rem;
+        }
+        .studio-nav {
+          gap: 0.5rem;
+          margin-bottom: 1.25rem;
+        }
+        .studio-nav > button {
+          height: auto;
+          min-height: 3.8rem;
+          gap: 0.6rem;
+          padding: 0.65rem 0.75rem;
+        }
+        .nav-index {
+          display: none;
+        }
+        .nav-copy strong {
+          font-size: 0.75rem;
+        }
+        .nav-copy small {
+          font-size: 0.625rem;
+        }
+        .scene-heading {
+          gap: 0.85rem;
+        }
+        .scene-actions {
+          width: 100%;
+        }
+        .scene-actions button {
+          flex: 1;
+        }
+        .node-stage {
+          min-height: var(--canvas-height, 320px);
+          background-size: 24px 24px;
+        }
+        .canvas-node {
+          width: 22%;
+          height: 8.5rem;
+          padding: 0.6rem;
+          gap: 0.35rem;
+        }
+        .node-title {
+          font-size: 0.75rem;
+        }
+        .node-detail {
+          font-size: 0.5625rem;
+        }
+        .node-icon {
+          width: 1.4rem;
+          height: 1.4rem;
+        }
+        .scene-footer {
+          padding: 0.8rem 1rem;
+        }
+        .inspector,
+        .side-panel {
+          padding: 1rem;
+        }
+        .capability-grid {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 0.6rem;
+        }
+        .capability-card {
+          display: grid;
+          grid-template-columns: 1.8rem minmax(0, 1fr);
+          gap: 0 0.8rem;
+          padding: 0.9rem 1rem;
+        }
+        .capability-icon {
+          grid-row: span 2;
+          margin: 0;
+        }
+        .capability-card p {
+          margin-top: 0.2rem;
+        }
+        .chart-stage {
+          padding-inline: 1.25rem;
+          min-height: 300px;
+        }
+        .bar-value,
+        .bar-label {
+          font-size: 0.5625rem;
+        }
+        .data-summary {
+          padding: 0.85rem 1rem;
+          gap: 0.5rem;
+        }
+        .data-summary .stat strong {
+          font-size: 1.15rem;
+        }
+        .data-summary .stat + .stat {
+          padding-left: 0.65rem;
+        }
+        .pipeline-stage {
+          min-height: 360px;
+          padding: 1.5rem 1rem;
+        }
+        .pipeline-node {
+          gap: 0.65rem;
+          padding: 0.75rem;
+        }
+        .step-state {
+          font-size: 0.5625rem;
+        }
+        .pipeline-connector {
+          margin-left: 1.75rem;
+        }
+      }
+      @media (max-width: 440px) {
+        .studio-app {
+          padding: 16px;
+        }
+        .studio-emblem {
+          display: none;
+        }
+      }
+      html[data-motion="reduced"] .studio-app *,
+      .studio-app[data-motion="reduced"] * {
+        animation: none;
+        transition: none;
+        scroll-behavior: auto;
+      }
+      html[data-motion="reduced"] .studio-nav > button:hover,
+      .studio-app[data-motion="reduced"] .studio-nav > button:hover {
+        transform: none;
+      }
+      @container workbench-studio (max-width: 380px) {
+        .studio-nav > button {
+          min-height: 3rem;
+          padding: 0.6rem;
+        }
+        .studio-nav .nav-icon,
+        .studio-nav .nav-copy small {
+          display: none;
+        }
+        .studio-nav .nav-copy strong {
+          font-size: 0.75rem;
+          white-space: nowrap;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .studio-app *,
+        .studio-app *::before,
+        .studio-app *::after {
+          animation: none;
+          transition: none;
+          scroll-behavior: auto;
+        }
+        .studio-nav > button:hover {
+          transform: none;
+        }
+      }
+      @media (prefers-contrast: more), (forced-colors: active) {
+        .studio-emblem,
+        .node-stage::before,
+        .chart-stage::before {
+          display: none;
+        }
+        .node-stage,
+        .chart-stage,
+        .pipeline-stage,
+        .studio-nav > button,
+        .canvas-node,
+        .pipeline-node,
+        .bar-fill {
+          background: var(--card, Canvas);
+        }
+        .studio-nav > button[aria-selected="true"],
+        .canvas-node[aria-pressed="true"] {
+          outline: 2px solid var(--foreground, CanvasText);
+          outline-offset: -3px;
         }
       }
     </style>
   </head>
   <body>
-    <main>
-      <header class="app-header">
-        <p id="app-name">本地工作台</p>
-        <nav id="tabs" role="tablist" aria-label="工具"></nav>
-      </header>
-      <section id="panel" role="tabpanel">
-        <h1 id="heading">文本工具</h1>
-        <p id="description" class="muted"></p>
-        <p id="operation-status" role="status"></p>
-        <div id="layout" class="layout">
-          <section id="form-pane">
-            <div id="fields" class="fields"></div>
-            <div id="actions" class="actions"></div>
-          </section>
-          <section id="results" class="blocks"></section>
+    <main class="studio-app" data-playing="false">
+      <header class="studio-heading">
+        <div>
+          <h1 id="app-name">本地工作台</h1>
+          <p
+            data-zh="让灵感连成画布，让数据流向结果。"
+            data-en="Connect ideas. Explore data. Build something that works."
+          ></p>
         </div>
-        <div id="artifacts"></div>
-        <p id="error" class="error" role="alert"></p>
+        <div class="studio-emblem" aria-hidden="true">
+          <i></i><i></i><i></i><b>✳</b>
+        </div>
+      </header>
+      <nav
+        class="studio-nav"
+        role="tablist"
+        aria-label="工作空间"
+        id="studio-nav"
+      >
+        <button
+          type="button"
+          role="tab"
+          id="studio-tab-canvas"
+          aria-controls="scene-canvas"
+          aria-selected="true"
+          data-scene="canvas"
+        >
+          <span class="nav-icon" aria-hidden="true">◇</span
+          ><span class="nav-copy"
+            ><strong data-zh="创意画布" data-en="Canvas"></strong
+            ><small data-zh="连接想法" data-en="Connect ideas"></small></span
+          ><span class="nav-index">01</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="studio-tab-lens"
+          aria-controls="scene-lens"
+          aria-selected="false"
+          tabindex="-1"
+          data-scene="lens"
+        >
+          <span class="nav-icon" aria-hidden="true">▥</span
+          ><span class="nav-copy"
+            ><strong data-zh="数据透镜" data-en="Data lens"></strong
+            ><small data-zh="发现规律" data-en="Find patterns"></small></span
+          ><span class="nav-index">02</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="studio-tab-flow"
+          aria-controls="scene-flow"
+          aria-selected="false"
+          tabindex="-1"
+          data-scene="flow"
+        >
+          <span class="nav-icon" aria-hidden="true">⌘</span
+          ><span class="nav-copy"
+            ><strong data-zh="流程编排" data-en="Pipeline"></strong
+            ><small
+              data-zh="把数据变成结果"
+              data-en="Shape the result"
+            ></small></span
+          ><span class="nav-index">03</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="studio-tab-tools"
+          aria-controls="scene-tools"
+          aria-selected="false"
+          tabindex="-1"
+          data-scene="tools"
+        >
+          <span class="nav-icon" aria-hidden="true">⊞</span
+          ><span class="nav-copy"
+            ><strong data-zh="工具与连接" data-en="Tools & connections"></strong
+            ><small
+              data-zh="接入真实能力"
+              data-en="Connect to your files"
+            ></small></span
+          ><span class="nav-index">04</span>
+        </button>
+      </nav>
+      <section
+        class="studio-scene"
+        id="scene-canvas"
+        role="tabpanel"
+        aria-labelledby="studio-tab-canvas"
+      >
+        <div class="studio-console">
+          <div class="scene-heading">
+            <div>
+              <span
+                class="eyebrow"
+                data-zh="你的想法，有了空间"
+                data-en="A little room for big ideas"
+              ></span>
+              <h2
+                data-zh="从一个节点，展开一个想法"
+                data-en="One node. A world of possibilities."
+              ></h2>
+              <p
+                data-zh="拖动、连接、编辑，把零散灵感组织成一张可导出的关系图。"
+                data-en="Drag, connect and edit your ideas into a map you can export."
+              ></p>
+            </div>
+            <div class="scene-actions">
+              <button
+                type="button"
+                id="canvas-arrange"
+                data-variant="outline"
+                data-zh="自动排列"
+                data-en="Arrange"
+              ></button
+              ><button
+                type="button"
+                id="canvas-add"
+                data-zh="＋ 添加节点"
+                data-en="＋ Add node"
+              ></button>
+            </div>
+          </div>
+          <div class="canvas-grid">
+            <div
+              class="node-stage"
+              id="node-stage"
+              role="group"
+              aria-label="创意画布"
+            >
+              <svg
+                class="node-links"
+                id="node-links"
+                viewBox="0 0 900 440"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              ></svg>
+              <div class="stage-coordinate" aria-hidden="true">CANVAS / 01</div>
+              <div
+                class="stage-hint"
+                data-zh="拖动节点 · 方向键微调 · 选择两点连线"
+                data-en="Drag nodes · Arrow keys to move · Connect two nodes"
+              ></div>
+            </div>
+            <aside class="inspector">
+              <span
+                class="eyebrow"
+                data-zh="节点属性"
+                data-en="Inspector"
+              ></span
+              ><label class="control-field"
+                ><span data-zh="标题" data-en="Title"></span
+                ><input id="node-title" maxlength="60" /></label
+              ><label class="control-field"
+                ><span data-zh="备注" data-en="Note"></span
+                ><textarea
+                  id="node-detail"
+                  rows="3"
+                  maxlength="240"
+                ></textarea></label
+              ><label class="control-field"
+                ><span data-zh="连接到" data-en="Connect to"></span
+                ><select id="node-target"></select></label
+              ><button
+                type="button"
+                id="canvas-connect"
+                data-variant="outline"
+                data-zh="连接 / 断开"
+                data-en="Toggle connection"
+              ></button
+              ><button
+                type="button"
+                id="canvas-remove"
+                data-variant="ghost"
+                data-zh="移除当前节点"
+                data-en="Remove node"
+              ></button>
+              <div class="inspector-summary">
+                <div class="mini-stats">
+                  <div class="stat">
+                    <strong id="node-count">0</strong
+                    ><span data-zh="节点" data-en="nodes"></span>
+                  </div>
+                  <div class="stat">
+                    <strong id="edge-count">0</strong
+                    ><span data-zh="连接" data-en="links"></span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+          <div class="scene-footer">
+            <span class="status-label"
+              ><i></i
+              ><span
+                data-zh="会话内画布 · 导出以保留成果"
+                data-en="Session canvas · Export to keep your work"
+              ></span
+            ></span>
+            <div class="scene-actions">
+              <button
+                type="button"
+                id="motion-toggle"
+                data-variant="ghost"
+                data-zh="暂停动效"
+                data-en="Pause motion"
+              ></button
+              ><button
+                type="button"
+                id="canvas-export"
+                data-variant="outline"
+                data-zh="导出画布"
+                data-en="Export canvas"
+              ></button>
+            </div>
+          </div>
+        </div>
+        <div class="capability-grid">
+          <article class="capability-card">
+            <span class="capability-icon" aria-hidden="true">↗</span>
+            <div>
+              <h3 data-zh="想法随手移动" data-en="Ideas in motion"></h3>
+              <p
+                data-zh="指针拖动、键盘微调、自动排列。布局由你决定。"
+                data-en="Drag, nudge with keys, or arrange everything at once."
+              ></p>
+            </div>
+          </article>
+          <article class="capability-card">
+            <span class="capability-icon" aria-hidden="true">⌁</span>
+            <div>
+              <h3 data-zh="数据可以接力" data-en="Keep the data flowing"></h3>
+              <p
+                data-zh="在数据透镜中探索，再送入流程编排继续处理。"
+                data-en="Explore in Data lens, then pass the rows to your pipeline."
+              ></p>
+            </div>
+          </article>
+          <article class="capability-card">
+            <span class="capability-icon" aria-hidden="true">▣</span>
+            <div>
+              <h3 data-zh="连接本地能力" data-en="Made for local work"></h3>
+              <p
+                data-zh="文件、私有存储与网络按需授权，成果由你保存。"
+                data-en="Connect files, storage and network with your permission."
+              ></p>
+            </div>
+          </article>
+        </div>
       </section>
+      <section
+        class="studio-scene"
+        id="scene-lens"
+        role="tabpanel"
+        aria-labelledby="studio-tab-lens"
+        hidden
+      >
+        <div class="studio-console">
+          <div class="scene-heading">
+            <div>
+              <span
+                class="eyebrow"
+                data-zh="让数字说话"
+                data-en="Give the numbers a voice"
+              ></span>
+              <h2
+                data-zh="换一个角度，看见数据"
+                data-en="A fresh perspective on your data"
+              ></h2>
+              <p
+                data-zh="筛选、切换图形或编辑数据，图表和统计即时联动。初始内容为内置示例。"
+                data-en="Filter, switch charts or edit rows. Charts and statistics update together. Starts with a built-in sample."
+              ></p>
+            </div>
+            <div class="scene-actions">
+              <button
+                type="button"
+                id="lens-export"
+                data-variant="outline"
+                data-zh="导出 CSV"
+                data-en="Export CSV"
+              ></button
+              ><button
+                type="button"
+                id="lens-send"
+                data-zh="送入流程 ↗"
+                data-en="Send to pipeline ↗"
+              ></button>
+            </div>
+          </div>
+          <div class="data-summary">
+            <div class="stat">
+              <span data-zh="当前记录" data-en="Visible rows"></span
+              ><strong id="lens-count">0</strong>
+            </div>
+            <div class="stat">
+              <span data-zh="数值总和" data-en="Total value"></span
+              ><strong id="lens-total">0</strong>
+            </div>
+            <div class="stat">
+              <span data-zh="平均值" data-en="Average"></span
+              ><strong id="lens-average">0</strong>
+            </div>
+          </div>
+          <div class="lens-grid">
+            <div class="chart-stage">
+              <div class="chart-toolbar">
+                <strong
+                  data-zh="数值分布"
+                  data-en="Value distribution"
+                ></strong>
+                <div class="scene-actions">
+                  <button
+                    type="button"
+                    id="chart-bars"
+                    aria-pressed="true"
+                    data-variant="secondary"
+                    data-zh="柱状"
+                    data-en="Bars"
+                  ></button
+                  ><button
+                    type="button"
+                    id="chart-line"
+                    aria-pressed="false"
+                    data-variant="ghost"
+                    data-zh="折线"
+                    data-en="Line"
+                  ></button>
+                </div>
+              </div>
+              <div
+                id="lens-chart"
+                class="lens-chart"
+                role="img"
+                aria-label="数据分布"
+              ></div>
+              <p
+                id="lens-empty"
+                hidden
+                data-zh="当前筛选没有记录，请调整分类或最低值。"
+                data-en="No rows match. Try another category or a lower minimum."
+              ></p>
+            </div>
+            <aside class="side-panel">
+              <span class="eyebrow" data-zh="探索参数" data-en="Explore"></span
+              ><label class="control-field"
+                ><span data-zh="分类" data-en="Category"></span
+                ><select id="lens-category"></select></label
+              ><label class="control-field"
+                ><span
+                  ><span data-zh="最低值" data-en="Minimum"></span>
+                  <output id="lens-min-value">0</output></span
+                ><input
+                  id="lens-min"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="0"
+                  step="1" /></label
+              ><button
+                type="button"
+                id="lens-edit"
+                aria-controls="data-editor"
+                aria-expanded="false"
+                data-variant="outline"
+                data-zh="编辑数据源"
+                data-en="Edit source"
+              ></button
+              ><button
+                type="button"
+                id="lens-sample"
+                data-variant="ghost"
+                data-zh="恢复内置示例"
+                data-en="Use built-in sample"
+              ></button>
+              <p
+                class="panel-note"
+                data-zh="支持 JSON 对象数组：label、category、value。最多 120 条；也可在工具与连接中接收文件后载入。"
+                data-en="JSON rows with label, category and value. Up to 120 rows. You can also load a file through Tools & connections."
+              ></p>
+            </aside>
+          </div>
+          <div class="data-editor" id="data-editor" hidden>
+            <label class="control-field"
+              ><span data-zh="数据源 · JSON" data-en="Source · JSON"></span
+              ><textarea
+                id="lens-source"
+                aria-describedby="lens-error"
+                rows="6"
+                maxlength="48000"
+                spellcheck="false"
+              ></textarea>
+            </label>
+            <div class="scene-actions">
+              <button
+                type="button"
+                id="lens-apply"
+                data-zh="应用数据"
+                data-en="Apply data"
+              ></button
+              ><button
+                type="button"
+                id="lens-cancel"
+                data-variant="ghost"
+                data-zh="放弃编辑"
+                data-en="Discard edits"
+              ></button>
+            </div>
+            <p id="lens-error" class="error" role="alert"></p>
+          </div>
+          <div
+            class="data-table-wrapper"
+            id="lens-table"
+            tabindex="0"
+            role="region"
+            aria-label="数据透镜数据表"
+          ></div>
+          <div class="scene-footer">
+            <span
+              class="status-label"
+              data-zh="所有图表均来自当前数据"
+              data-en="Every chart is calculated from the current rows"
+            ></span
+            ><span id="lens-source-label" class="muted"></span>
+          </div>
+        </div>
+      </section>
+      <section
+        class="studio-scene"
+        id="scene-flow"
+        role="tabpanel"
+        aria-labelledby="studio-tab-flow"
+        hidden
+      >
+        <div class="studio-console">
+          <div class="scene-heading">
+            <div>
+              <span
+                class="eyebrow"
+                data-zh="把操作串起来"
+                data-en="Turn a sequence into a system"
+              ></span>
+              <h2
+                data-zh="一条流程，走向清晰的结果"
+                data-en="A pipeline with a useful destination"
+              ></h2>
+              <p
+                data-zh="为当前数据配置过滤、分组与排序；运行后查看每一步的真实输入输出。"
+                data-en="Filter, group and sort your rows. Run to inspect the actual input and output of every step."
+              ></p>
+            </div>
+            <div class="scene-actions">
+              <button
+                type="button"
+                id="flow-export"
+                data-variant="outline"
+                disabled
+                data-zh="导出结果"
+                data-en="Export result"
+              ></button
+              ><button
+                type="button"
+                id="flow-run"
+                data-zh="▶ 运行流程"
+                data-en="▶ Run pipeline"
+              ></button>
+            </div>
+          </div>
+          <div class="flow-grid">
+            <div class="pipeline-stage" id="pipeline-stage">
+              <div class="pipeline-node" data-step="0">
+                <span class="step-number">01</span>
+                <div class="step-copy">
+                  <strong data-zh="读取数据" data-en="Read source"></strong>
+                  <p
+                    data-zh="来自数据透镜的当前数据"
+                    data-en="Current rows from Data lens"
+                  ></p>
+                </div>
+                <span class="step-state"></span>
+              </div>
+              <div class="pipeline-connector" aria-hidden="true"><i></i></div>
+              <div class="pipeline-node" data-step="1">
+                <span class="step-number">02</span>
+                <div class="step-copy">
+                  <strong data-zh="过滤数值" data-en="Filter values"></strong>
+                  <p id="flow-filter-summary"></p>
+                </div>
+                <span class="step-state"></span>
+              </div>
+              <div class="pipeline-connector" aria-hidden="true"><i></i></div>
+              <div class="pipeline-node" data-step="2">
+                <span class="step-number">03</span>
+                <div class="step-copy">
+                  <strong
+                    data-zh="分组与聚合"
+                    data-en="Group & aggregate"
+                  ></strong>
+                  <p id="flow-group-summary"></p>
+                </div>
+                <span class="step-state"></span>
+              </div>
+              <div class="pipeline-connector" aria-hidden="true"><i></i></div>
+              <div class="pipeline-node" data-step="3">
+                <span class="step-number">04</span>
+                <div class="step-copy">
+                  <strong
+                    data-zh="排序并生成结果"
+                    data-en="Sort & produce output"
+                  ></strong>
+                  <p
+                    data-zh="按数值从高到低排列"
+                    data-en="Order by value, highest first"
+                  ></p>
+                </div>
+                <span class="step-state"></span>
+              </div>
+            </div>
+            <aside class="side-panel">
+              <span
+                class="eyebrow"
+                data-zh="流程参数"
+                data-en="Pipeline settings"
+              ></span
+              ><label class="control-field"
+                ><span
+                  data-zh="保留最低数值"
+                  data-en="Keep values at least"
+                ></span
+                ><input
+                  id="flow-min"
+                  type="number"
+                  min="-1000000"
+                  max="1000000"
+                  value="30" /></label
+              ><label class="control-field"
+                ><span data-zh="聚合方式" data-en="Aggregation"></span
+                ><select id="flow-group">
+                  <option
+                    value="sum"
+                    data-zh="按分类求和"
+                    data-en="Sum by category"
+                  ></option>
+                  <option
+                    value="average"
+                    data-zh="按分类求平均"
+                    data-en="Average by category"
+                  ></option>
+                  <option
+                    value="none"
+                    data-zh="保留每条记录"
+                    data-en="Keep individual rows"
+                  ></option></select
+              ></label>
+              <div class="flow-metrics">
+                <span data-zh="输入 / 输出" data-en="Input / output"></span
+                ><strong id="flow-count">— / —</strong>
+              </div>
+              <p
+                class="panel-note"
+                data-zh="流程在当前界面处理数据。切换页面或修改参数会停止预览，导出仅使用已完成的结果。"
+                data-en="This pipeline processes data in this page. Switching scenes or changing settings stops the preview. Only completed results can be exported."
+              ></p>
+            </aside>
+          </div>
+          <div class="flow-results">
+            <div class="chart-toolbar">
+              <strong data-zh="运行结果" data-en="Run result"></strong
+              ><span
+                id="flow-status"
+                role="status"
+                data-zh="配置参数，运行第一条流程。"
+                data-en="Set your parameters and run your first pipeline."
+              ></span>
+            </div>
+            <div
+              class="data-table-wrapper"
+              id="flow-table"
+              tabindex="0"
+              role="region"
+              aria-label="流程结果数据表"
+            ></div>
+          </div>
+        </div>
+      </section>
+      <section
+        class="studio-scene"
+        id="scene-tools"
+        role="tabpanel"
+        aria-labelledby="studio-tab-tools"
+        hidden
+      >
+        <header class="app-header">
+          <nav id="tabs" role="tablist" aria-label="工具"></nav>
+          <div class="scene-actions">
+            <button
+              type="button"
+              id="tools-to-lens"
+              data-variant="outline"
+              data-zh="将数据载入透镜"
+              data-en="Load into Data lens"
+            ></button>
+          </div>
+        </header>
+        <section id="panel" role="tabpanel">
+          <div class="tool-heading">
+            <h2 id="heading">文本工具</h2>
+            <p id="operation-status" role="status"></p>
+          </div>
+          <p id="description" class="muted"></p>
+          <div id="layout" class="layout">
+            <section id="form-pane">
+              <div id="fields" class="fields"></div>
+              <div id="actions" class="actions"></div>
+            </section>
+            <section id="results" class="blocks"></section>
+          </div>
+          <div id="artifacts"></div>
+          <p id="error" class="error" role="alert"></p>
+        </section>
+      </section>
+      <p id="studio-error" class="error" role="alert"></p>
+      <p
+        id="studio-announcement"
+        class="sr-only"
+        role="status"
+        aria-live="polite"
+      ></p>
     </main>
     <script>
       (() => {
@@ -282,10 +2178,96 @@
           };
         let current,
           working = false,
-          signature = "",
+          renderedTab = null,
+          pendingTab = null,
+          panelVisible = true,
           force = false,
           localFields = {},
           pages = {};
+        const signatures = new Map(),
+          paneMemory = new Map(),
+          reducedMotion = window.matchMedia?.(
+            "(prefers-reduced-motion: reduce)",
+          );
+        function changed(key, value) {
+          const signature = JSON.stringify(value);
+          if (signatures.get(key) === signature) return false;
+          signatures.set(key, signature);
+          return true;
+        }
+        function stopMotion() {
+          canvasAnimations.forEach((animation) => animation.cancel());
+          canvasAnimations.clear();
+        }
+        function motionAllowed() {
+          return (
+            current?.active !== false &&
+            (current?.theme?.motion ??
+              document.documentElement.dataset.motion) !== "reduced" &&
+            !reducedMotion?.matches &&
+            !document.hidden &&
+            panelVisible
+          );
+        }
+        function syncMotion() {
+          document.querySelector("main").dataset.motion = motionAllowed()
+            ? "full"
+            : "reduced";
+          document.querySelector("main").dataset.playing = String(
+            motionAllowed() && !studio.paused,
+          );
+          if (!motionAllowed() || studio.paused) {
+            stopMotion();
+            studioAnimation?.cancel();
+            if (current?.active === false || document.hidden || !panelVisible)
+              cancelFlow();
+            else if (flowStep >= 0) {
+              if (flowTimer !== null) clearTimeout(flowTimer);
+              advanceFlow(flowGeneration);
+            }
+          }
+        }
+        function rememberPane(id) {
+          if (!id) return;
+          paneMemory.set(
+            id,
+            [
+              ...$("panel").querySelectorAll(
+                "[data-field],.table-scroll,pre,details",
+              ),
+            ].map((node, index) => ({
+              key: node.dataset.field ?? `result-${index}`,
+              top: node.scrollTop,
+              left: node.scrollLeft,
+              start: node.selectionStart,
+              end: node.selectionEnd,
+              open: node instanceof HTMLDetailsElement ? node.open : undefined,
+            })),
+          );
+        }
+        function restorePane(id) {
+          const memory = paneMemory.get(id);
+          if (!memory) return;
+          [
+            ...$("panel").querySelectorAll(
+              "[data-field],.table-scroll,pre,details",
+            ),
+          ].forEach((node, index) => {
+            const saved = memory.find(
+              (item) => item.key === (node.dataset.field ?? `result-${index}`),
+            );
+            if (!saved) return;
+            if (node instanceof HTMLDetailsElement)
+              node.open = saved.open ?? false;
+            if (
+              typeof saved.start === "number" &&
+              typeof node.setSelectionRange === "function"
+            )
+              node.setSelectionRange(saved.start, saved.end);
+            node.scrollTop = saved.top;
+            node.scrollLeft = saved.left;
+          });
+        }
         const tr = (zh, en) => (current?.locale === "en" ? en : zh);
         const values = () =>
           Object.fromEntries(
@@ -305,8 +2287,12 @@
               : (current.fields[field.id] ?? field.value))
           );
         };
-        function retain(dirty = true) {
-          return starter.checkpoint({ fields: values(), pages }, dirty);
+        function retain(dirty = true, fields = values()) {
+          studioDirty ||= dirty;
+          return starter.checkpoint(
+            { studio, fields, pages },
+            dirty || studioDirty,
+          );
         }
         function inline(node, text) {
           for (const token of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
@@ -613,22 +2599,31 @@
           const button = create("button", action.label);
           button.type = "button";
           button.dataset.action = action.id;
+          button.dataset.disabled = String(!!action.disabled);
           button.classList.toggle("primary", action.primary);
           button.setAttribute("aria-label", action.ariaLabel ?? action.label);
           button.onclick = () => void act(action.id);
           return button;
         }
-        function build(view) {
-          const active = document.hasFocus() ? document.activeElement : null,
-            focus = active?.dataset.field ?? active?.dataset.action,
-            selection =
-              active instanceof HTMLTextAreaElement
-                ? [active.selectionStart, active.selectionEnd]
-                : null;
-          $("tabs").replaceChildren(
-            ...(view.tabs ?? []).map((tab) => {
-              const button = actionButton({ ...tab, primary: tab.active });
+        function updateTabs(view) {
+          const retained = new Map(
+            [...$("tabs").children].map((button) => [
+              button.dataset.action,
+              button,
+            ]),
+          );
+          (view.tabs ?? [])
+            .filter((tab) => tab.id !== "tab-studio")
+            .forEach((tab, index) => {
+              const button = retained.get(tab.id) ?? actionButton(tab);
+              retained.delete(tab.id);
+              if (button.textContent !== tab.label)
+                button.textContent = tab.label;
+              button.setAttribute("aria-label", tab.label);
+              button.classList.toggle("primary", tab.active);
               button.dataset.variant = "outline";
+              button.dataset.pending = String(pendingTab === tab.id);
+              button.setAttribute("aria-busy", String(pendingTab === tab.id));
               button.setAttribute("role", "tab");
               button.setAttribute("aria-selected", String(tab.active));
               button.setAttribute("aria-controls", "panel");
@@ -636,158 +2631,206 @@
               button.tabIndex = tab.active ? 0 : -1;
               if (tab.active)
                 $("panel").setAttribute("aria-labelledby", button.id);
-              return button;
-            }),
-          );
-          $("fields").replaceChildren(
-            ...[...view.fields]
-              .sort((a, b) => (a.kind === "textarea") - (b.kind === "textarea"))
-              .map((field) => {
-                const label = create("label"),
-                  caption = create("span", field.label),
-                  input = create(
-                    field.kind === "textarea"
-                      ? "textarea"
-                      : field.kind === "select"
-                        ? "select"
-                        : "input",
-                  ),
-                  error = create("span");
-                label.className = field.kind === "checkbox" ? "check" : "field";
-                input.dataset.field = field.id;
-                input.id = `field-${field.id}`;
-                caption.id = `label-${field.id}`;
-                input.setAttribute("aria-labelledby", caption.id);
-                error.id = `error-${field.id}`;
-                error.className = "field-error error";
-                input.setAttribute("aria-describedby", error.id);
-                if (input instanceof HTMLInputElement)
-                  input.type =
-                    field.kind === "checkbox"
-                      ? "checkbox"
-                      : field.kind === "date"
-                        ? "date"
-                        : field.kind === "number"
-                          ? "number"
-                          : "text";
-                if (input instanceof HTMLSelectElement)
-                  (field.options ?? []).forEach((option) =>
-                    input.append(new Option(option.label, option.value)),
-                  );
-                if (input.type === "checkbox")
-                  input.checked = fieldValue(field) === "true";
-                else input.value = fieldValue(field);
-                input.addEventListener(
-                  field.kind === "checkbox" || field.kind === "select"
-                    ? "change"
-                    : "input",
-                  () => {
-                    if (working || current.busy) {
-                      force = true;
-                      render();
-                      return;
-                    }
-                    localFields[field.id] =
-                      input.type === "checkbox"
-                        ? String(input.checked)
-                        : input.value;
-                    if (
-                      current.view.tabs?.some(
-                        (tab) =>
-                          tab.active &&
-                          ["tab-text", "tab-data"].includes(tab.id),
-                      )
-                    )
-                      $("operation-status").textContent = tr(
-                        "输入已修改，处理后更新结果。",
-                        "Input changed. Apply to update the result.",
-                      );
-                    void retain(true).catch(report);
-                  },
+              if ($("tabs").children[index] !== button)
+                $("tabs").insertBefore(
+                  button,
+                  $("tabs").children[index] ?? null,
                 );
-                if (field.kind === "textarea")
-                  input.onkeydown = (event) => {
-                    if (
-                      (event.ctrlKey || event.metaKey) &&
-                      event.key === "Enter"
-                    ) {
-                      event.preventDefault();
-                      void act(
-                        field.id === "data-source" ? "data-preview" : "analyze",
-                      );
-                    }
-                  };
-                label.append(caption, input, error);
-                return label;
+            });
+          retained.forEach((button) => button.remove());
+        }
+        function build(view) {
+          const active = document.hasFocus() ? document.activeElement : null,
+            focus =
+              active?.dataset.field !== undefined
+                ? ["field", active.dataset.field]
+                : active?.dataset.action !== undefined
+                  ? ["action", active.dataset.action]
+                  : active?.dataset.artifact !== undefined
+                    ? ["artifact", active.dataset.artifact]
+                    : null,
+            selection =
+              typeof active?.selectionStart === "number"
+                ? [active.selectionStart, active.selectionEnd]
+                : null,
+            activeTab = view.tabs?.find((tab) => tab.active)?.id;
+          if (
+            changed("fields", [
+              activeTab,
+              view.fields.map(({ value, ...field }) => field),
+            ])
+          ) {
+            $("fields").replaceChildren(
+              ...[...view.fields]
+                .sort(
+                  (a, b) => (a.kind === "textarea") - (b.kind === "textarea"),
+                )
+                .map((field) => {
+                  const label = create("label"),
+                    caption = create("span", field.label),
+                    input = create(
+                      field.kind === "textarea"
+                        ? "textarea"
+                        : field.kind === "select"
+                          ? "select"
+                          : "input",
+                    ),
+                    error = create("span");
+                  label.className =
+                    field.kind === "checkbox" ? "check" : "field";
+                  input.dataset.field = field.id;
+                  input.id = `field-${field.id}`;
+                  caption.id = `label-${field.id}`;
+                  input.setAttribute("aria-labelledby", caption.id);
+                  error.id = `error-${field.id}`;
+                  error.className = "field-error error";
+                  input.setAttribute("aria-describedby", error.id);
+                  if (input instanceof HTMLInputElement)
+                    input.type =
+                      field.kind === "checkbox"
+                        ? "checkbox"
+                        : field.kind === "date"
+                          ? "date"
+                          : field.kind === "number"
+                            ? "number"
+                            : "text";
+                  if (input instanceof HTMLSelectElement)
+                    (field.options ?? []).forEach((option) =>
+                      input.append(new Option(option.label, option.value)),
+                    );
+                  if (input.type === "checkbox")
+                    input.checked = fieldValue(field) === "true";
+                  else input.value = fieldValue(field);
+                  input.addEventListener(
+                    field.kind === "checkbox" || field.kind === "select"
+                      ? "change"
+                      : "input",
+                    () => {
+                      if (working || current.busy) {
+                        force = true;
+                        render();
+                        return;
+                      }
+                      localFields[field.id] =
+                        input.type === "checkbox"
+                          ? String(input.checked)
+                          : input.value;
+                      if (
+                        current.view.tabs?.some(
+                          (tab) =>
+                            tab.active &&
+                            ["tab-text", "tab-data"].includes(tab.id),
+                        )
+                      )
+                        $("operation-status").textContent = tr(
+                          "输入已修改，处理后更新结果。",
+                          "Input changed. Apply to update the result.",
+                        );
+                      void retain(true).catch(report);
+                    },
+                  );
+                  if (field.kind === "textarea")
+                    input.onkeydown = (event) => {
+                      if (
+                        (event.ctrlKey || event.metaKey) &&
+                        event.key === "Enter"
+                      ) {
+                        event.preventDefault();
+                        void act(
+                          field.id === "data-source"
+                            ? "data-preview"
+                            : "analyze",
+                        );
+                      }
+                    };
+                  label.append(caption, input, error);
+                  return label;
+                }),
+            );
+          }
+          if (changed("actions", [activeTab, view.groups])) {
+            $("actions").replaceChildren();
+            view.groups.forEach((group) =>
+              group.actions.forEach((action) => {
+                if (
+                  activeTab === "tab-todo" &&
+                  /^todo-(toggle|remove)-/.test(action.id)
+                )
+                  return;
+                $("actions").append(actionButton(action));
               }),
-          );
-          $("actions").replaceChildren();
-          const activeTab = view.tabs?.find((tab) => tab.active)?.id;
-          view.groups.forEach((group) =>
-            group.actions.forEach((action) => {
-              if (
-                activeTab === "tab-todo" &&
-                /^todo-(toggle|remove)-/.test(action.id)
-              )
-                return;
-              $("actions").append(actionButton(action));
-            }),
-          );
+            );
+          }
           $("form-pane").hidden =
             view.fields.length === 0 && view.groups.length === 0;
           $("layout").classList.toggle("single", view.fields.length === 0);
-          blocks(view);
-          $("artifacts").replaceChildren(
-            ...(view.artifacts ?? []).map((artifact, index) => {
-              const button = create(
-                "button",
-                tr("保存 ", "Save ") + artifact.name,
-              );
-              button.type = "button";
-              button.dataset.artifact = String(index);
-              button.onclick = () => {
-                if (working || current.busy) return;
-                working = true;
-                render();
-                void starter
-                  .saveArtifact(index)
-                  .catch(report)
-                  .finally(() => {
-                    working = false;
-                    render();
-                  });
-              };
-              return button;
-            }),
-          );
+          if (
+            changed("blocks", [
+              activeTab,
+              current.locale,
+              view.blocks,
+              activeTab === "tab-todo" ? view.groups : null,
+            ])
+          )
+            blocks(view);
+          if (changed("artifacts", [current.locale, view.artifacts])) {
+            $("artifacts").replaceChildren(
+              ...(view.artifacts ?? []).map((artifact, index) => {
+                const button = create(
+                  "button",
+                  tr("保存 ", "Save ") + artifact.name,
+                );
+                button.type = "button";
+                button.dataset.artifact = String(index);
+                button.onclick = () => {
+                  if (working || current.busy) return;
+                  working = true;
+                  render();
+                  void starter
+                    .saveArtifact(index)
+                    .catch(report)
+                    .finally(() => {
+                      working = false;
+                      render();
+                    });
+                };
+                return button;
+              }),
+            );
+          }
           if (focus) {
             const replacement = [
-              ...document.querySelectorAll("[data-field],[data-action]"),
-            ].find(
-              (node) =>
-                node.dataset.field === focus || node.dataset.action === focus,
-            );
-            replacement?.focus();
-            if (selection && replacement instanceof HTMLTextAreaElement)
+              ...document.querySelectorAll(
+                "[data-field],[data-action],[data-artifact]",
+              ),
+            ].find((node) => node.dataset[focus[0]] === focus[1]);
+            replacement?.focus({ preventScroll: true });
+            if (
+              selection &&
+              typeof replacement?.setSelectionRange === "function"
+            )
               replacement.setSelectionRange(...selection);
           }
         }
         function render() {
           if (!current?.view) return;
+          // 宿主空闲快照可能晚于请求回执，保持切换样式直到两侧都已完成。
+          if (!working && !current.busy) pendingTab = null;
+          syncMotion();
+          $("scene-tools").dataset.switching = String(pendingTab !== null);
           document
             .querySelector("main")
             .setAttribute("aria-busy", String(working || current.busy));
           document
-            .querySelectorAll("input, select, textarea")
+            .querySelectorAll("#fields input, #fields select, #fields textarea")
             .forEach((input) => {
               input.disabled = false;
             });
           const view = current.view,
-            next = JSON.stringify([view, current.locale]);
-          if (next !== signature) {
-            signature = next;
-            build(view);
-          }
+            activeTab = view.tabs?.find((tab) => tab.active)?.id ?? null;
+          rememberPane(renderedTab);
+          updateTabs(view);
+          build(view);
           $("heading").textContent = view.display;
           $("description").textContent = view.description;
           $("tabs").setAttribute("aria-label", tr("工具", "Tools"));
@@ -799,7 +2842,7 @@
             const value = fieldValue(field);
             if (!working && (force || document.activeElement !== input)) {
               if (input.type === "checkbox") input.checked = value === "true";
-              else input.value = value;
+              else if (input.value !== value) input.value = value;
             }
             input.readOnly = working || current.busy;
             input.setAttribute(
@@ -832,6 +2875,9 @@
                 String(working || current.busy),
               ),
             );
+          restorePane(activeTab);
+          renderedTab = activeTab;
+          studioControls();
         }
         function report() {
           $("error").textContent = tr(
@@ -840,6 +2886,7 @@
           );
         }
         async function act(id) {
+          if (studioInvalid) return;
           const view = current?.view,
             tab = view?.tabs?.find((tab) => tab.id === id),
             action = view?.groups
@@ -855,24 +2902,29 @@
           const submitted = values(),
             previousDirty = current.dirty;
           working = true;
+          pendingTab = tab ? id : null;
           $("operation-status").textContent = tab
-            ? tr("正在打开工具…", "Opening tool…")
+            ? ""
             : tr("正在处理…", "Working…");
           render();
           try {
             $("error").textContent = "";
             const next = await starter.run(id, submitted);
-            await starter.checkpoint(null, tab ? previousDirty : true);
             current = {
               ...current,
               view: next,
               fields: Object.fromEntries(
                 next.fields.map((field) => [field.id, field.value]),
               ),
-              checkpoint: null,
             };
             localFields = {};
             force = true;
+            await retain(
+              tab ? previousDirty : true,
+              Object.fromEntries(
+                next.fields.map((field) => [field.id, field.value]),
+              ),
+            );
           } catch {
             report();
           } finally {
@@ -896,8 +2948,1433 @@
                   tabs.length;
           tabs[next]?.focus();
         };
+        const SCENES = ["canvas", "lens", "flow", "tools"];
+        const svgNode = (tag, attributes = {}) => {
+          const node = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            tag,
+          );
+          Object.entries(attributes).forEach(([key, value]) =>
+            node.setAttribute(key, String(value)),
+          );
+          return node;
+        };
+        const sampleRows = () =>
+          [
+            ["Mon", "Design", 48],
+            ["Tue", "Build", 72],
+            ["Wed", "Design", 56],
+            ["Thu", "Research", 34],
+            ["Fri", "Build", 91],
+            ["Sat", "Research", 63],
+            ["Sun", "Design", 78],
+            ["Next", "Build", 84],
+          ].map(([label, category, value]) => ({ label, category, value }));
+        function freshStudio() {
+          return {
+            schema: 1,
+            sourceDraft: null,
+            editorOpen: false,
+            flowUseLens: false,
+            flowCategory: "",
+            flowLensMinimum: 0,
+            scene: "canvas",
+            paused: false,
+            selected: "n2",
+            chart: "bars",
+            category: "",
+            minimum: 0,
+            flowMinimum: 30,
+            aggregation: "sum",
+            source: "sample",
+            rows: sampleRows(),
+            nodes: [
+              {
+                id: "n1",
+                title: tr("捕捉灵感", "Capture an idea"),
+                detail: tr(
+                  "从一个值得探索的问题开始",
+                  "Start with a question worth exploring",
+                ),
+                tone: "violet",
+                x: 17,
+                y: 26,
+              },
+              {
+                id: "n2",
+                title: tr("连接线索", "Connect the dots"),
+                detail: tr(
+                  "把想法组织成清晰的关系",
+                  "Give your ideas a clear structure",
+                ),
+                tone: "cyan",
+                x: 50,
+                y: 26,
+              },
+              {
+                id: "n3",
+                title: tr("做出原型", "Make a prototype"),
+                detail: tr(
+                  "把抽象想法变成可以操作的东西",
+                  "Turn the idea into something you can try",
+                ),
+                tone: "rose",
+                x: 83,
+                y: 26,
+              },
+              {
+                id: "n4",
+                title: tr("观察数据", "Explore the data"),
+                detail: tr(
+                  "在数据透镜里寻找下一步",
+                  "Find the next step in Data lens",
+                ),
+                tone: "orange",
+                x: 33,
+                y: 72,
+              },
+              {
+                id: "n5",
+                title: tr("整理与交付", "Shape & deliver"),
+                detail: tr(
+                  "连接流程，导出属于你的成果",
+                  "Build the flow and export your work",
+                ),
+                tone: "violet",
+                x: 70,
+                y: 72,
+              },
+            ],
+            edges: [
+              ["n1", "n2"],
+              ["n2", "n3"],
+              ["n2", "n4"],
+              ["n3", "n5"],
+              ["n4", "n5"],
+            ],
+          };
+        }
+        let studio = freshStudio(),
+          studioLoaded = false,
+          studioDirty = false,
+          studioInvalid = false,
+          studioLocale = null,
+          studioAnimation = null,
+          flowResult = null,
+          flowTimer = null,
+          flowStep = -1,
+          flowSource = null,
+          flowGeneration = 0,
+          drag = null;
+        const canvasHistory = [],
+          canvasAnimations = new Set(),
+          dataHistory = [];
+        function parseRows(value) {
+          if (!Array.isArray(value) || value.length > 120)
+            throw new Error("rows");
+          return value.map((row) => {
+            if (
+              !row ||
+              typeof row !== "object" ||
+              typeof row.label !== "string" ||
+              !row.label.trim() ||
+              row.label.length > 80 ||
+              typeof row.category !== "string" ||
+              !row.category.trim() ||
+              row.category.length > 80 ||
+              typeof row.value !== "number" ||
+              !Number.isFinite(row.value) ||
+              Math.abs(row.value) > 1000000 ||
+              row.label.includes("\0") ||
+              row.category.includes("\0")
+            )
+              throw new Error("row");
+            return {
+              label: row.label,
+              category: row.category,
+              value: row.value,
+            };
+          });
+        }
+        function restoreStudio(saved) {
+          if (
+            !saved ||
+            saved.schema !== 1 ||
+            !SCENES.includes(saved.scene) ||
+            !Array.isArray(saved.nodes) ||
+            saved.nodes.length < 1 ||
+            saved.nodes.length > 24
+          )
+            return false;
+          try {
+            const nodes = saved.nodes.map((node) => {
+              if (
+                !node ||
+                !/^n[0-9]{1,12}$/.test(node.id) ||
+                typeof node.title !== "string" ||
+                node.title.length > 60 ||
+                typeof node.detail !== "string" ||
+                node.detail.length > 240 ||
+                !["violet", "cyan", "rose", "orange"].includes(node.tone) ||
+                !Number.isFinite(node.x) ||
+                !Number.isFinite(node.y) ||
+                node.x < 12 ||
+                node.x > 88 ||
+                node.y < 16 ||
+                node.y > 84
+              )
+                throw new Error("node");
+              return {
+                id: node.id,
+                title: node.title,
+                detail: node.detail,
+                tone: node.tone,
+                x: node.x,
+                y: node.y,
+              };
+            });
+            const ids = new Set(nodes.map((node) => node.id));
+            if (
+              ids.size !== nodes.length ||
+              !Array.isArray(saved.edges) ||
+              saved.edges.length > 64 ||
+              saved.edges.some(
+                (edge) =>
+                  !Array.isArray(edge) ||
+                  edge.length !== 2 ||
+                  edge[0] === edge[1] ||
+                  edge.some((id) => !ids.has(id)),
+              )
+            )
+              return false;
+            const rows = parseRows(saved.rows);
+            if (
+              (saved.sourceDraft !== undefined &&
+                saved.sourceDraft !== null &&
+                (typeof saved.sourceDraft !== "string" ||
+                  new TextEncoder().encode(saved.sourceDraft).length >
+                    48000)) ||
+              (saved.editorOpen !== undefined &&
+                typeof saved.editorOpen !== "boolean")
+            )
+              return false;
+            studio = {
+              ...freshStudio(),
+              nodes,
+              edges: saved.edges.map((edge) => [...edge]),
+              rows,
+              scene: saved.scene,
+              selected: ids.has(saved.selected) ? saved.selected : nodes[0].id,
+              paused: saved.paused === true,
+              chart: saved.chart === "line" ? "line" : "bars",
+              category:
+                typeof saved.category === "string"
+                  ? saved.category.slice(0, 80)
+                  : "",
+              minimum: Number.isFinite(saved.minimum)
+                ? Math.max(-1000000, Math.min(1000000, saved.minimum))
+                : 0,
+              flowMinimum: Number.isFinite(saved.flowMinimum)
+                ? Math.max(-1000000, Math.min(1000000, saved.flowMinimum))
+                : 30,
+              aggregation: ["sum", "average", "none"].includes(
+                saved.aggregation,
+              )
+                ? saved.aggregation
+                : "sum",
+              source: saved.source === "sample" ? "sample" : "custom",
+              sourceDraft: saved.sourceDraft ?? null,
+              editorOpen: saved.editorOpen === true,
+              flowUseLens: saved.flowUseLens === true,
+              flowCategory:
+                typeof saved.flowCategory === "string"
+                  ? saved.flowCategory.slice(0, 80)
+                  : "",
+              flowLensMinimum: Number.isFinite(saved.flowLensMinimum)
+                ? Math.max(-1000000, Math.min(1000000, saved.flowLensMinimum))
+                : 0,
+            };
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        function announce(text) {
+          $("studio-announcement").textContent = text;
+        }
+        function studioError(text) {
+          $("studio-error").textContent = text;
+        }
+        function notifyStudio(text, tone = "info") {
+          if (typeof starter.notify === "function")
+            void starter.notify(text, { tone }).catch(() => studioError(text));
+          else announce(text);
+        }
+        function retainStudio(dirty = true) {
+          studioDirty ||= dirty;
+          if (studioInvalid) return;
+          if (working || current?.busy || current?.active === false) return;
+          void retain(studioDirty || current?.dirty).catch(() =>
+            studioError(
+              tr(
+                "草稿登记失败，请重试；当前内容仍在界面中。",
+                "Could not retain the draft. Your work is still on this page.",
+              ),
+            ),
+          );
+        }
+        function studioControls() {
+          const blocked =
+            studioInvalid ||
+            working ||
+            current?.busy ||
+            current?.active === false;
+          document
+            .querySelectorAll(
+              ".studio-scene input, .studio-scene select, .studio-scene textarea, .studio-scene button:not([data-action]):not([data-artifact])",
+            )
+            .forEach((node) => {
+              node.disabled = !!blocked;
+            });
+          $("canvas-undo").disabled = !!blocked || canvasHistory.length === 0;
+          $("canvas-remove").disabled = !!blocked || studio.nodes.length < 2;
+          $("canvas-connect").disabled = !!blocked || studio.nodes.length < 2;
+          $("lens-export").disabled = !!blocked || visibleRows().length === 0;
+          $("flow-export").disabled = !!blocked || !flowResult?.length;
+          $("flow-run").disabled = !!blocked || flowStep >= 0;
+          $("lens-undo").disabled = !!blocked || dataHistory.length === 0;
+        }
+        function localizeStudio() {
+          $("lens-table").setAttribute(
+            "aria-label",
+            tr("数据透镜数据表", "Data lens table"),
+          );
+          $("flow-table").setAttribute(
+            "aria-label",
+            tr("流程结果数据表", "Pipeline result table"),
+          );
+          document.querySelectorAll("[data-zh][data-en]").forEach((node) => {
+            node.textContent =
+              current?.locale === "en" ? node.dataset.en : node.dataset.zh;
+          });
+          $("studio-nav").setAttribute(
+            "aria-label",
+            tr("工作空间", "Workspaces"),
+          );
+          $("node-stage").setAttribute(
+            "aria-label",
+            tr("创意画布", "Idea canvas"),
+          );
+          $("motion-toggle").textContent = tr(
+            studio.paused ? "继续动效" : "暂停动效",
+            studio.paused ? "Resume motion" : "Pause motion",
+          );
+          $("motion-toggle").setAttribute(
+            "aria-pressed",
+            String(studio.paused),
+          );
+        }
+        function cancelFlow(clearResult = false) {
+          if (flowTimer !== null) clearTimeout(flowTimer);
+          flowTimer = null;
+          flowGeneration++;
+          const wasRunning = flowStep >= 0;
+          flowStep = -1;
+          if (clearResult) flowResult = null;
+          if (wasRunning || clearResult) {
+            $("flow-status").textContent = tr(
+              "参数或来源已更新，请重新运行。",
+              "Source or settings changed. Run the pipeline again.",
+            );
+            document.querySelectorAll("[data-step]").forEach((node) => {
+              delete node.dataset.state;
+              node.querySelector(".step-state").textContent = "";
+            });
+          }
+          $("flow-run").disabled = false;
+          $("flow-export").disabled = !flowResult;
+          if (clearResult) {
+            $("flow-table").replaceChildren();
+            $("flow-count").textContent = "— / —";
+          }
+        }
+        function setScene(scene, persist = true) {
+          if (!SCENES.includes(scene)) return;
+          const changedScene = studio.scene !== scene;
+          if (changedScene) {
+            cancelFlow();
+            stopMotion();
+          }
+          studio.scene = scene;
+          panelVisible = true;
+          visibility?.disconnect();
+          visibility?.observe(
+            $(scene === "tools" ? "panel" : "scene-" + scene),
+          );
+          document.querySelectorAll(".studio-scene").forEach((node) => {
+            node.hidden = node.id !== `scene-${scene}`;
+          });
+          document
+            .querySelectorAll("#studio-nav [data-scene]")
+            .forEach((node) => {
+              node.setAttribute(
+                "aria-selected",
+                String(node.dataset.scene === scene),
+              );
+              node.tabIndex = node.dataset.scene === scene ? 0 : -1;
+            });
+          studioAnimation?.cancel();
+          if (
+            changedScene &&
+            motionAllowed() &&
+            !studio.paused &&
+            typeof $("scene-" + scene).animate === "function"
+          ) {
+            studioAnimation = $("scene-" + scene).animate(
+              [
+                { opacity: 0.72, transform: "translateY(6px)" },
+                { opacity: 1, transform: "none" },
+              ],
+              { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" },
+            );
+          }
+          if (persist) retainStudio(false);
+          if (
+            scene === "tools" &&
+            current?.view?.tabs?.some(
+              (tab) => tab.id === "tab-studio" && tab.active,
+            ) &&
+            !working &&
+            !current.busy
+          )
+            void act("tab-text");
+          studioControls();
+        }
+        $("studio-nav").onclick = (event) => {
+          const button = event.target.closest("[data-scene]");
+          if (button) setScene(button.dataset.scene);
+        };
+        $("studio-nav").onkeydown = (event) => {
+          const index = SCENES.indexOf(
+            event.target.closest("[data-scene]")?.dataset.scene,
+          );
+          if (
+            index < 0 ||
+            !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+          )
+            return;
+          event.preventDefault();
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? 3
+                : (index + (event.key === "ArrowRight" ? 1 : 3)) % 4;
+          setScene(SCENES[next]);
+          $("studio-tab-" + SCENES[next]).focus();
+        };
+        function canvasUndoPoint() {
+          canvasHistory.push(
+            JSON.stringify({
+              nodes: studio.nodes,
+              edges: studio.edges,
+              selected: studio.selected,
+            }),
+          );
+          if (canvasHistory.length > 20) canvasHistory.shift();
+          $("canvas-undo").disabled = false;
+        }
+        const undo = create("button", tr("撤销", "Undo"));
+        undo.id = "canvas-undo";
+        undo.type = "button";
+        undo.dataset.variant = "outline";
+        undo.dataset.zh = "撤销";
+        undo.dataset.en = "Undo";
+        undo.disabled = true;
+        $("canvas-arrange").before(undo);
+        undo.onclick = () => {
+          const previous = canvasHistory.pop();
+          if (!previous) return;
+          Object.assign(studio, JSON.parse(previous));
+          undo.disabled = canvasHistory.length === 0;
+          drawCanvas();
+          retainStudio();
+        };
+        function drawLinks() {
+          $("node-links").replaceChildren(
+            ...studio.edges.map(([from, to]) => {
+              const a = studio.nodes.find((node) => node.id === from),
+                b = studio.nodes.find((node) => node.id === to);
+              const ax = a.x * 9,
+                ay = a.y * 4.4,
+                bx = b.x * 9,
+                by = b.y * 4.4,
+                mid = (ax + bx) / 2;
+              return svgNode("path", {
+                d: `M${ax} ${ay} C${mid} ${ay},${mid} ${by},${bx} ${by}`,
+                class: "connection-path flow-pulse",
+              });
+            }),
+          );
+        }
+        function inspector() {
+          const node =
+            studio.nodes.find((item) => item.id === studio.selected) ??
+            studio.nodes[0];
+          studio.selected = node.id;
+          if (document.activeElement !== $("node-title"))
+            $("node-title").value = node.title;
+          if (document.activeElement !== $("node-detail"))
+            $("node-detail").value = node.detail;
+          const previousTarget = $("node-target").value;
+          $("node-target").replaceChildren(
+            ...studio.nodes
+              .filter((item) => item.id !== node.id)
+              .map((item) => new Option(item.title || item.id, item.id)),
+          );
+          if (
+            [...$("node-target").options].some(
+              (option) => option.value === previousTarget,
+            )
+          )
+            $("node-target").value = previousTarget;
+          $("canvas-connect").disabled = studio.nodes.length < 2;
+          $("canvas-remove").disabled = studio.nodes.length < 2;
+          $("node-count").textContent = String(studio.nodes.length);
+          $("edge-count").textContent = String(studio.edges.length);
+          $("node-stage")
+            .querySelectorAll(".canvas-node")
+            .forEach((button) =>
+              button.setAttribute(
+                "aria-pressed",
+                String(button.dataset.node === studio.selected),
+              ),
+            );
+        }
+        function drawCanvas() {
+          $("node-stage").style.setProperty(
+            "--canvas-height",
+            Math.max(390, Math.ceil(studio.nodes.length / 4) * 160 + 100) +
+              "px",
+          );
+          const previous = new Map(
+            [...$("node-stage").querySelectorAll(".canvas-node")].map(
+              (node) => [
+                node.dataset.node,
+                {
+                  x: parseFloat(node.style.left),
+                  y: parseFloat(node.style.top),
+                },
+              ],
+            ),
+          );
+          canvasAnimations.forEach((animation) => animation.cancel());
+          canvasAnimations.clear();
+          $("node-stage")
+            .querySelectorAll(".canvas-node")
+            .forEach((node) => node.remove());
+          studio.nodes.forEach((node) => {
+            const button = create("button");
+            button.type = "button";
+            button.className = "canvas-node";
+            button.dataset.node = node.id;
+            button.dataset.tone = node.tone;
+            const icon = create(
+              "span",
+              { violet: "◇", cyan: "⌁", rose: "✳", orange: "▥" }[node.tone],
+            );
+            icon.className = "node-icon";
+            icon.setAttribute("aria-hidden", "true");
+            const title = create("strong", node.title),
+              detail = create("span", node.detail),
+              port = create("i");
+            title.className = "node-title";
+            detail.className = "node-detail";
+            port.className = "node-port";
+            button.append(icon, title, detail, port);
+            button.style.left = node.x + "%";
+            button.style.top = node.y + "%";
+            button.onclick = () => {
+              studio.selected = node.id;
+              inspector();
+              retainStudio(false);
+            };
+            button.onpointerdown = (event) => {
+              if (
+                event.button !== 0 ||
+                working ||
+                current?.busy ||
+                current?.active === false
+              )
+                return;
+              studio.selected = node.id;
+              inspector();
+              button.focus({ preventScroll: true });
+              drag = {
+                id: node.id,
+                pointer: event.pointerId,
+                px: event.clientX,
+                py: event.clientY,
+                x: node.x,
+                y: node.y,
+                moved: false,
+              };
+              button.setPointerCapture?.(event.pointerId);
+            };
+            button.onpointermove = (event) => {
+              if (
+                !drag ||
+                drag.id !== node.id ||
+                drag.pointer !== event.pointerId
+              )
+                return;
+              const bounds = $("node-stage").getBoundingClientRect();
+              if (!bounds.width || !bounds.height) return;
+              if (
+                !drag.moved &&
+                Math.hypot(event.clientX - drag.px, event.clientY - drag.py) < 3
+              )
+                return;
+              if (!drag.moved) {
+                canvasUndoPoint();
+                drag.moved = true;
+              }
+              node.x = Math.max(
+                12,
+                Math.min(
+                  88,
+                  drag.x + ((event.clientX - drag.px) * 100) / bounds.width,
+                ),
+              );
+              node.y = Math.max(
+                16,
+                Math.min(
+                  84,
+                  drag.y + ((event.clientY - drag.py) * 100) / bounds.height,
+                ),
+              );
+              button.style.left = node.x + "%";
+              button.style.top = node.y + "%";
+              button.dataset.dragging = "true";
+              drawLinks();
+            };
+            const endDrag = (event) => {
+              if (
+                !drag ||
+                drag.id !== node.id ||
+                drag.pointer !== event.pointerId
+              )
+                return;
+              if (event.type === "pointercancel") {
+                node.x = drag.x;
+                node.y = drag.y;
+                button.style.left = node.x + "%";
+                button.style.top = node.y + "%";
+                drawLinks();
+              }
+              const moved = drag.moved;
+              drag = null;
+              delete button.dataset.dragging;
+              if (button.hasPointerCapture?.(event.pointerId))
+                button.releasePointerCapture(event.pointerId);
+              if (moved) retainStudio();
+            };
+            button.onpointerup =
+              button.onpointercancel =
+              button.onlostpointercapture =
+                endDrag;
+            button.onkeydown = (event) => {
+              const delta = {
+                ArrowLeft: [-1, 0],
+                ArrowRight: [1, 0],
+                ArrowUp: [0, -1],
+                ArrowDown: [0, 1],
+              }[event.key];
+              if (!delta) return;
+              event.preventDefault();
+              canvasUndoPoint();
+              const step = event.shiftKey ? 0.5 : 2;
+              node.x = Math.max(12, Math.min(88, node.x + delta[0] * step));
+              node.y = Math.max(16, Math.min(84, node.y + delta[1] * step));
+              button.style.left = node.x + "%";
+              button.style.top = node.y + "%";
+              drawLinks();
+              retainStudio();
+            };
+            $("node-stage").append(button);
+            if (
+              previous.size &&
+              motionAllowed() &&
+              !studio.paused &&
+              typeof button.animate === "function"
+            ) {
+              const old = previous.get(node.id),
+                bounds = $("node-stage").getBoundingClientRect();
+              const first = old
+                ? {
+                    transform: `translate(calc(-50% + ${((old.x - node.x) * bounds.width) / 100}px), calc(-50% + ${((old.y - node.y) * bounds.height) / 100}px))`,
+                    opacity: 1,
+                  }
+                : { transform: "translate(-50%, -50%) scale(.9)", opacity: 0 };
+              const animation = button.animate(
+                [
+                  first,
+                  { transform: "translate(-50%, -50%) scale(1)", opacity: 1 },
+                ],
+                { duration: 360, easing: "cubic-bezier(.16,1,.3,1)" },
+              );
+              canvasAnimations.add(animation);
+              animation.onfinish = () => canvasAnimations.delete(animation);
+            }
+          });
+          inspector();
+          drawLinks();
+        }
+        $("canvas-add").onclick = () => {
+          if (studio.nodes.length >= 24) {
+            notifyStudio(
+              tr(
+                "画布最多容纳 24 个节点。",
+                "A canvas can hold up to 24 nodes.",
+              ),
+            );
+            return;
+          }
+          canvasUndoPoint();
+          let serial = 1;
+          while (studio.nodes.some((node) => node.id === `n${serial}`))
+            serial++;
+          const node = {
+            id: `n${serial}`,
+            title: tr("新的想法", "A new idea"),
+            detail: tr("在右侧写下你的想法", "Add your notes in the inspector"),
+            tone: ["violet", "cyan", "rose", "orange"][studio.nodes.length % 4],
+            x: 20 + (studio.nodes.length % 4) * 19,
+            y: 40 + (studio.nodes.length % 2) * 20,
+          };
+          studio.nodes.push(node);
+          studio.selected = node.id;
+          drawCanvas();
+          retainStudio();
+          $("node-title").focus();
+          $("node-title").select();
+        };
+        $("canvas-remove").onclick = () => {
+          if (studio.nodes.length < 2) return;
+          canvasUndoPoint();
+          const id = studio.selected;
+          studio.nodes = studio.nodes.filter((node) => node.id !== id);
+          studio.edges = studio.edges.filter((edge) => !edge.includes(id));
+          studio.selected = studio.nodes[0].id;
+          drawCanvas();
+          retainStudio();
+          announce(
+            tr("节点已移除，可撤销。", "Node removed. Undo is available."),
+          );
+        };
+        $("canvas-connect").onclick = () => {
+          const to = $("node-target").value;
+          if (!to || to === studio.selected) return;
+          const index = studio.edges.findIndex(
+            ([from, target]) => from === studio.selected && target === to,
+          );
+          if (index < 0 && studio.edges.length >= 64) {
+            notifyStudio(
+              tr("最多保留 64 条连接。", "A canvas can hold up to 64 links."),
+            );
+            return;
+          }
+          canvasUndoPoint();
+          if (index >= 0) studio.edges.splice(index, 1);
+          else studio.edges.push([studio.selected, to]);
+          drawLinks();
+          inspector();
+          retainStudio();
+        };
+        $("canvas-arrange").onclick = () => {
+          canvasUndoPoint();
+          const columns = Math.min(
+              4,
+              Math.ceil(Math.sqrt(studio.nodes.length)),
+            ),
+            rows = Math.ceil(studio.nodes.length / columns);
+          studio.nodes.forEach((node, index) => {
+            node.x =
+              columns === 1
+                ? 50
+                : 15 + ((index % columns) * 70) / (columns - 1);
+            node.y =
+              rows === 1
+                ? 50
+                : 18 + (Math.floor(index / columns) * 64) / (rows - 1);
+          });
+          drawCanvas();
+          retainStudio();
+        };
+        for (const [id, key] of [
+          ["node-title", "title"],
+          ["node-detail", "detail"],
+        ]) {
+          $(id).onfocus = () => canvasUndoPoint();
+          $(id).oninput = () => {
+            const node = studio.nodes.find(
+              (item) => item.id === studio.selected,
+            );
+            node[key] = $(id).value;
+            $("node-stage").querySelector(
+              `[data-node="${node.id}"] .node-${key}`,
+            ).textContent = node[key];
+            retainStudio();
+          };
+        }
+        $("motion-toggle").onclick = () => {
+          studio.paused = !studio.paused;
+          localizeStudio();
+          syncMotion();
+          retainStudio(false);
+        };
+        function visibleRows() {
+          return studio.rows.filter(
+            (row) =>
+              (!studio.category || row.category === studio.category) &&
+              row.value >= studio.minimum,
+          );
+        }
+        function simpleTable(rows, columns) {
+          const node = create("table"),
+            head = create("thead"),
+            header = create("tr"),
+            body = create("tbody");
+          const caption = create("caption", tr("当前数据", "Current data"));
+          caption.className = "sr-only";
+          node.append(caption);
+          columns.forEach((label) => {
+            const cell = create("th", label);
+            cell.scope = "col";
+            header.append(cell);
+          });
+          head.append(header);
+          rows.forEach((row) => {
+            const line = create("tr");
+            row.forEach((value) => line.append(create("td", String(value))));
+            body.append(line);
+          });
+          node.append(head, body);
+          return node;
+        }
+        function drawLens() {
+          const rows = visibleRows(),
+            total = rows.reduce((sum, row) => sum + row.value, 0);
+          $("lens-count").textContent = String(rows.length);
+          $("lens-total").textContent = total.toLocaleString(current?.locale, {
+            maximumFractionDigits: 1,
+          });
+          $("lens-average").textContent = (
+            rows.length ? total / rows.length : 0
+          ).toLocaleString(current?.locale, { maximumFractionDigits: 1 });
+          $("lens-category").replaceChildren(
+            new Option(tr("全部分类", "All categories"), ""),
+            ...[...new Set(studio.rows.map((row) => row.category))].map(
+              (category) => new Option(category, category),
+            ),
+          );
+          $("lens-category").value = studio.category;
+          $("lens-min").min = String(
+            Math.min(0, ...studio.rows.map((row) => row.value)),
+          );
+          $("lens-min").max = String(
+            Math.max(1, ...studio.rows.map((row) => row.value)),
+          );
+          $("lens-min").value = String(studio.minimum);
+          $("lens-min-value").textContent = String(studio.minimum);
+          $("lens-chart").setAttribute(
+            "aria-label",
+            tr(
+              `数值分布，${rows.length} 条记录，总和 ${total}`,
+              `Value distribution: ${rows.length} rows, total ${total}`,
+            ),
+          );
+          $("lens-empty").hidden = rows.length > 0;
+          $("lens-source-label").textContent =
+            studio.source === "sample"
+              ? tr(
+                  "内置示例 · 可替换",
+                  "Built-in sample · Replace with your own",
+                )
+              : tr("自定义数据", "Custom data");
+          const max = Math.max(1, ...rows.map((row) => Math.abs(row.value))),
+            preview = rows.slice(0, 24);
+          $("lens-preview-note").hidden = rows.length <= 24;
+          $("lens-preview-note").textContent = tr(
+            "图表预览前 24 条记录；统计、下表和导出包含所有筛选记录。",
+            "The chart previews the first 24 rows. Statistics, the table and export include every matching row.",
+          );
+          $("lens-chart").replaceChildren();
+          if (studio.chart === "line") {
+            const svg = svgNode("svg", {
+              viewBox: "0 0 640 230",
+              role: "presentation",
+            });
+            const lo = Math.min(0, ...preview.map((row) => row.value)),
+              hi = Math.max(1, ...preview.map((row) => row.value));
+            const points = preview.map((row, i) => [
+              24 + (i * 592) / Math.max(1, preview.length - 1),
+              205 - ((row.value - lo) * 180) / (hi - lo),
+            ]);
+            if (points.length)
+              svg.append(
+                svgNode("polyline", {
+                  points: points.map((point) => point.join(",")).join(" "),
+                  fill: "none",
+                  stroke: "var(--primary)",
+                  "stroke-width": 3,
+                  "stroke-linecap": "round",
+                  "stroke-linejoin": "round",
+                }),
+              );
+            points.forEach(([cx, cy], i) => {
+              const circle = svgNode("circle", {
+                cx,
+                cy,
+                r: 4,
+                fill: "var(--primary)",
+              });
+              const title = svgNode("title");
+              title.textContent = `${preview[i].label}: ${preview[i].value}`;
+              circle.append(title);
+              svg.append(circle);
+            });
+            $("lens-chart").append(svg);
+          } else {
+            const chart = create("div");
+            chart.className = "bar-chart";
+            preview.forEach((row, index) => {
+              const column = create("div"),
+                fill = create("div"),
+                label = create("span", row.label),
+                value = create(
+                  "span",
+                  row.value.toLocaleString(current?.locale),
+                );
+              column.className = "bar-column";
+              column.dataset.tone = ["violet", "cyan", "rose", "orange"][
+                index % 4
+              ];
+              column.style.setProperty(
+                "--bar-height",
+                Math.max(1, (Math.abs(row.value) / max) * 100) + "%",
+              );
+              fill.className = "bar-fill";
+              label.className = "bar-label";
+              value.className = "bar-value";
+              fill.append(value);
+              column.append(fill, label);
+              chart.append(column);
+            });
+            $("lens-chart").append(chart);
+          }
+          $("chart-bars").setAttribute(
+            "aria-pressed",
+            String(studio.chart === "bars"),
+          );
+          $("chart-line").setAttribute(
+            "aria-pressed",
+            String(studio.chart === "line"),
+          );
+          $("lens-table").replaceChildren(
+            simpleTable(
+              rows.map((row) => [row.label, row.category, row.value]),
+              [
+                tr("项目", "Label"),
+                tr("分类", "Category"),
+                tr("数值", "Value"),
+              ],
+            ),
+          );
+          $("lens-export").disabled = rows.length === 0;
+        }
+        $("lens-category").onchange = () => {
+          studio.category = $("lens-category").value;
+          drawLens();
+          retainStudio(false);
+        };
+        $("lens-min").oninput = () => {
+          studio.minimum = Number($("lens-min").value);
+          drawLens();
+          retainStudio(false);
+        };
+        ["bars", "line"].forEach((kind) => {
+          $("chart-" + kind).onclick = () => {
+            studio.chart = kind;
+            drawLens();
+            retainStudio(false);
+          };
+        });
+        $("lens-edit").onclick = () => {
+          if (!studio.editorOpen)
+            $("lens-source").value =
+              studio.sourceDraft ?? JSON.stringify(studio.rows, null, 2);
+          studio.editorOpen = true;
+          $("data-editor").hidden = false;
+          $("lens-edit").setAttribute("aria-expanded", "true");
+          $("lens-source").focus();
+          retainStudio(false);
+        };
+        $("lens-source").oninput = () => {
+          const input = $("lens-source"),
+            encoder = new TextEncoder();
+          input.removeAttribute("aria-invalid");
+          if (encoder.encode(input.value).length > 48000) {
+            let bytes = 0,
+              limited = "";
+            for (const character of input.value) {
+              const size = encoder.encode(character).length;
+              if (bytes + size > 48000) break;
+              limited += character;
+              bytes += size;
+            }
+            input.value = limited;
+            $("lens-error").textContent = tr(
+              "数据源最多 48000 字节，已截取并保留前段内容；请缩短数据后重试。",
+              "The source is limited to 48000 bytes. The beginning was retained; shorten the data and try again.",
+            );
+          } else $("lens-error").textContent = "";
+          studio.sourceDraft = input.value;
+          retainStudio();
+        };
+        $("lens-cancel").onclick = () => {
+          studio.editorOpen = false;
+          studio.sourceDraft = null;
+          $("data-editor").hidden = true;
+          $("lens-edit").setAttribute("aria-expanded", "false");
+          $("lens-source").removeAttribute("aria-invalid");
+          $("lens-error").textContent = "";
+          $("lens-edit").focus();
+          retainStudio(false);
+        };
+        function applyRows(rows, source) {
+          const next = parseRows(rows);
+          dataHistory.push({
+            rows: studio.rows,
+            source: studio.source,
+            category: studio.category,
+            minimum: studio.minimum,
+          });
+          if (dataHistory.length > 10) dataHistory.shift();
+          $("lens-undo").disabled = false;
+          studio.rows = next;
+          studio.category = "";
+          studio.minimum = Math.min(0, ...studio.rows.map((row) => row.value));
+          studio.source = source;
+          studio.flowUseLens = false;
+          studio.sourceDraft = null;
+          studio.editorOpen = false;
+          $("data-editor").hidden = true;
+          $("lens-edit").setAttribute("aria-expanded", "false");
+          $("lens-source").removeAttribute("aria-invalid");
+          $("lens-error").textContent = "";
+          cancelFlow(true);
+          drawLens();
+          retainStudio();
+        }
+        $("lens-apply").onclick = () => {
+          try {
+            const raw = $("lens-source").value;
+            if (new TextEncoder().encode(raw).length > 48000)
+              throw new Error("size");
+            applyRows(JSON.parse(raw), "custom");
+            $("data-editor").hidden = true;
+            $("lens-error").textContent = "";
+            $("lens-edit").focus();
+          } catch {
+            $("lens-source").setAttribute("aria-invalid", "true");
+            $("lens-error").textContent = tr(
+              "请输入最多 120 条的 JSON 数组，每条包含非空 label、category 和有限数值 value（绝对值不超过 1000000）。",
+              "Use a JSON array of up to 120 rows with nonempty label and category strings and a finite value between -1000000 and 1000000.",
+            );
+          }
+        };
+        $("lens-sample").onclick = () => {
+          applyRows(sampleRows(), "sample");
+        };
+        const undoData = create("button");
+        undoData.id = "lens-undo";
+        undoData.type = "button";
+        undoData.dataset.variant = "ghost";
+        undoData.dataset.zh = "撤销数据替换";
+        undoData.dataset.en = "Undo data replacement";
+        undoData.disabled = true;
+        $("lens-sample").after(undoData);
+        undoData.onclick = () => {
+          const saved = dataHistory.pop();
+          if (!saved) return;
+          Object.assign(studio, saved, {
+            flowUseLens: false,
+            sourceDraft: null,
+            editorOpen: false,
+          });
+          $("data-editor").hidden = true;
+          $("lens-edit").setAttribute("aria-expanded", "false");
+          $("lens-source").removeAttribute("aria-invalid");
+          $("lens-error").textContent = "";
+          cancelFlow(true);
+          drawLens();
+          retainStudio();
+          studioControls();
+        };
+        const previewNote = create("p");
+        previewNote.id = "lens-preview-note";
+        previewNote.className = "panel-note";
+        previewNote.hidden = true;
+        $("lens-chart").after(previewNote);
+        $("lens-send").onclick = () => {
+          cancelFlow(true);
+          studio.flowUseLens = true;
+          studio.flowCategory = studio.category;
+          studio.flowLensMinimum = studio.minimum;
+          flowSettings();
+          setScene("flow");
+          announce(
+            tr(
+              "当前数据已接入流程。",
+              "The current dataset is connected to the pipeline.",
+            ),
+          );
+        };
+        function flowSettings() {
+          document.querySelector("[data-step='0'] .step-copy p").textContent =
+            studio.flowUseLens
+              ? tr(
+                  `数据透镜筛选结果 · ${flowInput().length} 条`,
+                  `Filtered Data lens source · ${flowInput().length} rows`,
+                )
+              : tr(
+                  `当前数据源 · ${flowInput().length} 条`,
+                  `Current source · ${flowInput().length} rows`,
+                );
+          $("flow-filter-summary").textContent = tr(
+            `保留 value ≥ ${studio.flowMinimum}`,
+            `Keep value ≥ ${studio.flowMinimum}`,
+          );
+          $("flow-group-summary").textContent =
+            studio.aggregation === "none"
+              ? tr("保留每条原始记录", "Keep individual rows")
+              : studio.aggregation === "sum"
+                ? tr("按 category 汇总 value", "Sum value by category")
+                : tr("按 category 计算平均 value", "Average value by category");
+          $("flow-min").value = String(studio.flowMinimum);
+          $("flow-group").value = studio.aggregation;
+        }
+        $("flow-min").oninput = () => {
+          const value = $("flow-min").valueAsNumber;
+          if (!Number.isFinite(value) || Math.abs(value) > 1000000) {
+            $("flow-min").setAttribute("aria-invalid", "true");
+            return;
+          }
+          $("flow-min").setAttribute("aria-invalid", "false");
+          studio.flowMinimum = value;
+          cancelFlow(true);
+          flowSettings();
+          retainStudio();
+        };
+        $("flow-group").onchange = () => {
+          studio.aggregation = $("flow-group").value;
+          cancelFlow(true);
+          flowSettings();
+          retainStudio();
+        };
+        function advanceFlow(generation) {
+          if (generation !== flowGeneration || flowStep < 0) return;
+          flowTimer = null;
+          const step = flowStep,
+            nodes = [...document.querySelectorAll("[data-step]")];
+          if (step === 0) flowSource = flowInput().map((row) => ({ ...row }));
+          if (step === 1)
+            flowSource = flowSource.filter(
+              (row) => row.value >= studio.flowMinimum,
+            );
+          if (step === 2 && studio.aggregation !== "none") {
+            const grouped = new Map();
+            flowSource.forEach((row) => {
+              const group = grouped.get(row.category) ?? { sum: 0, count: 0 };
+              group.sum += row.value;
+              group.count++;
+              grouped.set(row.category, group);
+            });
+            flowSource = [...grouped].map(([category, group]) => ({
+              label: category,
+              category,
+              value:
+                studio.aggregation === "sum"
+                  ? group.sum
+                  : group.sum / group.count,
+            }));
+          }
+          if (step === 3) flowSource.sort((a, b) => b.value - a.value);
+          nodes[step].dataset.state = "done";
+          nodes[step].querySelector(".step-state").textContent = tr(
+            `${flowSource.length} 条`,
+            `${flowSource.length} rows`,
+          );
+          if (step === 3) {
+            flowResult = flowSource.map((row) => ({ ...row }));
+            flowStep = -1;
+            $("flow-table").replaceChildren(
+              simpleTable(
+                flowResult.map((row) => [
+                  row.label,
+                  row.category,
+                  Number(row.value.toFixed(4)),
+                ]),
+                [
+                  tr("项目", "Label"),
+                  tr("分类", "Category"),
+                  tr("数值", "Value"),
+                ],
+              ),
+            );
+            $("flow-count").textContent =
+              `${flowInput().length} / ${flowResult.length}`;
+            $("flow-status").textContent = tr(
+              "处理完成，结果可以导出。",
+              "Complete. Your result is ready to export.",
+            );
+            $("flow-run").disabled = false;
+            $("flow-export").disabled = flowResult.length === 0;
+            return;
+          }
+          flowStep++;
+          nodes[flowStep].dataset.state = "running";
+          if (!motionAllowed() || studio.paused) advanceFlow(generation);
+          else flowTimer = setTimeout(() => advanceFlow(generation), 240);
+        }
+        $("flow-run").onclick = () => {
+          if ($("flow-min").getAttribute("aria-invalid") === "true") {
+            $("flow-min").focus();
+            return;
+          }
+          cancelFlow(true);
+          flowStep = 0;
+          const generation = flowGeneration;
+          $("flow-run").disabled = true;
+          $("flow-status").textContent = tr(
+            "正在处理当前数据…",
+            "Processing the current dataset…",
+          );
+          document.querySelector("[data-step='0']").dataset.state = "running";
+          if (!motionAllowed() || studio.paused) advanceFlow(generation);
+          else flowTimer = setTimeout(() => advanceFlow(generation), 180);
+        };
+        function flowInput() {
+          return studio.flowUseLens
+            ? studio.rows.filter(
+                (row) =>
+                  (!studio.flowCategory ||
+                    row.category === studio.flowCategory) &&
+                  row.value >= studio.flowLensMinimum,
+              )
+            : studio.rows;
+        }
+        async function exportStudio(name, columns, rows, format) {
+          if (
+            studioInvalid ||
+            working ||
+            current?.busy ||
+            current?.active === false
+          )
+            return;
+          const payload = JSON.stringify({
+            schema: 1,
+            name,
+            columns,
+            rows: rows.map((row) => row.map(String)),
+          });
+          if (new TextEncoder().encode(payload).length > 64000) {
+            studioError(
+              tr(
+                "导出内容过大，请减少记录后重试。",
+                "The export is too large. Reduce the number of rows and try again.",
+              ),
+            );
+            return;
+          }
+          const drafts = values();
+          studioError("");
+          working = true;
+          studioControls();
+          try {
+            await retain(studioDirty || current.dirty);
+            let view = await starter.run("tab-studio", drafts);
+            current = {
+              ...current,
+              view,
+              fields: Object.fromEntries(
+                view.fields.map((field) => [field.id, field.value]),
+              ),
+            };
+            view = await starter.run("workspace-export", {
+              workspace: payload,
+              "workspace-format": format,
+            });
+            current = {
+              ...current,
+              view,
+              fields: Object.fromEntries(
+                view.fields.map((field) => [field.id, field.value]),
+              ),
+            };
+            if (view.errors && Object.keys(view.errors).length)
+              throw new Error("validation");
+            if (!view.artifacts?.length) throw new Error("artifact");
+            if (await starter.saveArtifact(0))
+              notifyStudio(tr("导出已保存。", "Export saved."), "success");
+          } catch {
+            studioError(
+              tr(
+                "导出未完成，当前内容已保留，可重试。",
+                "The export did not finish. Your work is retained; try again.",
+              ),
+            );
+          } finally {
+            working = false;
+            localFields = {};
+            force = true;
+            render();
+            retainStudio(false);
+          }
+        }
+        $("canvas-export").onclick = () =>
+          void exportStudio(
+            tr("创意画布", "Idea canvas"),
+            ["id", "title", "note", "tone", "x", "y", "connections"],
+            studio.nodes.map((node) => [
+              node.id,
+              node.title,
+              node.detail,
+              node.tone,
+              node.x.toFixed(2),
+              node.y.toFixed(2),
+              studio.edges
+                .filter(([id]) => id === node.id)
+                .map(([, to]) => to)
+                .join(","),
+            ]),
+            "json",
+          );
+        $("lens-export").onclick = () =>
+          void exportStudio(
+            tr("数据透镜", "Data lens"),
+            ["label", "category", "value"],
+            visibleRows().map((row) => [row.label, row.category, row.value]),
+            "csv",
+          );
+        $("flow-export").onclick = () => {
+          if (flowResult)
+            void exportStudio(
+              tr("流程结果", "Pipeline result"),
+              ["label", "category", "value"],
+              flowResult.map((row) => [row.label, row.category, row.value]),
+              "csv",
+            );
+        };
+        $("tools-to-lens").onclick = () => {
+          try {
+            const state = JSON.parse(current.view.state),
+              raw =
+                values()["data-source"] ||
+                state.data?.source ||
+                state.data?.received;
+            if (!raw) throw new Error("empty");
+            applyRows(JSON.parse(raw), "custom");
+            setScene("lens");
+          } catch {
+            notifyStudio(
+              tr(
+                "请先在 CSV / JSON 工具载入含 label、category、value 的 JSON 数据，或从文件与网络接收后载入。",
+                "Load JSON rows with label, category and value in CSV / JSON, or receive and load a file first.",
+              ),
+              "error",
+            );
+          }
+        };
+        function studioSnapshot(snapshot) {
+          if (!studioLoaded) {
+            studio = freshStudio();
+            const saved = snapshot.checkpoint?.studio;
+            if (saved && !restoreStudio(saved)) {
+              studioInvalid = true;
+              studioError(
+                tr(
+                  "无法恢复工作台草稿，原检查点已保留。请先从扩展工具导出当前会话，再新建会话。",
+                  "This workspace draft cannot be restored. Its checkpoint is retained. Export the session from Extension tools, then start a new session.",
+                ),
+              );
+            }
+            studioLoaded = true;
+            localizeStudio();
+            drawCanvas();
+            drawLens();
+            $("data-editor").hidden = !studio.editorOpen;
+            $("lens-edit").setAttribute(
+              "aria-expanded",
+              String(studio.editorOpen),
+            );
+            $("lens-source").value =
+              studio.sourceDraft ?? JSON.stringify(studio.rows, null, 2);
+            flowSettings();
+            setScene(studio.scene, false);
+          }
+          if (studioLocale !== snapshot.locale) {
+            studioLocale = snapshot.locale;
+            localizeStudio();
+            inspector();
+            drawLens();
+            flowSettings();
+          }
+          if (snapshot.active === false) {
+            cancelFlow();
+            studioAnimation?.cancel();
+            if (drag) {
+              const button = $("node-stage").querySelector(
+                `[data-node="${drag.id}"]`,
+              );
+              if (button?.hasPointerCapture?.(drag.pointer))
+                button.releasePointerCapture(drag.pointer);
+              drag = null;
+            }
+          }
+          syncMotion();
+        }
+        const visibility =
+          typeof IntersectionObserver === "function"
+            ? new IntersectionObserver(([entry]) => {
+                panelVisible = entry.isIntersecting;
+                syncMotion();
+              })
+            : null;
+        visibility?.observe($("scene-canvas"));
+        document.addEventListener("visibilitychange", syncMotion);
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) cancelFlow();
+        });
+        reducedMotion?.addEventListener("change", syncMotion);
+        window.addEventListener(
+          "pagehide",
+          () => {
+            cancelFlow();
+            studioAnimation?.cancel();
+            stopMotion();
+            visibility?.disconnect();
+            reducedMotion?.removeEventListener("change", syncMotion);
+            document.removeEventListener("visibilitychange", syncMotion);
+          },
+          { once: true },
+        );
         starter.onChange((snapshot) => {
+          if (current?.dirty && !snapshot.dirty && !working)
+            studioDirty = false;
           current = snapshot;
+          studioSnapshot(snapshot);
           if (
             snapshot.checkpoint?.pages &&
             typeof snapshot.checkpoint.pages === "object"

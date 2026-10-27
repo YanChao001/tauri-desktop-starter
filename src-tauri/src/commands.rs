@@ -83,16 +83,6 @@ pub async fn save_settings_snapshot(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_notes(app: tauri::AppHandle, search: Option<String>) -> NativeResult<Vec<Note>> {
-    blocking::run(move || {
-        app.state::<Database>()
-            .list(search.as_deref().unwrap_or_default())
-    })
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn create_note(app: tauri::AppHandle, input: NoteInput) -> NativeResult<Note> {
     blocking::run(move || {
         let note = app.state::<Database>().create(input)?;
@@ -109,17 +99,6 @@ pub async fn update_note(app: tauri::AppHandle, input: NoteUpdate) -> NativeResu
         let note = app.state::<Database>().update(input)?;
         let _ = app.emit("app://notes-changed", ());
         Ok(note)
-    })
-    .await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_note(app: tauri::AppHandle, id: i32) -> NativeResult<()> {
-    blocking::run(move || {
-        app.state::<Database>().delete(id)?;
-        let _ = app.emit("app://notes-changed", ());
-        Ok(())
     })
     .await
 }

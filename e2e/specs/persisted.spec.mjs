@@ -56,22 +56,46 @@ describe("App process restart", () => {
         "utf8",
       ),
     );
-    const placement = await windowPlacement();
-    const restored =
-      Math.abs(placement.position.x - expectedPosition.x) <= 2 &&
-      Math.abs(placement.position.y - expectedPosition.y) <= 2;
-    const diagnostic = restored
-      ? null
-      : recordWindowPlacement("restart-failed", {
-          expected: expectedPosition,
-          actual: placement.position,
-          outerSize: placement.outerSize,
-          workAreas: placement.workAreas,
-          scaleFactor: placement.scaleFactor,
-        });
-    assert.ok(
-      restored,
-      `Remembered window position changed: ${JSON.stringify(diagnostic)}`,
+    const started = Date.now();
+    let firstObserved;
+    let placement;
+    const positionDetails = () => ({
+      expected: expectedPosition,
+      firstObserved,
+      actual: placement?.position,
+      outerSize: placement?.outerSize,
+      workAreas: placement?.workAreas,
+      scaleFactor: placement?.scaleFactor,
+      elapsedMs: Date.now() - started,
+    });
+    try {
+      // 可见和 IPC 就绪早于异步窗口管理器的位置配置；以真实原生坐标确认恢复。
+      await browser.waitUntil(
+        async () => {
+          placement = await windowPlacement();
+          firstObserved ??= placement.position;
+          return (
+            Math.abs(placement.position.x - expectedPosition.x) <= 2 &&
+            Math.abs(placement.position.y - expectedPosition.y) <= 2
+          );
+        },
+        {
+          timeoutMsg: "Window manager did not restore the remembered position",
+        },
+      );
+    } catch (error) {
+      const diagnostic = recordWindowPlacement(
+        "restart-failed",
+        positionDetails(),
+      );
+      throw new Error(
+        `Remembered window position changed: ${JSON.stringify(diagnostic)}`,
+        { cause: error },
+      );
+    }
+    console.info(
+      "Restored window position:",
+      recordWindowPlacement("restart-restored", positionDetails()),
     );
     const geometry = await invoke("get_window_geometry");
     assert.equal(geometry.ok, true);
@@ -93,11 +117,19 @@ describe("App process restart", () => {
       (await invoke("plugin:window|is_visible", { label: "main" })).value,
       true,
     );
-    const notes = await invoke("list_notes", { search: "E2E persisted note" });
+    const notes = await invoke("query_notes", {
+      query: {
+        search: "E2E persisted note",
+        offset: 0,
+        limit: 50,
+        sort: "updated-desc",
+        trash: false,
+      },
+    });
     assert.equal(notes.ok, true);
-    assert.equal(notes.value.length, 1);
-    assert.equal(notes.value[0].title, "E2E persisted note");
-    assert.equal(notes.value[0].body, "Saved before app process restart");
+    assert.equal(notes.value.total, 1);
+    assert.equal(notes.value.items[0].title, "E2E persisted note");
+    assert.equal(notes.value.items[0].body, "Saved before app process restart");
     await browser.saveScreenshot(
       "artifacts/e2e/persisted/restarted-window.png",
     );

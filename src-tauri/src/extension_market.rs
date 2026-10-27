@@ -7,6 +7,7 @@ use crate::{
         ui::{ExtensionUiDocument, UI_DOCUMENT_LIMIT, UI_TOTAL_LIMIT, valid_document_id},
         valid_id, version,
     },
+    network::{self, NetworkMode},
     storage::atomic_write,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -24,7 +25,7 @@ use std::{
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri_plugin_http::reqwest::{Client, redirect::Policy};
+use tauri_plugin_http::reqwest::{Client, Response, redirect::Policy};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use url::Url;
 
@@ -35,6 +36,7 @@ const FUTURE_TOLERANCE: u64 = 300;
 const TRUST_LIMIT: usize = 64 * 1024;
 const TRUST_SOURCES: usize = 64;
 const JSON_DEPTH_LIMIT: usize = 64;
+const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -197,6 +199,19 @@ pub struct MarketDownload {
     pub content: String,
     pub preview: ExtensionPreview,
     pub source: MarketSource,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(
+    tag = "phase",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum MarketDownloadProgress {
+    Downloading {
+        received_bytes: u32,
+        total_bytes: u32,
+    },
+    Verifying,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -884,11 +899,17 @@ fn allowed_url(url: &Url, repository: &str) -> bool {
         _ => false,
     }
 }
-async fn fetch(url: Url, repository: String, limit: usize) -> NativeResult<Vec<u8>> {
+async fn fetch(
+    url: Url,
+    repository: String,
+    limit: usize,
+    network_mode: NetworkMode,
+    on_progress: impl Fn(usize),
+) -> NativeResult<Vec<u8>> {
     if !allowed_url(&url, &repository) {
         return Err(failure(ErrorCode::MarketInvalid));
     }
-    let client = Client::builder()
+    let client = network::configure_client(Client::builder(), network_mode)
         .https_only(true)
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(60))
@@ -902,7 +923,7 @@ async fn fetch(url: Url, repository: String, limit: usize) -> NativeResult<Vec<u
         }))
         .build()
         .map_err(|_| failure(ErrorCode::MarketUnavailable))?;
-    let mut response = client
+    let response = client
         .get(url)
         .send()
         .await
@@ -910,6 +931,39 @@ async fn fetch(url: Url, repository: String, limit: usize) -> NativeResult<Vec<u
     if !response.status().is_success() {
         return Err(failure(ErrorCode::MarketUnavailable));
     }
+    read_response(response, limit, on_progress).await
+}
+
+struct DownloadProgressThrottle {
+    last_bytes: usize,
+    last_reported_at: Instant,
+}
+impl DownloadProgressThrottle {
+    fn new(now: Instant) -> Self {
+        Self {
+            last_bytes: 0,
+            last_reported_at: now,
+        }
+    }
+    fn should_publish(&mut self, received: usize, complete: bool, now: Instant) -> bool {
+        if received == self.last_bytes
+            || (!complete
+                && now.saturating_duration_since(self.last_reported_at)
+                    < DOWNLOAD_PROGRESS_INTERVAL)
+        {
+            return false;
+        }
+        self.last_bytes = received;
+        self.last_reported_at = now;
+        true
+    }
+}
+
+async fn read_response(
+    mut response: Response,
+    limit: usize,
+    on_progress: impl Fn(usize),
+) -> NativeResult<Vec<u8>> {
     if response
         .content_length()
         .is_some_and(|length| length > limit as u64)
@@ -917,6 +971,7 @@ async fn fetch(url: Url, repository: String, limit: usize) -> NativeResult<Vec<u
         return Err(failure(ErrorCode::MarketInvalid));
     }
     let mut bytes = Vec::new();
+    let mut progress = DownloadProgressThrottle::new(Instant::now());
     while let Some(chunk) = response
         .chunk()
         .await
@@ -926,6 +981,12 @@ async fn fetch(url: Url, repository: String, limit: usize) -> NativeResult<Vec<u
             return Err(failure(ErrorCode::MarketInvalid));
         }
         bytes.extend_from_slice(&chunk);
+        if progress.should_publish(bytes.len(), bytes.len() == limit, Instant::now()) {
+            on_progress(bytes.len());
+        }
+    }
+    if progress.should_publish(bytes.len(), true, Instant::now()) {
+        on_progress(bytes.len());
     }
     Ok(bytes)
 }
@@ -953,7 +1014,11 @@ impl ExtensionMarket {
             .map(|cache| cache.clone())
             .map_err(|_| failure(ErrorCode::MarketUnavailable))
     }
-    async fn latest(&self, force: bool) -> NativeResult<VerifiedCatalog> {
+    async fn latest(
+        &self,
+        force: bool,
+        network_mode: NetworkMode,
+    ) -> NativeResult<VerifiedCatalog> {
         let _refresh = self.refresh.lock().await;
         if self.isolated {
             return Err(failure(ErrorCode::ExtensionUnavailable));
@@ -981,6 +1046,8 @@ impl ExtensionMarket {
             config.catalog_url()?,
             config.repository.clone(),
             CATALOG_LIMIT,
+            network_mode,
+            |_| {},
         )
         .await?;
         let next = blocking::run(move || verify_catalog(&bytes, &config)).await?;
@@ -994,8 +1061,12 @@ impl ExtensionMarket {
             .map_err(|_| failure(ErrorCode::MarketUnavailable))? = Some(next.clone());
         Ok(next)
     }
-    pub async fn snapshot(&self, force: bool) -> NativeResult<MarketSnapshot> {
-        match self.latest(force).await {
+    pub async fn snapshot(
+        &self,
+        force: bool,
+        network_mode: NetworkMode,
+    ) -> NativeResult<MarketSnapshot> {
+        match self.latest(force, network_mode).await {
             Ok(value) => Ok(MarketSnapshot {
                 catalog: value.catalog,
                 incompatible_entries: value.incompatible_entries,
@@ -1027,6 +1098,8 @@ impl ExtensionMarket {
         &self,
         id: &str,
         expected_package_sha256: &str,
+        network_mode: NetworkMode,
+        on_progress: impl Fn(MarketDownloadProgress) + Send + Sync,
     ) -> NativeResult<MarketDownload> {
         if id.is_empty() || id.len() > 80 || !valid_digest(expected_package_sha256) {
             return Err(failure(ErrorCode::MarketInvalid));
@@ -1035,18 +1108,34 @@ impl ExtensionMarket {
             .downloads
             .try_acquire()
             .map_err(|_| failure(ErrorCode::ExtensionBusy))?;
+        on_progress(MarketDownloadProgress::Downloading {
+            received_bytes: 0,
+            total_bytes: 0,
+        });
         // 下载前重新确认当前上架状态，过期的界面不能绕过下架。
-        let catalog = self.latest(true).await?;
+        let catalog = self.latest(true, network_mode).await?;
         let entry = entry_for(catalog.catalog.clone(), id, expected_package_sha256)?;
         let source = catalog.source(&entry);
         let config = MarketConfig::configured()?;
+        on_progress(MarketDownloadProgress::Downloading {
+            received_bytes: 0,
+            total_bytes: entry.package_bytes,
+        });
         let bytes = fetch(
             config.package_url(&entry)?,
             config.repository,
             entry.package_bytes as usize,
+            network_mode,
+            |received| {
+                on_progress(MarketDownloadProgress::Downloading {
+                    received_bytes: received as u32,
+                    total_bytes: entry.package_bytes,
+                });
+            },
         )
         .await?;
         catalog.require_current(Instant::now(), now_seconds()?)?;
+        on_progress(MarketDownloadProgress::Verifying);
         let download = blocking::run(move || verify_package(&bytes, &entry, source)).await?;
         catalog.require_current(Instant::now(), now_seconds()?)?;
         Ok(download)
@@ -1056,12 +1145,13 @@ impl ExtensionMarket {
         content: &str,
         expected_sha256: &str,
         source: &MarketSource,
+        network_mode: NetworkMode,
     ) -> NativeResult<MarketSource> {
         if content.len() > PACKAGE_LIMIT || !valid_digest(expected_sha256) {
             return Err(failure(ErrorCode::MarketInvalid));
         }
         source.validate()?;
-        let catalog = self.latest(false).await?;
+        let catalog = self.latest(false, network_mode).await?;
         let content = content.to_string();
         let expected_sha256 = expected_sha256.to_string();
         let source = source.clone();
@@ -1114,6 +1204,137 @@ mod tests {
         let payload = serde_json::to_vec(value).unwrap();
         validate_unique_json(&payload)?;
         decode_catalog(&payload, &config(), TEST_NOW)
+    }
+    fn read_fixture(wire: Vec<u8>, limit: usize) -> (NativeResult<Vec<u8>>, Vec<usize>) {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                let length = stream.read(&mut buffer).unwrap();
+                assert_ne!(length, 0);
+                request.extend_from_slice(&buffer[..length]);
+            }
+            stream.write_all(&wire).unwrap();
+        });
+        let progress = Mutex::new(Vec::new());
+        let result = tauri::async_runtime::block_on(async {
+            let response = Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap()
+                .get(url)
+                .send()
+                .await
+                .unwrap();
+            read_response(response, limit, |received| {
+                progress.lock().unwrap().push(received);
+            })
+            .await
+        });
+        server.join().unwrap();
+        (result, progress.into_inner().unwrap())
+    }
+    #[test]
+    fn download_progress_serializes_scoped_phases_and_signed_byte_counts() {
+        let total_bytes = verified().catalog.entries[0].package_bytes;
+        assert_eq!(
+            serde_json::to_value(MarketDownloadProgress::Downloading {
+                received_bytes: 0,
+                total_bytes,
+            })
+            .unwrap(),
+            serde_json::json!({"phase":"downloading", "receivedBytes":0, "totalBytes":total_bytes})
+        );
+        assert_eq!(
+            serde_json::to_value(MarketDownloadProgress::Verifying).unwrap(),
+            serde_json::json!({"phase":"verifying"})
+        );
+    }
+    #[test]
+    fn download_progress_limits_intermediate_reports_and_flushes_the_last_bytes() {
+        let started = Instant::now();
+        let mut progress = DownloadProgressThrottle::new(started);
+        assert!(!progress.should_publish(0, false, started));
+        assert!(!progress.should_publish(20, false, started + Duration::from_millis(10)));
+        assert!(!progress.should_publish(40, false, started + Duration::from_millis(99)));
+        assert!(progress.should_publish(60, false, started + DOWNLOAD_PROGRESS_INTERVAL));
+        assert!(!progress.should_publish(80, false, started + Duration::from_millis(101)));
+        assert!(progress.should_publish(100, true, started + Duration::from_millis(102)));
+        assert!(!progress.should_publish(100, true, started + Duration::from_millis(103)));
+        let mut short = DownloadProgressThrottle::new(started);
+        assert!(short.should_publish(7, true, started));
+    }
+    #[test]
+    fn download_reports_actual_body_bytes_before_package_verification() {
+        let mut wire = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            PACKAGE.len()
+        )
+        .into_bytes();
+        wire.extend_from_slice(PACKAGE);
+        let (bytes, progress) = read_fixture(wire, PACKAGE.len());
+        assert_eq!(progress.last(), Some(&PACKAGE.len()));
+        let catalog = verified();
+        let entry = &catalog.catalog.entries[0];
+        assert!(verify_package(&bytes.unwrap(), entry, catalog.source(entry)).is_ok());
+
+        let (bytes, progress) = read_fixture(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n4\r\ndefg\r\n0\r\n\r\n".to_vec(),
+            10,
+        );
+        assert_eq!(bytes.unwrap(), b"abcdefg");
+        assert_eq!(progress.last(), Some(&7));
+        assert!(progress.iter().all(|received| *received <= 7));
+    }
+    #[test]
+    fn oversized_or_interrupted_downloads_do_not_report_completion() {
+        for wire in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nabcdefgh".as_slice(),
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n8\r\nabcdefgh\r\n0\r\n\r\n".as_slice(),
+        ] {
+            let (result, progress) = read_fixture(wire.to_vec(), 7);
+            assert_eq!(result.unwrap_err().code, ErrorCode::MarketInvalid);
+            assert!(progress.is_empty());
+        }
+        let (result, progress) = read_fixture(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\nabc".to_vec(),
+            10,
+        );
+        assert_eq!(result.unwrap_err().code, ErrorCode::MarketUnavailable);
+        assert!(!progress.contains(&10));
+    }
+    #[test]
+    fn rejected_downloads_never_enter_the_verifying_phase() {
+        let directory = tempdir();
+        let market = ExtensionMarket::new(directory.path().join("market"), true);
+        let entry = &verified().catalog.entries[0];
+        let progress = Mutex::new(Vec::new());
+        let error = tauri::async_runtime::block_on(market.download(
+            &entry.package.manifest.id,
+            &entry.package_sha256,
+            NetworkMode::Direct,
+            |value| progress.lock().unwrap().push(value),
+        ))
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ExtensionUnavailable);
+        assert_eq!(
+            progress.into_inner().unwrap(),
+            vec![MarketDownloadProgress::Downloading {
+                received_bytes: 0,
+                total_bytes: 0,
+            }]
+        );
     }
     #[test]
     fn signed_future_permissions_are_quarantined_without_hiding_usable_entries() {
@@ -1639,9 +1860,32 @@ mod tests {
     fn recovery_isolation_disables_market_and_preserves_trust() {
         let directory = tempdir();
         let market = ExtensionMarket::new(directory.path().join("market"), true);
-        let error = tauri::async_runtime::block_on(market.snapshot(false)).unwrap_err();
-        assert_eq!(error.code, ErrorCode::ExtensionUnavailable);
+        for mode in [NetworkMode::System, NetworkMode::Direct] {
+            let error = tauri::async_runtime::block_on(market.snapshot(false, mode)).unwrap_err();
+            assert_eq!(error.code, ErrorCode::ExtensionUnavailable);
+        }
         assert!(!market.root.exists());
+    }
+
+    #[test]
+    fn network_modes_cannot_bypass_market_source_restrictions() {
+        for mode in [NetworkMode::System, NetworkMode::Direct] {
+            for source in [
+                "http://github.com/owner/repo/releases/latest/download/catalog.json",
+                "https://github.com/other/repo/releases/latest/download/catalog.json",
+                "https://127.0.0.1/catalog.json",
+            ] {
+                let error = tauri::async_runtime::block_on(fetch(
+                    Url::parse(source).unwrap(),
+                    "owner/repo".into(),
+                    CATALOG_LIMIT,
+                    mode,
+                    |_| {},
+                ))
+                .unwrap_err();
+                assert_eq!(error.code, ErrorCode::MarketInvalid);
+            }
+        }
     }
     #[test]
     fn configuration_rejects_repository_dot_segments_and_invalid_owners() {
@@ -1732,11 +1976,16 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let directory = tempdir();
             let market = ExtensionMarket::new(directory.path().join("market"), false);
-            let snapshot = market.snapshot(true).await.unwrap();
+            let snapshot = market.snapshot(true, NetworkMode::System).await.unwrap();
             assert!(!snapshot.stale);
             let entry = snapshot.catalog.entries.first().unwrap();
             let download = market
-                .download(&entry.package.manifest.id, &entry.package_sha256)
+                .download(
+                    &entry.package.manifest.id,
+                    &entry.package_sha256,
+                    NetworkMode::System,
+                    |_| {},
+                )
                 .await
                 .unwrap();
             assert_eq!(download.preview.sha256, entry.package.sha256);

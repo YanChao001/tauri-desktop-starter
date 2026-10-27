@@ -14,7 +14,7 @@ export const zhWorkbench = {
   "workbench.saved": "文件已保存",
   "workbench.importNote": "导入为笔记副本",
   "workbench.imported":
-    "已将当前编辑内容保存为 SQLite 笔记，原文件与未保存编辑仍保留。",
+    "已将当前编辑内容保存为本地笔记，原文件与未保存编辑仍保留。",
   "workbench.openNotes": "打开笔记列表",
   "workbench.noteLimit":
     "笔记正文上限为 64KiB。请缩小内容后导入，或直接另存文件。",
@@ -50,13 +50,13 @@ export const zhWorkbench = {
   "workbench.localDraft": "未保存的新文件",
   "tasks.title": "后台任务中心",
   "tasks.description":
-    "真实扫描所选目录或计算文件 SHA-256。任务在 Rust 中执行，切换页面或隐藏窗口后仍继续。",
+    "列出所选文件夹中的文件，或计算文件校验值。切换页面或隐藏窗口后，任务仍会继续。",
   "tasks.pickDirectory": "选择目录",
   "tasks.directory": "任务目录",
   "tasks.noDirectory": "先选择本机目录",
   "tasks.kind": "任务类型",
   "tasks.scan": "扫描文件清单",
-  "tasks.sha256": "计算 SHA-256",
+  "tasks.sha256": "计算文件校验值（SHA-256）",
   "tasks.start": "启动任务",
   "tasks.cancel": "请求取消",
   "tasks.retry": "重新运行",
@@ -64,22 +64,33 @@ export const zhWorkbench = {
   "tasks.exported": "任务结果已导出",
   "tasks.results": "查看结果",
   "tasks.hideResults": "收起结果",
-  "tasks.active": "正在执行 {count} / 2 项任务",
-  "tasks.queued": "正在等待 {count} / 10 项任务",
-  "tasks.waiting": "等待空闲执行位置",
+  "tasks.active": "执行中 {count} / 2",
+  "tasks.queued": "排队 {count} / 10",
+  "tasks.waiting": "等待前面的任务完成",
   "tasks.capacity":
     "最多同时运行两项任务，另有十项按提交顺序排队；等待中的任务可以取消。",
   "tasks.empty": "还没有任务。选择目录，然后扫描或计算校验值。",
+  "tasks.loading": "正在读取任务…",
+  "tasks.countUnavailable": "任务统计暂不可用",
+  "tasks.interruptedHint": "应用在任务完成前停止；重新运行会创建新任务。",
+  "tasks.unreadableEntries":
+    "有 {count} 项无法读取，请查看结果或导出完整报告。",
+  "tasks.reportUnavailable":
+    "完整报告未能保存。请在关闭应用前导出仍在内存中的完整结果。",
+  "tasks.legacyNotice": "此历史任务包含附加诊断，可展开结果查看原始记录。",
+  "tasks.entryLimit": "文件或路径超出本次任务的处理限制，已跳过。",
+  "tasks.entryFailed": "此文件未能完成处理，可展开原始诊断查看详情。",
+  "tasks.diagnostics": "原始诊断",
   "tasks.progress": "已处理 {processed} / {total} 个文件",
   "tasks.discovering": "正在发现文件…",
   "tasks.history": "最近任务",
   "tasks.historyHint":
     "保留最近 30 次任务。重启后未完成的任务标为中断，可重新运行；取消会保留已经完成的结果。",
   "tasks.limits":
-    "单次最多扫描 5000 个文件、32 层目录；不跟随符号链接。单文件哈希上限 512MiB。",
+    "单次最多扫描 5000 个文件、32 层文件夹；不会沿链接扫描其他位置。仅对不超过 512MiB 的文件计算校验值。",
   "tasks.path": "相对路径",
   "tasks.bytes": "字节数",
-  "tasks.hash": "SHA-256 / 结果",
+  "tasks.hash": "文件校验值 / 结果",
   "tasks.noResults": "没有已完成的文件结果。",
   "tasks.previewLimit":
     "页面最多预览前 200 项；导出可获得本次已处理的完整结果。",
