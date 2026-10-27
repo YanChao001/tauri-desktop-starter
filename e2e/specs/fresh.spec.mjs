@@ -64,13 +64,16 @@ describe("Real Tauri desktop", () => {
     // 初始化为 minimal 的项目也可在隔离测试偏好中开启演示页面。
     await $("#settings-appMode button").click();
     await navigate("/bridge");
+    await browser.waitUntil(
+      async () => (await $("main h2").getText()) === "应用通信",
+    );
     await $("#name").setValue("桌面测试");
     await $("form button[type=submit]").click();
     await browser.waitUntil(async () =>
       (await $("main [role=status]").getText()).includes("你好，桌面测试"),
     );
     await language("en");
-    assert.match(await $("h2").getText(), /Rust|Bridge|IPC/);
+    assert.equal(await $("main h2").getText(), "App communication");
     await $("#name").setValue("E2E");
     await $("form button[type=submit]").click();
     await browser.waitUntil(async () =>

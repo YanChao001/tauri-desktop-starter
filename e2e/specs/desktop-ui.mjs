@@ -184,11 +184,20 @@ export function desktopUiChecks() {
       await $("#settings-desktop").scrollIntoView();
       await screenshot("desktop-controls.png");
       await navigate("/bridge");
+      const developerResources = await $("main details > summary");
+      assert.match(
+        await developerResources.getText(),
+        /^(开发者资料|Developer resources)$/,
+      );
+      await developerResources.click();
       for (const theme of ["light", "dark"]) {
         await patchSettings({ theme });
         await settledAppearance({ theme });
         for (const language of ["rust", "typescript"]) {
-          await $("code[data-language=" + language + "]").waitForDisplayed();
+          const code = await $("code[data-language=" + language + "]");
+          await code.waitForDisplayed();
+          await code.$("[data-token=keyword]").waitForDisplayed();
+          await code.$("[data-token=string]").waitForDisplayed();
           const colors = await browser.execute((value) => {
             const code = document.querySelector(
               "code[data-language=" + value + "]",
