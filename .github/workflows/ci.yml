@@ -310,7 +310,7 @@ jobs:
       - name: 桌面 E2E（Linux）
         if: runner.os == 'Linux'
         env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DMABUF_RENDERER_FORCE_SHM: "1"
         run: |
           mkdir -p artifacts/e2e/crash
           sudo sysctl -w "kernel.core_pattern=$GITHUB_WORKSPACE/artifacts/e2e/crash/core.%p"

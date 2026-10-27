@@ -303,7 +303,7 @@ pnpm test:e2e --interactive --skip-build
 
 runner 直接启动内嵌 WebDriver 的测试程序，等待 `/status` 就绪，再让 WDIO 通过动态 localhost 端口连接 W3C WebDriver。没有接入 tauri-service 的自动焦点 / mock 层，不需要额外 Rust mock 插件、生产前端 bootstrap、tauri-driver 或 EdgeDriver；窗口切换由测试显式控制。内嵌驱动支持 Windows、Linux、macOS，平台细节见 [WebdriverIO 内嵌 provider](https://webdriver.io/docs/desktop-testing/tauri/platform-support)。升级驱动和 WDIO 时应同时运行真实主链路，不能只依靠依赖可安装或类型检查通过。
 
-Linux CI 额外安装 WebKitGTK、Xvfb、DBus 与 Openbox，以提供真正的窗口管理；无桌面会话时，按 [`ci.yml` 的 `desktop-e2e` job](../.github/workflows/ci.yml) 准备依赖并运行其 DBus / Xvfb / Openbox 命令，单独加 `xvfb-run` 不能提供窗口管理器。macOS 保留系统红绿灯，窗口操作通过原生 API 验证。不能用 jsdom 通过或单个平台成功代替其他平台的真实结果。
+Linux CI 额外安装 WebKitGTK、Xvfb、DBus 与 Openbox，以提供真正的窗口管理；无桌面会话时，按 [`ci.yml` 的 `desktop-e2e` job](../.github/workflows/ci.yml) 准备依赖并运行其 DBus / Xvfb / Openbox 命令，单独加 `xvfb-run` 不能提供窗口管理器。Xvfb 软件渲染使用 `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` 保留共享内存传输；`WEBKIT_DISABLE_DMABUF_RENDERER=1` 在 WebKitGTK 2.50 等版本的 View Transition 中存在[原生空指针崩溃](https://bugs.webkit.org/show_bug.cgi?id=324730)，不能用于此测试环境。macOS 保留系统红绿灯，窗口操作通过原生 API 验证。不能用 jsdom 通过或单个平台成功代替其他平台的真实结果。
 
 ## README 原生截图更新
 
