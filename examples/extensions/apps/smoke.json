@@ -10,7 +10,59 @@
     },
     "expectJsonSubset": {
       "version": 2,
-      "display": "文本工具",
+      "display": "交互工作台",
+      "effects": [],
+      "errors": {}
+    }
+  },
+  {
+    "command": "open",
+    "input": {
+      "version": 2,
+      "state": "",
+      "fields": {
+        "workspace": "{\"schema\":1,\"name\":\"Canvas\",\"columns\":[\"id\",\"title\"],\"rows\":[[\"node-1\",\"Orbit\"]]}",
+        "workspace-format": "json"
+      },
+      "locale": "en",
+      "action": "workspace-export"
+    },
+    "expectJsonSubset": {
+      "display": "Interactive studio",
+      "artifacts": [
+        {
+          "name": "workspace.json",
+          "mediaType": "application/json",
+          "encoding": "utf8",
+          "content": "{\"schema\":1,\"name\":\"Canvas\",\"columns\":[\"id\",\"title\"],\"rows\":[[\"node-1\",\"Orbit\"]]}"
+        }
+      ],
+      "effects": [],
+      "errors": {}
+    }
+  },
+  {
+    "command": "open",
+    "input": {
+      "version": 2,
+      "state": "",
+      "fields": {
+        "workspace": "{\"schema\":1,\"name\":\"Lens\",\"columns\":[\"period\",\"value\"],\"rows\":[[\"=formula\",\"12\"]]}",
+        "workspace-format": "csv"
+      },
+      "locale": "en",
+      "action": "workspace-export"
+    },
+    "expectJsonSubset": {
+      "display": "Interactive studio",
+      "artifacts": [
+        {
+          "name": "workspace.csv",
+          "mediaType": "text/csv",
+          "encoding": "utf8",
+          "content": "\"period\",\"value\"\r\n\"'=formula\",\"12\""
+        }
+      ],
       "effects": [],
       "errors": {}
     }

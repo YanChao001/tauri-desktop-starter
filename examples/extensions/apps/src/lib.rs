@@ -3,6 +3,7 @@
 
 mod app;
 mod data;
+mod studio;
 mod tasks;
 mod text;
 mod view;
