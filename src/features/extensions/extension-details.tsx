@@ -15,6 +15,7 @@ export const PERMISSION_LABELS: Record<ExtensionPermission, DictKey> = {
   "network:images": "ext.permission.network:images",
   "network:system-proxy": "ext.permission.network:system-proxy",
   "links:open": "ext.permission.links:open",
+  "window:control": "ext.permission.window:control",
   storage: "ext.permission.storage",
   "messaging:lan": "ext.permission.messaging:lan",
   "wallpapers:manage": "ext.permission.wallpapers:manage",
@@ -23,10 +24,14 @@ export const PERMISSION_LABELS: Record<ExtensionPermission, DictKey> = {
 export function ExtensionDetails({
   value,
   origin,
+  showIdentity = true,
+  grantedPermissions,
   consent,
 }: {
   value: ExtensionPreview;
   origin?: ExtensionInfo["origin"];
+  showIdentity?: boolean;
+  grantedPermissions?: readonly ExtensionPermission[];
   consent?: {
     grants: ExtensionPermission[];
     disabled: boolean;
@@ -38,33 +43,35 @@ export function ExtensionDetails({
   const selectedOptionalCount = manifest.optionalPermissions.filter(
     (permission) => consent?.grants.includes(permission),
   ).length;
+  const canConnect = [
+    ...manifest.permissions,
+    ...manifest.optionalPermissions,
+  ].some(
+    (permission) =>
+      permission.startsWith("network:") || permission === "messaging:lan",
+  );
   return (
     <div className="space-y-4 text-sm">
-      <div>
-        <h3 className="font-semibold break-words">{manifest.name}</h3>
-        <p className="mt-1 break-words text-muted-foreground">
-          {manifest.description}
-        </p>
-        <code className="text-xs break-all">{manifest.id}</code>
-      </div>
+      {showIdentity ? (
+        <div>
+          <h3 className="font-semibold break-words">{manifest.name}</h3>
+          <p className="mt-1 break-words text-muted-foreground">
+            {manifest.description}
+          </p>
+        </div>
+      ) : null}
       <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-[auto_1fr]">
         {[
-          [t("ext.author"), manifest.author],
           [t("ext.version"), manifest.version],
-          [t("ext.minHostVersion"), manifest.minHostVersion],
+          [t("ext.author"), manifest.author],
           [
-            t("ext.commands"),
-            manifest.commands
-              .map(
-                (command) =>
-                  `${command.title} (${command.inputFormat} → ${command.resultFormat})`,
-              )
-              .join(", "),
+            t("ext.features"),
+            manifest.commands.map((command) => command.title).join(" · "),
           ],
         ].map(([label, content]) => (
           <div key={label} className="contents">
             <dt className="text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 break-all">{content}</dd>
+            <dd className="min-w-0 break-words">{content}</dd>
           </div>
         ))}
       </dl>
@@ -80,21 +87,21 @@ export function ExtensionDetails({
                   : "ext.source.local",
             )}
           </p>
-          {origin.kind === "market" ? (
-            <>
-              <p className="break-all">
-                <code>{origin.source.repository}</code> ·{" "}
-                {t("ext.market.revision", {
-                  revision: origin.source.catalogRevision,
-                })}
-              </p>
-              <p className="break-all text-xs text-muted-foreground">
-                {t("ext.source.key")}{" "}
-                <code>{origin.source.publicKeyFingerprint}</code>
-              </p>
-            </>
-          ) : null}
+          <p className="leading-relaxed text-muted-foreground">
+            {t(
+              origin.kind === "market"
+                ? "ext.source.marketHint"
+                : origin.kind === "bundled"
+                  ? "ext.source.bundledHint"
+                  : "ext.source.localHint",
+            )}
+          </p>
         </div>
+      ) : null}
+      {canConnect ? (
+        <p className="leading-relaxed text-muted-foreground">
+          {t("ext.permissionScopeHint")}
+        </p>
       ) : null}
       <div>
         <h4 className="font-medium">{t("ext.requiredPermissions")}</h4>
@@ -113,6 +120,9 @@ export function ExtensionDetails({
           <legend className="font-medium">
             {t("ext.optionalPermissions")}
           </legend>
+          <p className="mt-1 text-muted-foreground">
+            {t("ext.optionalPermissionsHint")}
+          </p>
           {consent ? (
             <Label className="mt-2 items-start leading-6">
               <Checkbox
@@ -174,30 +184,83 @@ export function ExtensionDetails({
                     </span>
                   </Label>
                 ) : (
-                  t(PERMISSION_LABELS[permission])
+                  <span>
+                    {t(PERMISSION_LABELS[permission])}
+                    {grantedPermissions ? (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {t(
+                          grantedPermissions.includes(permission)
+                            ? "ext.permissionAllowed"
+                            : "ext.permissionNotAllowed",
+                        )}
+                      </span>
+                    ) : null}
+                  </span>
                 )}
               </li>
             ))}
           </ul>
         </fieldset>
       ) : null}
-      {manifest.network.length ? (
-        <div className="space-y-1">
-          <h4 className="font-medium">{t("ext.allowedHosts")}</h4>
-          {manifest.network.map((rule) => (
-            <p key={rule.origin} className="break-all">
-              <code>{rule.origin}</code> · {rule.methods.join(", ")}
+      <details className="border-t pt-3">
+        <summary className="cursor-pointer rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {t("ext.technicalInfo")}
+        </summary>
+        <div className="space-y-4 pt-3">
+          <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-[auto_1fr]">
+            {[
+              [t("ext.identifier"), manifest.id],
+              [t("ext.minHostVersion"), manifest.minHostVersion],
+              [
+                t("ext.technicalCommands"),
+                manifest.commands
+                  .map(
+                    (command) =>
+                      `${command.title} (${command.inputFormat} → ${command.resultFormat})`,
+                  )
+                  .join(", "),
+              ],
+            ].map(([label, content]) => (
+              <div key={label} className="contents">
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 break-all">{content}</dd>
+              </div>
+            ))}
+          </dl>
+          {origin?.kind === "market" ? (
+            <div className="space-y-1">
+              <h4 className="font-medium">{t("ext.source")}</h4>
+              <p className="break-all">
+                <code>{origin.source.repository}</code> ·{" "}
+                {t("ext.market.revision", {
+                  revision: origin.source.catalogRevision,
+                })}
+              </p>
+              <p className="break-all text-xs text-muted-foreground">
+                {t("ext.source.key")}{" "}
+                <code>{origin.source.publicKeyFingerprint}</code>
+              </p>
+            </div>
+          ) : null}
+          {manifest.network.length ? (
+            <div className="space-y-1">
+              <h4 className="font-medium">{t("ext.allowedHosts")}</h4>
+              {manifest.network.map((rule) => (
+                <p key={rule.origin} className="break-all">
+                  <code>{rule.origin}</code> · {rule.methods.join(", ")}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          <div>
+            <p className="font-medium">{t("ext.hash")}</p>
+            <code className="block break-all text-xs">{value.sha256}</code>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("ext.bytes", { bytes: value.bytes })} · {t("ext.hashHint")}
             </p>
-          ))}
+          </div>
         </div>
-      ) : null}
-      <div>
-        <p className="font-medium">{t("ext.hash")}</p>
-        <code className="block break-all text-xs">{value.sha256}</code>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("ext.bytes", { bytes: value.bytes })} · {t("ext.hashHint")}
-        </p>
-      </div>
+      </details>
     </div>
   );
 }

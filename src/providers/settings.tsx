@@ -62,7 +62,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     };
   }, [native]);
   useEffect(() => {
-    applySettings(settings);
+    applySettings(settings, { includeTheme: false });
     if (futureVersion.current) return;
     if (native) {
       try {

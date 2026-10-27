@@ -71,11 +71,11 @@ describe("system integration lifecycle", () => {
     ).toBeInTheDocument();
     fireEvent.focus(
       screen.getByRole("button", {
-        name: "Deep links and file associations · Help",
+        name: "Open through links or files · Help",
       }),
     );
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      /Installed builds support .* and \.migrate files/,
+      /The installed app can open through .* links or \.migrate files/,
     );
     await waitFor(() =>
       expect(native.getActivationSnapshot).toHaveBeenCalledOnce(),
@@ -203,8 +203,8 @@ describe("system integration lifecycle", () => {
     const unregister = vi.fn().mockRejectedValue(error);
     vi.mocked(native.registerGlobalShortcut).mockResolvedValue(unregister);
     const view = render(<System />);
-    fireEvent.click(screen.getByRole("button", { name: "Register shortcut" }));
-    await screen.findByRole("button", { name: "Unregister shortcut" });
+    fireEvent.click(screen.getByRole("button", { name: "Enable shortcut" }));
+    await screen.findByRole("button", { name: "Disable shortcut" });
     view.unmount();
     await waitFor(() => expect(reportClientError).toHaveBeenCalledWith(error));
   });

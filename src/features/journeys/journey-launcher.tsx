@@ -25,10 +25,7 @@ export function JourneyLauncher({ minimal = false }: { minimal?: boolean }) {
   return (
     <section className="experience-routes" aria-labelledby="experience-heading">
       <div className="experience-heading">
-        <div>
-          <span className="studio-eyebrow">{t("experience.eyebrow")}</span>
-          <h3 id="experience-heading">{t("experience.title")}</h3>
-        </div>
+        <h3 id="experience-heading">{t("experience.title")}</h3>
         <p>{t("experience.description")}</p>
       </div>
       <div className="experience-grid">

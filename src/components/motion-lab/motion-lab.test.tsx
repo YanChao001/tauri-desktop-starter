@@ -112,4 +112,43 @@ describe("interactive motion laboratory", () => {
     );
     expect(controls).toHaveLength(0);
   });
+
+  it("keeps layout controls and focus stable when visibility or motion preferences change", async () => {
+    const user = userEvent.setup();
+    const view = render(<MotionLab />);
+    await user.click(screen.getByRole("tab", { name: "空间变换" }));
+    const choice = screen.getAllByRole("button", { name: "记录" })[0]!;
+    choice.focus();
+    activity.visible = false;
+    view.rerender(<MotionLab />);
+    expect(choice).toBeInTheDocument();
+    expect(choice).toHaveFocus();
+    activity.visible = true;
+    activity.reduced = true;
+    view.rerender(<MotionLab />);
+    expect(screen.getAllByRole("button", { name: "记录" })[0]).toBe(choice);
+    expect(choice).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(choice).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("freezes and resumes an in-flight flip without replacing its playback controller", async () => {
+    const user = userEvent.setup();
+    const view = render(<MotionLab />);
+    await user.click(screen.getByRole("tab", { name: "光影触感" }));
+    await user.click(screen.getByRole("button", { name: "翻转卡片" }));
+    const flip = controls.at(-1)!;
+    const count = controls.length;
+    activity.visible = false;
+    view.rerender(<MotionLab />);
+    expect(flip.pause).toHaveBeenCalled();
+    expect(flip.stop).not.toHaveBeenCalled();
+    expect(controls).toHaveLength(count);
+    activity.visible = true;
+    view.rerender(<MotionLab />);
+    expect(flip.play).toHaveBeenCalled();
+    expect(controls).toHaveLength(count);
+    view.unmount();
+    expect(flip.stop).toHaveBeenCalled();
+  });
 });

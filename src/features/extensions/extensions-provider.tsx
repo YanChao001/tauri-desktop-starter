@@ -1,34 +1,62 @@
-import {
-  ExtensionsContext as Context,
-  type ExtensionSession,
-} from "./extensions-context";
-export type { ExtensionSession } from "./extensions-context";
+import { ExtensionsContext as Context } from "./extensions-context";
 import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
+import { useI18n } from "@/providers/i18n";
+import { nativeErrorText } from "@/lib/native-error";
 import {
   extensionSnapshot,
+  prepareEnabledExtensions,
   isTauri,
   onExtensionsChanged,
   type ExtensionSnapshot,
 } from "@/lib/tauri";
 
 import { extensionInstallationIdentity } from "./extension-model";
+import {
+  createExtensionSession,
+  ExtensionSessionCache,
+  type ExtensionSession,
+} from "./extension-session-cache";
 
 /** One snapshot subscription per host window; sessions stay in this window's memory. */
 export function ExtensionsProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
+  const translate = useRef(t);
+  translate.current = t;
   const [data, setData] = useState<ExtensionSnapshot | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(isTauri);
-  const sessions = useRef(new Map<string, ExtensionSession>());
+  const [sessionCache] = useState(() => new ExtensionSessionCache());
   const generation = useRef(0);
   const alive = useRef(false);
+  const startupChecked = useRef(false);
+  const prepare = useCallback(async function prepareStartup(): Promise<void> {
+    if (!alive.current) return;
+    try {
+      await prepareEnabledExtensions();
+      if (alive.current) toast.dismiss("extension-startup-preparation");
+    } catch (reason) {
+      if (!alive.current) return;
+      const t = translate.current;
+      toast.error(nativeErrorText(reason, t), {
+        id: "extension-startup-preparation",
+        description: t("ext.prepareFailedDescription"),
+        action: {
+          label: t("common.retry"),
+          onClick: () => void prepareStartup(),
+        },
+      });
+    }
+  }, []);
   const invalidate = useCallback(() => {
     generation.current++;
   }, []);
@@ -38,19 +66,21 @@ export function ExtensionsProvider({ children }: { children: ReactNode }) {
     try {
       const snapshot = await extensionSnapshot();
       if (alive.current && request === generation.current) {
-        for (const [key, session] of sessions.current) {
+        sessionCache.reconcile((key, state) => {
           const extensionId = key.split(":")[0];
-          if (
-            !snapshot.items.some(
-              (item) =>
-                item.package.manifest.id === extensionId &&
-                extensionInstallationIdentity(item) === session.identity,
-            )
-          )
-            sessions.current.delete(key);
-        }
+          return snapshot.items.some(
+            (item) =>
+              item.package.manifest.id === extensionId &&
+              extensionInstallationIdentity(item) === state.identity,
+          );
+        });
         setData(snapshot);
         setError(null);
+        if (!startupChecked.current) {
+          startupChecked.current = true;
+          // 只准备启动时已有的插件；不等待编译，不因运行阶段刷新重复启动。
+          if (snapshot.items.some((item) => item.enabled)) void prepare();
+        }
       }
     } catch (reason) {
       if (alive.current && request === generation.current) {
@@ -60,7 +90,7 @@ export function ExtensionsProvider({ children }: { children: ReactNode }) {
     } finally {
       if (alive.current && request === generation.current) setLoading(false);
     }
-  }, []);
+  }, [sessionCache, prepare]);
   useEffect(() => {
     alive.current = true;
     let stopped = false;
@@ -90,8 +120,15 @@ export function ExtensionsProvider({ children }: { children: ReactNode }) {
     };
   }, [reload, invalidate]);
   const value = useMemo(
-    () => ({ data, error, loading, reload, sessions: sessions.current }),
-    [data, error, loading, reload],
+    () => ({
+      data,
+      error,
+      loading,
+      reload,
+      sessions: sessionCache.sessions,
+      sessionCache,
+    }),
+    [data, error, loading, reload, sessionCache],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -103,23 +140,10 @@ export function useExtensions() {
 
 export function useExtensionSession(key: string, identity: string) {
   const context = useContext(Context);
-  const [session] = useState<ExtensionSession>(() => {
-    const previous = context?.sessions.get(key);
-    if (previous?.identity === identity) return previous;
-    const next: ExtensionSession = {
-      identity,
-      uiState: null,
-      view: null,
-      fields: {},
-      dirty: false,
-      pending: null,
-      exporting: null,
-      selecting: null,
-      error: null,
-      draft: { inputText: "", url: "", files: [] },
-    };
-    context?.sessions.set(key, next);
-    return next;
-  });
+  const cache = context?.sessionCache;
+  const [session] = useState<ExtensionSession>(
+    () => cache?.getOrCreate(key, identity) ?? createExtensionSession(identity),
+  );
+  useLayoutEffect(() => cache?.retain(session), [cache, session]);
   return session;
 }

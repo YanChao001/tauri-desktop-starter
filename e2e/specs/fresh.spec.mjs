@@ -502,6 +502,7 @@ describe("Real Tauri desktop", () => {
 
   it("renders diagnostic JSON as highlighted inert text", async () => {
     await navigate("/diagnostics");
+    await $("summary=View detailed report and logs").click();
     await browser.waitUntil(async () =>
       (await $("[data-testid=diagnostics-report]").getText()).includes(
         "appVersion",
@@ -547,20 +548,44 @@ describe("Real Tauri desktop", () => {
     });
     assert.equal(stale.ok, false);
     assert.equal(stale.failure.code, "CONFLICT");
-    const listed = await invoke("list_notes", { search: "E2E persisted note" });
+    const query = {
+      search: "E2E persisted note",
+      offset: 0,
+      limit: 50,
+      sort: "updated-desc",
+      trash: false,
+    };
+    const listed = await invoke("query_notes", { query });
     assert.equal(listed.ok, true);
-    assert.equal(listed.value.length, 1);
-    assert.equal(listed.value[0].body, "Saved before app process restart");
+    assert.equal(listed.value.total, 1);
+    assert.equal(
+      listed.value.items[0].body,
+      "Saved before app process restart",
+    );
     const temporary = await invoke("create_note", {
       input: { title: "E2E delete me", body: "" },
     });
     assert.equal(temporary.ok, true);
     assert.equal(
-      (await invoke("delete_note", { id: temporary.value.id })).ok,
+      (
+        await invoke("change_notes", {
+          items: [
+            {
+              id: temporary.value.id,
+              expectedVersion: temporary.value.version,
+            },
+          ],
+          action: "trash",
+        })
+      ).ok,
       true,
     );
     assert.deepEqual(
-      (await invoke("list_notes", { search: "E2E delete me" })).value,
+      (
+        await invoke("query_notes", {
+          query: { ...query, search: "E2E delete me" },
+        })
+      ).value.items,
       [],
     );
   });
@@ -617,7 +642,7 @@ describe("Real Tauri desktop", () => {
       assert.equal(tail.value.total, 251);
       assert.equal(tail.value.items.length, 51);
       assert.equal(tail.value.items.at(-1).title, `${search}250`);
-      assert.equal((await invoke("list_notes", { search })).value.length, 251);
+      assert.equal((await invoke("query_notes", { query })).value.total, 251);
       await navigate("/database");
       await $("input[type=search]").setValue(search);
       await $("#notes-sort").click();

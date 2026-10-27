@@ -28,6 +28,8 @@ export const zhComponents = {
   "playground.glowDescription": "为画布增加一层氛围光。",
   "playground.showAuthor": "显示创作者署名",
   "playground.livePreview": "实时预览",
+  "playground.pauseMotion": "暂停预览动效",
+  "playground.resumeMotion": "继续预览动效",
   "playground.defaultName": "下一束灵感",
   "playground.defaultDescription": "从一点好奇开始，让想法自由生长。",
   "playground.author": "林间工作室",

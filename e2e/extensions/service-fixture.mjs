@@ -1,36 +1,115 @@
 // Browser-only boundary substitutes. These do not exercise TCP, network, dialogs or native storage.
 const dataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jA1sAAAAASUVORK5CYII=";
-// Only the HTTP/native edges are substituted. Search results must be parsed by
-// the packaged Wasm from this HTML, rather than returned by a wallpaper service.
-function bingHtml(query) {
-  const escape = (value) =>
-    value
-      .replaceAll("&", "&amp;")
-      .replaceAll("'", "&#39;")
-      .replaceAll('"', "&quot;");
-  const items = [
-    { title: "Fixture landscape", file: "one", width: 1200, height: 800 },
-    {
-      title: "Landscape".repeat(24) + ".jpg",
-      file: "two",
-      width: 0,
-      height: 0,
-    },
-  ];
-  return `<input id='sb_form_q' value='${escape(query)}'>${items
-    .map((item) => {
-      const metadata = {
-        murl: `https://images.wikipedia.org/${item.file}.jpg`,
-        purl: `https://www.wikipedia.org/${item.file}`,
-        turl: `https://ts2.mm.bing.net/th?id=OIP.fixture-${item.file}`,
-        t: item.title,
-        w: item.width,
-        h: item.height,
-      };
-      return `<a class='iusc' href='/images/search?q=${escape(encodeURIComponent(query))}&amp;expw=${item.width}&amp;exph=${item.height}' m='${escape(JSON.stringify(metadata))}'>image</a>`;
-    })
-    .join("")}`;
+// Only HTTP/native edges are substituted. The real packaged Wasm parses these
+// provider payloads and resolves the stable thumbnail/original pairs itself.
+const fixtureImageUrls = new Set();
+const fixtureSourceUrls = new Set(["https://wp.upx8.com/"]);
+function imageUrl(url) {
+  fixtureImageUrls.add(url);
+  return url;
+}
+function sourceUrl(url) {
+  fixtureSourceUrls.add(url);
+  return url;
+}
+function providerPayload(url, effectId) {
+  const serial = effectId.replaceAll(/[^a-zA-Z0-9-]/g, "");
+  const title = (index) =>
+    index === 0 ? "Fixture landscape" : "Landscape".repeat(24) + index;
+  if (url.origin === "https://wp.upx8.com" && url.pathname === "/api.php")
+    return {
+      code: 200,
+      data: Array.from({ length: 10 }, (_, index) => ({
+        url: imageUrl(
+          `https://cdn-hsyq-static.shanhutech.cn/bizhi/staticwp/fixture-${serial}-${index}.jpg`,
+        ),
+        width: 1920,
+        height: 1080,
+        title: title(index),
+        source: "birdpaper",
+      })),
+    };
+  if (
+    url.origin === "https://wallhaven.cc" &&
+    url.pathname === "/api/v1/search"
+  )
+    return {
+      data: Array.from(
+        { length: url.searchParams.get("q") === "fixture-no-results" ? 0 : 24 },
+        (_, index) => ({
+          id: `fixture${serial.replaceAll("-", "")}${index}`,
+          purity: "sfw",
+          category:
+            { 100: "general", "010": "anime", "001": "people" }[
+              url.searchParams.get("categories")
+            ] ?? "general",
+          url: sourceUrl(
+            `https://wallhaven.cc/w/fixture${serial.replaceAll("-", "")}${index}`,
+          ),
+          path: imageUrl(
+            `https://w.wallhaven.cc/full/fi/wallhaven-fixture${serial.replaceAll("-", "")}${index}.jpg`,
+          ),
+          thumbs: {
+            large: imageUrl(
+              `https://th.wallhaven.cc/lg/fi/fixture${serial.replaceAll("-", "")}${index}.jpg`,
+            ),
+          },
+          dimension_x: 1920,
+          dimension_y: 1080,
+          resolution: "1920x1080",
+        }),
+      ),
+    };
+  if (
+    url.origin === "https://commons.wikimedia.org" &&
+    url.pathname === "/w/api.php"
+  )
+    return {
+      query: {
+        pages: Array.from({ length: 24 }, (_, index) => ({
+          title: `File:${title(index)}.jpg`,
+          imageinfo: [
+            {
+              url: imageUrl(
+                `https://upload.wikimedia.org/wikipedia/commons/a/ab/fixture-${serial}-${index}.jpg`,
+              ),
+              thumburl: imageUrl(
+                `https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/fixture-${serial}-${index}.jpg/640px-fixture-${serial}-${index}.jpg`,
+              ),
+              descriptionurl: sourceUrl(
+                `https://commons.wikimedia.org/wiki/File:fixture-${serial}-${index}.jpg`,
+              ),
+              width: 1920,
+              height: 1080,
+              mime: "image/jpeg",
+            },
+          ],
+        })),
+      },
+    };
+  if (
+    url.origin === "https://nekos.best" &&
+    /^\/api\/v2\/(neko|kitsune|waifu|husbando|search)$/.test(url.pathname)
+  ) {
+    const category =
+      url.pathname === "/api/v2/search"
+        ? url.searchParams.get("category")
+        : url.pathname.split("/").at(-1);
+    return {
+      results: Array.from({ length: 20 }, (_, index) => ({
+        artist_name: title(index),
+        source_url: sourceUrl(
+          `https://www.pixiv.net/en/artworks/fixture-${serial}-${index}`,
+        ),
+        url: imageUrl(
+          `https://nekos.best/api/v2/${category}/fixture-${serial}-${index}.png`,
+        ),
+        dimensions: { width: 1000, height: 1181 },
+      })),
+    };
+  }
+  throw Error("Unknown explicit provider fixture URL");
 }
 function rejected(code, message) {
   return {
@@ -43,6 +122,11 @@ export function createBoundaryServices() {
   const calls = [];
   const httpCalls = [];
   let resourceSerial = 0;
+  let httpFailurePending = false;
+  let imageFailurePending = false;
+  let lanAttachmentCancellationPending = false;
+  let lanSaveCancellationPending = false;
+  let nextLanAttachmentGate = null;
   function state(session, seedGallery = false) {
     if (!sessions.has(session))
       sessions.set(session, {
@@ -57,6 +141,12 @@ export function createBoundaryServices() {
           historyLimit: 500,
           lastError: null,
           encrypted: false,
+          mode: "lan",
+          loopbackPeerId: null,
+          attachmentLimit: 1024 * 1024 * 1024,
+          imageAttachmentLimit: 8 * 1024 * 1024,
+          fileAttachmentLimit: 1024 * 1024 * 1024,
+          attachmentCacheLimit: 2 * 1024 * 1024 * 1024,
         },
         wallpaper: {
           revision: 0,
@@ -82,33 +172,29 @@ export function createBoundaryServices() {
     const granted = input.boundaryGrantedPermissions ?? [];
     if (
       effect.kind !== "http" ||
-      url.origin !== "https://cn.bing.com" ||
-      url.pathname !== "/images/search" ||
+      ![
+        "https://wp.upx8.com",
+        "https://wallhaven.cc",
+        "https://commons.wikimedia.org",
+        "https://nekos.best",
+      ].includes(url.origin) ||
       url.username ||
       url.password ||
       url.hash ||
       request.method !== "GET" ||
-      !["direct", "system"].includes(request.networkMode) ||
+      (request.networkMode !== undefined &&
+        !["direct", "system"].includes(request.networkMode)) ||
       request.body != null ||
       request.credential != null ||
       Object.keys(request.headers).length !== 2 ||
-      request.headers.Accept !== "text/html" ||
+      request.headers.Accept !== "application/json" ||
       request.headers["User-Agent"] !==
-        "TauriDesktopStarterWallpaper/1.0 (https://github.com/YanChao001/tauri-desktop-starter-extensions)"
+        "TauriDesktopStarterWallpaper/2.0 (https://github.com/YanChao001/tauri-desktop-starter-extensions)"
     )
       throw Error("Unsupported explicit HTTP effect boundary");
-    const query = url.searchParams.get("q");
-    if (
-      !query ||
-      url.searchParams.getAll("q").length !== 1 ||
-      [...query].length > 100 ||
-      Buffer.byteLength(query) > 400 ||
-      [...query].some((character) => {
-        const code = character.codePointAt(0);
-        return code < 32 || (code >= 127 && code <= 159);
-      })
-    )
-      throw Error("Search effect must contain its bounded query");
+    const payload = providerPayload(url, effect.id);
+    const failHttp = httpFailurePending;
+    httpFailurePending = false;
     const error =
       !granted.includes("network:https") ||
       (request.networkMode === "system" &&
@@ -118,7 +204,7 @@ export function createBoundaryServices() {
             message: "HTTP permission is not granted",
             retryable: false,
           }
-        : query === "fixture-search-failure"
+        : failHttp
           ? {
               code: "EXTENSION_RUN_FAILED",
               message: "Explicit offline HTTP boundary failure",
@@ -130,7 +216,12 @@ export function createBoundaryServices() {
       error,
       value: error
         ? null
-        : { url: request.url, status: 200, headers: {}, body: bingHtml(query) },
+        : {
+            url: request.url,
+            status: 200,
+            headers: {},
+            body: JSON.stringify(payload),
+          },
     };
     httpCalls.push({
       plugin: input.id,
@@ -149,6 +240,11 @@ export function createBoundaryServices() {
       request: input.request,
       boundaryMock: true,
     });
+    if (input.service === "window")
+      return rejected(
+        "EXTENSION_UNAVAILABLE",
+        "Window services require a native extension window",
+      );
     const data = state(
         input.fixtureSession,
         input.boundaryGallerySeed === true,
@@ -182,13 +278,65 @@ export function createBoundaryServices() {
     let result;
     if (input.service === "lan") {
       const lan = data.lan;
+      const appendMessage = (peerId, text, kind = "text", attachment) => {
+        const peer = lan.peers.find((item) => item.id === peerId);
+        if (!lan.running || !peer?.connected)
+          throw Error("Connect the explicit boundary fixture peer first");
+        const outgoing = {
+          id: String(lan.messages.length).padStart(32, "d"),
+          peerId,
+          sender: lan.nodeId,
+          nickname: lan.nickname,
+          text,
+          kind,
+          at: 1761400001000 + lan.messages.length,
+          outgoing: true,
+          delivery: "delivered",
+          ...(attachment ? { attachment } : {}),
+        };
+        lan.messages.push(outgoing);
+        if (lan.mode === "loopback")
+          lan.messages.push({
+            ...outgoing,
+            id: String(lan.messages.length).padStart(32, "d"),
+            sender: peer.id,
+            nickname: peer.nickname,
+            outgoing: false,
+            delivery: "received",
+          });
+      };
       switch (operation.action) {
         case "status":
           break;
         case "start":
           lan.running = true;
           lan.nickname = operation.nickname;
-          lan.port = operation.port;
+          lan.port = operation.port ?? 45873;
+          lan.mode = operation.mode ?? "lan";
+          lan.loopbackPeerId = null;
+          lan.addresses = ["192.168.1.20"];
+          break;
+        case "loopback":
+          lan.running = true;
+          lan.nickname = operation.nickname;
+          lan.port = 41234;
+          lan.mode = "loopback";
+          lan.loopbackPeerId = "e".repeat(32);
+          lan.addresses = ["127.0.0.1"];
+          lan.peers = [
+            ...lan.peers
+              .filter((peer) => peer.id !== lan.loopbackPeerId)
+              .map((peer) => ({ ...peer, connected: false })),
+            {
+              id: lan.loopbackPeerId,
+              nickname: "Boundary echo peer",
+              address: "127.0.0.1",
+              port: 41235,
+              lastSeen: 1761400000000,
+              unread: 0,
+              connected: true,
+            },
+          ];
           break;
         case "stop":
           lan.running = false;
@@ -219,6 +367,7 @@ export function createBoundaryServices() {
               sender: "b".repeat(32),
               nickname: "Fixture friend",
               text: "Boundary fixture hello",
+              kind: "text",
               at: 1761400000000,
               outgoing: false,
               delivery: "received",
@@ -226,22 +375,72 @@ export function createBoundaryServices() {
           ];
           break;
         case "markRead":
-          lan.peers.find((peer) => peer.id === operation.peerId).unread = 0;
+          if (lan.peers.some((peer) => peer.id === operation.peerId))
+            lan.peers.find((peer) => peer.id === operation.peerId).unread = 0;
           break;
         case "send":
           if (operation.text === "fixture-failed-send")
-            throw Error("Explicit browser boundary send failure");
-          lan.messages.push({
-            id: String(lan.messages.length).padStart(32, "d"),
-            peerId: operation.peerId,
-            sender: lan.nodeId,
-            nickname: lan.nickname,
-            text: operation.text,
-            at: 1761400001000,
-            outgoing: true,
-            delivery: "delivered",
-          });
+            return rejected(
+              "EXTENSION_RUN_FAILED",
+              "Explicit browser boundary send failure",
+            );
+          appendMessage(operation.peerId, operation.text, operation.kind);
           break;
+        case "sendAttachment": {
+          if (!["image", "file"].includes(operation.kind))
+            throw Error("Unsupported explicit attachment fixture kind");
+          const cancelled = lanAttachmentCancellationPending;
+          lanAttachmentCancellationPending = false;
+          if (!cancelled)
+            appendMessage(operation.peerId, "", operation.kind, {
+              name:
+                operation.kind === "image"
+                  ? "boundary-fixture.png"
+                  : "boundary-fixture.txt",
+              mime:
+                operation.kind === "image"
+                  ? "image/png"
+                  : "application/octet-stream",
+              // Metadata only: the explicit browser boundary never transfers these bytes.
+              bytes: operation.kind === "image" ? 68 : 64 * 1024 * 1024,
+              sha256: "f".repeat(64),
+            });
+          result = { ...structuredClone(lan), cancelled };
+          if (nextLanAttachmentGate) {
+            const gate = nextLanAttachmentGate;
+            nextLanAttachmentGate = null;
+            gate.started = true;
+            const captured = { ...structuredClone(result), boundaryMock: true };
+            return new Promise((resolve) => {
+              gate.complete = () => resolve(captured);
+              if (gate.released) gate.complete();
+            });
+          }
+          break;
+        }
+        case "previewAttachment": {
+          const message = lan.messages.find(
+            (item) => item.id === operation.messageId,
+          );
+          if (!message?.attachment)
+            return rejected("NOT_FOUND", "Boundary attachment is unavailable");
+          result = { dataUrl: message.kind === "image" ? dataUrl : null };
+          break;
+        }
+        case "saveAttachment": {
+          const message = lan.messages.find(
+            (item) => item.id === operation.messageId,
+          );
+          if (!message?.attachment)
+            return rejected("NOT_FOUND", "Boundary attachment is unavailable");
+          const cancelled = lanSaveCancellationPending;
+          lanSaveCancellationPending = false;
+          result = {
+            cancelled,
+            ...(cancelled ? {} : { name: message.attachment.name }),
+          };
+          break;
+        }
         case "clearHistory":
           lan.messages = [];
           break;
@@ -254,7 +453,7 @@ export function createBoundaryServices() {
         default:
           throw Error("Unsupported explicit LAN boundary operation");
       }
-      result = lan;
+      result ??= lan;
     } else if (input.service === "wallpaper") {
       const library = data.wallpaper;
       switch (operation.action) {
@@ -308,18 +507,18 @@ export function createBoundaryServices() {
     } else if (input.service === "resources") {
       switch (operation.action) {
         case "fetch-image": {
-          if (
-            ![
-              "https://images.wikipedia.org/one.jpg",
-              "https://images.wikipedia.org/two.jpg",
-              "https://ts2.mm.bing.net/th?id=OIP.fixture-one",
-              "https://ts2.mm.bing.net/th?id=OIP.fixture-two",
-            ].includes(operation.url)
-          )
+          if (!fixtureImageUrls.has(operation.url))
             return rejected(
               "INVALID_ARGUMENT",
               "Unknown explicit fixture image URL",
             );
+          if (imageFailurePending) {
+            imageFailurePending = false;
+            return rejected(
+              "EXTENSION_RUN_FAILED",
+              "Explicit transient image boundary failure",
+            );
+          }
           const metadata = {
             resourceId: (++resourceSerial).toString(16).padStart(48, "0"),
             mime: "image/png",
@@ -352,12 +551,7 @@ export function createBoundaryServices() {
           throw Error("Unsupported explicit resource boundary operation");
       }
     } else if (input.service === "links") {
-      if (
-        ![
-          "https://www.wikipedia.org/one",
-          "https://www.wikipedia.org/two",
-        ].includes(operation.url)
-      )
+      if (!fixtureSourceUrls.has(operation.url))
         return rejected(
           "INVALID_ARGUMENT",
           "Unknown explicit fixture source URL",
@@ -373,6 +567,34 @@ export function createBoundaryServices() {
     calls,
     http,
     httpCalls,
+    failNextHttp: () => {
+      httpFailurePending = true;
+    },
+    failNextImage: () => {
+      imageFailurePending = true;
+    },
+    cancelNextLanAttachment: () => {
+      lanAttachmentCancellationPending = true;
+    },
+    cancelNextLanSave: () => {
+      lanSaveCancellationPending = true;
+    },
+    holdNextLanAttachment: () => {
+      if (nextLanAttachmentGate)
+        throw Error(
+          "An explicit LAN attachment boundary gate is already armed",
+        );
+      const gate = { started: false, released: false, complete: null };
+      nextLanAttachmentGate = gate;
+      return {
+        started: () => gate.started,
+        release: () => {
+          gate.released = true;
+          if (nextLanAttachmentGate === gate) nextLanAttachmentGate = null;
+          gate.complete?.();
+        },
+      };
+    },
     activeResources: () =>
       [...sessions.values()].reduce(
         (count, session) => count + session.resources.size,

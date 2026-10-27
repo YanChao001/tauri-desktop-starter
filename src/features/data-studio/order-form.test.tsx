@@ -75,14 +75,62 @@ describe("complex demo form", () => {
       name: /Company name: Business requests require/,
     });
     fireEvent.click(company);
+    await waitFor(() => expect(company).not.toBeInTheDocument());
     await waitFor(() =>
       expect(screen.getByLabelText("Company name")).toHaveFocus(),
     );
+    const summaryTrigger = screen.getByRole("button", {
+      name: /Check these fields/,
+    });
+    fireEvent.click(summaryTrigger);
+    const reopenedCompany = await screen.findByRole("link", {
+      name: /Company name: Business requests require/,
+    });
+    fireEvent.keyDown(reopenedCompany, { key: "Escape" });
+    await waitFor(() => expect(reopenedCompany).not.toBeInTheDocument());
+    await waitFor(() => expect(summaryTrigger).toHaveFocus());
     fireEvent.keyDown(screen.getByLabelText("Request type"), { key: "Enter" });
     fireEvent.click(screen.getByRole("option", { name: "Personal" }));
     expect(screen.queryByLabelText("Company name")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /Company name:/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("exposes field errors beside their labels with complete keyboard-readable descriptions", async () => {
+    render(<OrderForm />);
+    const applicant = screen.getByLabelText("Applicant");
+    const consent = screen.getByLabelText("I confirm this is local demo data");
+    expect(applicant).not.toHaveAttribute("aria-describedby");
+    expect(consent).not.toHaveAttribute("aria-describedby");
+    expect(document.querySelector('[id$="-error"]')).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Submit demo request" }),
+    );
+    await waitFor(() => {
+      expect(applicant).toHaveAttribute("aria-invalid", "true");
+      expect(applicant).toHaveAccessibleDescription(
+        "Enter valid content (at least 2 characters).",
+      );
+      expect(consent).toHaveAccessibleDescription(
+        "Confirm the demo-data statement.",
+      );
+    });
+    const error = screen.getByText(
+      "Enter valid content (at least 2 characters).",
+      { selector: "#order-customer-error" },
+    );
+    expect(error).toHaveAttribute("type", "button");
+    fireEvent.focus(error);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Enter valid content (at least 2 characters).",
+    );
+    fireEvent.change(applicant, { target: { value: "Ada Lovelace" } });
+    await waitFor(() => {
+      expect(applicant).toHaveAttribute("aria-invalid", "false");
+      expect(applicant).not.toHaveAttribute("aria-describedby");
+      expect(error).not.toBeInTheDocument();
+    });
   });
 });

@@ -5,6 +5,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/providers/i18n";
 
 const OPTIONS = ["playground.optionDesign", "playground.optionCode"] as const;
@@ -26,9 +32,34 @@ export function ControlStates() {
     <div className="control-states">
       <form className="space-y-4" onSubmit={validate} noValidate>
         <div className="space-y-2">
-          <Label htmlFor="reference-title">
-            {t("playground.requiredTitle")}
-          </Label>
+          <div className="flex h-5 min-w-0 items-center gap-2">
+            <Label htmlFor="reference-title" className="shrink-0">
+              {t("playground.requiredTitle")}
+            </Label>
+            {invalid ? (
+              <div role="alert" className="min-w-0 flex-1">
+                <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        id="reference-title-error"
+                        type="button"
+                        className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {t("playground.titleRequired")}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-72 leading-relaxed"
+                    >
+                      {t("playground.titleRequired")}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            ) : null}
+          </div>
           <Input
             id="reference-title"
             required
@@ -41,17 +72,6 @@ export function ControlStates() {
             aria-invalid={invalid}
             aria-describedby={invalid ? "reference-title-error" : undefined}
           />
-          <div className="min-h-4">
-            {invalid ? (
-              <p
-                id="reference-title-error"
-                role="alert"
-                className="text-xs text-destructive"
-              >
-                {t("playground.titleRequired")}
-              </p>
-            ) : null}
-          </div>
         </div>
         <div className="space-y-2">
           <Label htmlFor="reference-notes">{t("playground.notes")}</Label>

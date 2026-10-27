@@ -7,15 +7,21 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { toast } from "sonner";
 import { copyText } from "@/lib/clipboard";
-import { getDiagnosticsReport, type DiagnosticsReport } from "@/lib/tauri";
+import {
+  getDiagnosticsReport,
+  recoveryStatus,
+  type DiagnosticsReport,
+} from "@/lib/tauri";
 import Diagnostics from "./diagnostics";
 
 const language = vi.hoisted(() => ({ value: "en" }));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
   getDiagnosticsReport: vi.fn(),
+  recoveryStatus: vi.fn(),
 }));
 vi.mock("@/lib/clipboard", () => ({ copyText: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -48,6 +54,13 @@ const report: DiagnosticsReport = {
   updaterConfigured: false,
   recentLogs: "[local path]",
 };
+function view(path = "/diagnostics") {
+  return render(<Diagnostics />, {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+    ),
+  });
+}
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -63,12 +76,20 @@ describe("diagnostics actions", () => {
     vi.clearAllMocks();
     language.value = "en";
     vi.mocked(getDiagnosticsReport).mockResolvedValue(report);
+    vi.mocked(recoveryStatus).mockResolvedValue({
+      active: false,
+      reason: null,
+      restored: false,
+      pending: false,
+      notes: 0,
+      archiveId: null,
+    });
   });
   afterEach(cleanup);
   it("deduplicates copying and reports failures in the currently selected language before retrying", async () => {
     const copy = deferred<void>();
     vi.mocked(copyText).mockReturnValueOnce(copy.promise);
-    const view = render(<Diagnostics />);
+    const mounted = view();
     await waitFor(() =>
       expect(screen.getByTestId("diagnostics-report")).toHaveTextContent(
         '"settingsRevision": 4',
@@ -83,7 +104,7 @@ describe("diagnostics actions", () => {
       JSON.stringify(report, null, 2),
     );
     language.value = "zh";
-    view.rerender(<Diagnostics />);
+    mounted.rerender(<Diagnostics />);
     await act(async () => copy.reject(new Error("clipboard denied")));
     expect(toast.error).toHaveBeenCalledWith("操作失败：clipboard denied");
     expect(toast.success).not.toHaveBeenCalled();
@@ -97,7 +118,7 @@ describe("diagnostics actions", () => {
     vi.mocked(getDiagnosticsReport).mockRejectedValueOnce({
       code: "STORAGE_IO",
     });
-    render(<Diagnostics />);
+    view();
     await screen.findByRole("alert");
     expect(
       screen.getByRole("button", { name: "Copy diagnostics" }),
@@ -115,21 +136,21 @@ describe("diagnostics actions", () => {
   it("suppresses notifications when a pending copy finishes after navigation", async () => {
     const copy = deferred<void>();
     vi.mocked(copyText).mockReturnValueOnce(copy.promise);
-    const view = render(<Diagnostics />);
+    const mounted = view();
     await waitFor(() =>
       expect(screen.getByTestId("diagnostics-report")).toHaveTextContent(
         '"settingsRevision": 4',
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
-    view.unmount();
+    mounted.unmount();
     await act(async () => copy.reject(new Error("closed")));
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("preserves the loaded report when a refresh fails and shows its error as a toast", async () => {
-    render(<Diagnostics />);
+    view();
     const preview = await screen.findByTestId("diagnostics-report");
     await waitFor(() =>
       expect(preview).toHaveTextContent('"settingsRevision": 4'),
@@ -146,5 +167,19 @@ describe("diagnostics actions", () => {
     expect(
       screen.getByRole("button", { name: "Copy diagnostics" }),
     ).toBeEnabled();
+  });
+
+  it("keeps healthy storage compact and focuses the recovery section for legacy links", async () => {
+    view("/diagnostics?section=recovery");
+    expect(await screen.findByText("Storage is healthy")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Import backup file" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Startup recovery" }),
+    ).toHaveFocus();
+    expect(
+      screen.getByText("View detailed report and logs").closest("details"),
+    ).not.toHaveAttribute("open");
   });
 });

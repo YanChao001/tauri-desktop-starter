@@ -260,6 +260,27 @@ it("rejects drafts with missing or unknown field identities", async () => {
       ),
     ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
 });
+it("round trips 32 declared field drafts within the existing 1 MiB total budget", async () => {
+  const fields = Object.fromEntries(
+    Array.from({ length: 32 }, (_, index) => [
+      `field${index}`,
+      "x".repeat((1024 * 1024) / 32),
+    ]),
+  );
+  const original = {
+    ...view,
+    fields: Object.keys(fields).map((id) => ({ id, label: id, value: "" })),
+  };
+  vi.mocked(native.validateExtensionView).mockResolvedValueOnce(original);
+  const restored = await parseExtensionSession(
+    serializeExtensionSession({ ...session(), view: original, fields }),
+    item,
+    "open",
+    "view",
+  );
+  expect(restored.fields).toEqual(fields);
+  expect(restored.view).toEqual(original);
+});
 it("round trips the largest legal tool strings after worst-case JSON escaping", async () => {
   const inputText = "\u0001".repeat(1024 * 1024);
   const resultText = "\u001f".repeat(4 * 1024 * 1024);
@@ -292,6 +313,11 @@ it("uses the same hard draft limits before writing and while restoring", async (
     { url: "x".repeat(4097) },
     { files: ["x".repeat(1025)] },
     { files: Array.from({ length: 17 }, () => "sample.txt") },
+    {
+      fields: Object.fromEntries(
+        Array.from({ length: 33 }, (_, index) => [`field${index}`, ""]),
+      ),
+    },
     { fields: { query: "x".repeat(256 * 1024 + 1) } },
     {
       fields: Object.fromEntries(

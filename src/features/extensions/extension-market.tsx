@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
+import { cn } from "cn";
 import {
   DownloadIcon,
   ExternalLinkIcon,
@@ -11,6 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -21,7 +28,12 @@ import { ResourceError } from "@/components/native-page";
 import { ExternalLink } from "@/components/external-link";
 import { APP_CONFIG } from "@/config/app";
 import { useI18n } from "@/providers/i18n";
-import type { ExtensionInfo, MarketEntry, MarketSnapshot } from "@/lib/tauri";
+import type {
+  ExtensionInfo,
+  MarketDownloadProgress,
+  MarketEntry,
+  MarketSnapshot,
+} from "@/lib/tauri";
 import { ExtensionIcon } from "./extension-icon";
 import { compareExtensionVersions } from "./market-model";
 import { ExtensionHelp } from "./extension-help";
@@ -33,6 +45,8 @@ export function ExtensionMarket({
   error,
   busy,
   downloadingId,
+  downloadProgress,
+  installingId,
   installed,
   onRefresh,
   onDownload,
@@ -42,6 +56,8 @@ export function ExtensionMarket({
   error: unknown;
   busy: boolean;
   downloadingId: string | null;
+  downloadProgress: MarketDownloadProgress | null;
+  installingId: string | null;
   installed: readonly ExtensionInfo[];
   onRefresh: () => void;
   onDownload: (entry: MarketEntry) => void;
@@ -85,88 +101,124 @@ export function ExtensionMarket({
         text.toLocaleLowerCase().includes(needle),
       ),
   );
+  const statusMessage = loading
+    ? t("ext.market.loading")
+    : snapshot && (snapshot.stale || error)
+      ? t("ext.market.stale")
+      : "";
   return (
     <section
       aria-label={t("ext.market.title")}
       aria-busy={loading}
-      className="space-y-5"
+      className="@container/market space-y-4"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-3xl space-y-2">
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <h3 className="flex items-center gap-2 font-semibold">
-            <ShieldCheckIcon className="size-5 text-primary" />
+            <ShieldCheckIcon className="size-5 shrink-0 text-primary" />
             {t("ext.market.title")}
             <ExtensionHelp label={t("ext.market.title")}>
               {t("ext.market.hint")}
             </ExtensionHelp>
           </h3>
-          {APP_CONFIG.extensionMarket.repository ? (
-            <ExternalLink
-              href={`https://github.com/${APP_CONFIG.extensionMarket.repository}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-primary underline underline-offset-4"
+          <div className="flex items-center gap-2">
+            {APP_CONFIG.extensionMarket.repository ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button asChild variant="ghost">
+                      <ExternalLink
+                        href={`https://github.com/${APP_CONFIG.extensionMarket.repository}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("ext.market.repository")}
+                      >
+                        <ExternalLinkIcon className="size-4" />
+                        <span className="hidden @2xl/market:inline">
+                          {t("ext.market.repository")}
+                        </span>
+                      </ExternalLink>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {t("ext.market.repository")}
+                    {snapshot ? (
+                      <p className="mt-1 text-xs">
+                        {t("ext.market.revision", {
+                          revision: snapshot.catalog.revision,
+                        })}
+                      </p>
+                    ) : null}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+            <Button
+              variant="outline"
+              disabled={loading || busy}
+              onClick={onRefresh}
             >
-              {t("ext.market.repository")}
-              <ExternalLinkIcon className="size-3.5" />
-            </ExternalLink>
-          ) : null}
+              <RefreshCwIcon className="size-4" />
+              {t("ext.market.refresh")}
+            </Button>
+          </div>
         </div>
-        <Button
-          variant="outline"
-          disabled={loading || busy}
-          onClick={onRefresh}
-        >
-          <RefreshCwIcon className="size-4" />
-          {t("ext.market.refresh")}
-        </Button>
+        <ResourceError error={!snapshot ? error : null} retry={onRefresh} />
+        <div className="grid gap-3 @xl/market:grid-cols-[minmax(0,1fr)_12rem]">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex h-6 min-w-0 items-center gap-3">
+              <Label htmlFor={`${id}-search`} className="shrink-0">
+                {t("ext.market.search")}
+              </Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p
+                      role="status"
+                      tabIndex={statusMessage ? 0 : undefined}
+                      className="min-w-0 flex-1 truncate rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {statusMessage}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    {statusMessage}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Input
+              id={`${id}-search`}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("ext.market.searchHint")}
+            />
+          </div>
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex h-6 items-center">
+              <Label htmlFor={`${id}-category`}>
+                {t("ext.market.category")}
+              </Label>
+            </div>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger id={`${id}-category`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {(["all", "text", "data", "tools", "games"] as const).map(
+                  (value) => (
+                    <SelectItem key={value} value={value}>
+                      {t(`ext.market.category.${value}`)}
+                    </SelectItem>
+                  ),
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </div>
-      <ResourceError error={!snapshot ? error : null} retry={onRefresh} />
-      <p
-        role="status"
-        className="h-5 truncate text-sm text-muted-foreground"
-        title={
-          snapshot && (snapshot.stale || error)
-            ? t("ext.market.stale")
-            : undefined
-        }
-      >
-        {loading
-          ? t("ext.market.loading")
-          : snapshot && (snapshot.stale || error)
-            ? t("ext.market.stale")
-            : ""}
-      </p>
-      <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-search`}>{t("ext.market.search")}</Label>
-          <Input
-            id={`${id}-search`}
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("ext.market.searchHint")}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-category`}>{t("ext.market.category")}</Label>
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger id={`${id}-category`} className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(["all", "text", "data", "tools", "games"] as const).map(
-                (value) => (
-                  <SelectItem key={value} value={value}>
-                    {t(`ext.market.category.${value}`)}
-                  </SelectItem>
-                ),
-              )}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="extension-card-grid">
         {entries.map((entry) => {
           const manifest = entry.package.manifest;
           const compatible =
@@ -195,6 +247,30 @@ export function ExtensionMarket({
                       ? "ext.market.newerInstalled"
                       : "ext.market.installed",
               );
+          const downloading = downloadingId === manifest.id;
+          const installing = installingId === manifest.id;
+          const active = downloading || installing;
+          const progress = downloading ? downloadProgress : null;
+          const percent =
+            progress?.phase === "downloading" && progress.totalBytes > 0
+              ? Math.min(
+                  100,
+                  Math.floor(
+                    (progress.receivedBytes / progress.totalBytes) * 100,
+                  ),
+                )
+              : null;
+          const activeLabel = installing
+            ? t("ext.market.installing")
+            : progress?.phase === "verifying"
+              ? t("ext.market.verifying")
+              : percent !== null
+                ? t("ext.market.downloadProgress", { percent })
+                : t("ext.market.preparing");
+          const fillPercent =
+            installing || progress?.phase === "verifying"
+              ? 100
+              : (percent ?? 0);
           return (
             <article
               key={manifest.id}
@@ -234,12 +310,25 @@ export function ExtensionMarket({
                       : t("ext.market.installHint")}
                 </p>
                 <Button
-                  disabled={busy || difference <= 0 || !compatible}
-                  aria-busy={downloadingId === manifest.id}
+                  disabled={busy || active || difference <= 0 || !compatible}
+                  aria-busy={active}
+                  className={cn(
+                    "relative overflow-hidden",
+                    active &&
+                      "bg-primary/10 text-foreground disabled:opacity-100",
+                  )}
                   onClick={() => onDownload(entry)}
                 >
-                  <DownloadIcon className="size-4" />
-                  <span className="grid">
+                  {active ? (
+                    <span
+                      data-slot="market-download-progress"
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-y-0 left-0 bg-primary/20"
+                      style={{ width: `${fillPercent}%` }}
+                    />
+                  ) : null}
+                  <DownloadIcon className="relative size-4" />
+                  <span className="relative grid">
                     <span
                       aria-hidden="true"
                       className="invisible col-start-1 row-start-1"
@@ -250,15 +339,42 @@ export function ExtensionMarket({
                       aria-hidden="true"
                       className="invisible col-start-1 row-start-1"
                     >
-                      {t("ext.market.downloading")}
+                      {t("ext.market.downloadProgress", { percent: 100 })}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="invisible col-start-1 row-start-1"
+                    >
+                      {t("ext.market.preparing")}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="invisible col-start-1 row-start-1"
+                    >
+                      {t("ext.market.verifying")}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="invisible col-start-1 row-start-1"
+                    >
+                      {t("ext.market.installing")}
                     </span>
                     <span className="col-start-1 row-start-1">
-                      {downloadingId === manifest.id
-                        ? t("ext.market.downloading")
-                        : downloadLabel}
+                      {active ? activeLabel : downloadLabel}
                     </span>
                   </span>
                 </Button>
+                {active ? (
+                  <span
+                    role="progressbar"
+                    aria-label={manifest.name}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={percent ?? undefined}
+                    aria-valuetext={activeLabel}
+                    className="sr-only"
+                  />
+                ) : null}
               </div>
             </article>
           );
@@ -286,11 +402,6 @@ export function ExtensionMarket({
               ? "ext.market.noMatches"
               : "ext.market.empty",
           )}
-        </p>
-      ) : null}
-      {snapshot ? (
-        <p className="text-xs text-muted-foreground">
-          {t("ext.market.revision", { revision: snapshot.catalog.revision })}
         </p>
       ) : null}
     </section>

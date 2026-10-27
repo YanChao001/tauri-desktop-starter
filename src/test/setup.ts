@@ -10,4 +10,15 @@ if (typeof Element !== "undefined") {
     unobserve() {}
     disconnect() {}
   };
+  // jsdom 没有媒体查询；具体断点与变更场景由测试自行替换。
+  globalThis.matchMedia ??= (media) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent: () => false,
+  });
 }

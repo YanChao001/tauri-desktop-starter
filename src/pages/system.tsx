@@ -102,114 +102,137 @@ export default function System() {
   }
   return (
     <NativePage title={t("system.title")} description={t("system.description")}>
-      <div className="space-y-5">
-        <section className="space-y-3 rounded-xl border bg-card p-5">
-          <h2 className="flex items-center gap-2 font-semibold">
-            {t("system.notification")}
-            <HelpTooltip
-              label={`${t("system.notification")} · ${t("title.help")}`}
-            >
-              {t("system.permission")}
-            </HelpTooltip>
-          </h2>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                if (
-                  !(await sendSystemNotification(
-                    t("system.title"),
-                    t("system.notificationBody"),
-                  ))
-                )
-                  throw new Error(t("system.denied"));
-              })
-            }
-          >
-            {t("system.notification")}
-          </Button>
-        </section>
-        <section className="space-y-3 rounded-xl border bg-card p-5">
-          <h2 className="flex items-center gap-2 font-semibold">
-            {t("system.shortcut")}
-            <HelpTooltip label={`${t("system.shortcut")} · ${t("title.help")}`}>
-              {t("system.shortcutHelp")}
-            </HelpTooltip>
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            <Select
-              value={shortcut}
-              disabled={registered || busy}
-              onValueChange={setShortcut}
-            >
-              <SelectTrigger aria-label={t("system.shortcut")}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" align="start">
-                {[
-                  "CommandOrControl+Shift+Space",
-                  "CommandOrControl+Shift+Y",
-                  "Alt+Shift+Y",
-                ].map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <div className="space-y-4">
+        <section className="divide-y rounded-xl border bg-card px-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <h2 className="flex items-center gap-2 font-semibold">
+              {t("system.notification")}
+              <HelpTooltip
+                label={`${t("system.notification")} · ${t("title.help")}`}
+              >
+                {t("system.permission")}
+              </HelpTooltip>
+            </h2>
             <Button
               disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  if (unregister.current) {
-                    await unregister.current();
-                    unregister.current = null;
-                    setRegistered(false);
-                  } else {
-                    const stop = await registerGlobalShortcut(shortcut);
-                    if (!alive.current) {
-                      await stop();
-                      return;
-                    }
-                    unregister.current = stop;
-                    setRegistered(true);
-                  }
+                  if (
+                    !(await sendSystemNotification(
+                      t("system.title"),
+                      t("system.notificationBody"),
+                    ))
+                  )
+                    throw new Error(t("system.denied"));
                 })
               }
             >
-              {t(registered ? "system.unregister" : "system.register")}
+              {t("system.notification")}
             </Button>
           </div>
-        </section>
-        <section className="space-y-3 rounded-xl border bg-card p-5">
-          <Label htmlFor="system-clipboard">{t("system.clipboard")}</Label>
-          <Input
-            id="system-clipboard"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            maxLength={16000}
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={busy}
-              onClick={() => void run(() => writeSystemClipboard(text))}
-            >
-              {t("system.writeClipboard")}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void run(async () =>
-                  setText((await readSystemClipboard()).slice(0, 16000)),
-                )
-              }
-            >
-              {t("system.readClipboard")}
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <h2 className="flex items-center gap-2 font-semibold">
+              {t("system.shortcut")}
+              <HelpTooltip
+                label={`${t("system.shortcut")} · ${t("title.help")}`}
+              >
+                {t("system.shortcutHelp")}
+              </HelpTooltip>
+            </h2>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Select
+                value={shortcut}
+                disabled={registered || busy}
+                onValueChange={setShortcut}
+              >
+                <SelectTrigger
+                  className="max-w-full"
+                  aria-label={t("system.shortcut")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {[
+                    "CommandOrControl+Shift+Space",
+                    "CommandOrControl+Shift+Y",
+                    "Alt+Shift+Y",
+                  ].map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    if (unregister.current) {
+                      await unregister.current();
+                      unregister.current = null;
+                      setRegistered(false);
+                    } else {
+                      const stop = await registerGlobalShortcut(shortcut);
+                      if (!alive.current) {
+                        await stop();
+                        return;
+                      }
+                      unregister.current = stop;
+                      setRegistered(true);
+                    }
+                  })
+                }
+              >
+                {t(registered ? "system.unregister" : "system.register")}
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2 py-3">
+            <Label htmlFor="system-clipboard">{t("system.clipboard")}</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                id="system-clipboard"
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                maxLength={16000}
+                className="min-w-40 flex-1"
+              />
+              <Button
+                disabled={busy}
+                onClick={() => void run(() => writeSystemClipboard(text))}
+              >
+                {t("system.writeClipboard")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () =>
+                    setText((await readSystemClipboard()).slice(0, 16000)),
+                  )
+                }
+              >
+                {t("system.readClipboard")}
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <h2 className="font-semibold">{t("system.workspace")}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button disabled={busy} onClick={() => void run(openNotesWindow)}>
+                {t("system.window")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => void run(restoreWorkspace)}
+              >
+                {t("system.restore")}
+              </Button>
+            </div>
           </div>
         </section>
-        <section className="space-y-3 rounded-xl border bg-card p-5">
+        <section className="space-y-3 rounded-xl border bg-card p-4">
           <h2 className="flex items-center gap-2 font-semibold">
             {t("system.deepLink")}
             <HelpTooltip label={`${t("system.deepLink")} · ${t("title.help")}`}>
@@ -224,7 +247,7 @@ export default function System() {
           </code>
           <h3 className="text-sm font-medium">{t("system.events")}</h3>
           <ul
-            className="h-48 space-y-2 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-24 space-y-2 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-live="polite"
             aria-label={t("system.events")}
             tabIndex={0}
@@ -241,18 +264,6 @@ export default function System() {
             )}
           </ul>
         </section>
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={busy} onClick={() => void run(openNotesWindow)}>
-            {t("system.window")}
-          </Button>
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => void run(restoreWorkspace)}
-          >
-            {t("system.restore")}
-          </Button>
-        </div>
       </div>
     </NativePage>
   );

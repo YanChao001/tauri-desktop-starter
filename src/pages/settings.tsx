@@ -7,14 +7,30 @@ import {
   RotateCcwIcon,
   SunIcon,
   ChevronDownIcon,
+  LanguagesIcon,
+  SunMoonIcon,
+  PaletteIcon,
+  SquareIcon,
+  TypeIcon,
+  ALargeSmallIcon,
+  ActivityIcon,
+  MenuIcon,
+  LayersIcon,
+  PanelLeftCloseIcon,
+  MoveHorizontalIcon,
+  LocateIcon,
+  GlobeIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LanguageSwitch } from "@/components/language-switch";
 import { SkinPicker } from "@/components/skin-picker";
 import { SettingsSearch } from "@/components/settings-search";
 import { SettingsPersistence } from "@/components/settings-persistence";
-import { SettingRow } from "@/components/setting-row";
+import { DesktopSettings } from "@/components/desktop-settings";
+import { UpdateSettings } from "@/components/update-settings";
+import { SettingLabel, SettingRow } from "@/components/setting-row";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { ExternalLink } from "@/components/external-link";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +43,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -60,7 +75,6 @@ import {
   isTauri,
   onWindowMoved,
   onWindowResized,
-  openExternal,
   resetWindowGeometry,
   setWindowSize,
   type WindowGeometry,
@@ -291,26 +305,11 @@ export default function Settings() {
     };
   }, []);
 
-  async function handleOpenLink(url: string) {
-    try {
-      await openExternal(url);
-    } catch (error) {
-      console.error("打开外链失败", error);
-      toast.error(translateLatest("common.openFailed"));
-    }
-  }
-
   return (
     <div className="studio-page settings-studio">
       <div className="studio-intro">
-        <div className="flex items-center gap-2">
-          <h2>{t("settings.title")}</h2>
-          <HelpTooltip
-            label={t("common.helpFor", { name: t("settings.title") })}
-          >
-            {t("settings.subtitle")}
-          </HelpTooltip>
-        </div>
+        <h2>{t("settings.title")}</h2>
+        <p>{t("settings.subtitle")}</p>
       </div>
 
       <SettingsSearch />
@@ -327,8 +326,12 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="text-sm">{t("settings.appearance")}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <SettingRow id="settings-language" label={t("common.language")}>
+        <CardContent className="space-y-4 [&>.settings-row]:py-0">
+          <SettingRow
+            id="settings-language"
+            icon={LanguagesIcon}
+            label={t("common.language")}
+          >
             <LanguageSwitch />
           </SettingRow>
           <div
@@ -336,7 +339,7 @@ export default function Settings() {
             tabIndex={-1}
             className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Label className="text-xs">{t("settings.theme")}</Label>
+            <SettingLabel icon={SunMoonIcon} label={t("settings.theme")} />
             <div className="grid grid-cols-3 gap-2">
               {THEMES.map((item) => {
                 const active = theme === item.value;
@@ -366,7 +369,7 @@ export default function Settings() {
             tabIndex={-1}
             className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Label className="text-xs">{t("settings.accent")}</Label>
+            <SettingLabel icon={PaletteIcon} label={t("settings.accent")} />
             <div className="flex flex-wrap gap-2">
               {ACCENTS.map((accent) => {
                 const active = settings.accent === accent;
@@ -396,7 +399,11 @@ export default function Settings() {
 
           <Separator />
 
-          <SettingRow id="settings-radius" label={t("settings.radius")}>
+          <SettingRow
+            id="settings-radius"
+            icon={SquareIcon}
+            label={t("settings.radius")}
+          >
             <ToggleGroup
               type="single"
               aria-label={t("settings.radius")}
@@ -418,7 +425,11 @@ export default function Settings() {
             </ToggleGroup>
           </SettingRow>
 
-          <SettingRow id="settings-font" label={t("settings.font")}>
+          <SettingRow
+            id="settings-font"
+            icon={TypeIcon}
+            label={t("settings.font")}
+          >
             <Select
               value={settings.font}
               onValueChange={(value) => update({ font: value as Font })}
@@ -440,7 +451,11 @@ export default function Settings() {
             </Select>
           </SettingRow>
 
-          <SettingRow id="settings-fontSize" label={t("settings.fontSize")}>
+          <SettingRow
+            id="settings-fontSize"
+            icon={ALargeSmallIcon}
+            label={t("settings.fontSize")}
+          >
             <ToggleGroup
               type="single"
               aria-label={t("settings.fontSize")}
@@ -464,6 +479,7 @@ export default function Settings() {
 
           <SettingRow
             id="settings-motion"
+            icon={ActivityIcon}
             label={t("settings.motion")}
             hint={t("settings.motionHint")}
           >
@@ -496,6 +512,7 @@ export default function Settings() {
         <CardContent className="divide-y">
           <SettingRow
             id="settings-menuBar"
+            icon={MenuIcon}
             label={t("settings.menuBar")}
             hint={t("settings.menuBarHint")}
           >
@@ -507,6 +524,7 @@ export default function Settings() {
           </SettingRow>
           <SettingRow
             id="settings-appMode"
+            icon={LayersIcon}
             label={t("settings.appMode")}
             hint={t("settings.appModeDescription")}
           >
@@ -527,14 +545,20 @@ export default function Settings() {
               </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-          <SettingRow label={t("settings.sidebarCollapsed")}>
+          <SettingRow
+            icon={PanelLeftCloseIcon}
+            label={t("settings.sidebarCollapsed")}
+          >
             <Switch
               aria-label={t("settings.sidebarCollapsed")}
               checked={settings.sidebarCollapsed}
               onCheckedChange={(value) => update({ sidebarCollapsed: value })}
             />
           </SettingRow>
-          <SettingRow label={t("settings.sidebarWidth")}>
+          <SettingRow
+            icon={MoveHorizontalIcon}
+            label={t("settings.sidebarWidth")}
+          >
             <input
               type="range"
               min={180}
@@ -555,7 +579,7 @@ export default function Settings() {
         <CardHeader>
           <div className="flex items-center gap-1.5">
             <CardTitle className="text-sm">
-              {t("settings.windowSize")}
+              {t("desktop.settingsTitle")}
             </CardTitle>
             <HelpTooltip
               label={t("common.helpFor", { name: t("settings.windowSize") })}
@@ -568,7 +592,9 @@ export default function Settings() {
             </HelpTooltip>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3 [&>.settings-row]:py-0">
+          <DesktopSettings />
+          <Separator />
           <div
             role="group"
             aria-label={t("settings.windowSize")}
@@ -593,7 +619,6 @@ export default function Settings() {
                   key={preset.id}
                   data-window-preset={preset.id}
                   type="button"
-                  aria-label={t(preset.label)}
                   aria-pressed={active}
                   aria-describedby={unavailable ? reasonId : undefined}
                   disabled={
@@ -611,12 +636,12 @@ export default function Settings() {
                     unavailable && "pointer-events-none h-full w-full",
                   )}
                 >
-                  <span className="text-sm">{t(preset.label)}</span>
+                  <span className="text-sm">{t(preset.label)}</span>{" "}
                   <span className="text-xs text-muted-foreground">
                     {preset.width !== null && preset.height !== null
                       ? `${preset.width} × ${preset.height}`
                       : t("settings.windowDefaultSize")}
-                  </span>
+                  </span>{" "}
                   {preset.id === "standard" && fittedDefault ? (
                     <span className="sr-only">
                       {t("settings.windowSizeFitted")}
@@ -704,6 +729,7 @@ export default function Settings() {
           <Separator />
           <SettingRow
             id="settings-windowPosition"
+            icon={LocateIcon}
             label={t("settings.windowPosition")}
             hint={t("settings.windowPositionHint")}
           >
@@ -724,6 +750,51 @@ export default function Settings() {
                 {t("settings.windowPositionCenter")}
               </ToggleGroupItem>
             </ToggleGroup>
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <UpdateSettings />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">{t("settings.network")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SettingRow
+            id="settings-networkMode"
+            icon={GlobeIcon}
+            label={t("settings.networkMode")}
+            hint={t(
+              native
+                ? "settings.networkModeHint"
+                : "settings.networkModeBrowserHint",
+            )}
+          >
+            <Select
+              value={settings.networkMode}
+              disabled={!native}
+              onValueChange={(value) => {
+                if (value === "system" || value === "direct")
+                  update({ networkMode: value });
+              }}
+            >
+              <SelectTrigger
+                className="w-44"
+                size="sm"
+                aria-label={t("settings.networkMode")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">
+                  {t("settings.networkModeSystem")}
+                </SelectItem>
+                <SelectItem value="direct">
+                  {t("settings.networkModeDirect")}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </SettingRow>
         </CardContent>
       </Card>
@@ -759,18 +830,20 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-1">
               {LINKS.map((link) => (
-                <button
+                <ExternalLink
                   key={link.url}
-                  type="button"
-                  onClick={() => void handleOpenLink(link.url)}
-                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
+                  href={link.url}
+                  className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span>{link.label}</span>
-                  <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                  <span>{link.label}</span>{" "}
+                  <span className="flex min-w-0 items-center gap-1.5 break-all font-mono text-xs text-muted-foreground">
                     {new URL(link.url).host}
-                    <ExternalLinkIcon className="size-3" />
+                    <ExternalLinkIcon
+                      className="size-3 shrink-0"
+                      aria-hidden="true"
+                    />
                   </span>
-                </button>
+                </ExternalLink>
               ))}
             </CardContent>
           </Card>

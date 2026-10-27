@@ -1,4 +1,5 @@
 import { StrictMode, useEffect, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   act,
   cleanup,
@@ -19,6 +20,7 @@ import {
   ExtensionChromeSlot,
 } from "./extension-chrome-slot";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ExtensionActivityProvider } from "./extension-activity";
 
 function render(ui: ReactNode) {
   return renderUi(ui, {
@@ -251,6 +253,88 @@ it("offers a native retry after an HTML document's first Wasm initialization fai
   expect(native.openExtensionUi).toHaveBeenCalledOnce();
 });
 
+it("loads the isolated document in parallel with a pending first Wasm view", async () => {
+  const initial = deferred<native.ExtensionView>();
+  const lease = deferred<{ url: string; token: string }>();
+  vi.mocked(native.viewExtension).mockReturnValueOnce(initial.promise);
+  vi.mocked(native.openExtensionUi).mockReturnValueOnce(lease.promise);
+  const mounted = render(
+    <ExtensionApp
+      item={{
+        ...item,
+        package: {
+          ...item.package,
+          manifest: {
+            ...item.package.manifest,
+            commands: item.package.manifest.commands.map((command) => ({
+              ...command,
+              ui: { sidebar: true, window: true, document: "main" },
+            })),
+          },
+        },
+      }}
+      commandId="open"
+      runs={[]}
+      onClose={onClose}
+      onSettled={onSettled}
+    />,
+  );
+  await waitFor(() => {
+    expect(native.viewExtension).toHaveBeenCalledOnce();
+    expect(native.openExtensionUi).toHaveBeenCalledOnce();
+  });
+  await act(async () =>
+    lease.resolve({ url: "about:blank", token: "parallel-start" }),
+  );
+  expect(mounted.container.querySelector("iframe")).toHaveAttribute(
+    "src",
+    "about:blank",
+  );
+  expect(screen.getByRole("status", { name: "Loading…" })).toBeVisible();
+  await act(async () => initial.resolve(first));
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
+});
+
+it("finishes an explicitly discarded session when successful navigation deactivates its cached page synchronously", async () => {
+  let changeActivity!: (active: boolean) => void;
+  const navigateAway = vi.fn(() => {
+    flushSync(() => changeActivity(false));
+  });
+  function CachedApp() {
+    const [active, setActive] = useState(true);
+    changeActivity = setActive;
+    return (
+      <ExtensionActivityProvider active={active}>
+        <ExtensionApp
+          item={item}
+          commandId="open"
+          runs={[]}
+          onClose={navigateAway}
+          onSettled={onSettled}
+        />
+      </ExtensionActivityProvider>
+    );
+  }
+  render(<CachedApp />);
+  const input = await screen.findByLabelText("Query");
+  fireEvent.change(input, { target: { value: "Discard after navigation" } });
+  fireEvent.click(sessionButton("End session"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "End this session?",
+  });
+  await act(async () => {
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Discard and end" }),
+    );
+  });
+  expect(navigateAway).toHaveBeenCalledOnce();
+  expect(lifecycle.work?.dirty).toBe(false);
+  expect(input).not.toBeInTheDocument();
+  await act(async () => changeActivity(true));
+  expect(await screen.findByLabelText("Query")).toHaveValue("Original");
+  expect(native.viewExtension).toHaveBeenCalledTimes(2);
+});
+
 it("keeps session tools out of the main workflow and preserves a draft when ending is cancelled", async () => {
   render(app());
   const input = await screen.findByLabelText("Query");
@@ -279,6 +363,47 @@ it("keeps session tools out of the main workflow and preserves a draft when endi
   expect(lifecycle.work?.dirty).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   expect(native.cancelExtension).not.toHaveBeenCalled();
+});
+
+it("dismisses cached session tools on navigation and does not reopen them or steal focus when returning", async () => {
+  const content = (active: boolean) => (
+    <>
+      <button>Current page action</button>
+      <ExtensionActivityProvider active={active}>
+        <section hidden={!active}>{app()}</section>
+      </ExtensionActivityProvider>
+    </>
+  );
+  const mounted = render(content(true));
+  await screen.findByLabelText("Query");
+  openSessionTools();
+  expect(screen.getByRole("menu", { name: "Extension tools" })).toBeVisible();
+
+  mounted.rerender(content(false));
+  const currentAction = screen.getByRole("button", {
+    name: "Current page action",
+  });
+  currentAction.focus();
+  await act(async () => {});
+  expect(currentAction).toHaveFocus();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+  mounted.rerender(content(true));
+  await act(async () => {});
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(currentAction).toHaveFocus();
+  openSessionTools();
+  expect(screen.getByRole("menu", { name: "Extension tools" })).toBeVisible();
+
+  // 鼠标 / 键盘导航也可能先把焦点交给下一页的操作，再停用旧页面。
+  currentAction.focus();
+  mounted.rerender(content(false));
+  await act(async () => {});
+  expect(currentAction).toHaveFocus();
+  mounted.rerender(content(true));
+  await act(async () => {});
+  expect(currentAction).toHaveFocus();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 });
 
 it("labels the compact menu after a hover delay without adding headings, forms or autofocus hints", async () => {
@@ -352,6 +477,50 @@ it("opens data in a separate focused dialog and keeps its draft after Escape ret
   fireEvent.click(sessionButton("Send data…"));
   expect(await screen.findByLabelText("Input text")).toHaveValue(
     "Retain this unsent draft",
+  );
+  expect(lifecycle.work?.dirty).toBe(true);
+});
+
+it("keeps the data draft without reopening its dialog when a cached page resumes", async () => {
+  const content = (active: boolean) => (
+    <>
+      <button>Current page action</button>
+      <ExtensionActivityProvider active={active}>
+        <section hidden={!active}>
+          <ExtensionApp
+            item={{ ...item, grantedPermissions: ["text:read"] }}
+            commandId="open"
+            runs={[]}
+            onClose={onClose}
+            onSettled={onSettled}
+          />
+        </section>
+      </ExtensionActivityProvider>
+    </>
+  );
+  const mounted = render(content(true));
+  await screen.findByLabelText("Query");
+  fireEvent.click(sessionButton("Send data…"));
+  fireEvent.change(await screen.findByLabelText("Input text"), {
+    target: { value: "Retain this draft across navigation" },
+  });
+
+  mounted.rerender(content(false));
+  const currentAction = screen.getByRole("button", {
+    name: "Current page action",
+  });
+  currentAction.focus();
+  await act(async () => {});
+  expect(currentAction).toHaveFocus();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+  mounted.rerender(content(true));
+  await act(async () => {});
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(currentAction).toHaveFocus();
+  fireEvent.click(sessionButton("Send data…"));
+  expect(await screen.findByLabelText("Input text")).toHaveValue(
+    "Retain this draft across navigation",
   );
   expect(lifecycle.work?.dirty).toBe(true);
 });
@@ -557,9 +726,11 @@ it("refreshes the requested locale after a draft changed before the locale effec
     const { sessions } = useExtensions();
     useEffect(() => {
       if (draft !== undefined)
-        sessions.get(`${item.package.manifest.id}:open`)!.fields = {
-          query: draft,
-        };
+        sessions.get(`${item.package.manifest.id}:open`)!.update({
+          fields: {
+            query: draft,
+          },
+        });
     }, [draft, sessions]);
     return null;
   }
@@ -811,6 +982,48 @@ it("reports the UTF-8 field limit before invoking Wasm and allows correcting the
       request: expect.objectContaining({ fields: { query: "中".repeat(682) } }),
     }),
   );
+});
+
+it("keeps select drafts in the generic form restricted to the current view options", async () => {
+  vi.mocked(native.viewExtension).mockResolvedValue({
+    ...first,
+    fields: [
+      {
+        id: "query",
+        label: "Category",
+        kind: "select",
+        value: "one",
+        options: [{ label: "One", value: "one" }],
+      },
+    ],
+  });
+  function DraftPatch({ value }: { value?: string }) {
+    const { sessions } = useExtensions();
+    useEffect(() => {
+      if (value !== undefined)
+        sessions
+          .get(`${item.package.manifest.id}:open`)!
+          .update({ fields: { query: value } });
+    }, [sessions, value]);
+    return null;
+  }
+  const workspace = (value?: string) => (
+    <ExtensionsProvider>
+      <DraftPatch value={value} />
+      {app()}
+    </ExtensionsProvider>
+  );
+  const mounted = render(workspace());
+  await screen.findByRole("combobox", { name: "Category" });
+  mounted.rerender(workspace("missing"));
+  const submit = screen.getByRole("button", { name: "Submit" });
+  expect(submit).toHaveAttribute("aria-disabled", "true");
+  fireEvent.click(submit);
+  expect(native.viewExtension).toHaveBeenCalledOnce();
+  mounted.rerender(workspace("one"));
+  expect(submit).toHaveAttribute("aria-disabled", "false");
+  fireEvent.click(submit);
+  await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(2));
 });
 
 it("exports and restores an over-limit draft separately from its valid view until the user corrects it", async () => {

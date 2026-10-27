@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   nativeHttpRequest,
+  NativeBridgeError,
   onSystemNotification,
   registerGlobalShortcut,
   sendSystemNotification,
@@ -15,7 +16,10 @@ const { ReadableStream: NodeReadableStream } = await vi.importActual<{
 }>("node:stream/web");
 
 const plugins = vi.hoisted(() => ({
-  fetch: vi.fn<typeof fetch>(),
+  requestDemoHttp: vi.fn(),
+  cancelDemoHttp: vi.fn(),
+  channelCreated: vi.fn(),
+  channels: [] as { onmessage: (message: null) => void }[],
   isPermissionGranted: vi.fn<() => Promise<boolean>>(),
   requestPermission: vi.fn<() => Promise<NotificationPermission>>(),
   sendNotification: vi.fn(),
@@ -25,7 +29,16 @@ const plugins = vi.hoisted(() => ({
   unregister: vi.fn(),
   activateMain: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-http", () => ({ fetch: plugins.fetch }));
+vi.mock("@tauri-apps/api/core", () => ({
+  Channel: class {
+    onmessage: (message: null) => void;
+    constructor(onmessage: (message: null) => void) {
+      this.onmessage = onmessage;
+      plugins.channels.push(this);
+      plugins.channelCreated();
+    }
+  },
+}));
 vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: plugins.isPermissionGranted,
   requestPermission: plugins.requestPermission,
@@ -38,7 +51,11 @@ vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
   unregister: plugins.unregister,
 }));
 vi.mock("./generated/bindings", () => ({
-  commands: { activateMain: plugins.activateMain },
+  commands: {
+    activateMain: plugins.activateMain,
+    requestDemoHttp: plugins.requestDemoHttp,
+    cancelDemoHttp: plugins.cancelDemoHttp,
+  },
 }));
 
 const browserFetch = vi.fn<typeof fetch>();
@@ -123,6 +140,8 @@ beforeEach(() => {
   vi.stubGlobal("ReadableStream", NodeReadableStream);
   vi.stubGlobal("WebSocket", TestWebSocket);
   TestWebSocket.instances = [];
+  plugins.channels = [];
+  plugins.cancelDemoHttp.mockResolvedValue({ status: "ok", data: undefined });
   plugins.isPermissionGranted.mockResolvedValue(false);
   plugins.requestPermission.mockResolvedValue("denied");
   plugins.isRegistered.mockResolvedValue(false);
@@ -152,7 +171,7 @@ describe("HTTPS bridge boundaries", () => {
       desktop();
       await expect(nativeHttpRequest({ url, method: "GET" })).rejects.toThrow();
       expect(browserFetch).not.toHaveBeenCalled();
-      expect(plugins.fetch).not.toHaveBeenCalled();
+      expect(plugins.requestDemoHttp).not.toHaveBeenCalled();
     },
   );
 
@@ -171,56 +190,210 @@ describe("HTTPS bridge boundaries", () => {
       }),
     ).rejects.toThrow("body size");
     expect(browserFetch).not.toHaveBeenCalled();
-    expect(plugins.fetch).not.toHaveBeenCalled();
+    expect(plugins.requestDemoHttp).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "routes a valid POST through the %s native boundary and decodes split UTF-8",
-    async (native) => {
-      if (native) desktop();
-      const bytes = new TextEncoder().encode("你好");
-      const { response, release } = streamedResponse([
-        bytes.slice(0, 2),
-        bytes.slice(2),
-      ]);
-      const fetcher = native ? plugins.fetch : browserFetch;
-      fetcher.mockResolvedValue(response);
-      const caller = new AbortController();
-      const removeListener = vi.spyOn(caller.signal, "removeEventListener");
-      await expect(
-        nativeHttpRequest(
-          {
-            url: endpoint,
-            method: "POST",
-            body: "demo",
-            headers: { "Content-Type": "text/plain" },
-          },
-          caller.signal,
-        ),
-      ).resolves.toEqual({
-        status: 201,
-        headers: { "x-demo": "streamed" },
-        body: "你好",
-      });
-      expect(fetcher).toHaveBeenCalledWith(
-        endpoint,
-        expect.objectContaining({
+  it("routes a browser POST and decodes split UTF-8", async () => {
+    const bytes = new TextEncoder().encode("你好");
+    const { response, release } = streamedResponse([
+      bytes.slice(0, 2),
+      bytes.slice(2),
+    ]);
+    browserFetch.mockResolvedValue(response);
+    const caller = new AbortController();
+    const removeListener = vi.spyOn(caller.signal, "removeEventListener");
+    await expect(
+      nativeHttpRequest(
+        {
+          url: endpoint,
           method: "POST",
           body: "demo",
-          credentials: "omit",
-          redirect: "error",
-          signal: expect.any(AbortSignal),
-        }),
+          headers: { "Content-Type": "text/plain" },
+        },
+        caller.signal,
+      ),
+    ).resolves.toEqual({
+      status: 201,
+      headers: { "x-demo": "streamed" },
+      body: "你好",
+    });
+    expect(browserFetch).toHaveBeenCalledWith(
+      endpoint,
+      expect.objectContaining({
+        method: "POST",
+        body: "demo",
+        credentials: "omit",
+        redirect: "error",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(plugins.requestDemoHttp).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("routes desktop HTTP through the typed host command", async () => {
+    desktop();
+    const result = {
+      status: 201,
+      headers: { "content-type": "text/plain" },
+      body: "你好",
+    };
+    plugins.requestDemoHttp.mockImplementation(
+      (_id, _input, onStarted: { onmessage: (message: null) => void }) => {
+        onStarted.onmessage(null);
+        return Promise.resolve({ status: "ok", data: result });
+      },
+    );
+    await expect(
+      nativeHttpRequest({
+        url: endpoint,
+        method: "POST",
+        body: "demo",
+        headers: { "Content-Type": "text/plain" },
+      }),
+    ).resolves.toEqual(result);
+    expect(plugins.requestDemoHttp).toHaveBeenCalledWith(
+      expect.any(String),
+      {
+        url: endpoint,
+        method: "POST",
+        body: "demo",
+        headers: { "Content-Type": "text/plain" },
+        timeoutMs: 10000,
+      },
+      plugins.channels[0],
+    );
+    expect(browserFetch).not.toHaveBeenCalled();
+    expect(plugins.cancelDemoHttp).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["before-import", "during-import"] as const)(
+    "does not dispatch a desktop request cancelled %s",
+    async (phase) => {
+      desktop();
+      const caller = new AbortController();
+      if (phase === "during-import")
+        plugins.channelCreated.mockImplementationOnce(() => caller.abort());
+      const request = nativeHttpRequest(
+        { url: endpoint, method: "GET" },
+        caller.signal,
       );
-      expect(native ? browserFetch : plugins.fetch).not.toHaveBeenCalled();
-      expect(release).toHaveBeenCalledOnce();
-      expect(removeListener).toHaveBeenCalledWith(
-        "abort",
-        expect.any(Function),
-      );
+      if (phase === "before-import") caller.abort();
+      await expect(request).rejects.toMatchObject({ name: "AbortError" });
+      expect(plugins.requestDemoHttp).not.toHaveBeenCalled();
+      expect(plugins.cancelDemoHttp).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     },
   );
+
+  it.each([false, true])(
+    "cancels the registered desktop operation when aborted (already acknowledged: %s)",
+    async (acknowledged) => {
+      desktop();
+      let finish: ((value: unknown) => void) | undefined;
+      plugins.requestDemoHttp.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const caller = new AbortController();
+      const request = nativeHttpRequest(
+        { url: endpoint, method: "GET" },
+        caller.signal,
+      );
+      const cancelled = expect(request).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      await vi.waitFor(() =>
+        expect(plugins.requestDemoHttp).toHaveBeenCalledOnce(),
+      );
+      const channel = plugins.channels[0]!;
+      if (acknowledged) channel.onmessage(null);
+      caller.abort();
+      if (!acknowledged) {
+        expect(plugins.cancelDemoHttp).not.toHaveBeenCalled();
+        channel.onmessage(null);
+      }
+      await vi.waitFor(() =>
+        expect(plugins.cancelDemoHttp).toHaveBeenCalledOnce(),
+      );
+      expect(plugins.cancelDemoHttp).toHaveBeenCalledWith(
+        plugins.requestDemoHttp.mock.calls[0]?.[0],
+      );
+      finish?.({
+        status: "error",
+        error: {
+          code: "USER_CANCELLED",
+          message: "HTTP demo request was cancelled",
+          retryable: false,
+        },
+      });
+      await cancelled;
+      channel.onmessage(null);
+      expect(plugins.cancelDemoHttp).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("forwards desktop timeout to native cancellation and keeps TimeoutError", async () => {
+    desktop();
+    let finish: ((value: unknown) => void) | undefined;
+    plugins.requestDemoHttp.mockImplementation(
+      (_id, _input, channel: { onmessage: (message: null) => void }) => {
+        channel.onmessage(null);
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+    plugins.cancelDemoHttp.mockImplementation(() => {
+      finish?.({
+        status: "error",
+        error: {
+          code: "USER_CANCELLED",
+          message: "HTTP demo request was cancelled",
+          retryable: false,
+        },
+      });
+      return Promise.resolve({ status: "ok", data: undefined });
+    });
+    const request = nativeHttpRequest({
+      url: endpoint,
+      method: "GET",
+      timeoutMs: 100,
+    });
+    const timedOut = expect(request).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    await vi.waitFor(() =>
+      expect(plugins.requestDemoHttp).toHaveBeenCalledOnce(),
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    await timedOut;
+    expect(plugins.cancelDemoHttp).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps a native timeout recognizable before the browser timer fires", async () => {
+    desktop();
+    plugins.requestDemoHttp.mockResolvedValue({
+      status: "error",
+      error: {
+        code: "HTTP_TIMEOUT",
+        message: "HTTP demo request timed out; retry the request",
+        retryable: true,
+      },
+    });
+    await expect(
+      nativeHttpRequest({ url: endpoint, method: "GET", timeoutMs: 10000 }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(plugins.cancelDemoHttp).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it("accepts the second HTTPS host and omits a GET body", async () => {
     browserFetch.mockResolvedValue(new Response(null, { status: 204 }));
@@ -316,7 +489,12 @@ describe("WebSocket bridge lifecycle", () => {
     "wss://user@echo.websocket.events",
     "wss://echo.websocket.events:8443",
   ])("rejects %s without opening a connection", async (url) => {
-    await expect(websocketConnect(url, vi.fn())).rejects.toThrow("allowed WSS");
+    const connection = websocketConnect(url, vi.fn());
+    await expect(connection).rejects.not.toBeInstanceOf(NativeBridgeError);
+    await expect(connection).rejects.toMatchObject({
+      code: "WEBSOCKET_ENDPOINT",
+      retryable: false,
+    });
     expect(TestWebSocket.instances).toHaveLength(0);
   });
 
@@ -327,7 +505,10 @@ describe("WebSocket bridge lifecycle", () => {
       vi.fn(),
       onClose,
     );
-    const rejected = expect(connection).rejects.toThrow("closed before");
+    const rejected = expect(connection).rejects.toMatchObject({
+      code: "WEBSOCKET_CONNECTION",
+      retryable: true,
+    });
     TestWebSocket.instances[0]!.closed();
     await rejected;
     expect(onClose).toHaveBeenCalledOnce();
@@ -350,21 +531,29 @@ describe("WebSocket bridge lifecycle", () => {
     expect(socket.send).toHaveBeenCalledWith("hello");
     socket.message("echo");
     expect(onMessage).toHaveBeenCalledWith("echo");
-    await expect(handle.send("x".repeat(65537))).rejects.toThrow("exceeds");
+    await expect(handle.send("x".repeat(65537))).rejects.toMatchObject({
+      code: "WEBSOCKET_SEND",
+      retryable: false,
+    });
     expect(socket.send).toHaveBeenCalledOnce();
     socket.message("x".repeat(65537));
     expect(socket.close).toHaveBeenCalledWith(1009, "Demo message limit");
     expect(onMessage).toHaveBeenCalledOnce();
     socket.closed();
     expect(onClose).toHaveBeenCalledOnce();
-    await expect(handle.send("closed")).rejects.toThrow("Socket closed");
+    await expect(handle.send("closed")).rejects.toMatchObject({
+      code: "WEBSOCKET_SEND",
+    });
     await handle.close();
     expect(socket.close).toHaveBeenLastCalledWith(1000);
   });
 
   it("closes a timed-out connection and leaves no pending timer", async () => {
     const connection = websocketConnect("wss://echo.websocket.events", vi.fn());
-    const rejected = expect(connection).rejects.toThrow("timed out");
+    const rejected = expect(connection).rejects.toMatchObject({
+      code: "WEBSOCKET_TIMEOUT",
+      retryable: true,
+    });
     await vi.advanceTimersByTimeAsync(10000);
     await rejected;
     expect(TestWebSocket.instances[0]!.close).toHaveBeenCalledOnce();

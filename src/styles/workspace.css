@@ -14,7 +14,7 @@
   place-items: center;
   min-width: 1.2rem;
   height: 1.2rem;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   border-radius: 50%;
   background: var(--muted);
   color: var(--foreground);
@@ -35,7 +35,7 @@
   background: color-mix(in oklab, var(--muted) 40%, var(--card));
 }
 .workspace-panel-label {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   margin: 0.4rem 0.5rem 0.8rem;
 }
@@ -116,7 +116,7 @@
   border-top: 1px solid var(--border);
   padding: 0.6rem 0.9rem;
   color: var(--muted-foreground);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
 }
 .workspace-empty {
   padding: 0.7rem 0.4rem;

@@ -213,14 +213,17 @@ export default function Overview() {
     return (
       <div className="studio-page showroom-minimal">
         <div className="studio-intro">
-          <span className="studio-eyebrow">{t("showroom.workspace")}</span>
           <h2>{t("home.title", { name: APP_CONFIG.name })}</h2>
           <p>{t("showroom.workspaceHint")}</p>
         </div>
         <div className="showroom-workspace-links">
           {(
             [
-              { to: "/desktop", label: "home.desktop", icon: MonitorIcon },
+              {
+                to: "/settings?section=desktop",
+                label: "home.desktop",
+                icon: MonitorIcon,
+              },
               { to: "/database", label: "home.database", icon: LayersIcon },
               {
                 to: "/settings",
@@ -246,10 +249,6 @@ export default function Overview() {
     <div className="studio-page showroom" data-testid="showroom">
       <section className="showroom-hero" aria-labelledby="showroom-heading">
         <div className="showroom-hero-copy">
-          <span className="studio-eyebrow">
-            <span className="showroom-live-dot" />
-            {t("showroom.eyebrow")}
-          </span>
           <motion.h2
             id="showroom-heading"
             initial={reduced ? false : { opacity: 0, y: 16 }}
@@ -288,149 +287,153 @@ export default function Overview() {
             <span className="sr-only">{t("showroom.commands")}</span>
           </button>
         </div>
-        <div
-          ref={scene}
-          className="showroom-scene"
-          data-vibe={vibe.id}
-          data-active={active}
-          onPointerMove={move}
-          onPointerLeave={resetPointer}
-          aria-label={t("showroom.preview")}
-        >
-          <div className="showroom-scene-aura" aria-hidden="true" />
-          <div className="showroom-scene-label">
-            <span>{t("showroom.preview")}</span>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              disabled={reduced}
-              aria-label={t(paused ? "showroom.play" : "showroom.pause")}
-              onClick={() => {
-                setPaused((value) => !value);
-                resetPointer();
-              }}
-            >
-              {paused || reduced ? <PlayIcon /> : <PauseIcon />}
-            </Button>
-          </div>
-          <motion.div
-            className="showroom-window"
-            style={{
-              rotateX: reduced ? 0 : rotateX,
-              rotateY: reduced ? 0 : rotateY,
-            }}
-            aria-hidden="true"
+        <div className="showroom-preview">
+          <div
+            ref={scene}
+            className="showroom-scene"
+            data-vibe={vibe.id}
+            data-active={active}
+            onPointerMove={move}
+            onPointerLeave={resetPointer}
+            aria-label={t("showroom.preview")}
           >
-            <div className="showroom-window-chrome">
-              <span className="showroom-window-dots">
-                <i />
-                <i />
-                <i />
-              </span>
-              <span>{t("showroom.canvas")}</span>
-              <SparklesIcon size={12} />
+            <div className="showroom-scene-aura" aria-hidden="true" />
+            <div className="showroom-scene-label">
+              <span>{t("showroom.preview")}</span>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                disabled={reduced}
+                aria-label={t(paused ? "showroom.play" : "showroom.pause")}
+                onClick={() => {
+                  setPaused((value) => !value);
+                  resetPointer();
+                }}
+              >
+                {paused || reduced ? <PlayIcon /> : <PauseIcon />}
+              </Button>
             </div>
-            <div className="showroom-window-art">
-              <PatternArtwork kind={vibe.background} preview />
-              <LightSculpture />
-              <span className="showroom-window-canvas-label">
-                {t("showroom.canvasNote")}
-              </span>
-            </div>
-            <div className="showroom-window-footer">
-              <div className="showroom-avatars">
-                <span>A</span>
-                <span>M</span>
-                <span>Y</span>
+            <motion.div
+              className="showroom-window"
+              style={{
+                rotateX: reduced ? 0 : rotateX,
+                rotateY: reduced ? 0 : rotateY,
+              }}
+              aria-hidden="true"
+            >
+              <div className="showroom-window-chrome">
+                <span className="showroom-window-dots">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span>{t("showroom.canvas")}</span>
+                <SparklesIcon size={12} />
               </div>
-              <span>{t("showroom.collectionHint")}</span>
-              <span className="showroom-mini-check">
-                <CheckIcon size={12} />
+              <div className="showroom-window-art">
+                <PatternArtwork kind={vibe.background} preview />
+                <LightSculpture />
+                <span className="showroom-window-canvas-label">
+                  {t("showroom.canvasNote")}
+                </span>
+              </div>
+              <div className="showroom-window-footer">
+                <div className="showroom-avatars">
+                  <span>A</span>
+                  <span>M</span>
+                  <span>Y</span>
+                </div>
+                <span>{t("showroom.collectionHint")}</span>
+                <span className="showroom-mini-check">
+                  <CheckIcon size={12} />
+                </span>
+              </div>
+            </motion.div>
+            <div className="showroom-floating-note" aria-hidden="true">
+              <span className="showroom-note-icon">
+                <LayersIcon size={18} />
               </span>
+              <div>
+                <strong>{t("showroom.collection")}</strong>
+                <span>{t("showroom.collectionHint")}</span>
+              </div>
+              <SparklesIcon size={16} />
             </div>
-          </motion.div>
-          <div className="showroom-floating-note" aria-hidden="true">
-            <span className="showroom-note-icon">
-              <LayersIcon size={18} />
-            </span>
+            <div className="sr-only">
+              {t(reduced ? "showroom.reduced" : "showroom.pointer")}
+            </div>
+          </div>
+          <section
+            className="showroom-vibes studio-panel"
+            aria-labelledby="showroom-vibes-heading"
+          >
             <div>
-              <strong>{t("showroom.collection")}</strong>
-              <span>{t("showroom.collectionHint")}</span>
+              <div className="flex items-center gap-2">
+                <h3 id="showroom-vibes-heading">{t("showroom.chooseVibe")}</h3>
+                <HelpTooltip
+                  label={t("common.helpFor", {
+                    name: t("showroom.chooseVibe"),
+                  })}
+                >
+                  {t("showroom.vibeHint")}
+                </HelpTooltip>
+              </div>
             </div>
-            <SparklesIcon size={16} />
-          </div>
-          <div className="sr-only">
-            {t(reduced ? "showroom.reduced" : "showroom.pointer")}
-          </div>
+            <fieldset className="showroom-vibe-options">
+              <legend className="sr-only">{t("showroom.chooseVibe")}</legend>
+              {VIBES.map((item, index) => (
+                <label
+                  key={item.id}
+                  className="showroom-vibe"
+                  data-vibe={item.id}
+                  data-selected={vibeIndex === index}
+                >
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name="showroom-vibe"
+                    value={item.id}
+                    checked={vibeIndex === index}
+                    onChange={() => setVibeIndex(index)}
+                  />
+                  <span className="showroom-vibe-swatch" aria-hidden="true" />
+                  <span>{t(item.label)}</span>
+                  {vibeIndex === index ? <CheckIcon size={12} /> : null}
+                </label>
+              ))}
+            </fieldset>
+            <div className="showroom-vibe-actions">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={applied}
+                onClick={applyAppearance}
+              >
+                {applied ? <CheckIcon /> : <WandSparklesIcon />}
+                {t(applied ? "showroom.applied" : "showroom.apply")}
+              </Button>
+              {previous ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t("showroom.undo")}
+                  title={t("showroom.undo")}
+                  onClick={undoAppearance}
+                >
+                  <RotateCcwIcon />
+                </Button>
+              ) : null}
+            </div>
+          </section>
         </div>
       </section>
       <JourneyLauncher />
-      <section
-        className="showroom-vibes studio-panel"
-        aria-labelledby="showroom-vibes-heading"
-      >
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 id="showroom-vibes-heading">{t("showroom.chooseVibe")}</h3>
-            <HelpTooltip
-              label={t("common.helpFor", { name: t("showroom.chooseVibe") })}
-            >
-              {t("showroom.vibeHint")}
-            </HelpTooltip>
-          </div>
-        </div>
-        <fieldset className="showroom-vibe-options">
-          <legend className="sr-only">{t("showroom.chooseVibe")}</legend>
-          {VIBES.map((item, index) => (
-            <label
-              key={item.id}
-              className="showroom-vibe"
-              data-vibe={item.id}
-              data-selected={vibeIndex === index}
-            >
-              <input
-                className="sr-only"
-                type="radio"
-                name="showroom-vibe"
-                value={item.id}
-                checked={vibeIndex === index}
-                onChange={() => setVibeIndex(index)}
-              />
-              <span className="showroom-vibe-swatch" aria-hidden="true" />
-              <span>{t(item.label)}</span>
-              {vibeIndex === index ? <CheckIcon size={12} /> : null}
-            </label>
-          ))}
-        </fieldset>
-        <div className="showroom-vibe-actions">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={applied}
-            onClick={applyAppearance}
-          >
-            {applied ? <CheckIcon /> : <WandSparklesIcon />}
-            {t(applied ? "showroom.applied" : "showroom.apply")}
-          </Button>
-          {previous ? (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={t("showroom.undo")}
-              title={t("showroom.undo")}
-              onClick={undoAppearance}
-            >
-              <RotateCcwIcon />
-            </Button>
-          ) : null}
-        </div>
-      </section>
       <div className="showroom-runtime-note">
         <MonitorIcon size={14} />
         <span>
           {t(isTauri() ? "showroom.nativeLive" : "showroom.browserLive")}
         </span>
-        <Link to="/desktop">
+        <Link to="/settings?section=desktop">
           {t("showroom.next")}
           <ArrowRightIcon size={13} />
         </Link>

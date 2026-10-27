@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PowerIcon } from "lucide-react";
 import { SettingRow } from "./setting-row";
 
 vi.mock("@/providers/i18n", () => ({
@@ -31,6 +32,7 @@ describe("设置行补充说明", () => {
   it("带图标的标签可以提供完整的帮助名称", async () => {
     render(
       <SettingRow
+        icon={PowerIcon}
         label={<span>自动启动</span>}
         helpLabel="了解自动启动"
         hint="登录系统后启动应用。"

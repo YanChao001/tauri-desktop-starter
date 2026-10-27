@@ -12,9 +12,9 @@ import { settingsDocument } from "@/lib/settings-model";
 import * as desktop from "@/lib/tauri";
 import { toast } from "sonner";
 
-function SettingsView() {
+function SettingsView({ initial = "/settings" }: { initial?: string }) {
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initial]}>
       <SettingsProvider>
         <I18nProvider>
           <Settings />
@@ -39,6 +39,15 @@ vi.mock("@/lib/tauri", () => ({
   loadSettingsSnapshot: vi.fn(),
   saveSettingsSnapshot: vi.fn(),
   onSettingsChanged: vi.fn(),
+  getDesktopStatus: vi.fn(),
+  getAutostartEnabled: vi.fn(),
+  setAutostartEnabled: vi.fn(),
+  openSecondaryWindow: vi.fn(),
+  checkForUpdate: vi.fn(),
+  downloadAndInstallUpdate: vi.fn(),
+  getUpdateSnapshot: vi.fn(),
+  onUpdateProgress: vi.fn(),
+  relaunchApp: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/wallpaper-library", async (importOriginal) => ({
@@ -71,6 +80,13 @@ describe("设置页", () => {
       version: "0.1.0",
       tauriVersion: "2.0.0",
     });
+    vi.mocked(desktop.getDesktopStatus).mockResolvedValue({
+      autostartSupported: true,
+      trayAvailable: true,
+      secondaryOpen: false,
+      runInBackground: false,
+    });
+    vi.mocked(desktop.getAutostartEnabled).mockResolvedValue(false);
     vi.mocked(desktop.getWindowGeometry).mockResolvedValue(geometry);
     vi.mocked(desktop.setWindowSize).mockImplementation(
       async (width, height) => ({ ...geometry, width, height }),
@@ -100,6 +116,96 @@ describe("设置页", () => {
     cleanup();
     vi.restoreAllMocks();
     Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  });
+  it("关于资源保留真实链接地址与浏览器新标签页语义", () => {
+    render(<SettingsView />);
+    fireEvent.click(screen.getByText("关于与资源"));
+    const link = screen.getByRole("link", { name: /^Tauri / });
+    expect(link).toHaveAttribute("href", "https://v2.tauri.app/");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(
+      screen.getByRole("link", { name: /^Tailwind CSS / }),
+    ).toHaveAttribute("href", "https://tailwindcss.com/");
+    expect(desktop.openExternal).not.toHaveBeenCalled();
+  });
+  it("网络位于设置末段并提供连接深链，浏览器禁用修改且按需说明连接由浏览器控制", async () => {
+    render(<SettingsView initial="/settings?focus=networkMode" />);
+    expect(screen.getByText("网络", { exact: true })).toBeVisible();
+    expect(
+      screen
+        .getAllByText(/^(应用更新|网络|关于与资源)$/)
+        .map((element) => element.textContent),
+    ).toEqual(["应用更新", "网络", "关于与资源"]);
+    expect(document.getElementById("settings-networkMode")).toHaveFocus();
+    const connection = screen.getByRole("combobox", { name: "网络连接" });
+    expect(connection).toBeDisabled();
+    expect(connection).toHaveTextContent("跟随系统代理");
+    expect(screen.queryByText(/连接方式由浏览器控制/)).not.toBeInTheDocument();
+    fireEvent.focus(screen.getByRole("button", { name: "了解网络连接" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "连接方式由浏览器控制，请在桌面应用中修改此设置。",
+    );
+    expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("桌面网络连接通过宿主设置保存，可在直连和系统代理间切换", async () => {
+    vi.mocked(desktop.isTauri).mockReturnValue(true);
+    render(<SettingsView />);
+    await screen.findByText("当前尺寸 1120 × 740");
+    const connection = screen.getByRole("combobox", { name: "网络连接" });
+    expect(connection).toBeEnabled();
+    fireEvent.keyDown(connection, { key: "Enter" });
+    fireEvent.click(screen.getByRole("option", { name: "直接连接" }));
+    await waitFor(() =>
+      expect(
+        vi.mocked(desktop.saveSettingsSnapshot).mock.calls.at(-1)?.[0],
+      ).toMatchObject({ networkMode: "direct" }),
+    );
+    expect(connection).toHaveTextContent("直接连接");
+    fireEvent.keyDown(connection, { key: "Enter" });
+    fireEvent.click(screen.getByRole("option", { name: "跟随系统代理" }));
+    await waitFor(() =>
+      expect(
+        vi.mocked(desktop.saveSettingsSnapshot).mock.calls.at(-1)?.[0],
+      ).toMatchObject({ networkMode: "system" }),
+    );
+    expect(connection).toHaveTextContent("跟随系统代理");
+    fireEvent.focus(screen.getByRole("button", { name: "了解网络连接" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "保存后用于后续网络请求。插件使用系统代理仍需单独授权。",
+    );
+  });
+
+  it("应用更新直接可见并支持深链定位，浏览器不会调用原生更新", () => {
+    render(<SettingsView initial="/settings?section=updates" />);
+    expect(screen.getByRole("region", { name: "应用更新" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "检查更新" })).toBeDisabled();
+    expect(
+      screen.getByRole("switch", { name: "启动时检查更新" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/更新检查、安装和自动检查仅在桌面应用中可用/),
+    ).toBeVisible();
+    expect(desktop.checkForUpdate).not.toHaveBeenCalled();
+    expect(desktop.downloadAndInstallUpdate).not.toHaveBeenCalled();
+    expect(desktop.getUpdateSnapshot).not.toHaveBeenCalled();
+    expect(desktop.onUpdateProgress).not.toHaveBeenCalled();
+  });
+  it("把桌面选项放在窗口设置中，浏览器明确限制且别名定位可聚焦", () => {
+    render(<SettingsView initial="/settings?section=desktop" />);
+    expect(screen.getByRole("region", { name: "窗口与运行" })).toHaveFocus();
+    expect(
+      screen.getByText(/登录启动、后台运行和多窗口需要桌面应用/),
+    ).toBeVisible();
+    expect(screen.getByRole("switch", { name: "登录时启动" })).toBeDisabled();
+    expect(
+      screen.getByRole("switch", { name: "关闭窗口后在后台运行" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "打开第二个窗口" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("group", { name: "窗口大小" })).toBeVisible();
   });
 
   it("提供语言切换入口并将新语言写入文档和存档", () => {
@@ -213,16 +319,36 @@ describe("设置页", () => {
     render(<SettingsView />);
     expect(await screen.findByRole("alert")).toBeVisible();
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
-    expect(presets.getByRole("button", { name: "标准" })).toBeDisabled();
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     await screen.findByText("当前尺寸 1120 × 740");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(presets.getByRole("button", { name: "标准" })).toBeEnabled();
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toBeEnabled();
   });
 
   it("浏览器预览禁用原生尺寸预设，环境说明按需展示且允许保存启动位置偏好", async () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
+    expect(
+      presets.getByRole("button", { name: "紧凑 960 × 640" }),
+    ).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: "标准 应用默认尺寸" }),
+    ).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: "舒适 1280 × 800" }),
+    ).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: "宽敞 1440 × 900" }),
+    ).toBeDisabled();
     for (const button of presets.getAllByRole("button"))
       expect(button).toBeDisabled();
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
@@ -256,13 +382,20 @@ describe("设置页", () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     await waitFor(() =>
-      expect(presets.getByRole("button", { name: "标准" })).toBeEnabled(),
+      expect(
+        presets.getByRole("button", {
+          name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        }),
+      ).toBeEnabled(),
     );
-    expect(presets.getByRole("button", { name: "标准" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(
+      presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
     );
-    fireEvent.click(presets.getByRole("button", { name: "舒适" }));
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("窗口大小已保存"),
     );
@@ -314,12 +447,18 @@ describe("设置页", () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     await waitFor(() =>
-      expect(presets.getByRole("button", { name: "紧凑" })).toBeEnabled(),
+      expect(
+        presets.getByRole("button", { name: /^紧凑 960 × 640(?: |$)/ }),
+      ).toBeEnabled(),
     );
-    expect(presets.getByRole("button", { name: "舒适" })).toBeDisabled();
-    expect(presets.getByRole("button", { name: "宽敞" })).toBeDisabled();
     expect(
-      presets.getByRole("button", { name: "舒适" }),
+      presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
+    ).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: /^宽敞 1440 × 900(?: |$)/ }),
+    ).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
     ).toHaveAccessibleDescription("不符合当前屏幕可用范围");
     const disabledReason = presets.getByRole("group", { name: "舒适" });
     expect(disabledReason).toHaveAttribute("tabindex", "0");
@@ -327,14 +466,24 @@ describe("设置页", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
       "不符合当前屏幕可用范围",
     );
-    expect(presets.getByRole("button", { name: "标准" })).toHaveTextContent(
-      "1000 × 700",
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toHaveTextContent("1000 × 700");
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toHaveTextContent("已适应当前屏幕");
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toBeEnabled();
+    fireEvent.click(
+      presets.getByRole("button", { name: /^宽敞 1440 × 900(?: |$)/ }),
     );
-    expect(presets.getByRole("button", { name: "标准" })).toHaveTextContent(
-      "已适应当前屏幕",
-    );
-    expect(presets.getByRole("button", { name: "标准" })).toBeEnabled();
-    fireEvent.click(presets.getByRole("button", { name: "宽敞" }));
     expect(desktop.setWindowSize).not.toHaveBeenCalled();
   });
 
@@ -350,9 +499,15 @@ describe("设置页", () => {
     });
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
-    const standard = presets.getByRole("button", { name: "标准" });
+    const standard = presets.getByRole("button", {
+      name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+    });
     await waitFor(() => expect(standard).toBeEnabled());
-    for (const name of ["紧凑", "舒适", "宽敞"])
+    for (const name of [
+      /^紧凑 960 × 640/,
+      /^舒适 1280 × 800/,
+      /^宽敞 1440 × 900/,
+    ])
       expect(presets.getByRole("button", { name })).toBeDisabled();
     expect(standard).toHaveTextContent("920 × 590");
     fireEvent.click(standard);
@@ -373,19 +528,26 @@ describe("设置页", () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     await waitFor(() =>
-      expect(presets.getByRole("button", { name: "标准" })).toBeEnabled(),
+      expect(
+        presets.getByRole("button", {
+          name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        }),
+      ).toBeEnabled(),
     );
     expect(presets.getAllByRole("button")).toHaveLength(3);
     expect(
-      presets.queryByRole("button", { name: "舒适" }),
+      presets.queryByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
     ).not.toBeInTheDocument();
-    expect(presets.getByRole("button", { name: "标准" })).toHaveTextContent(
-      "1280 × 800",
-    );
-    expect(presets.getByRole("button", { name: "标准" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toHaveTextContent("1280 × 800");
+    expect(
+      presets.getByRole("button", {
+        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("手动调整窗口后刷新当前尺寸，不自动选择最接近的预设", async () => {
@@ -422,12 +584,20 @@ describe("设置页", () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     await waitFor(() =>
-      expect(presets.getByRole("button", { name: "紧凑" })).toBeEnabled(),
+      expect(
+        presets.getByRole("button", { name: /^紧凑 960 × 640(?: |$)/ }),
+      ).toBeEnabled(),
     );
-    fireEvent.click(presets.getByRole("button", { name: "紧凑" }));
-    fireEvent.click(presets.getByRole("button", { name: "舒适" }));
+    fireEvent.click(
+      presets.getByRole("button", { name: /^紧凑 960 × 640(?: |$)/ }),
+    );
+    fireEvent.click(
+      presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
+    );
     expect(desktop.setWindowSize).toHaveBeenCalledExactlyOnceWith(960, 640);
-    expect(presets.getByRole("button", { name: "舒适" })).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
+    ).toBeDisabled();
     await act(async () => rejectSize({ code: "WINDOW_ERROR" }));
     expect(toast.error).toHaveBeenCalledOnce();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -445,7 +615,9 @@ describe("设置页", () => {
     await act(async () => refresh?.onClick());
     await screen.findByText("当前尺寸 1000 × 700");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(presets.getByRole("button", { name: "舒适" })).toBeDisabled();
+    expect(
+      presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
+    ).toBeDisabled();
     expect(toast.success).not.toHaveBeenCalled();
   });
 

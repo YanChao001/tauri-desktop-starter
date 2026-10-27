@@ -22,13 +22,17 @@ export function SettingsSearch() {
   const { key: locationKey } = useLocation();
   const results = useMemo(() => searchSettings(query, t), [query, t]);
   const id = useId();
+  const input = useRef<HTMLInputElement>(null);
   const anchor = useRef<HTMLDivElement>(null);
   const resultList = useRef<HTMLUListElement>(null);
   const requested = params.get("focus");
+  const section = params.get("section");
   useEffect(() => {
     const entry = SETTINGS_SEARCH_ENTRIES.find((item) => item.id === requested);
     if (entry) focusSetting(entry.anchor);
-  }, [requested, locationKey]);
+    else if (section === "desktop") focusSetting("settings-desktop");
+    else if (section === "updates") focusSetting("settings-updates");
+  }, [requested, section, locationKey]);
   function chooseSetting(target: string) {
     focusSetting(target);
     setQuery("");
@@ -49,6 +53,7 @@ export function SettingsSearch() {
             aria-hidden="true"
           />
           <Input
+            ref={input}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -90,7 +95,10 @@ export function SettingsSearch() {
           )
             event.preventDefault();
         }}
-        onEscapeKeyDown={() => setQuery("")}
+        onEscapeKeyDown={() => {
+          setQuery("");
+          input.current?.focus({ preventScroll: true });
+        }}
       >
         <p
           id={id}

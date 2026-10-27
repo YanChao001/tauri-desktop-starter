@@ -46,7 +46,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
     <>
       <div className="lab-stage lab-layout-stage" ref={stageRef}>
         <StageGuides label={t("lab.layout")} />
-        <LayoutGroup id={group} key={active ? "moving" : "still"}>
+        <LayoutGroup id={group}>
           <div
             className="lab-layout-tabs"
             role="group"

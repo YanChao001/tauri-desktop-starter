@@ -32,29 +32,51 @@ afterEach(() => {
   native.isTauri.mockReturnValue(false);
 });
 
+it.each(["", "99", "10001", "100.5"])(
+  "explains an invalid timeout (%s) next to the field before requests are disabled",
+  (value) => {
+    render(<Network />);
+    const timeout = screen.getByLabelText("Timeout (milliseconds)");
+    fireEvent.change(timeout, { target: { value } });
+    expect(timeout).toHaveAttribute("aria-invalid", "true");
+    expect(timeout).toHaveAccessibleDescription(
+      "Enter an integer from 100–10000.",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter an integer from 100–10000.",
+    );
+    expect(screen.getByRole("button", { name: "Get content" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send content" })).toBeDisabled();
+    fireEvent.change(timeout, { target: { value: "2000" } });
+    expect(timeout).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Get content" })).toBeEnabled();
+  },
+);
+
 it("reads cached fixture data offline and never calls the native transport", async () => {
   render(<Network />);
-  fireEvent.click(screen.getByRole("button", { name: "Run GET" }));
+  fireEvent.click(screen.getByRole("button", { name: "Get content" }));
   await waitFor(() =>
     expect(
-      screen.getByRole("region", { name: "Validated response" }),
+      screen.getByRole("region", { name: "Returned content" }),
     ).toHaveTextContent('"source": "fixture"'),
   );
   fireEvent.click(screen.getByLabelText("Simulate offline"));
-  expect(screen.getByRole("button", { name: "Run GET" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Read cache / fetch" }));
+  expect(screen.getByRole("button", { name: "Get content" })).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "View or refresh result" }),
+  );
   expect(toast.info).toHaveBeenCalledWith(
-    "Read the last cached response offline. It may be stale; no request was made.",
+    "Showing the last result offline. It may be out of date; no request was made.",
   );
   expect(native.nativeHttpRequest).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("button", { name: "Save to system credential store" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save securely" })).toBeDisabled();
 });
 
 it("cancels a pending fixture without replacing its response with a success", async () => {
   render(<Network />);
-  fireEvent.click(screen.getByRole("button", { name: "Run GET" }));
+  fireEvent.click(screen.getByRole("button", { name: "Get content" }));
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "Cancel request" }),
@@ -62,13 +84,13 @@ it("cancels a pending fixture without replacing its response with a success", as
   );
   fireEvent.click(screen.getByRole("button", { name: "Cancel request" }));
   expect(toast.info).toHaveBeenCalledWith(
-    "Request cancelled. Existing cache was retained.",
+    "Request cancelled. The last result was retained.",
   );
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Run GET" })).toBeEnabled(),
+    expect(screen.getByRole("button", { name: "Get content" })).toBeEnabled(),
   );
   expect(
-    screen.getByRole("region", { name: "Validated response" }),
+    screen.getByRole("region", { name: "Returned content" }),
   ).toHaveTextContent("null");
   expect(toast.error).not.toHaveBeenCalled();
 });
@@ -88,14 +110,14 @@ it("成功的 POST 不继续显示先前 GET 的错误与重试次数", async ()
     });
   render(<Network />);
   fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
-  fireEvent.click(screen.getByRole("option", { name: "Real HTTPS" }));
-  fireEvent.click(screen.getByRole("button", { name: "Run GET" }));
+  fireEvent.click(screen.getByRole("option", { name: "Online test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Get content" }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Run POST" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send content" }));
   await waitFor(() =>
     expect(
-      screen.getByRole("region", { name: "Validated response" }),
+      screen.getByRole("region", { name: "Returned content" }),
     ).toHaveTextContent('"method": "POST"'),
   );
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -117,16 +139,18 @@ it("POST 失败只弹消息并保留输入和已有响应", async () => {
     .mockResolvedValueOnce({ status: 403, headers: {}, body: "" });
   render(<Network />);
   fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
-  fireEvent.click(screen.getByRole("option", { name: "Real HTTPS" }));
-  fireEvent.click(screen.getByRole("button", { name: "Run GET" }));
-  const response = screen.getByRole("region", { name: "Validated response" });
+  fireEvent.click(screen.getByRole("option", { name: "Online test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Get content" }));
+  const response = screen.getByRole("region", { name: "Returned content" });
   await waitFor(() => expect(response).toHaveTextContent('"method": "GET"'));
-  fireEvent.change(screen.getByLabelText("POST content"), {
+  fireEvent.change(screen.getByLabelText("Content to send"), {
     target: { value: "keep this input" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Run POST" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send content" }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
-  expect(screen.getByLabelText("POST content")).toHaveValue("keep this input");
+  expect(screen.getByLabelText("Content to send")).toHaveValue(
+    "keep this input",
+  );
   expect(response).toHaveTextContent('"method": "GET"');
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

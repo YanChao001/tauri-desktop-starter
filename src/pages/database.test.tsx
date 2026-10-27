@@ -30,7 +30,6 @@ vi.mock("@/lib/tauri", () => ({
   saveDataBackup: vi.fn(),
   createNote: vi.fn(),
   updateNote: vi.fn(),
-  deleteNote: vi.fn(),
   onNotesChanged: vi.fn(),
 }));
 vi.mock("@/providers/i18n", async () => {
@@ -124,6 +123,132 @@ describe("native note editor", () => {
     }
     cleanup();
   });
+
+  it("shows a full-width empty state until a note is explicitly created and returns after discarding", async () => {
+    notes = [];
+    await open();
+    expect(
+      await screen.findByText("No notes yet. Create your first note."),
+    ).toBeVisible();
+    expect(screen.queryByTestId("notes-list")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("note-editor")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Create full backup$/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Import backup from file$/ }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Create a note" }));
+    expect(title()).toBeEnabled();
+    fireEvent.change(title(), { target: { value: "Unsaved first note" } });
+    expect(lifecycle.current?.dirty).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Discard current edits" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("note-editor")).not.toBeInTheDocument(),
+    );
+    expect(native.createNote).not.toHaveBeenCalled();
+  });
+
+  it("opens a recovered unsaved draft even when there are no saved notes", async () => {
+    notes = [];
+    vi.mocked(native.loadNoteDraft).mockResolvedValueOnce({
+      noteId: null,
+      title: "Recovered first note",
+      body: "Keep this unsaved text",
+      expectedVersion: null,
+      originalTitle: "",
+      originalBody: "",
+    });
+    await open();
+    await waitFor(() => expect(title()).toHaveValue("Recovered first note"));
+    expect(body()).toHaveValue("Keep this unsaved text");
+    expect(lifecycle.current?.dirty).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("creates a backup directly from the visible toolbar after flushing the draft", async () => {
+    const info = {
+      id: "direct-backup.json",
+      createdAt: first.updatedAt,
+      notes: 1,
+      trashed: 0,
+      drafts: 0,
+      bytes: 1024,
+    };
+    vi.mocked(native.createDataBackup).mockResolvedValueOnce(info);
+    const write = deferred<void>();
+    vi.mocked(native.saveNoteDraft).mockReturnValueOnce(write.promise);
+    await open();
+    const create = screen.getByRole("button", { name: /Create full backup$/ });
+    await waitFor(() => expect(create).toBeEnabled());
+    expect(create).toHaveTextContent(/^Back up$/);
+    expect(
+      screen.getByRole("button", { name: /Import backup from file$/ }),
+    ).toHaveTextContent(/^Import backup$/);
+    expect(
+      screen.getByRole("button", { name: /Backup and restore$/ }),
+    ).toHaveTextContent(/^Backup history$/);
+    const backupActions = screen.getByRole("group", {
+      name: /Backup and restore$/,
+    });
+    expect(within(backupActions).getAllByRole("button")).toHaveLength(3);
+    const searchActions = screen.getByRole("group", { name: "Search notes" });
+    expect(within(searchActions).getByRole("searchbox")).toBeVisible();
+    expect(
+      within(searchActions).getByRole("button", { name: "New note" }),
+    ).toBeVisible();
+    expect(
+      within(searchActions).getByRole("button", { name: "Refresh" }),
+    ).toBeVisible();
+    await act(async () => create.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "External imports are limited to 16 MiB",
+    );
+    fireEvent.click(create);
+    await waitFor(() =>
+      expect(native.saveNoteDraft).toHaveBeenCalledWith(null),
+    );
+    expect(native.createDataBackup).not.toHaveBeenCalled();
+    await act(async () => write.resolve());
+    await waitFor(() => expect(native.createDataBackup).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { label: "Search notes", value: "界".repeat(100) },
+    { label: "Content", value: "界".repeat(22000) },
+  ])(
+    "keeps the full $label length error associated with its field and available through keyboard focus",
+    async ({ label, value }) => {
+      await open();
+      await waitFor(() => expect(body()).toBeEnabled());
+      const field = screen.getByRole(
+        label === "Search notes" ? "searchbox" : "textbox",
+        { name: label },
+      );
+      fireEvent.change(field, { target: { value } });
+      const message = "The input is too long. Shorten it and try again.";
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(field).toHaveAccessibleDescription(message);
+      const descriptionId = field.getAttribute("aria-describedby")!;
+      expect(document.getElementById(descriptionId)).toHaveAttribute(
+        "role",
+        "alert",
+      );
+      const details = screen.getByRole("button", { name: `${label} · Help` });
+      await act(async () => details.focus());
+      expect(details).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(message);
+      fireEvent.change(field, { target: { value: "" } });
+      expect(field).toHaveAttribute("aria-invalid", "false");
+      expect(field).not.toHaveAttribute("aria-describedby");
+      expect(
+        screen.queryByRole("button", { name: `${label} · Help` }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it("keeps a manually selected note ahead of a delayed search result", async () => {
     const requested = deferred<Note>();
@@ -271,6 +396,8 @@ describe("native note editor", () => {
     notes = [];
     await act(async () => removal.resolve());
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("note-editor")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
     expect(title()).toHaveValue("");
   });
 
@@ -458,16 +585,14 @@ describe("native note editor", () => {
     });
     vi.mocked(native.updateNote).mockRejectedValueOnce({ code: "CONFLICT" });
     fireEvent.submit(form());
-    fireEvent.click(await screen.findByText("View remote content"));
+    fireEvent.click(await screen.findByText("View saved content"));
     expect(
       screen
         .getAllByText("Remote version")
         .some((node) => node.tagName === "PRE"),
     ).toBe(true);
     expect(body()).toHaveValue("My local work");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Keep local and continue editing" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Keep current edits" }));
     vi.mocked(native.updateNote).mockResolvedValueOnce({
       ...first,
       body: "My local work",
@@ -522,7 +647,7 @@ describe("native note editor", () => {
     vi.mocked(native.updateNote).mockRejectedValueOnce({ code: "CONFLICT" });
     fireEvent.submit(form());
     const conflict = await screen.findByRole("region", {
-      name: "Note version conflict",
+      name: "Note changed in another window",
     });
     fireEvent.click(
       await within(conflict).findByRole("radio", {
@@ -560,7 +685,9 @@ describe("native note editor", () => {
         }),
       ),
     );
-    await screen.findByRole("region", { name: "Note version conflict" });
+    await screen.findByRole("region", {
+      name: "Note changed in another window",
+    });
     expect(body()).toHaveValue("Reviewed body with my addition");
   });
 
@@ -703,7 +830,9 @@ describe("native note editor", () => {
       safetyBackup: { ...info, id: "notes-backup-safety.json" },
     });
     await open();
-    fireEvent.click(screen.getByText("Backup and restore"));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Backup and restore$/ }),
+    );
     const preview = await screen.findByRole("button", {
       name: "Preview backup",
     });
@@ -732,9 +861,8 @@ describe("native note editor", () => {
   it("does not restore imported data when the native file picker is cancelled", async () => {
     vi.mocked(native.pickDataBackup).mockResolvedValueOnce(null);
     await open();
-    fireEvent.click(screen.getByText("Backup and restore"));
     const picker = await screen.findByRole("button", {
-      name: "Import backup from file",
+      name: /Import backup from file$/,
     });
     await waitFor(() => expect(picker).toBeEnabled());
     fireEvent.click(picker);
@@ -769,10 +897,12 @@ describe("native note editor", () => {
       deferred<Awaited<ReturnType<typeof native.loadNoteDraft>>>();
     vi.mocked(native.loadNoteDraft).mockReturnValueOnce(initialDraft.promise);
     await open();
-    fireEvent.click(screen.getByText("Backup and restore"));
     expect(
-      screen.getByRole("button", { name: "Create full backup" }),
+      screen.getByRole("button", { name: /Create full backup$/ }),
     ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Backup and restore$/ }),
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: "Preview backup" }),
     );
@@ -808,7 +938,7 @@ describe("native note editor", () => {
     expect(body()).toHaveValue("");
     expect(body()).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Create full backup" }),
+      screen.getByRole("button", { name: /Create full backup$/ }),
     ).toBeDisabled();
     expect(native.saveNoteDraft).not.toHaveBeenCalled();
     vi.mocked(native.loadNoteDraft).mockResolvedValueOnce({

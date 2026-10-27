@@ -229,9 +229,43 @@ export function FeedbackStudio() {
               </DialogHeader>
               <form onSubmit={addMember} className="space-y-4" noValidate>
                 <div className="studio-field">
-                  <Label htmlFor="playground-email">
-                    {t("playground.email")}
-                  </Label>
+                  <div className="flex h-6 min-w-0 items-center gap-2">
+                    <Label htmlFor="playground-email" className="shrink-0">
+                      {t("playground.email")}
+                    </Label>
+                    <span
+                      id="playground-email-error"
+                      role={error ? "alert" : undefined}
+                      className="min-w-0 flex-1"
+                    >
+                      {error ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {t(
+                                error === "invalid"
+                                  ? "playground.invalidEmail"
+                                  : "playground.duplicateEmail",
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="bottom"
+                            className="max-w-72 leading-relaxed"
+                          >
+                            {t(
+                              error === "invalid"
+                                ? "playground.invalidEmail"
+                                : "playground.duplicateEmail",
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </span>
+                  </div>
                   <Input
                     id="playground-email"
                     type="email"
@@ -249,20 +283,6 @@ export function FeedbackStudio() {
                       setError(null);
                     }}
                   />
-                  <p
-                    id="playground-email-error"
-                    role={error ? "alert" : undefined}
-                    tabIndex={error ? 0 : undefined}
-                    className="h-10 overflow-auto break-words text-xs text-destructive outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {error
-                      ? t(
-                          error === "invalid"
-                            ? "playground.invalidEmail"
-                            : "playground.duplicateEmail",
-                        )
-                      : ""}
-                  </p>
                 </div>
                 <div className="studio-field">
                   <Label htmlFor="playground-role">
@@ -275,7 +295,7 @@ export function FeedbackStudio() {
                     <SelectTrigger id="playground-role" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper">
                       {ROLES.map((item) => (
                         <SelectItem value={item.value} key={item.value}>
                           {t(item.label)}
@@ -363,7 +383,7 @@ export function FeedbackStudio() {
                       <SelectTrigger id="playground-tone" className="w-full">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper">
                         {TONES.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
                             {t(item.label)}

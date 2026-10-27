@@ -5,7 +5,10 @@ import {
   type ExtensionView,
   type ExtensionResultFormat,
 } from "@/lib/tauri";
-import { validateUiCheckpoint } from "./extension-ui-bridge";
+import {
+  EXTENSION_MAX_FIELDS,
+  validateUiCheckpoint,
+} from "./extension-ui-bridge";
 
 export const EXTENSION_SESSION_BYTES = 32 * 1024 * 1024;
 export type ExtensionSessionExport = {
@@ -52,7 +55,10 @@ function sessionDraft(
   const inputText = bounded(value.inputText, 1024 * 1024);
   const url = bounded(value.url, 4096);
   if (!Array.isArray(value.files) || !record(value.fields)) invalid();
-  if (value.files.length > 16 || Object.keys(value.fields).length > 24)
+  if (
+    value.files.length > 16 ||
+    Object.keys(value.fields).length > EXTENSION_MAX_FIELDS
+  )
     tooLong();
   const files = value.files.map((name: unknown) => bounded(name, 1024));
   const entries: [string, string][] = [];

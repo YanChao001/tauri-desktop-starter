@@ -17,6 +17,7 @@ import {
   parseExtensionSession,
   type ExtensionSessionExport,
 } from "./extension-session";
+import { useExtensionActivity } from "./extension-activity";
 
 export function ExtensionSessionImport({
   item,
@@ -42,6 +43,7 @@ export function ExtensionSessionImport({
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useI18n();
+  const active = useExtensionActivity();
   const id = useId();
   const localInput = useRef<HTMLInputElement>(null);
   const input = inputRef ?? localInput;
@@ -116,14 +118,16 @@ export function ExtensionSessionImport({
         inputControl
       )}
       <Dialog
-        open={review !== null}
+        open={active && review !== null}
         onOpenChange={(open) => {
           if (!open) setReview(null);
         }}
       >
         <DialogContent
+          closeLabel={t("common.close")}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
+            if (!active) return;
             (presentation === "hidden"
               ? returnFocusRef?.current
               : input.current

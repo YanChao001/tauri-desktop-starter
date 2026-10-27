@@ -7,21 +7,28 @@ import {
   act,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 import * as native from "@/lib/tauri";
 import type { WorkbenchTask, WorkbenchTaskSnapshot } from "@/lib/tauri";
 import Tasks from "./tasks";
 import { toast } from "sonner";
 
-vi.mock("@/providers/i18n", () => ({
-  useI18n: () => ({ t: (key: string) => key, language: "en" }),
-}));
-vi.mock("@/hooks/use-latest-translator", () => ({
-  useLatestTranslator: () => (key: string) => key,
-}));
-vi.mock("@/components/native-page", () => ({
-  NativePage: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
+const locale = vi.hoisted(() => ({ language: "keys" as "keys" | "en" | "zh" }));
+vi.mock("@/providers/i18n", async () => {
+  const { createTranslator } = await import("@/i18n/translate");
+  const { en } = await import("@/i18n/en");
+  const { zhCN } = await import("@/i18n/zh-CN");
+  const translators = {
+    keys: (key: string) => key,
+    en: createTranslator(en),
+    zh: createTranslator(zhCN),
+  };
+  return {
+    useI18n: () => ({
+      t: translators[locale.language],
+      language: locale.language === "zh" ? "zh" : "en",
+    }),
+  };
+});
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => true,
@@ -53,6 +60,7 @@ const task: WorkbenchTask = {
 let listener: ((snapshot: WorkbenchTaskSnapshot) => void) | undefined;
 const stop = vi.fn();
 beforeEach(() => {
+  locale.language = "keys";
   listener = undefined;
   vi.clearAllMocks();
   vi.mocked(native.onWorkbenchTasksChanged).mockImplementation(
@@ -79,6 +87,133 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("background task center", () => {
+  it("distinguishes a pending first snapshot from an empty history and zero counts", async () => {
+    let resolve!: (value: WorkbenchTaskSnapshot) => void;
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(<Tasks />);
+    expect(screen.getAllByText("tasks.loading")).toHaveLength(2);
+    expect(screen.queryByText("tasks.empty")).not.toBeInTheDocument();
+    expect(screen.queryByText(/tasks.active/)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(native.getWorkbenchTaskSnapshot).toHaveBeenCalledOnce(),
+    );
+    await act(async () =>
+      resolve({ revision: 1, active: 0, queued: 0, tasks: [] }),
+    );
+    expect(screen.getByText("tasks.empty")).toBeVisible();
+    expect(screen.queryByText("tasks.loading")).not.toBeInTheDocument();
+  });
+
+  it("offers an inline retry after the first snapshot fails without also showing an empty history", async () => {
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockRejectedValueOnce({
+      code: "STORAGE_IO",
+    });
+    render(<Tasks />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("errors.IO");
+    expect(screen.queryByText("tasks.empty")).not.toBeInTheDocument();
+    expect(screen.getByText("tasks.countUnavailable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "common.retry" }));
+    expect(await screen.findByText("tasks.empty")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("retains the inline recovery action when retrying the first snapshot also fails", async () => {
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockRejectedValue({
+      code: "STORAGE_IO",
+    });
+    render(<Tasks />);
+    const retry = await screen.findByRole("button", { name: "common.retry" });
+    fireEvent.click(retry);
+    expect(await screen.findByRole("alert")).toHaveTextContent("errors.IO");
+    expect(screen.getByRole("button", { name: "common.retry" })).toBeEnabled();
+    expect(screen.queryByText("tasks.empty")).not.toBeInTheDocument();
+    expect(screen.queryByText("tasks.loading")).not.toBeInTheDocument();
+  });
+
+  it("localizes structured task notices and retains original diagnostics behind an expansion", async () => {
+    locale.language = "en";
+    const diagnostic = "Raw persisted report diagnostic";
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockResolvedValueOnce({
+      revision: 1,
+      active: 0,
+      queued: 0,
+      tasks: [
+        {
+          ...task,
+          status: "completed",
+          message: diagnostic,
+          unreadableEntries: 3,
+          reportUnavailable: true,
+          results: [
+            {
+              path: "oversized.bin",
+              bytes: 0,
+              sha256: null,
+              error: "Raw oversized file diagnostic",
+              failure: {
+                code: "INPUT_TOO_LONG",
+                message: "Raw oversized file diagnostic",
+                retryable: false,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const view = render(<Tasks />);
+    expect(
+      await screen.findByText(/3 entries could not be read/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/The complete report could not be saved/),
+    ).toBeVisible();
+    expect(screen.queryByText(diagnostic)).not.toBeInTheDocument();
+    locale.language = "zh";
+    view.rerender(<Tasks />);
+    expect(screen.getByText(/有 3 项无法读取/)).toBeVisible();
+    expect(
+      screen.queryByText(/3 entries could not be read/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看结果" }));
+    expect(
+      screen.getByText("文件或路径超出本次任务的处理限制，已跳过。"),
+    ).toBeVisible();
+    const original = screen.getByText(diagnostic);
+    expect(original.closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(original.closest("details")!.querySelector("summary")!);
+    expect(original.closest("details")).toHaveAttribute("open");
+    expect(original).toBeVisible();
+  });
+
+  it("uses a localized explanation for legacy string diagnostics without interpreting them", async () => {
+    locale.language = "zh";
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockResolvedValueOnce({
+      revision: 1,
+      active: 0,
+      queued: 0,
+      tasks: [
+        { ...task, status: "failed", message: "An unknown old task message" },
+      ],
+    });
+    render(<Tasks />);
+    expect(
+      await screen.findByText(
+        "此历史任务包含附加诊断，可展开结果查看原始记录。",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("An unknown old task message"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看结果" }));
+    expect(
+      screen.getByText("An unknown old task message").closest("details"),
+    ).not.toHaveAttribute("open");
+  });
+
   it("keeps startup failures recoverable and clears their alert after a valid event arrives", async () => {
     vi.mocked(native.getWorkbenchTaskSnapshot).mockRejectedValueOnce({
       code: "STORAGE_IO",

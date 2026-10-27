@@ -1,7 +1,21 @@
 export const zhExtensions = {
+  "ext.error.networkBlocked":
+    "请求目标解析到了受保护的网络地址。请检查宿主网络设置及代理授权。",
+  "ext.error.imageRedirect": "图源返回了跳转地址，请重试或切换图源。",
+  "ext.error.imageSourceRejected":
+    "图源暂时拒绝了图片请求，请稍后重试或切换图源。",
+  "ext.error.imageInvalid": "图片格式不受支持或内容损坏，请换一张图片。",
+  "ext.error.imageTooLarge": "图片超出大小或解码额度，请换一张图片。",
+  "ext.error.attachmentTooLarge": "附件超过允许的大小，请选择较小的文件。",
+  "ext.error.attachmentCacheFull":
+    "本机附件缓存已满，请清理不需要的聊天记录后重试。",
+  "ext.error.transferInterrupted":
+    "附件传输中断或完整性校验失败，请检查连接后重试。",
+  "ext.prepareFailedDescription":
+    "插件预编译未完成。你仍可打开插件，届时会按需编译。",
   "ext.uiUnavailable": "扩展界面暂时无法打开，会话内容已保留。",
   "ext.recovery.title": "扩展存档恢复",
-  "ext.checkBundledUpdate": "检查内置工作台更新",
+  "ext.checkBundledUpdate": "检查内置更新",
   "ext.bundledCurrent": "内置工作台已是当前版本。",
   "ext.bundledNewerInstalled": "本机工作台比内置版本更新，已保留本机安装包。",
   "ext.bundledDifferent":
@@ -52,7 +66,10 @@ export const zhExtensions = {
   "ext.market.installHint": "下载后审阅并安装",
   "ext.market.download": "下载并审阅",
   "ext.market.hostRequired": "需要应用 {version} 或更高版本",
-  "ext.market.downloading": "正在下载并校验…",
+  "ext.market.preparing": "正在准备下载…",
+  "ext.market.downloadProgress": "正在下载 {percent}%",
+  "ext.market.verifying": "正在校验…",
+  "ext.market.installing": "正在安装…",
   "ext.market.update": "下载更新",
   "ext.market.updateTo": "更新至 {version}",
   "ext.market.installed": "已安装此版本",
@@ -74,17 +91,28 @@ export const zhExtensions = {
     "每个字段最多输入 {bytes} 个 UTF-8 字节，请缩短内容后再执行。",
   "nav.extensions": "扩展中心",
   "catalog.extensions":
-    "安装 Extism Wasm 扩展，按需授权输入、文件和网络数据；支持 Rust、JavaScript 与 TypeScript 开发。",
+    "添加常用工具与应用，按需要管理每个插件可以访问的数据和功能。",
   "ext.title": "扩展中心",
   "ext.description": "安装和管理扩展，打开你常用的工具与应用。",
   "ext.dataBoundary": "权限与数据说明",
   "ext.installed": "已安装扩展",
   "ext.open": "打开",
   "ext.openNamed": "打开 {name}",
-  "ext.details": "包详情与权限",
+  "ext.details": "关于与权限",
+  "ext.actionsFor": "{name}的更多操作",
+  "ext.otherFeatures": "其他功能",
+  "ext.permissionNeeded": "需要授权",
+  "ext.advancedSettings": "高级设置",
+  "ext.advancedSettingsFor": "{name} · 高级设置",
+  "ext.advancedSettingsHint":
+    "需要时再调整此扩展保存的本机数据或网络服务连接。",
+  "ext.technicalInfo": "技术信息",
+  "ext.identifier": "扩展标识",
+  "ext.technicalCommands": "功能调用格式",
+  "ext.features": "提供的功能",
   "ext.appSessionHint":
     "同一窗口切换导航会保留进度；导出会话后，可在相同包版本中导入恢复。插件私有存储在重启后保留；结束会话仅清空本次输入、进度和结果。",
-  "ext.noPermissions": "没有必需权限，可单独开启可选能力。",
+  "ext.noPermissions": "没有必需权限，可自行决定是否允许可选项目。",
   "ext.appLoad": "加载应用",
   "ext.appWorking": "正在处理…",
   "ext.appStatus": "运行状态",
@@ -106,16 +134,18 @@ export const zhExtensions = {
   "ext.appStopHint": "请求取消当前操作并等待实际停止，保留输入与上次结果。",
   "ext.appCloseHint": "清空本次会话并退出，不会禁用或卸载扩展。",
   "ext.boundary":
-    "扩展在 Wasm 中运行。你可以管理必需与可选权限；文件仅通过所选资源访问，网络限定清单中的来源和方法，私有存储按插件隔离。",
+    "你可以查看并管理插件的访问权限。插件只接收你确认提供的文件，联网仅限声明的服务，每个插件的本机数据相互独立。",
   "ext.installFile": "选择扩展包",
+  "ext.installLocal": "安装本地扩展",
+  "ext.openPackageFile": "打开文件",
+  "ext.selectedPackageFile": "{name}，点击更换文件",
   "ext.packageHint":
     "选择 .starter-extension.json 包（最多 24 MiB），审阅权限后安装并启用。预览、安装和启用均不执行插件程序。",
-  "ext.docs": "扩展开发与打包文档",
+  "ext.docs": "开发文档",
   "ext.host": "运行框架",
-  "ext.empty":
-    "尚未安装扩展。可恢复内置工作台，或导入使用 Extism PDK 开发的扩展包。",
+  "ext.empty": "还没有安装扩展。可以恢复内置工作台，或从文件安装你信任的扩展。",
   "ext.review": "审阅扩展包",
-  "ext.author": "声明作者（未经签名认证）",
+  "ext.author": "作者（自行声明）",
   "ext.version": "版本",
   "ext.permissions": "声明用途与宿主数据访问",
   "ext.hash": "Wasm 模块 SHA-256",
@@ -132,12 +162,14 @@ export const zhExtensions = {
   "ext.enabled": "已启用",
   "ext.disabled": "已禁用",
   "ext.enableTitle": "确认信任与用途",
-  "ext.trust": "我同意向此扩展交付已授权的数据，并了解作者信息未经签名认证。",
+  "ext.trust":
+    "我信任此扩展的来源，并同意向它提供已授权的内容。我了解作者身份尚未经过核实。",
   "ext.grantHint":
-    "同意必需权限，并按需勾选可选权限。不授权可选联网能力时仍可使用离线命令；启用后也能修改授权。",
+    "查看扩展需要哪些权限，再选择你愿意允许的项目。以后可以在更多操作中更改权限。",
   "ext.permission.files:read":
-    "文件读取：接收本次由用户选择并确认发送的文件内容，包括二进制文件",
-  "ext.permission.network:https": "HTTPS：调用已声明的公共来源及 HTTP 方法",
+    "读取你分享的文件：仅接收你主动选择并确认发送的文件内容。",
+  "ext.permission.network:https":
+    "访问指定网络服务：与扩展声明的互联网服务获取或发送数据。",
   "ext.allowedHosts": "声明的网络来源与方法",
   "ext.uninstall": "卸载",
   "ext.uninstallTitle": "卸载此扩展？",
@@ -150,6 +182,7 @@ export const zhExtensions = {
   "ext.choose": "选择扩展命令",
   "ext.noEnabled": "先安装并启用一个扩展。",
   "ext.input": "输入文本",
+  "ext.inputTooLong": "文本超过 1 MiB UTF-8 上限，请删减内容后继续。",
   "ext.inputHint": "最多 1 MiB UTF-8，作为数据交给所选 Wasm 导出函数。",
   "ext.files": "选择本次发送的文件",
   "ext.filesHint":
@@ -194,7 +227,8 @@ export const zhExtensions = {
   "ext.inputFormat": "输入格式",
   "ext.resultFormat": "结果格式",
   "ext.commands": "扩展命令",
-  "ext.permission.text:read": "文本读取：接收本次主动输入的文本",
+  "ext.permission.text:read":
+    "读取你发送的文字：接收你为本次操作输入并发送的文字。",
   "ext.bundledHint":
     "应用自带的本地工作台已安装，启用后可从侧栏打开，也可使用独立窗口。卸载后不会自动重装。",
   "ext.hostData": "宿主数据 · 显式发送",
@@ -210,14 +244,22 @@ export const zhExtensions = {
     "扩展未启用、已卸载，或这个应用命令已失效。请在扩展中心检查状态。",
   "ext.restoreLab": "恢复内置工作台",
   "ext.minHostVersion": "最低宿主版本",
-  "ext.requiredPermissions": "必需权限",
-  "ext.optionalPermissions": "可选权限",
-  "ext.selectAllOptionalPermissions": "全选可选权限",
+  "ext.requiredPermissions": "使用时需要的权限",
+  "ext.optionalPermissions": "你可以选择允许",
+  "ext.optionalPermissionsHint":
+    "按需开启；未允许的相关功能将不可用，以后可以更改。",
+  "ext.selectAllOptionalPermissions": "允许所有可选权限",
+  "ext.permissionAllowed": "已允许",
+  "ext.permissionNotAllowed": "未允许",
+  "ext.permissionScopeHint":
+    "权限适用于整个扩展。允许联网后，扩展可以将你交给它的内容发送到获准访问的服务。",
   "ext.managePermissions": "管理权限",
   "ext.savePermissions": "保存权限",
-  "ext.limitedCommands": "当前授权可使用 {total} 个命令中的 {available} 个。",
-  "ext.permission.network:local": "本地网络：调用明确声明的回环或内网服务",
-  "ext.permission.storage": "私有存储：跨重启保存插件数据",
+  "ext.limitedCommands": "当前可使用 {total} 项功能中的 {available} 项。",
+  "ext.permission.network:local":
+    "连接本机服务：仅连接在这台电脑上运行的指定服务，不访问其他局域网设备。",
+  "ext.permission.storage":
+    "保存扩展数据：在这台电脑上保存，重启后仍保留。数据不加密，卸载时不会自动删除。",
   "ext.queueSummary": "共 {count} 项操作正在排队或运行",
   "ext.queued": "正在排队，等待运行名额…",
   "ext.storage": "插件私有存储",
@@ -235,6 +277,11 @@ export const zhExtensions = {
   "ext.saveCredential": "保存凭据",
   "ext.deleteCredential": "删除凭据",
   "ext.deleteCredentialNamed": "删除凭据 {alias}",
+  "ext.deleteCredentialHint":
+    "删除 {origin} 的凭据 {alias}？此处无法恢复；扩展后续需要时，须重新填写。",
+  "ext.disabledPermissionsHint":
+    "禁用的扩展不保留有效授权。请先显式启用扩展，再调整权限。",
+  "ext.viewPermissions": "查看权限",
   "ext.rollback": "恢复至 {version}",
   "ext.rollbackTitle": "恢复上一版本的扩展包？",
   "ext.rollbackHint":
@@ -253,17 +300,25 @@ export const zhExtensions = {
   "ext.switchCommandHint":
     "放弃当前命令尚未导出的输入和结果？如需保留，请先导出会话。",
   "ext.source": "安装来源",
-  "ext.source.market": "已验证的市场包（目录签名）",
-  "ext.source.bundled": "随宿主应用内置",
-  "ext.source.local": "本地安装包（来源未经认证）",
+  "ext.source.market": "来自扩展市场",
+  "ext.source.bundled": "随应用提供",
+  "ext.source.local": "从本机文件安装",
+  "ext.source.marketHint":
+    "已核对与市场发布的扩展包一致。作者信息由发布者填写，来源核对不代表安全保证。",
+  "ext.source.bundledHint":
+    "此扩展随应用提供。作者信息为扩展自行声明，请只授予需要的权限。",
+  "ext.source.localHint": "文件来源和作者身份未经核实，请仅使用你信任的扩展。",
   "ext.source.key": "市场签名公钥指纹：",
   "ext.permission.messaging:lan":
-    "内网通信：主动监听和连接私有网段，发送和保存聊天记录（明文）",
+    "内网通信：由你主动开启或连接，与本地网络设备收发文字、图片和文件并保存记录；文件由你选择发送或另存。通信不加密，也不验证对方身份。",
   "ext.permission.wallpapers:manage":
-    "图库管理：导入图片、管理本机图库与应用背景；不包含网络访问",
+    "管理图库和应用背景：导入、改名或删除本机图库图片，更换本应用背景；不更改电脑桌面壁纸，也不包含联网。",
   "ext.permission.network:images":
-    "公网图片：下载任意公共 HTTPS 来源的图片并预览、另存；请求 URL 可向来源发送数据",
+    "下载互联网图片：从任意公开的 HTTPS 地址下载、预览或另存图片。图片网址本身也可能向网站发送信息。",
   "ext.permission.network:system-proxy":
-    "系统代理：允许已授权的公网请求沿用系统或环境代理；代理可在本机或内网，宿主无法核验代理解析的最终地址",
-  "ext.permission.links:open": "外部链接：在默认浏览器打开公共 HTTPS 网页",
+    "使用电脑的代理设置：让已允许的网络请求通过代理中转。代理可能在本机或内网，应用无法核实它最终连接的地址。",
+  "ext.permission.links:open":
+    "在浏览器打开网页：允许扩展在默认浏览器打开公开的 HTTPS 网页。",
+  "ext.permission.window:control":
+    "插件窗口置顶：读取或更改此插件自身独立窗口的置顶状态。",
 } as const;

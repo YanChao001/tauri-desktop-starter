@@ -9,26 +9,16 @@
 }
 .showroom-hero {
   display: grid;
-  grid-template-columns: 1.05fr 1fr;
-  align-items: center;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: start;
   gap: 2rem;
-  min-height: 27rem;
 }
 .showroom-hero-copy {
   position: relative;
   z-index: 1;
-  padding: 1.5rem 0;
-}
-.showroom-live-dot {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: var(--studio-violet);
-  box-shadow: 0 0 0 0.25rem
-    color-mix(in oklch, var(--studio-violet) 12%, transparent);
+  padding: 0.5rem 0;
 }
 .showroom-headline {
-  margin-top: 1.5rem;
   font-size: clamp(2.6rem, 4.5cqi, 4.1rem);
   line-height: 1.2;
   font-weight: 650;
@@ -44,7 +34,7 @@
 }
 .showroom-lede {
   max-width: 28rem;
-  margin-top: 1.4rem;
+  margin-top: 0.875rem;
   font-size: 0.875rem;
   line-height: 1.95;
   color: var(--muted-foreground);
@@ -54,7 +44,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 1.8rem;
+  margin-top: 1rem;
 }
 .showroom-hero-actions > :first-child {
   box-shadow: 0 0.45rem 1.2rem
@@ -65,30 +55,38 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0;
-  margin-top: 1.5rem;
-  font-size: 0.7rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   cursor: pointer;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-sm);
 }
 .showroom-command-link:hover {
   color: var(--foreground);
 }
 .showroom-command-link kbd {
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   padding: 0.1rem 0.3rem;
   border: 1px solid var(--border);
-  border-radius: 0.3rem;
+  border-radius: var(--radius-sm);
   background: var(--card);
 }
 .showroom-command-link:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 4px;
 }
+.showroom-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
 .showroom-scene {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   min-width: 0;
-  height: 27rem;
   perspective: 1000px;
   --scene-bg: #171a35;
   --scene-ink: #f0efff;
@@ -125,23 +123,22 @@
   box-shadow: none;
 }
 .showroom-scene-label {
-  position: absolute;
-  top: 0;
-  left: 1.5rem;
-  right: 0.5rem;
+  position: relative;
+  width: 91%;
+  max-width: 28rem;
+  margin-left: 3%;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   color: var(--muted-foreground);
   letter-spacing: 0.08em;
 }
 .showroom-window {
-  position: absolute;
-  top: 3.5rem;
-  left: 3%;
+  position: relative;
   width: 91%;
   max-width: 28rem;
+  margin-left: 3%;
   border: 1px solid color-mix(in oklch, var(--scene-main) 40%, transparent);
   border-radius: 1rem;
   overflow: hidden;
@@ -250,7 +247,7 @@
 }
 .showroom-floating-note {
   position: absolute;
-  bottom: 2.8rem;
+  bottom: 0.25rem;
   left: -1rem;
   display: flex;
   align-items: center;
@@ -259,7 +256,7 @@
   color: var(--foreground);
   border: 1px solid color-mix(in oklch, var(--scene-main) 35%, var(--border));
   background: var(--card);
-  border-radius: 0.9rem;
+  border-radius: var(--radius-xl);
   box-shadow: 0 0.8rem 2.5rem #00000014;
   animation: showroom-note-float 8s ease-in-out infinite;
 }
@@ -270,7 +267,7 @@
   height: 2.25rem;
   background: color-mix(in oklch, var(--scene-main) 16%, transparent);
   color: var(--studio-violet);
-  border-radius: 0.65rem;
+  border-radius: var(--radius-lg);
 }
 .showroom-floating-note strong {
   display: block;
@@ -293,7 +290,7 @@
   width: 100%;
   text-align: center;
   color: var(--muted-foreground);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
 }
 .showroom-scene[data-active="false"]
   :is(.showroom-sculpture-float, .showroom-sparks, .showroom-floating-note) {
@@ -301,11 +298,17 @@
 }
 .showroom-vibes {
   display: flex;
-  gap: 1.25rem;
+  gap: 0.75rem;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: 1.25rem 1.4rem;
+  width: 91%;
+  max-width: 28rem;
+  margin-left: 3%;
+  padding: 1rem;
+}
+.showroom-vibes > div:first-child {
+  flex-basis: 100%;
 }
 .showroom-vibes h3 {
   font-size: 0.875rem;
@@ -313,7 +316,7 @@
 }
 .showroom-vibes p {
   color: var(--muted-foreground);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   line-height: 1.7;
   margin-top: 0.3rem;
   max-width: 26rem;
@@ -328,13 +331,17 @@
   align-items: center;
   gap: 0.45rem;
   padding: 0.5rem 0.65rem;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 0.7rem;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition:
     background-color 0.2s,
     border-color 0.2s;
+}
+.showroom-vibe:hover {
+  background: var(--muted);
+  border-color: color-mix(in oklch, var(--foreground) 35%, var(--border));
 }
 .showroom-vibe[data-selected="true"] {
   background: var(--muted);
@@ -368,7 +375,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--muted-foreground);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   padding: 0.2rem 0.2rem 1rem;
 }
 .showroom-runtime-note a {
@@ -376,6 +383,16 @@
   align-items: center;
   gap: 0.3rem;
   margin-left: auto;
+  border-radius: var(--radius-sm);
+}
+.showroom-runtime-note a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.showroom-runtime-note a:focus-visible,
+.showroom-workspace-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
 }
 .showroom-workspace-links {
   display: grid;
@@ -388,6 +405,13 @@
   gap: 0.75rem;
   padding: 1.75rem 1.25rem;
   font-size: 0.875rem;
+  transition:
+    background-color 150ms,
+    border-color 150ms;
+}
+.showroom-workspace-link:hover {
+  background: var(--accent);
+  border-color: var(--primary);
 }
 .showroom-workspace-link > svg:last-child {
   width: 1rem;
@@ -427,12 +451,6 @@
   .showroom-headline {
     font-size: clamp(2.4rem, 4.6cqi, 3.4rem);
   }
-  .showroom-vibes {
-    gap: 1rem;
-  }
-  .showroom-vibes > div:first-child {
-    flex-basis: 100%;
-  }
 }
 @container showroom (max-width: 900px) {
   .showroom-hero {
@@ -448,9 +466,9 @@
   .showroom-lede {
     max-width: 37rem;
   }
-  .showroom-scene {
+  .showroom-preview {
     width: min(100%, 32rem);
-    margin: 1.5rem auto 0.5rem;
+    margin: 0.75rem auto 0;
   }
 }
 @container showroom (max-width: 560px) {

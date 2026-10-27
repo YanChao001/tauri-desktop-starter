@@ -7,6 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -15,11 +21,17 @@ import {
 } from "@/components/ui/select";
 import { isTauri, runDemoSidecar, websocketConnect } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
-import { useI18n } from "@/providers/i18n";
-import { validWorkerInput } from "./model";
+import { useI18n, type DictKey } from "@/providers/i18n";
+import { validWorkerInput, workerTextResult } from "./model";
 
 type SocketState = "disconnected" | "connecting" | "connected";
 type SocketHandle = Awaited<ReturnType<typeof websocketConnect>>;
+const socketErrorKeys: Record<string, DictKey> = {
+  WEBSOCKET_ENDPOINT: "labs.socket.error.endpoint",
+  WEBSOCKET_TIMEOUT: "labs.socket.error.timeout",
+  WEBSOCKET_CONNECTION: "labs.socket.error.connection",
+  WEBSOCKET_SEND: "labs.socket.error.send",
+};
 
 export function WebSocketPanel() {
   const { t } = useI18n();
@@ -34,6 +46,15 @@ export function WebSocketPanel() {
   const generation = useRef(0);
   const mounted = useRef(false);
   const sendBusy = useRef(false);
+  function socketErrorText(reason: unknown, fallback: DictKey) {
+    const code =
+      reason && typeof reason === "object" && "code" in reason
+        ? reason.code
+        : undefined;
+    return t(
+      typeof code === "string" ? (socketErrorKeys[code] ?? fallback) : fallback,
+    );
+  }
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -74,7 +95,7 @@ export function WebSocketPanel() {
       setState("connected");
     } catch (reason) {
       if (mounted.current && current === generation.current) {
-        toast.error(nativeErrorText(reason, t));
+        toast.error(socketErrorText(reason, "labs.socket.error.connection"));
         setState("disconnected");
       }
     }
@@ -88,7 +109,7 @@ export function WebSocketPanel() {
       await connection?.close();
     } catch (reason) {
       if (mounted.current && current === generation.current)
-        toast.error(nativeErrorText(reason, t));
+        toast.error(socketErrorText(reason, "labs.socket.error.connection"));
     }
   }
   async function send() {
@@ -119,7 +140,7 @@ export function WebSocketPanel() {
       setMessage("");
     } catch (reason) {
       if (mounted.current && current === generation.current)
-        toast.error(nativeErrorText(reason, t));
+        toast.error(socketErrorText(reason, "labs.socket.error.send"));
     } finally {
       sendBusy.current = false;
       if (mounted.current) setSending(false);
@@ -225,6 +246,7 @@ export function SidecarPanel() {
   > | null>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
+  const textResult = output ? workerTextResult(output.stdout) : null;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -270,21 +292,47 @@ export function SidecarPanel() {
             void run();
           }}
         >
-          <Label htmlFor="sidecar-input">{t("labs.sidecar.input")}</Label>
-          <Input
-            id="sidecar-input"
-            value={input}
-            disabled={!native || pending}
-            maxLength={1000}
-            onChange={(event) => setInput(event.target.value)}
-            aria-invalid={!validWorkerInput(input)}
-            aria-describedby={
-              !validWorkerInput(input) ? "sidecar-error" : undefined
-            }
-          />
-          <p id="sidecar-error" className="h-4 text-xs text-destructive">
-            {!validWorkerInput(input) ? t("labs.sidecar.tooLong") : null}
-          </p>
+          <div className="space-y-1.5">
+            <div className="flex h-6 min-w-0 items-center gap-2">
+              <Label htmlFor="sidecar-input" className="shrink-0">
+                {t("labs.sidecar.input")}
+              </Label>
+              {!validWorkerInput(input) ? (
+                <div role="alert" className="min-w-0 flex-1">
+                  <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          id="sidecar-error"
+                          type="button"
+                          className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {t("labs.sidecar.tooLong")}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        className="max-w-72 leading-relaxed"
+                      >
+                        {t("labs.sidecar.tooLong")}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              ) : null}
+            </div>
+            <Input
+              id="sidecar-input"
+              value={input}
+              disabled={!native || pending}
+              maxLength={1000}
+              onChange={(event) => setInput(event.target.value)}
+              aria-invalid={!validWorkerInput(input)}
+              aria-describedby={
+                !validWorkerInput(input) ? "sidecar-error" : undefined
+              }
+            />
+          </div>
           <Button
             className="min-w-44"
             disabled={!native || pending || !validWorkerInput(input)}
@@ -292,12 +340,90 @@ export function SidecarPanel() {
             {pending ? t("labs.loading") : t("labs.sidecar.run")}
           </Button>
         </form>
-        <CodeBlock
-          aria-label={t("labs.media.preview")}
-          code={output ? JSON.stringify(output, null, 2) : t("labs.idle")}
-          language={output ? "json" : "text"}
-          className="max-h-56 rounded-md bg-muted p-3"
-        />
+        <section
+          aria-label={t("labs.sidecar.output")}
+          className="space-y-3 rounded-md bg-muted p-3 text-sm"
+        >
+          {output ? (
+            <>
+              <p
+                role={output.exitCode === 0 ? "status" : "alert"}
+                className={
+                  output.exitCode === 0 ? undefined : "text-destructive"
+                }
+              >
+                {output.exitCode === 0
+                  ? t("labs.sidecar.completed")
+                  : t("labs.sidecar.failed", { code: output.exitCode })}
+              </p>
+              {textResult ? (
+                <dl className="space-y-3">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      {t("labs.sidecar.transformed")}
+                    </dt>
+                    <dd
+                      tabIndex={0}
+                      className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {textResult.transformed}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      {t("labs.sidecar.original")}
+                    </dt>
+                    <dd
+                      tabIndex={0}
+                      className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {textResult.original}
+                    </dd>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <dt className="text-xs text-muted-foreground">
+                      {t("labs.sidecar.characterCount")}
+                    </dt>
+                    <dd className="tabular-nums">
+                      {textResult.characterCount}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <pre
+                  tabIndex={0}
+                  className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {output.stdout || t("labs.sidecar.emptyOutput")}
+                </pre>
+              )}
+              {output.stderr ? (
+                <div className="space-y-1 text-destructive">
+                  <h4 className="font-medium">{t("labs.sidecar.errors")}</h4>
+                  <pre
+                    tabIndex={0}
+                    className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {output.stderr}
+                  </pre>
+                </div>
+              ) : null}
+              <details className="rounded-md border bg-background/50 p-3">
+                <summary className="cursor-pointer text-xs text-muted-foreground">
+                  {t("labs.sidecar.details")}
+                </summary>
+                <CodeBlock
+                  aria-label={t("labs.sidecar.details")}
+                  code={JSON.stringify(output, null, 2)}
+                  language="json"
+                  className="mt-3 max-h-56 bg-transparent p-0"
+                />
+              </details>
+            </>
+          ) : (
+            <p className="text-muted-foreground">{t("labs.idle")}</p>
+          )}
+        </section>
       </CardContent>
     </Card>
   );

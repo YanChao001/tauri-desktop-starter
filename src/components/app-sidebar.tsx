@@ -26,26 +26,38 @@ import { ExtensionChromeSlot } from "@/features/extensions/extension-chrome-slot
 
 export function AppSidebar({
   routes,
+  onWidthPreview,
 }: {
   routes: readonly AppNavigationItem[];
+  /** 拖动期间同步内容区留白，最终宽度仍由设置持久化。 */
+  onWidthPreview?: (width: number | null) => void;
 }) {
   const { t } = useI18n();
   const { settings, update } = useSettings();
   const { execute } = useCommands();
   const { pathname } = useLocation();
   const navigationId = useId();
-  const drag = useRef<{ id: number; x: number; width: number } | null>(null);
-  const [resizing, setResizing] = useState(false);
+  const drag = useRef<{
+    id: number;
+    x: number;
+    width: number;
+    preview: number;
+  } | null>(null);
+  const [previewWidth, setPreviewWidth] = useState<number | null>(null);
   const [tooltip, setTooltip] = useState<string | null>(null);
   const tooltipIntent = useRef<string | null>(null);
-  const resizeHandle = useCallback((node: HTMLDivElement | null) => {
-    if (!node) {
-      drag.current = null;
-      setResizing(false);
-    }
-  }, []);
+  const resizeHandle = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node) {
+        drag.current = null;
+        setPreviewWidth(null);
+        onWidthPreview?.(null);
+      }
+    },
+    [onWidthPreview],
+  );
   const collapsed = settings.sidebarCollapsed;
-  const width = settings.sidebarWidth;
+  const width = previewWidth ?? settings.sidebarWidth;
   // 展开时的隐藏 Tooltip 不积累 open 状态；折叠、切页和调宽先清空提示。
   useLayoutEffect(() => {
     tooltipIntent.current = null;
@@ -61,28 +73,52 @@ export function AppSidebar({
   const leaveTooltip = (id: string) => {
     if (tooltipIntent.current === id) tooltipIntent.current = null;
   };
-  const resize = (value: number) => update({ sidebarWidth: value });
+  const boundedWidth = (value: number) =>
+    Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, value)));
+  const resize = (value: number) => {
+    const next = boundedWidth(value);
+    if (next !== settings.sidebarWidth) update({ sidebarWidth: next });
+  };
+  const preview = (value: number) => {
+    const next = boundedWidth(value);
+    setPreviewWidth(next);
+    onWidthPreview?.(next);
+    return next;
+  };
+  const finishResize = (commit: boolean) => {
+    const state = drag.current;
+    if (!state) return;
+    drag.current = null;
+    setPreviewWidth(null);
+    onWidthPreview?.(null);
+    if (commit) resize(state.preview);
+  };
   const groups = NAVIGATION_GROUPS.map((group) => ({
     ...group,
     routes: routes.filter((route) => route.group === group.id),
   })).filter((group) => group.routes.length > 0);
+  const firstGroup = groups[0];
   return (
     <aside
       id="app-sidebar"
       aria-label={t("layout.sidebar")}
       data-collapsed={collapsed}
-      data-resizing={resizing}
+      data-resizing={previewWidth !== null}
       data-motion={settings.motion}
       style={{ width: collapsed ? 56 : width }}
       className="app-sidebar flex shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground"
     >
       <div className="app-sidebar-top relative flex shrink-0 items-center">
-        <span
-          aria-hidden={collapsed}
-          className="app-sidebar-label app-sidebar-caption min-w-0 flex-1 truncate"
-        >
-          {t("navContext.browse")}
-        </span>
+        {firstGroup ? (
+          <p
+            id={`${navigationId}-${firstGroup.id}`}
+            className="app-sidebar-group-heading app-sidebar-top-heading min-w-0 flex-1"
+          >
+            <span className="app-sidebar-label min-w-0 truncate">
+              {t(firstGroup.labelKey)}
+            </span>
+          </p>
+        ) : null}
         <Button
           className="absolute right-3"
           variant="ghost"
@@ -116,12 +152,14 @@ export function AppSidebar({
             aria-labelledby={`${navigationId}-${group.id}`}
             className="app-sidebar-group"
           >
-            <p
-              id={`${navigationId}-${group.id}`}
-              className="app-sidebar-group-heading"
-            >
-              <span className="app-sidebar-label">{t(group.labelKey)}</span>
-            </p>
+            {group !== firstGroup ? (
+              <p
+                id={`${navigationId}-${group.id}`}
+                className="app-sidebar-group-heading"
+              >
+                <span className="app-sidebar-label">{t(group.labelKey)}</span>
+              </p>
+            ) : null}
             <div className="space-y-0.5">
               {group.routes.map(
                 ({ path, labelKey, label, icon: Icon, exact, preload }) => {
@@ -262,35 +300,32 @@ export function AppSidebar({
             event.currentTarget.focus({ preventScroll: true });
             const renderedWidth =
               event.currentTarget.parentElement?.getBoundingClientRect().width;
+            const startingWidth =
+              renderedWidth && renderedWidth >= SIDEBAR_MIN_WIDTH
+                ? renderedWidth
+                : width;
             drag.current = {
               id: event.pointerId,
               x: event.clientX,
-              width:
-                renderedWidth && renderedWidth >= SIDEBAR_MIN_WIDTH
-                  ? renderedWidth
-                  : width,
+              width: startingWidth,
+              preview: preview(startingWidth),
             };
-            setResizing(true);
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
             const state = drag.current;
             if (state?.id === event.pointerId)
-              resize(state.width + event.clientX - state.x);
+              state.preview = preview(state.width + event.clientX - state.x);
           }}
           onPointerUp={(event) => {
-            drag.current = null;
-            setResizing(false);
+            if (drag.current?.id !== event.pointerId) return;
+            finishResize(true);
             if (event.currentTarget.hasPointerCapture(event.pointerId))
               event.currentTarget.releasePointerCapture(event.pointerId);
           }}
-          onLostPointerCapture={() => {
-            drag.current = null;
-            setResizing(false);
-          }}
-          onPointerCancel={() => {
-            drag.current = null;
-            setResizing(false);
+          onLostPointerCapture={() => finishResize(true)}
+          onPointerCancel={(event) => {
+            if (drag.current?.id === event.pointerId) finishResize(false);
           }}
         />
       ) : null}

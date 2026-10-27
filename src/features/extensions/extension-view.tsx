@@ -14,20 +14,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SafeMarkdown } from "@/components/safe-markdown";
 import type { ExtensionView as View, ExtensionViewBlock } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/providers/i18n";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
+import { extensionFieldBytes } from "./extension-model";
 
-export const EXTENSION_FIELD_BYTES = 64 * 1024;
 export const EXTENSION_FORM_BYTES = 1024 * 1024;
-export function extensionFieldBytes(field: View["fields"][number]): number {
-  return field.maxBytes ?? EXTENSION_FIELD_BYTES;
-}
 const ExtensionChart = lazy(() =>
   import("./extension-chart").then((module) => ({
     default: module.ExtensionChart,
+  })),
+);
+const SafeMarkdown = lazy(() =>
+  import("@/components/safe-markdown").then((module) => ({
+    default: module.SafeMarkdown,
   })),
 );
 
@@ -113,7 +114,9 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "markdown")
     return (
       <div className="min-w-0 rounded-xl border bg-card p-5">
-        <SafeMarkdown content={block.text} />
+        <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+          <SafeMarkdown content={block.text} />
+        </Suspense>
       </div>
     );
   if (block.kind === "metrics")

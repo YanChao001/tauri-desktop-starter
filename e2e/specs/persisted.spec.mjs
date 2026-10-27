@@ -93,11 +93,19 @@ describe("App process restart", () => {
       (await invoke("plugin:window|is_visible", { label: "main" })).value,
       true,
     );
-    const notes = await invoke("list_notes", { search: "E2E persisted note" });
+    const notes = await invoke("query_notes", {
+      query: {
+        search: "E2E persisted note",
+        offset: 0,
+        limit: 50,
+        sort: "updated-desc",
+        trash: false,
+      },
+    });
     assert.equal(notes.ok, true);
-    assert.equal(notes.value.length, 1);
-    assert.equal(notes.value[0].title, "E2E persisted note");
-    assert.equal(notes.value[0].body, "Saved before app process restart");
+    assert.equal(notes.value.total, 1);
+    assert.equal(notes.value.items[0].title, "E2E persisted note");
+    assert.equal(notes.value.items[0].body, "Saved before app process restart");
     await browser.saveScreenshot(
       "artifacts/e2e/persisted/restarted-window.png",
     );

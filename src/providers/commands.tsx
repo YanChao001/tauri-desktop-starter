@@ -254,13 +254,13 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "open-desktop",
         labelKey: "commands.openDesktop",
         group: "tools",
-        run: () => navigate("/desktop"),
+        run: () => navigate("/settings?section=desktop"),
       },
       {
         id: "open-window",
         labelKey: "commands.openWindow",
         group: "tools",
-        run: () => navigate("/desktop"),
+        run: () => navigate("/settings?focus=windows"),
       },
       {
         id: "open-database",
@@ -272,14 +272,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "check-updates",
         labelKey: "commands.checkUpdates",
         group: "tools",
-        run: () => navigate("/updates"),
-      },
-      {
-        id: "copy-diagnostics",
-        labelKey: "commands.copyDiagnostics",
-        group: "tools",
-        available: () => false,
-        run: () => {},
+        run: () => navigate("/settings?section=updates"),
       },
     ],
     [

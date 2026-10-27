@@ -43,6 +43,34 @@ describe("versioned settings model", () => {
     ).toEqual({ autoCheckUpdates: false });
   });
 
+  it("旧存档默认跟随系统代理，连接方式在保存和补丁中保留", () => {
+    expect(migrateSettings({ schemaVersion: 3 }).networkMode).toBe("system");
+    expect(
+      migrateSettings({
+        schemaVersion: 1,
+        settings: { networkMode: "direct" },
+      }).networkMode,
+    ).toBe("direct");
+    for (const networkMode of ["system", "direct"] as const) {
+      const settings = { ...DEFAULT_SETTINGS, networkMode };
+      expect(migrateSettings(settingsDocument(settings)).networkMode).toBe(
+        networkMode,
+      );
+      expect(normalizeSettingsPatch(DEFAULT_SETTINGS, { networkMode })).toEqual(
+        {
+          networkMode,
+        },
+      );
+    }
+  });
+
+  it.each(["proxy", "auto", "", true, 1, null, { mode: "direct" }])(
+    "非法连接方式 %j 回落到系统代理",
+    (networkMode) => {
+      expect(migrateSettings({ networkMode }).networkMode).toBe("system");
+    },
+  );
+
   it("migrates legacy flat and v1 wrapped documents to the current complete shape", () => {
     expect(migrateSettings({ language: "en", background: "gradient" })).toEqual(
       { ...DEFAULT_SETTINGS, language: "en", background: "cloudscape" },
@@ -295,6 +323,20 @@ describe("loadSettings", () => {
 
 describe("applySettings", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("运行时应用其余偏好时保留主题旧帧，由主题同步统一提交", () => {
+    const root = document.documentElement;
+    root.classList.remove("light");
+    root.classList.add("dark");
+    root.style.colorScheme = "dark";
+    applySettings(
+      { ...DEFAULT_SETTINGS, theme: "light", accent: "rose" },
+      { includeTheme: false },
+    );
+    expect(root).toHaveClass("dark");
+    expect(root).not.toHaveClass("light");
+    expect(root.style.colorScheme).toBe("dark");
+    expect(root.dataset.accent).toBe("rose");
+  });
   it("applies the saved theme before React mounts and resolves system preference", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
     const root = document.documentElement;

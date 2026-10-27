@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from "react";
-import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { useRegisterCommands } from "@/providers/commands";
@@ -22,14 +21,10 @@ export function DesktopEffects() {
   useWorkspace();
   useTaskNotifications();
   useStartupUpdates();
-  const { settings, persistence, persistenceError } = useSettings();
-  const { theme, setTheme } = useTheme();
+  const { persistence, persistenceError } = useSettings();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const t = useLatestTranslator();
-  useEffect(() => {
-    if (theme !== settings.theme) setTheme(settings.theme);
-  }, [theme, settings.theme, setTheme]);
   useEffect(() => {
     const onError = (event: ErrorEvent) =>
       reportClientError(event.error ?? event.message);
@@ -70,7 +65,7 @@ export function DesktopEffects() {
         group: "tools",
         available: isTauri,
         run: async () => {
-          navigate("/updates");
+          navigate("/settings?section=updates");
           await checkUpdates();
         },
       },
@@ -91,8 +86,7 @@ export function DesktopEffects() {
   const showFutureWarning =
     persistence === "error" &&
     persistenceError === "FUTURE_SETTINGS_VERSION" &&
-    pathname !== "/settings" &&
-    pathname !== "/desktop";
+    pathname !== "/settings";
   const persistenceFeedback = (
     <SettingsPersistence compact showFutureWarning={showFutureWarning} />
   );

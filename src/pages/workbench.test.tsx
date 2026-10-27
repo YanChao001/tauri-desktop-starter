@@ -67,6 +67,101 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("file workbench", () => {
+  it("shows one draft status with the current UTF-8 size and switches to the real path after saving", async () => {
+    workbenchEditor.open([
+      { ...selected, id: "draft", path: "", content: "", bytes: 0 },
+    ]);
+    vi.mocked(native.saveWorkbenchAs).mockResolvedValue({
+      ...selected,
+      content: "你好🙂",
+      bytes: 10,
+    });
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
+    fireEvent.change(screen.getByLabelText("workbench.editor"), {
+      target: { value: "你好🙂" },
+    });
+    expect(screen.getAllByText("workbench.localDraft")).toHaveLength(1);
+    expect(screen.queryByText("workbench.dirty")).not.toBeInTheDocument();
+    expect(screen.getByText("10 B")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "note.txt · title.help" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "workbench.save" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("workbench.localDraft"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText(selected.path)).toBeVisible();
+    const pathHelp = screen.getByRole("button", {
+      name: "note.txt · title.help",
+    });
+    await act(async () => pathHelp.focus());
+    expect(pathHelp).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(selected.path);
+  });
+
+  it("keeps dirty status for existing paths and preserves original image sizes", () => {
+    workbenchEditor.open([selected]);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
+    fireEvent.change(screen.getByLabelText("workbench.editor"), {
+      target: { value: "é" },
+    });
+    expect(screen.getByText("workbench.dirty")).toBeVisible();
+    expect(screen.getByText("2 B")).toBeVisible();
+    act(() =>
+      workbenchEditor.open([
+        {
+          ...selected,
+          id: "image",
+          name: "image.png",
+          kind: "image",
+          content: null,
+          bytes: 1234,
+        },
+      ]),
+    );
+    expect(screen.getByText(`${(1234).toLocaleString()} B`)).toBeVisible();
+  });
+
+  it("keeps JSON validation associated with the editor and opens the full message through keyboard focus", async () => {
+    workbenchEditor.open([{ ...selected, kind: "json", content: "{" }]);
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
+    const editor = screen.getByLabelText("workbench.editor");
+    expect(editor).toHaveAccessibleDescription("workbench.invalidJson");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "workbench.invalidJson",
+    );
+    const details = screen.getByRole("button", {
+      name: "workbench.editor · title.help",
+    });
+    await act(async () => details.focus());
+    expect(details).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "workbench.invalidJson",
+    );
+    fireEvent.change(editor, { target: { value: "{}" } });
+    expect(editor).not.toHaveAttribute("aria-describedby");
+    expect(
+      screen.queryByRole("button", {
+        name: "workbench.editor · title.help",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps a manually selected tab ahead of a delayed search result", async () => {
     const other = { ...selected, id: "file-2", name: "other.txt" };
     workbenchEditor.open([selected, other]);
@@ -313,6 +408,31 @@ describe("file workbench", () => {
       ).toBeEnabled(),
     );
     expect(editor).toHaveValue("mine");
+    expect(workbenchEditor.hasUnsavedChanges()).toBe(true);
+  });
+
+  it("按需加载磁盘差异，合并后保留本地编辑与新的磁盘 revision", async () => {
+    workbenchEditor.open([selected]);
+    workbenchEditor.edit(selected.id, "local work");
+    vi.mocked(native.loadWorkbenchDocument).mockResolvedValue({
+      ...selected,
+      content: "disk work",
+      revision: "v2",
+    });
+    render(
+      <MemoryRouter>
+        <Workbench />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "workbench.reload" }));
+    const apply = await screen.findByRole("button", { name: "diff.apply" });
+    fireEvent.click(apply);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText("workbench.editor")).toHaveValue("local work");
+    expect(workbenchEditor.getSnapshot().entries[0]?.document).toMatchObject({
+      content: "disk work",
+      revision: "v2",
+    });
     expect(workbenchEditor.hasUnsavedChanges()).toBe(true);
   });
 

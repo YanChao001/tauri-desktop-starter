@@ -25,7 +25,8 @@ vi.mock("@/routes", () => ({
     "/workbench",
     "/extensions",
     "/recovery",
-  ].map((path) => ({ path })),
+    "/diagnostics",
+  ].map((path) => ({ path, hidden: path === "/recovery" })),
 }));
 vi.mock("@/lib/report-error", () => ({ reportClientError: vi.fn() }));
 vi.mock("@/components/workbench/editor-store", async (importOriginal) => ({
@@ -446,6 +447,25 @@ describe("workspace lifecycle", () => {
     view.rerender();
     await act(async () => {});
     expect(native.saveWorkspaceRoute).not.toHaveBeenCalled();
+  });
+  it("accepts a saved legacy recovery route and persists only its visible canonical destination", async () => {
+    vi.mocked(native.getWorkspace).mockResolvedValue({
+      routes: { main: "/recovery" },
+      secondaryOpen: false,
+    });
+    const view = renderHook(useWorkspace);
+    await waitFor(() =>
+      expect(router.navigate).toHaveBeenCalledWith("/recovery"),
+    );
+    router.pathname = "/recovery";
+    view.rerender();
+    await act(async () => {});
+    expect(native.saveWorkspaceRoute).not.toHaveBeenCalled();
+    router.pathname = "/diagnostics";
+    view.rerender();
+    await waitFor(() =>
+      expect(native.saveWorkspaceRoute).toHaveBeenCalledWith("/diagnostics"),
+    );
   });
 
   it("calls a listener disposer that resolves only after unmount", async () => {

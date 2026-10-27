@@ -1,11 +1,9 @@
-import { Suspense, useLayoutEffect, useRef, type CSSProperties } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useLocation } from "react-router-dom";
 import { ChevronRightIcon, MinimizeIcon } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { TitleBar } from "@/components/title-bar";
 import { WindowBackground } from "@/components/window-background";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { useCommands } from "@/providers/commands";
@@ -24,6 +22,7 @@ import { currentJourney } from "@/features/journeys/model";
 import { useAppChrome } from "@/hooks/use-app-chrome";
 import "@/styles/app-navigation.css";
 import { ExtensionChromeProvider } from "@/features/extensions/extension-chrome-slot";
+import { ExtensionOutlets } from "./extension-outlets";
 
 /** 感知路由的应用布局；页面失败时保留导航能力 */
 export function AppShell() {
@@ -38,6 +37,9 @@ export function AppShell() {
     NAVIGATION_GROUPS[0];
   const { t } = useI18n();
   const { settings } = useSettings();
+  const [sidebarPreviewWidth, setSidebarPreviewWidth] = useState<number | null>(
+    null,
+  );
   const { fullscreen, execute } = useCommands();
   const routes = [
     ...APP_ROUTES.filter(
@@ -69,7 +71,7 @@ export function AppShell() {
         )}
         style={
           {
-            "--app-sidebar-width": `${settings.sidebarCollapsed ? 56 : settings.sidebarWidth}px`,
+            "--app-sidebar-width": `${settings.sidebarCollapsed ? 56 : (sidebarPreviewWidth ?? settings.sidebarWidth)}px`,
           } as CSSProperties
         }
       >
@@ -93,7 +95,7 @@ export function AppShell() {
         <div ref={chrome} className="app-chrome">
           <TitleBar />
         </div>
-        <AppSidebar routes={routes} />
+        <AppSidebar routes={routes} onWidthPreview={setSidebarPreviewWidth} />
         <main
           ref={content}
           className="app-main app-scroll-region outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -123,24 +125,7 @@ export function AppShell() {
               </nav>
             ) : null}
             {!extensionSurface ? <JourneyGuide /> : null}
-            <Suspense
-              key={pathname}
-              fallback={
-                <div
-                  role="status"
-                  aria-label={t("common.loading")}
-                  className="space-y-3"
-                >
-                  <Skeleton className="h-7 w-40" />
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-48 w-full" />
-                </div>
-              }
-            >
-              <RouteErrorBoundary>
-                <Outlet />
-              </RouteErrorBoundary>
-            </Suspense>
+            <ExtensionOutlets items={data?.items ?? []} />
           </div>
         </main>
       </div>

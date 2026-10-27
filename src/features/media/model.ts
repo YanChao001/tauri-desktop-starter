@@ -13,6 +13,33 @@ export function validWorkerInput(value: string) {
   return value.trim().length > 0 && length <= 1000;
 }
 
+/** 识别本机文字转换的结果；其他输出保留原文，避免按错误格式解释。 */
+export function workerTextResult(output: string) {
+  try {
+    const value: unknown = JSON.parse(output);
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("input" in value) ||
+      typeof value.input !== "string" ||
+      !("uppercase" in value) ||
+      typeof value.uppercase !== "string" ||
+      !("characters" in value) ||
+      typeof value.characters !== "number" ||
+      !Number.isSafeInteger(value.characters) ||
+      value.characters < 0
+    )
+      return null;
+    return {
+      original: value.input,
+      transformed: value.uppercase,
+      characterCount: value.characters,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const demoMetrics = [
   { day: "1", requests: 120, latency: 82 },
   { day: "2", requests: 180, latency: 74 },

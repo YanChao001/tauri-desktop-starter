@@ -17,8 +17,25 @@ describe("路由配置与匹配", () => {
   it("按路径段匹配子页面，未知路径返回首页", () => {
     expect(matchRoute("/settings/appearance").path).toBe("/settings");
     expect(matchRoute("/desktop").group).toBe("capabilities");
+    expect(matchRoute("/desktop").hidden).toBe(true);
+    expect(matchRoute("/updates")).toMatchObject({
+      hidden: true,
+      labelKey: "nav.settings",
+    });
     expect(matchRoute("/desktop-tools").path).toBe("/");
     expect(matchRoute("/unknown").path).toBe("/");
+  });
+  it("诊断与恢复只有一个可见导航，同时保留旧恢复路径", () => {
+    expect(
+      APP_ROUTES.filter(
+        (route) =>
+          !route.hidden && ["/diagnostics", "/recovery"].includes(route.path),
+      ).map((route) => route.path),
+    ).toEqual(["/diagnostics"]);
+    expect(matchRoute("/recovery")).toMatchObject({
+      path: "/recovery",
+      hidden: true,
+    });
   });
   it("按命令类型、侧栏声明和可选授权过滤扩展入口", () => {
     const item: ExtensionInfo = {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpenIcon, PlayIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
-import { NativePage } from "@/components/native-page";
+import { NativePage, ResourceError } from "@/components/native-page";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,10 +27,25 @@ import {
   startWorkbenchTask,
   type WorkbenchDirectory,
   type WorkbenchTaskKind,
+  type WorkbenchTask,
   type WorkbenchTaskSnapshot,
 } from "@/lib/tauri";
 import { useI18n } from "@/providers/i18n";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
+import type { Translate } from "@/i18n/translate";
+
+function taskNotice(task: WorkbenchTask, t: Translate) {
+  const messages: string[] = [];
+  const unreadableEntries = task.unreadableEntries ?? 0;
+  if (task.status === "interrupted") messages.push(t("tasks.interruptedHint"));
+  if (task.failure) messages.push(nativeErrorText(task.failure, t));
+  if (unreadableEntries > 0)
+    messages.push(t("tasks.unreadableEntries", { count: unreadableEntries }));
+  if (task.reportUnavailable) messages.push(t("tasks.reportUnavailable"));
+  if (task.truncated) messages.push(t("tasks.truncated"));
+  if (!messages.length && task.message) messages.push(t("tasks.legacyNotice"));
+  return messages.join(" · ");
+}
 
 export default function Tasks() {
   const { t, language } = useI18n();
@@ -93,7 +108,7 @@ export default function Tasks() {
             );
         })
         .catch((reason) => {
-          if (!disposed) setError(reason);
+          if (!disposed) toast.error(nativeErrorText(reason, latest));
         });
     }
     const timer = window.setInterval(() => {
@@ -108,7 +123,7 @@ export default function Tasks() {
       stop?.();
       window.clearInterval(timer);
     };
-  }, [accept, refresh]);
+  }, [accept, refresh, latest]);
   const perform = useCallback(
     async (id: string, action: () => Promise<void>) => {
       if (running.current) return;
@@ -117,9 +132,12 @@ export default function Tasks() {
       setError(null);
       try {
         await action();
-        await refresh();
+        if (id !== "refresh") await refresh();
       } catch (reason) {
-        if (mounted.current) toast.error(nativeErrorText(reason, latest));
+        if (mounted.current) {
+          if (id === "refresh") setError(reason);
+          else toast.error(nativeErrorText(reason, latest));
+        }
       } finally {
         running.current = false;
         if (mounted.current) setPending(null);
@@ -129,70 +147,64 @@ export default function Tasks() {
   );
   return (
     <NativePage title={t("tasks.title")} description={t("tasks.description")}>
-      {error && !snapshot ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive"
-        >
-          {nativeErrorText(error, t)}
-        </p>
-      ) : null}
       <section
-        className="space-y-4 rounded-xl border bg-card p-4"
-        aria-busy={pending !== null}
+        className="@container space-y-3 rounded-xl border bg-card p-4"
+        aria-busy={pending !== null || (!snapshot && !error)}
       >
-        <div className="flex flex-wrap items-end gap-3">
-          <Button
-            variant="outline"
-            disabled={pending !== null}
-            onClick={() =>
-              void perform("pick", async () => {
-                const directory = await pickWorkbenchDirectory();
-                if (directory && mounted.current) {
-                  setDirectories((entries) => [
-                    directory,
-                    ...entries.filter((entry) => entry.id !== directory.id),
-                  ]);
-                  setDirectoryId(directory.id);
-                }
-              })
-            }
-          >
-            <FolderOpenIcon />
-            {t("tasks.pickDirectory")}
-          </Button>
-          <div className="min-w-48 flex-1 space-y-1">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 @3xl:grid-cols-[minmax(0,1fr)_12rem_auto]">
+          <div className="col-span-2 min-w-0 space-y-1.5 @3xl:col-span-1">
             <Label htmlFor="task-directory">{t("tasks.directory")}</Label>
-            <Select
-              value={directoryId || "__none__"}
-              disabled={pending !== null}
-              onValueChange={(value) =>
-                setDirectoryId(value === "__none__" ? "" : value)
-              }
-            >
-              <SelectTrigger id="task-directory" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" align="start">
-                <SelectItem value="__none__">
-                  {t("tasks.noDirectory")}
-                </SelectItem>
-                {directories.map((directory) => (
-                  <SelectItem key={directory.id} value={directory.id}>
-                    {directory.name}
+            <div className="flex min-w-0 items-center gap-2">
+              <Select
+                value={directoryId || "__none__"}
+                disabled={pending !== null}
+                onValueChange={(value) =>
+                  setDirectoryId(value === "__none__" ? "" : value)
+                }
+              >
+                <SelectTrigger id="task-directory" className="min-w-0 flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  <SelectItem value="__none__">
+                    {t("tasks.noDirectory")}
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  {directories.map((directory) => (
+                    <SelectItem key={directory.id} value={directory.id}>
+                      {directory.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                disabled={pending !== null}
+                onClick={() =>
+                  void perform("pick", async () => {
+                    const directory = await pickWorkbenchDirectory();
+                    if (directory && mounted.current) {
+                      setDirectories((entries) => [
+                        directory,
+                        ...entries.filter((entry) => entry.id !== directory.id),
+                      ]);
+                      setDirectoryId(directory.id);
+                    }
+                  })
+                }
+              >
+                <FolderOpenIcon />
+                {t("tasks.pickDirectory")}
+              </Button>
+            </div>
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1.5">
             <Label htmlFor="task-kind">{t("tasks.kind")}</Label>
             <Select
               value={kind}
               disabled={pending !== null}
               onValueChange={(value) => setKind(value as WorkbenchTaskKind)}
             >
-              <SelectTrigger id="task-kind">
+              <SelectTrigger id="task-kind" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start">
@@ -201,54 +213,63 @@ export default function Tasks() {
               </SelectContent>
             </Select>
           </div>
-          <Button
-            disabled={
-              !directoryId || pending !== null || (snapshot?.queued ?? 0) >= 10
-            }
-            onClick={() =>
-              void perform("start", async () => {
-                await startWorkbenchTask(kind, directoryId);
-              })
-            }
-          >
-            <PlayIcon />
-            {t("tasks.start")}
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={pending !== null}
-            aria-label={t("common.refresh")}
-            onClick={() => void perform("refresh", refresh)}
-          >
-            <RefreshCwIcon />
-          </Button>
-        </div>
-        <div className="flex h-6 min-w-0 items-center gap-2">
-          <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-            {
-              directories.find((directory) => directory.id === directoryId)
-                ?.path
-            }
-          </p>
-          {directoryId ? (
-            <HelpTooltip label={`${t("tasks.directory")} · ${t("title.help")}`}>
-              {
-                directories.find((directory) => directory.id === directoryId)
-                  ?.path
+          <div className="flex items-center gap-2">
+            <Button
+              disabled={
+                !directoryId ||
+                pending !== null ||
+                (snapshot?.queued ?? 0) >= 10
               }
-            </HelpTooltip>
-          ) : null}
+              onClick={() =>
+                void perform("start", async () => {
+                  await startWorkbenchTask(kind, directoryId);
+                })
+              }
+            >
+              <PlayIcon />
+              {t("tasks.start")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={pending !== null}
+              aria-label={t("common.refresh")}
+              onClick={() => void perform("refresh", refresh)}
+            >
+              <RefreshCwIcon />
+            </Button>
+          </div>
         </div>
-        <div className="flex h-6 items-center gap-2">
-          <p role="status" className="min-w-0 truncate text-sm tabular-nums">
-            {t("tasks.active", { count: snapshot?.active ?? 0 })}
-            {" · "}
-            {t("tasks.queued", { count: snapshot?.queued ?? 0 })}
-          </p>
-          <HelpTooltip label={`${t("tasks.kind")} · ${t("title.help")}`}>
-            <p>{t("tasks.limits")}</p>
-            <p>{t("tasks.capacity")}</p>
-          </HelpTooltip>
+        <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
+          <div className="flex shrink-0 items-center gap-1">
+            <p role="status" className="tabular-nums">
+              {snapshot
+                ? `${t("tasks.active", { count: snapshot.active })} · ${t("tasks.queued", { count: snapshot.queued })}`
+                : t(error ? "tasks.countUnavailable" : "tasks.loading")}
+            </p>
+            <HelpTooltip label={`${t("tasks.kind")} · ${t("title.help")}`}>
+              <p>{t("tasks.limits")}</p>
+              <p>{t("tasks.capacity")}</p>
+            </HelpTooltip>
+          </div>
+          {directoryId ? (
+            <div className="flex min-w-0 items-center gap-1">
+              <p className="min-w-0 truncate">
+                {
+                  directories.find((directory) => directory.id === directoryId)
+                    ?.path
+                }
+              </p>
+              <HelpTooltip
+                label={`${t("tasks.directory")} · ${t("title.help")}`}
+              >
+                {
+                  directories.find((directory) => directory.id === directoryId)
+                    ?.path
+                }
+              </HelpTooltip>
+            </div>
+          ) : null}
         </div>
       </section>
       <div className="flex items-center gap-2">
@@ -257,8 +278,22 @@ export default function Tasks() {
           {t("tasks.historyHint")}
         </HelpTooltip>
       </div>
-      {!snapshot?.tasks.length ? (
-        <p className="rounded-xl border bg-card p-8 text-sm text-muted-foreground">
+      {!snapshot ? (
+        error ? (
+          <ResourceError
+            error={error}
+            retry={() => void perform("refresh", refresh)}
+          />
+        ) : (
+          <p
+            role="status"
+            className="rounded-xl border bg-card p-4 text-sm text-muted-foreground"
+          >
+            {t("tasks.loading")}
+          </p>
+        )
+      ) : !snapshot.tasks.length ? (
+        <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
           {t("tasks.empty")}
         </p>
       ) : (
@@ -270,6 +305,7 @@ export default function Tasks() {
               task.status === "cancelling";
             const executing =
               task.status === "running" || task.status === "cancelling";
+            const notice = taskNotice(task, t);
             return (
               <li
                 key={task.id}
@@ -321,16 +357,12 @@ export default function Tasks() {
                   · {(task.bytes ?? 0).toLocaleString()} B
                 </p>
                 <div className="flex h-6 min-w-0 items-center gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm">
-                    {task.message ||
-                      (task.truncated ? t("tasks.truncated") : "")}
-                  </p>
+                  <p className="min-w-0 flex-1 truncate text-sm">{notice}</p>
                   <HelpTooltip
                     label={`${t("tasks.results")} · ${t("title.help")}`}
                   >
                     <p className="break-all">{task.id}</p>
-                    {task.message ? <p>{task.message}</p> : null}
-                    {task.truncated ? <p>{t("tasks.truncated")}</p> : null}
+                    {notice ? <p>{notice}</p> : null}
                     {task.attemptOf ? (
                       <p>{t("tasks.retryOf", { id: task.attemptOf })}</p>
                     ) : null}
@@ -396,6 +428,19 @@ export default function Tasks() {
                 </div>
                 {expanded === task.id ? (
                   <div className="min-w-0 space-y-2 border-t pt-3">
+                    {task.message || task.failure?.message ? (
+                      <details className="rounded-md border p-2 text-xs">
+                        <summary className="cursor-pointer font-medium">
+                          {t("tasks.diagnostics")}
+                        </summary>
+                        <p
+                          tabIndex={0}
+                          className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {task.message ?? task.failure?.message}
+                        </p>
+                      </details>
+                    ) : null}
                     {task.results.length ? (
                       <div className="max-h-80 overflow-auto">
                         <table className="w-full text-left text-xs">
@@ -415,8 +460,35 @@ export default function Tasks() {
                                 <td className="whitespace-nowrap p-2">
                                   {(entry.bytes ?? 0).toLocaleString()}
                                 </td>
-                                <td className="max-w-96 break-all p-2 font-mono">
-                                  {entry.error ?? entry.sha256 ?? "—"}
+                                <td className="max-w-96 break-all p-2">
+                                  {entry.failure || entry.error ? (
+                                    <div className="space-y-1">
+                                      <p>
+                                        {entry.failure
+                                          ? entry.failure.code ===
+                                            "INPUT_TOO_LONG"
+                                            ? t("tasks.entryLimit")
+                                            : nativeErrorText(entry.failure, t)
+                                          : t("tasks.entryFailed")}
+                                      </p>
+                                      <details>
+                                        <summary className="cursor-pointer text-muted-foreground">
+                                          {t("tasks.diagnostics")}
+                                        </summary>
+                                        <p
+                                          tabIndex={0}
+                                          className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        >
+                                          {entry.error ??
+                                            entry.failure?.message}
+                                        </p>
+                                      </details>
+                                    </div>
+                                  ) : (
+                                    <span className="font-mono">
+                                      {entry.sha256 ?? "—"}
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             ))}

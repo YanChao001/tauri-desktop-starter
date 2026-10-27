@@ -27,22 +27,17 @@ describe("前端错误记录", () => {
     expect(record.stack).not.toMatch(/Alice|alice|private/);
   });
 
-  it("中文和Emoji错误按UTF8字节限制截断，不拆开字符", async () => {
+  it("将完整的 Unicode 诊断交给原生门面统一裁剪", async () => {
     const { reportClientError } = await import("./report-error");
     const error = new Error("错🌸".repeat(3000));
     error.stack = "错🌸".repeat(5000);
     reportClientError(error, error.stack);
     const record = vi.mocked(recordFrontendError).mock.calls[0]![0];
-    expect(new TextEncoder().encode(record.message).length).toBeLessThanOrEqual(
-      4000,
-    );
-    expect(new TextEncoder().encode(record.stack).length).toBeLessThanOrEqual(
-      8000,
-    );
-    expect(
-      new TextEncoder().encode(record.componentStack).length,
-    ).toBeLessThanOrEqual(8000);
-    expect(JSON.stringify(record)).not.toContain("�");
+    expect(record).toEqual({
+      message: error.message,
+      stack: error.stack,
+      componentStack: error.stack,
+    });
   });
 
   it("浏览器不发IPC，原生每分钟最多20条，记录自身失败不递归", async () => {

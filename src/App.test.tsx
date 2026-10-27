@@ -11,6 +11,7 @@ vi.mock("@/providers/commands", () => ({
 }));
 vi.mock("@/components/command-palette", () => ({ CommandPalette: () => null }));
 vi.mock("@/components/desktop-effects", () => ({ DesktopEffects: () => null }));
+vi.mock("@/components/theme-effects", () => ({ ThemeEffects: () => null }));
 vi.mock("@/features/extensions/extension-commands", () => ({
   ExtensionCommands: () => null,
 }));
@@ -35,6 +36,7 @@ vi.mock("@/providers/settings", () => ({
 }));
 vi.mock("@/providers/i18n", () => ({
   I18nProvider: ({ children }: { children: ReactNode }) => children,
+  useI18n: () => ({ language: "en", t: (key: string) => key }),
 }));
 vi.mock("next-themes", () => ({
   ThemeProvider: ({ children }: { children: ReactNode }) => children,

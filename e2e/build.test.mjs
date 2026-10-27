@@ -43,7 +43,7 @@ test("E2E resolves Cargo's actual binary and platform-specific Tauri renames", (
     join(directory, "test-app.exe"),
   );
   config("tauri.e2e.conf.json", { mainBinaryName: "../outside" });
-  assert.throws(() => e2eExecutable(root, target, pkg), /单个文件名/);
+  assert.throws(() => e2eExecutable(root, target, pkg), /single file name/);
 });
 
 test("E2E respects default-run and does not append exe on Unix", (t) => {

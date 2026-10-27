@@ -1,13 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ExternalLinkIcon, PuzzleIcon } from "lucide-react";
-import { useTheme } from "next-themes";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { Button } from "@/components/ui/button";
 import { ExtensionApp } from "@/features/extensions/extension-app";
 import { useExtensions } from "@/features/extensions/extensions-provider";
 import { useI18n } from "@/providers/i18n";
-import { useSettings } from "@/providers/settings";
 import { canRunExtensionCommand } from "@/features/extensions/extension-model";
 import { closeWindow, openExtensionWindow } from "@/lib/tauri";
 import { ExtensionLoading } from "@/features/extensions/extension-loading";
@@ -24,11 +22,6 @@ export function ExtensionPage({
   const navigate = useNavigate();
   const [windowError, setWindowError] = useState<unknown>(null);
   const [opening, setOpening] = useState(false);
-  const { settings } = useSettings();
-  const { theme, setTheme } = useTheme();
-  useEffect(() => {
-    if (standalone && theme !== settings.theme) setTheme(settings.theme);
-  }, [standalone, theme, settings.theme, setTheme]);
   const item = data?.items.find(
     (item) => item.enabled && item.package.manifest.id === extensionId,
   );
@@ -83,12 +76,10 @@ export function ExtensionPage({
             }
             runs={data?.runs ?? []}
             onSettled={reload}
-            onClose={() => {
-              if (standalone)
-                void closeWindow().catch((reason: unknown) =>
-                  setWindowError(reason),
-                );
-              else navigate("/extensions");
+            onClose={(signal) => {
+              signal?.throwIfAborted();
+              if (standalone) return closeWindow();
+              navigate("/extensions");
             }}
           />
         </>

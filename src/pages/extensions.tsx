@@ -1,12 +1,22 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { PackagePlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ExternalLinkIcon,
+  FolderOpenIcon,
+  PackagePlusIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { NativePage, ResourceError } from "@/components/native-page";
+import { PageLoading } from "@/components/page-loading";
 import { ExternalLink } from "@/components/external-link";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -43,6 +53,7 @@ import {
   installMarketExtension,
   rollbackExtension,
   type MarketSource,
+  type MarketDownloadProgress,
   setExtensionEnabled,
   uninstallExtension,
   isTauri,
@@ -79,10 +90,16 @@ export default function Extensions() {
   const locked = useRef(false);
   const alive = useRef(false);
   const dialogTrigger = useRef<HTMLElement | null>(null);
+  const packageInput = useRef<HTMLInputElement>(null);
+  const packageTrigger = useRef<HTMLButtonElement>(null);
+  const [packageFileName, setPackageFileName] = useState("");
   const [review, setReview] = useState<Review | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [grants, setGrants] = useState<ExtensionPermission[]>([]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] =
+    useState<MarketDownloadProgress | null>(null);
+  const [installingId, setInstallingId] = useState<string | null>(null);
   useEffect(() => {
     if (actionError)
       toast.error(nativeErrorText(actionError, t), { id: "extensions:action" });
@@ -158,8 +175,9 @@ export default function Extensions() {
   }
   async function inspect(file?: File) {
     if (!data) return;
-    dialogTrigger.current =
-      document.activeElement instanceof HTMLElement
+    dialogTrigger.current = file
+      ? packageTrigger.current
+      : document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
     const snapshot = data;
@@ -226,10 +244,15 @@ export default function Extensions() {
     const snapshot = data;
     await act(async () => {
       setDownloadingId(entry.package.manifest.id);
+      setDownloadProgress(null);
+      let receiving = true;
       try {
         const downloaded = await downloadMarketExtension(
           entry.package.manifest.id,
           entry.packageSha256,
+          (progress) => {
+            if (alive.current && receiving) setDownloadProgress(progress);
+          },
         );
         if (alive.current)
           reviewPackage({
@@ -244,7 +267,11 @@ export default function Extensions() {
               )?.package.manifest.version ?? null,
           });
       } finally {
-        if (alive.current) setDownloadingId(null);
+        receiving = false;
+        if (alive.current) {
+          setDownloadingId(null);
+          setDownloadProgress(null);
+        }
       }
     });
   }
@@ -268,13 +295,16 @@ export default function Extensions() {
     event.preventDefault();
     const trigger = dialogTrigger.current;
     if (trigger?.isConnected && !trigger.matches(":disabled")) trigger.focus();
-    else document.getElementById("extension-package")?.focus();
+    else packageTrigger.current?.focus();
   }
+  const disabledPermissions =
+    decision?.action === "permissions" && !decision.item.enabled;
   return (
     <NativePage title={t("ext.title")} description={t("ext.description")}>
       <ResourceError error={error} retry={() => void reload()} />
       <ExtensionRecovery error={error} reload={reload} />
       <Tabs
+        className="gap-4"
         value={tab}
         onValueChange={(value) =>
           setSearch(
@@ -288,7 +318,7 @@ export default function Extensions() {
           )
         }
       >
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <TabsList>
             <TabsTrigger value="installed">{t("ext.installed")}</TabsTrigger>
             <TabsTrigger value="discover">
@@ -298,25 +328,42 @@ export default function Extensions() {
           <ExtensionHelp label={t("ext.dataBoundary")}>
             {t("ext.boundary")}
           </ExtensionHelp>
+          <span
+            role="status"
+            className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+          >
+            {data?.runs.length
+              ? t("ext.queueSummary", { count: data.runs.length })
+              : ""}
+          </span>
+          {tab === "installed" ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={busy || loading}
+                    onClick={() => void reload()}
+                    aria-label={t("ext.refresh")}
+                  >
+                    <RefreshCwIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("ext.refresh")}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
         </div>
         <TabsContent
           value="installed"
           forceMount
           hidden={tab !== "installed"}
-          className="space-y-5 pt-4"
+          className="space-y-4"
+          aria-busy={loading}
         >
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <h3 className="font-semibold">{t("ext.installed")}</h3>
-            <span
-              role="status"
-              className="min-w-0 truncate text-sm text-muted-foreground"
-            >
-              {data?.runs.length
-                ? t("ext.queueSummary", { count: data.runs.length })
-                : ""}
-            </span>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
+          {!data && loading ? <PageLoading /> : null}
+          <div className="extension-card-grid">
             {data?.items.map((item) => (
               <ExtensionCard
                 key={item.package.manifest.id}
@@ -372,63 +419,6 @@ export default function Extensions() {
               {t("ext.empty")}
             </p>
           ) : null}
-          <section className="space-y-4 rounded-xl border bg-card p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="flex items-center gap-2 font-semibold">
-                <PackagePlusIcon className="size-5" />
-                {t("ext.installFile")}
-                <ExtensionHelp label={t("ext.installFile")}>
-                  {t("ext.packageHint")}
-                </ExtensionHelp>
-              </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy || loading}
-                onClick={() => void reload()}
-                aria-label={t("ext.refresh")}
-              >
-                <RefreshCwIcon className="size-4" />
-              </Button>
-            </div>
-            <Label htmlFor="extension-package">{t("ext.installFile")}</Label>
-            <Input
-              id="extension-package"
-              type="file"
-              accept=".json,application/json"
-              disabled={!data || busy}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (file) void inspect(file);
-              }}
-            />
-            <Button
-              variant="outline"
-              disabled={!data || busy}
-              onClick={() => void inspect()}
-            >
-              {t(
-                data?.items.some(
-                  (item) =>
-                    item.package.manifest.id === "starter.extension-lab",
-                )
-                  ? "ext.checkBundledUpdate"
-                  : "ext.restoreLab",
-              )}
-            </Button>
-            <ExternalLink
-              className="text-sm text-primary underline underline-offset-4"
-              href={repositoryFileUrl(
-                APP_CONFIG.repositoryUrl,
-                "docs/extensions.md",
-              )}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t("ext.docs")}
-            </ExternalLink>
-          </section>
           {data && runnerOpened ? (
             <div id="extension-runner">
               <ExtensionRunner
@@ -445,14 +435,119 @@ export default function Extensions() {
           value="discover"
           forceMount
           hidden={tab !== "discover"}
-          className="pt-4"
+          className="space-y-4"
         >
+          <section
+            aria-labelledby="extension-install-title"
+            className="@container/install flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border bg-card p-4"
+          >
+            <h3 className="flex items-center gap-2 font-semibold">
+              <PackagePlusIcon className="size-5 shrink-0" aria-hidden="true" />
+              <span id="extension-install-title">{t("ext.installLocal")}</span>
+              <ExtensionHelp label={t("ext.installLocal")}>
+                {t("ext.packageHint")}
+              </ExtensionHelp>
+            </h3>
+            <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    ref={packageTrigger}
+                    type="button"
+                    variant="outline"
+                    className="max-w-[min(100%,16rem)] min-w-0 shrink justify-start"
+                    disabled={!data || busy}
+                    aria-label={
+                      packageFileName
+                        ? t("ext.selectedPackageFile", {
+                            name: packageFileName,
+                          })
+                        : t("ext.openPackageFile")
+                    }
+                    onClick={() => packageInput.current?.click()}
+                  >
+                    <FolderOpenIcon className="shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 truncate">
+                      {packageFileName || t("ext.openPackageFile")}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                {packageFileName ? (
+                  <TooltipContent
+                    side="bottom"
+                    collisionPadding={8}
+                    className="max-w-[min(22rem,var(--radix-tooltip-content-available-width))] whitespace-normal break-words leading-relaxed"
+                  >
+                    <span className="min-w-0 [overflow-wrap:anywhere]">
+                      {packageFileName}
+                    </span>
+                  </TooltipContent>
+                ) : null}
+              </Tooltip>
+            </TooltipProvider>
+            <input
+              ref={packageInput}
+              id="extension-package"
+              type="file"
+              hidden
+              aria-label={t("ext.installFile")}
+              accept=".json,application/json"
+              disabled={!data || busy}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) {
+                  setPackageFileName(file.name);
+                  void inspect(file);
+                }
+              }}
+            />
+            <Button
+              variant="outline"
+              disabled={!data || busy}
+              onClick={() => void inspect()}
+            >
+              {t(
+                data?.items.some(
+                  (item) =>
+                    item.package.manifest.id === "starter.extension-lab",
+                )
+                  ? "ext.checkBundledUpdate"
+                  : "ext.restoreLab",
+              )}
+            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost">
+                    <ExternalLink
+                      href={repositoryFileUrl(
+                        APP_CONFIG.repositoryUrl,
+                        "docs/extensions.md",
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={t("ext.docs")}
+                    >
+                      <ExternalLinkIcon aria-hidden="true" />
+                      <span className="hidden @2xl/install:inline">
+                        {t("ext.docs")}
+                      </span>
+                    </ExternalLink>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("ext.docs")}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </section>
           <ExtensionMarket
             snapshot={market.data}
             loading={market.loading}
             error={market.error}
             busy={busy || !data}
             downloadingId={downloadingId}
+            downloadProgress={downloadProgress}
+            installingId={installingId}
             installed={data?.items ?? []}
             onRefresh={() => void market.reload()}
             onDownload={(entry) => void inspectMarket(entry)}
@@ -469,6 +564,7 @@ export default function Extensions() {
         }}
       >
         <DialogContent
+          closeLabel={t("common.close")}
           className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"
           onCloseAutoFocus={restoreDialogFocus}
         >
@@ -515,32 +611,60 @@ export default function Extensions() {
             </Button>
             <Button
               disabled={busy || !review}
+              aria-busy={installingId !== null}
               onClick={() => {
                 if (review)
                   void act(async () => {
-                    if (review.source)
-                      await installMarketExtension(
-                        review.content,
-                        review.revision,
-                        review.previous !== null,
-                        review.preview.sha256,
-                        review.source,
-                        consentFor(review.preview),
-                      );
-                    else
-                      await installExtension(
-                        review.content,
-                        review.revision,
-                        review.previous !== null,
-                        review.preview.sha256,
-                        consentFor(review.preview),
-                      );
-                    if (alive.current) setReview(null);
-                    await reload();
+                    setInstallingId(review.preview.manifest.id);
+                    try {
+                      if (review.source)
+                        await installMarketExtension(
+                          review.content,
+                          review.revision,
+                          review.previous !== null,
+                          review.preview.sha256,
+                          review.source,
+                          consentFor(review.preview),
+                        );
+                      else
+                        await installExtension(
+                          review.content,
+                          review.revision,
+                          review.previous !== null,
+                          review.preview.sha256,
+                          consentFor(review.preview),
+                        );
+                      if (alive.current) setReview(null);
+                      await reload();
+                    } finally {
+                      if (alive.current) setInstallingId(null);
+                    }
                   });
               }}
             >
-              {t(review?.previous ? "ext.upgrade" : "ext.install")}
+              <span className="grid">
+                <span
+                  aria-hidden="true"
+                  className="invisible col-start-1 row-start-1"
+                >
+                  {t(review?.previous ? "ext.upgrade" : "ext.install")}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="invisible col-start-1 row-start-1"
+                >
+                  {t("ext.market.installing")}
+                </span>
+                <span className="col-start-1 row-start-1" aria-live="polite">
+                  {t(
+                    installingId
+                      ? "ext.market.installing"
+                      : review?.previous
+                        ? "ext.upgrade"
+                        : "ext.install",
+                  )}
+                </span>
+              </span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -555,6 +679,7 @@ export default function Extensions() {
         }}
       >
         <DialogContent
+          closeLabel={t("common.close")}
           className="max-h-[85dvh] overflow-y-auto sm:max-w-xl"
           onCloseAutoFocus={restoreDialogFocus}
         >
@@ -565,7 +690,11 @@ export default function Extensions() {
                   ? "ext.rollbackTitle"
                   : decision?.action === "uninstall"
                     ? "ext.uninstallTitle"
-                    : "ext.enableTitle",
+                    : decision?.action === "permissions"
+                      ? disabledPermissions
+                        ? "ext.viewPermissions"
+                        : "ext.managePermissions"
+                      : "ext.enableTitle",
               )}
             </DialogTitle>
             <DialogDescription>
@@ -574,17 +703,21 @@ export default function Extensions() {
                   ? "ext.rollbackHint"
                   : decision?.action === "uninstall"
                     ? "ext.uninstallHint"
-                    : "ext.grantHint",
+                    : disabledPermissions
+                      ? "ext.disabledPermissionsHint"
+                      : "ext.grantHint",
               )}
             </DialogDescription>
           </DialogHeader>
           {decision ? (
             <ExtensionDetails
               consent={
-                ["enable", "permissions"].includes(decision.action)
+                ["enable", "permissions"].includes(decision.action) &&
+                !disabledPermissions
                   ? { grants, disabled: busy, onChange: setGrants }
                   : undefined
               }
+              grantedPermissions={decision.item.grantedPermissions}
               value={
                 decision.action === "rollback" && decision.item.previousPackage
                   ? decision.item.previousPackage
@@ -597,7 +730,9 @@ export default function Extensions() {
               }
             />
           ) : null}
-          {decision && ["enable", "permissions"].includes(decision.action) ? (
+          {decision &&
+          ["enable", "permissions"].includes(decision.action) &&
+          !disabledPermissions ? (
             <p className="text-sm text-muted-foreground">
               {t("ext.installConsent")}
             </p>
@@ -616,52 +751,57 @@ export default function Extensions() {
                 setActionError(null);
               }}
             >
-              {t("ext.cancel")}
+              {t(disabledPermissions ? "common.close" : "ext.cancel")}
             </Button>
-            <Button
-              variant={
-                decision?.action === "uninstall" ? "destructive" : "default"
-              }
-              disabled={busy || !decision}
-              onClick={() => {
-                if (decision)
-                  void act(async () => {
-                    if (
-                      decision.action === "enable" ||
-                      decision.action === "permissions"
-                    )
-                      await setExtensionEnabled(
-                        decision.item.package.manifest.id,
-                        true,
-                        consentFor(decision.item.package).grantedPermissions,
-                        decision.revision,
-                        true,
-                      );
-                    else if (decision.action === "rollback")
-                      await rollbackExtension(
-                        decision.item.package.manifest.id,
-                        decision.revision,
-                      );
-                    else
-                      await uninstallExtension(
-                        decision.item.package.manifest.id,
-                        decision.revision,
-                      );
-                    if (alive.current) setDecision(null);
-                    await reload();
-                  });
-              }}
-            >
-              {t(
-                decision?.action === "uninstall"
-                  ? "ext.uninstall"
-                  : decision?.action === "rollback"
-                    ? "ext.rollbackConfirm"
-                    : decision?.action === "permissions"
-                      ? "ext.savePermissions"
-                      : "ext.enable",
-              )}
-            </Button>
+            {!disabledPermissions ? (
+              <Button
+                variant={
+                  decision?.action === "uninstall" ? "destructive" : "default"
+                }
+                disabled={busy || !decision}
+                onClick={() => {
+                  if (decision)
+                    void act(async () => {
+                      if (
+                        decision.action === "enable" ||
+                        decision.action === "permissions"
+                      )
+                        await setExtensionEnabled(
+                          decision.item.package.manifest.id,
+                          decision.action === "enable" || decision.item.enabled,
+                          decision.action === "enable" || decision.item.enabled
+                            ? consentFor(decision.item.package)
+                                .grantedPermissions
+                            : [],
+                          decision.revision,
+                          true,
+                        );
+                      else if (decision.action === "rollback")
+                        await rollbackExtension(
+                          decision.item.package.manifest.id,
+                          decision.revision,
+                        );
+                      else
+                        await uninstallExtension(
+                          decision.item.package.manifest.id,
+                          decision.revision,
+                        );
+                      if (alive.current) setDecision(null);
+                      await reload();
+                    });
+                }}
+              >
+                {t(
+                  decision?.action === "uninstall"
+                    ? "ext.uninstall"
+                    : decision?.action === "rollback"
+                      ? "ext.rollbackConfirm"
+                      : decision?.action === "permissions"
+                        ? "ext.savePermissions"
+                        : "ext.enable",
+                )}
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

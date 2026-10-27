@@ -3,12 +3,30 @@ import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import { I18nContext } from "@/providers/i18n-context"
 import { XIcon } from "lucide-react"
 
+const DialogModalContext = React.createContext(true)
+
+function focusDialogTarget(target: Element | null) {
+  if (
+    !(target instanceof HTMLElement) || target === document.body ||
+    !target.isConnected || target.matches(":disabled") ||
+    target.closest("[hidden], [inert], [data-slot=dialog-content][data-state=closed]")
+  ) return false
+  target.focus({ preventScroll: true })
+  return document.activeElement === target
+}
+
 function Dialog({
+  modal = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  return (
+    <DialogModalContext.Provider value={modal}>
+      <DialogPrimitive.Root data-slot="dialog" modal={modal} {...props} />
+    </DialogModalContext.Provider>
+  )
 }
 
 function DialogTrigger({
@@ -49,12 +67,19 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
-  closeLabel = "Close",
+  closeLabel,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
   closeLabel?: string
 }) {
+  const modal = React.useContext(DialogModalContext)
+  const i18n = React.useContext(I18nContext)
+  const returnFocus = React.useRef<HTMLElement[]>([])
+  const interactedOutside = React.useRef(false)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -65,6 +90,40 @@ function DialogContent({
           className
         )}
         {...props}
+        onOpenAutoFocus={(event) => {
+          // 受控弹窗可能没有 DialogTrigger；在焦点进入弹窗前保存操作位置。
+          returnFocus.current = []
+          interactedOutside.current = false
+          let target = document.activeElement
+          while (target instanceof HTMLElement && target !== document.body) {
+            if (target.tagName !== "MAIN" && (target === document.activeElement || target.hasAttribute("tabindex"))) {
+              returnFocus.current.push(target)
+            }
+            target = target.parentElement
+          }
+          onOpenAutoFocus?.(event)
+        }}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event)
+          if (!event.defaultPrevented) interactedOutside.current = true
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          // 非模态弹窗保留 Radix 对外部点击的焦点处理；显式恢复回调始终优先。
+          if (event.defaultPrevented || (!modal && interactedOutside.current)) return
+          for (const target of returnFocus.current) {
+            if (focusDialogTarget(target)) {
+              event.preventDefault()
+              break
+            }
+          }
+          // 嵌套弹窗可能同时关闭，不覆盖外层已经恢复的有效位置。
+          if (!event.defaultPrevented && (
+            focusDialogTarget(document.activeElement) ||
+            focusDialogTarget(document.querySelector("main[tabindex]"))
+          )) event.preventDefault()
+          returnFocus.current = []
+        }}
       >
         {children}
         {showCloseButton && (
@@ -76,7 +135,7 @@ function DialogContent({
             >
               <XIcon
               />
-              <span className="sr-only">{closeLabel}</span>
+              <span className="sr-only">{closeLabel ?? i18n?.t("common.close") ?? "Close"}</span>
             </Button>
           </DialogPrimitive.Close>
         )}
@@ -98,13 +157,14 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 function DialogFooter({
   className,
   showCloseButton = false,
-  closeLabel = "Close",
+  closeLabel,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
   closeLabel?: string
 }) {
+  const i18n = React.useContext(I18nContext)
   return (
     <div
       data-slot="dialog-footer"
@@ -117,7 +177,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">{closeLabel}</Button>
+          <Button variant="outline">{closeLabel ?? i18n?.t("common.close") ?? "Close"}</Button>
         </DialogPrimitive.Close>
       )}
     </div>

@@ -78,4 +78,22 @@ describe("startup recovery gate", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Business editor")).toBeInTheDocument();
   });
+  it("keeps the combined diagnostics recovery destination available during isolation", async () => {
+    vi.mocked(native.recoveryStatus).mockResolvedValue({
+      ...healthy,
+      active: true,
+      reason: "Storage corrupt",
+    });
+    render(
+      <MemoryRouter initialEntries={["/diagnostics?section=recovery"]}>
+        <RecoveryGate>
+          <p>Combined diagnostics and recovery</p>
+        </RecoveryGate>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText("Combined diagnostics and recovery"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Business editor")).not.toBeInTheDocument();
+  });
 });

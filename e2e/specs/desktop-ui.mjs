@@ -126,7 +126,8 @@ export function desktopUiChecks() {
       await $("[data-slot=tooltip-content]").waitForExist({ reverse: true });
       assert.equal((await $$("[data-slot=tooltip-content]")).length, 0);
 
-      await navigate("/desktop");
+      await navigate("/settings");
+      await $("#settings-desktop").scrollIntoView();
       await $("[data-testid=open-secondary-window]").waitForEnabled();
       for (const width of [880, 1120]) {
         // CI 工作区可能小于预设尺寸，沿用原生服务报告的可用范围。
@@ -153,19 +154,21 @@ export function desktopUiChecks() {
           await patchSettings({ language, fontSize: "lg", theme: "light" });
           await settledAppearance({ language, fontSize: "lg", theme: "light" });
           const controls = await browser.execute(() =>
-            [...document.querySelectorAll(".settings-row-control")].map(
-              (element) => {
-                const control = element.getBoundingClientRect();
-                const row = element
-                  .closest(".settings-row")
-                  .getBoundingClientRect();
-                return {
-                  right: control.right,
-                  withinRow:
-                    control.left >= row.left && control.right <= row.right + 1,
-                };
-              },
-            ),
+            [
+              ...document.querySelectorAll(
+                "#settings-desktop .settings-row-control",
+              ),
+            ].map((element) => {
+              const control = element.getBoundingClientRect();
+              const row = element
+                .closest(".settings-row")
+                .getBoundingClientRect();
+              return {
+                right: control.right,
+                withinRow:
+                  control.left >= row.left && control.right <= row.right + 1,
+              };
+            }),
           );
           assert.equal(controls.length, 3);
           assert.ok(controls.every((control) => control.withinRow));
@@ -178,6 +181,7 @@ export function desktopUiChecks() {
       }
       await patchSettings({ language: "zh", fontSize: "md" });
       await settledAppearance({ language: "zh", fontSize: "md" });
+      await $("#settings-desktop").scrollIntoView();
       await screenshot("desktop-controls.png");
       await navigate("/bridge");
       for (const theme of ["light", "dark"]) {
