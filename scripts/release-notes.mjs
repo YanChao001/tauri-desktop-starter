@@ -19,7 +19,7 @@ const validSha = (value) => /^[a-f0-9]{40}$/i.test(value);
 const markdown = (value) =>
   String(value)
     .replace(/\s+/g, " ")
-    .replace(/[\\`*_{}\[\]()<>|]/g, "\\$&");
+    .replace(/[\\`*_{}[\]()<>|]/g, "\\$&");
 const runGit = (args) =>
   execFileSync("git", args, {
     cwd: resolve(import.meta.dirname, ".."),
