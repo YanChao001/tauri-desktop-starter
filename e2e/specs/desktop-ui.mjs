@@ -184,6 +184,9 @@ export function desktopUiChecks() {
       await $("#settings-desktop").scrollIntoView();
       await screenshot("desktop-controls.png");
       await navigate("/bridge");
+      await browser.waitUntil(async () =>
+        /^(应用通信|App communication)$/.test(await $("main h2").getText()),
+      );
       const developerResources = await $("main details > summary");
       assert.match(
         await developerResources.getText(),
