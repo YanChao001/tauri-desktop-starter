@@ -42,6 +42,9 @@ export function spawnOwned(command, args, { cwd, env, logPath } = {}) {
     });
     child.once("close", (code, signal) => {
       state.done = true;
+      log?.write(
+        `\n[${new Date().toISOString()}][e2e] owned-process-exit code=${code ?? "null"} signal=${signal ?? "null"}\n`,
+      );
       done({ code, signal, error: state.error });
     });
   });

@@ -82,7 +82,19 @@ try {
       );
       owned.push(runner);
       const deadline = AbortSignal.timeout(10 * 60 * 1000);
-      await waitOwned(runner, AbortSignal.any([cancellation.signal, deadline]));
+      try {
+        await waitOwned(
+          runner,
+          AbortSignal.any([cancellation.signal, deadline]),
+        );
+      } catch (error) {
+        if (app.child.exitCode !== null || app.child.signalCode !== null)
+          throw new Error(
+            `测试应用提前退出（code=${app.child.exitCode ?? "null"} signal=${app.child.signalCode ?? "null"}）；${error.message}`,
+            { cause: error },
+          );
+        throw error;
+      }
     } finally {
       await stopOwned(runner);
       await stopOwned(app);

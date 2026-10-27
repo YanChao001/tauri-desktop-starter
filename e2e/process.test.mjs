@@ -77,6 +77,20 @@ test("failed process startup is reported and cleanup remains safe", async (t) =>
   assert.equal(owned.state.done, true);
 });
 
+test("an unexpected process exit preserves its code in the owned log", async (t) => {
+  const { root, track } = fixture(t);
+  const logPath = join(root, "exit.log");
+  const owned = track(
+    spawnOwned(process.execPath, ["-e", "process.exitCode = 7"], { logPath }),
+  );
+  await assert.rejects(waitOwned(owned), /受控进程退出（7）/);
+  await stopOwned(owned);
+  assert.match(
+    readFileSync(logPath, "utf8"),
+    /\[e2e\] owned-process-exit code=7 signal=null/,
+  );
+});
+
 test("an unwritable log fails promptly while still stopping the owned process", async (t) => {
   const { root } = fixture(t);
   // 向已有目录写日志会在 Windows / Unix 都失败，子进程本身仍保持运行。
