@@ -278,7 +278,7 @@ jobs:
           printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           "${apt[@]}" update
-          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox
+          "${apt[@]}" install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 openbox gdb
 
       - uses: pnpm/action-setup@v6
 
@@ -311,7 +311,39 @@ jobs:
         if: runner.os == 'Linux'
         env:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-        run: dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --interactive --skip-build'
+        run: |
+          mkdir -p artifacts/e2e/crash
+          sudo sysctl -w "kernel.core_pattern=$GITHUB_WORKSPACE/artifacts/e2e/crash/core.%p"
+          ulimit -c unlimited
+          dbus-run-session -- xvfb-run -a sh -c 'openbox >/tmp/starter-openbox.log 2>&1 & pnpm test:e2e --interactive --skip-build'
+
+      - name: 保存 Linux 应用崩溃的原生线程栈
+        if: failure() && runner.os == 'Linux'
+        run: |
+          if [[ ! -f src-tauri/target/e2e/build.json ]]; then
+            echo "本次测试程序尚未构建，没有可读取的应用崩溃栈。"
+            exit 0
+          fi
+          binary="$(node --input-type=module -e 'import { readE2EBuild } from "./e2e/build.mjs"; process.stdout.write(readE2EBuild());')"
+          shopt -s nullglob
+          found=0
+          for native_log in artifacts/e2e/*/native.log; do
+            pid="$(sed -n 's/.*owned-process-exit .* pid=\([0-9][0-9]*\)$/\1/p' "$native_log" | tail -n 1)"
+            [[ "$pid" =~ ^[0-9]+$ ]] || continue
+            core="artifacts/e2e/crash/core.$pid"
+            [[ -f "$core" ]] || continue
+            found=1
+            backtrace="artifacts/e2e/crash/app-$pid.backtrace.txt"
+            if ! timeout --kill-after=5s 60s gdb --batch --quiet "$binary" "$core" \
+              -ex 'set pagination off' -ex 'info threads' -ex 'thread apply all bt' > "$backtrace" 2>&1; then
+              echo "gdb 未完整结束，已保留可取得的线程栈：$backtrace"
+            fi
+            # 只保留文本栈；core 属于本次隔离应用且可能包含大块进程内存。
+            rm -f -- "$core"
+          done
+          if (( found == 0 )); then
+            echo "没有发现本次主程序的 core dump；保留原有进程退出记录。"
+          fi
 
       - name: 保留 Windows README 原生截图
         if: success() && runner.os == 'Windows'
@@ -330,7 +362,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: desktop-e2e-${{ runner.os }}
-          path: artifacts/e2e
+          path: |
+            artifacts/e2e
+            !artifacts/e2e/crash/core.*
           if-no-files-found: ignore
 
   quality-gate:

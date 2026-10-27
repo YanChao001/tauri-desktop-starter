@@ -226,16 +226,74 @@ export function desktopUiChecks() {
         await screenshot("desktop-code-examples-" + theme + ".png");
       }
     } finally {
-      await patchSettings(original);
-      await settledAppearance({
-        language: original.language,
-        theme: original.theme,
-        background: original.background,
+      const probe = await browser.execute(() => {
+        const events = [];
+        const listener = (event) => {
+          if (events.length < 4)
+            events.push({
+              at: Date.now(),
+              startedAt: event.detail?.startedAt,
+              duration: event.detail?.duration,
+            });
+        };
+        window.addEventListener("starter:theme-reveal", listener);
+        globalThis.__STARTER_E2E_RESTORE_PROBE__ = { events, listener };
+        return {
+          viewTransition: typeof document.startViewTransition === "function",
+          theme: document.documentElement.classList.contains("dark")
+            ? "dark"
+            : "light",
+          motion: document.documentElement.dataset.motion,
+          language: document.documentElement.lang,
+        };
       });
-      await invoke("set_window_size", {
-        width: originalWindow.width,
-        height: originalWindow.height,
+      const mark = (stage, details = {}) =>
+        console.info("Desktop UI restore:", {
+          stage,
+          at: Date.now(),
+          ...details,
+        });
+      mark("save-before", {
+        original: {
+          theme: original.theme,
+          motion: original.motion,
+          language: original.language,
+        },
+        current: probe,
       });
+      try {
+        await patchSettings(original);
+        mark("save-after");
+        mark("settled-before");
+        await settledAppearance({
+          language: original.language,
+          theme: original.theme,
+          background: original.background,
+        });
+        mark("settled-after");
+        mark("theme-reveals-before-resize", {
+          events: await browser.execute(
+            () => globalThis.__STARTER_E2E_RESTORE_PROBE__.events,
+          ),
+        });
+        mark("resize-before");
+        await invoke("set_window_size", {
+          width: originalWindow.width,
+          height: originalWindow.height,
+        });
+        mark("resize-after");
+      } finally {
+        // 仅采集本次临时窗口的主题时点，不在断连时覆盖原始失败。
+        const reveals = await browser
+          .execute(() => {
+            const active = globalThis.__STARTER_E2E_RESTORE_PROBE__;
+            window.removeEventListener("starter:theme-reveal", active.listener);
+            delete globalThis.__STARTER_E2E_RESTORE_PROBE__;
+            return active.events;
+          })
+          .catch(() => undefined);
+        mark("theme-reveals", { events: reveals });
+      }
     }
   });
 

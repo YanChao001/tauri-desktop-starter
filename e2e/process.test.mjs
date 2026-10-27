@@ -89,6 +89,7 @@ test("an unexpected process exit preserves its code in the owned log", async (t)
     readFileSync(logPath, "utf8"),
     /\[e2e\] owned-process-exit code=7 signal=null/,
   );
+  assert.ok(readFileSync(logPath, "utf8").includes(`pid=${owned.child.pid}`));
 });
 
 test("an unwritable log fails promptly while still stopping the owned process", async (t) => {

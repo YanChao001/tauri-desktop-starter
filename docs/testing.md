@@ -297,6 +297,8 @@ pnpm test:e2e --interactive --skip-build
 - 测试通过 W3C execute 调用真实 Tauri IPC，没有浏览器 mock、签名跳过或任意系统目录读写。
 - runner 只管理本次创建的应用 / WDIO 进程；超时、中断或异常后先尝试停止受控子树，再清理本次临时数据。无法确认受控进程退出时保留数据以便排查，不扩大到按产品名终止用户实例。失败截图、原生日志和重启后的窗口截图保留在 `artifacts/e2e/`。
 
+原生日志记录本次测试应用的退出码、信号与 PID。Linux CI 在隔离 runner 中为本次应用收集 core dump，并按构建收据中的确切程序生成 `artifacts/e2e/crash/` 下的原生线程栈；处理后删除对应 core，上传规则也排除所有原始 core，只保留文本栈、日志和截图。崩溃继续导致质量门禁失败，不通过重试或忽略平台代替定位。
+
 `--skip-build` 只检查已有测试二进制的路径与哈希；源码或配置修改后应重新构建。测试 feature、标识符和数据路径保护不可用于正式分发构建。
 
 runner 直接启动内嵌 WebDriver 的测试程序，等待 `/status` 就绪，再让 WDIO 通过动态 localhost 端口连接 W3C WebDriver。没有接入 tauri-service 的自动焦点 / mock 层，不需要额外 Rust mock 插件、生产前端 bootstrap、tauri-driver 或 EdgeDriver；窗口切换由测试显式控制。内嵌驱动支持 Windows、Linux、macOS，平台细节见 [WebdriverIO 内嵌 provider](https://webdriver.io/docs/desktop-testing/tauri/platform-support)。升级驱动和 WDIO 时应同时运行真实主链路，不能只依靠依赖可安装或类型检查通过。
