@@ -3071,6 +3071,8 @@ mod tests {
         let owned = tempfile::tempdir_in(std::env::temp_dir()).unwrap();
         let raw = owned
             .path()
+            .canonicalize()
+            .unwrap()
             .to_string_lossy()
             .trim_start_matches(r"\\?\")
             .to_owned();
@@ -3463,6 +3465,8 @@ mod tests {
         let root = PathBuf::from(
             owned
                 .path()
+                .canonicalize()
+                .unwrap()
                 .to_string_lossy()
                 .trim_start_matches(r"\\?\")
                 .to_owned(),
