@@ -3257,9 +3257,13 @@ mod tests {
                     }
                 })
             };
+            // Replacing validates the package and ABI before entering external cleanup.
+            // This startup barrier does not measure unrelated-plugin concurrency.
             entered_recv
-                .recv_timeout(std::time::Duration::from_secs(2))
-                .unwrap();
+                .recv_timeout(crate::extension_runtime::TIMEOUT)
+                .unwrap_or_else(|error| {
+                    panic!("Cleanup hook for {action} did not start within the execution budget: {error}")
+                });
             let (completed_send, completed_recv) = std::sync::mpsc::channel();
             let unrelated = {
                 let store = store.clone();
