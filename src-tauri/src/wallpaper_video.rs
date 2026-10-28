@@ -45,6 +45,14 @@ fn io_error(error: std::io::Error) -> NativeError {
     NativeError::operation(ErrorCode::StorageIo, "Cannot access wallpaper video", error)
 }
 
+fn optional_io<T>(result: std::io::Result<T>) -> NativeResult<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(io_error(error)),
+    }
+}
+
 fn video_from_filename(name: &str) -> Option<WallpaperVideo> {
     let (id, extension) = name.split_once('.')?;
     let mime = match extension {
@@ -82,27 +90,39 @@ impl WallpaperVideoStore {
         }
     }
 
-    fn open(&self, video: &WallpaperVideo) -> NativeResult<File> {
+    /// 去重探测时尚无副本属于正常情况；权限和其他存储故障仍须报告。
+    fn open_optional(&self, video: &WallpaperVideo) -> NativeResult<Option<File>> {
         if !video.valid() {
             return Err(invalid("Invalid wallpaper video reference"));
         }
         let path = self.root.join(video.filename());
-        let root_metadata = fs::symlink_metadata(&self.root).map_err(io_error)?;
+        let Some(root_metadata) = optional_io(fs::symlink_metadata(&self.root))? else {
+            return Ok(None);
+        };
         if !root_metadata.is_dir() || root_metadata.file_type().is_symlink() {
             return Err(invalid("Invalid wallpaper media directory"));
         }
-        let metadata = fs::symlink_metadata(&path).map_err(io_error)?;
+        let Some(metadata) = optional_io(fs::symlink_metadata(&path))? else {
+            return Ok(None);
+        };
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
             || metadata.len() > MAX_VIDEO_BYTES
         {
             return Err(invalid("Invalid wallpaper video file"));
         }
-        File::open(path).map_err(io_error)
+        optional_io(File::open(path))
+    }
+
+    fn open(&self, video: &WallpaperVideo) -> NativeResult<File> {
+        self.open_optional(video)?.ok_or_else(|| {
+            // 实际播放缺少副本仍是故障，不能当作成功读取。
+            io_error(std::io::Error::from(std::io::ErrorKind::NotFound))
+        })
     }
 
     pub(crate) fn exists(&self, video: &WallpaperVideo) -> bool {
-        self.open(video).is_ok()
+        self.open_optional(video).is_ok_and(|file| file.is_some())
     }
 
     pub(crate) fn with_video<T>(
@@ -203,7 +223,7 @@ impl WallpaperVideoStore {
                 id: format!("{:x}", hash.finalize()),
                 mime,
             };
-            if !self.exists(&video) {
+            if self.open_optional(&video)?.is_none() {
                 return Err(NativeError::new(
                     ErrorCode::InputTooLong,
                     "Wallpaper videos exceed the 512 MiB library budget",
@@ -257,7 +277,7 @@ impl WallpaperVideoStore {
             id: format!("{:x}", hash.finalize()),
             mime,
         };
-        if !self.exists(&video) {
+        if self.open_optional(&video)?.is_none() {
             if total.saturating_add(bytes) > MAX_MEDIA_BYTES {
                 return Err(NativeError::new(
                     ErrorCode::InputTooLong,
@@ -476,6 +496,73 @@ mod tests {
             "http://localhost:1420",
             Some("http://localhost:1420")
         ));
+    }
+    #[test]
+    fn missing_import_targets_are_normal_but_missing_playback_still_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source.mp4");
+        fs::write(&source, mp4()).unwrap();
+        let store = WallpaperVideoStore::new(&directory.path().join("wallpapers.json"));
+        let video = WallpaperVideo {
+            id: format!("{:x}", Sha256::digest(mp4())),
+            mime: WallpaperVideoMime::Mp4,
+        };
+        assert!(store.open_optional(&video).unwrap().is_none());
+        fs::create_dir_all(&store.root).unwrap();
+        assert!(store.open_optional(&video).unwrap().is_none());
+
+        let selected = store.import(&source, || Ok(None)).unwrap();
+        assert_eq!(selected.video, video);
+        let mut opened = store.open_optional(&video).unwrap().unwrap();
+        let mut content = vec![];
+        opened.read_to_end(&mut content).unwrap();
+        assert_eq!(content, mp4());
+        drop(opened);
+
+        let request = Request::builder()
+            .uri(format!(
+                "http://wallpaper-media.localhost/{}",
+                video.filename()
+            ))
+            .header("Range", "bytes=4-11")
+            .body(vec![])
+            .unwrap();
+        let response = store.response(&request).unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(response.body(), &mp4()[4..12]);
+        fs::remove_file(store.root.join(video.filename())).unwrap();
+        assert!(store.open_optional(&video).unwrap().is_none());
+        assert_eq!(
+            store.response(&request).unwrap_err().code,
+            ErrorCode::StorageIo
+        );
+    }
+    #[test]
+    fn invalid_media_entries_are_rejected_instead_of_treated_as_missing() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = WallpaperVideoStore::new(&directory.path().join("wallpapers.json"));
+        let source = directory.path().join("source.mp4");
+        fs::write(&source, mp4()).unwrap();
+        let video = WallpaperVideo {
+            id: format!("{:x}", Sha256::digest(mp4())),
+            mime: WallpaperVideoMime::Mp4,
+        };
+        fs::write(&store.root, b"not a directory").unwrap();
+        assert_eq!(
+            store.open_optional(&video).unwrap_err().code,
+            ErrorCode::InvalidArgument
+        );
+        fs::remove_file(&store.root).unwrap();
+        fs::create_dir_all(store.root.join(video.filename())).unwrap();
+        assert_eq!(
+            store.open_optional(&video).unwrap_err().code,
+            ErrorCode::InvalidArgument
+        );
+        assert_eq!(
+            store.import(&source, || Ok(None)).unwrap_err().code,
+            ErrorCode::InvalidArgument
+        );
+        assert!(store.root.join(video.filename()).is_dir());
     }
     #[test]
     fn imports_deduplicates_and_reopens_only_managed_video_files() {
