@@ -2,11 +2,14 @@
 use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult},
-    extension_resources::{IMAGE_LIMIT, ResourceIdentity, bounded_render_image, gallery_image},
+    extension_resources::{
+        LOCAL_IMAGE_LIMIT, ResourceIdentity, bounded_render_image, gallery_image,
+        render_local_wallpaper,
+    },
     extension_services::ServicePermit,
     storage::{SETTINGS_EVENT, SETTINGS_SCHEMA_VERSION, SettingsStore, future_settings_schema},
     wallpaper_commands::WALLPAPERS_EVENT,
-    wallpapers::{Wallpaper, WallpaperInput, WallpaperStore},
+    wallpapers::{Wallpaper, WallpaperInput, WallpaperStore, WallpaperVideo},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
@@ -135,9 +138,29 @@ fn local_display_name(source: &str) -> String {
 fn legacy(settings: &Value) -> Option<WallpaperInput> {
     let value = settings.get("customBackground")?;
     Some(WallpaperInput {
+        video: value
+            .get("video")
+            .filter(|value| !value.is_null())
+            .and_then(|value| serde_json::from_value(value.clone()).ok()),
         name: value.get("name")?.as_str()?.to_owned(),
         data_url: value.get("dataUrl")?.as_str()?.to_owned(),
     })
+}
+fn matches_background(settings: &Value, entry: &Wallpaper) -> bool {
+    let Some(current) = settings.get("customBackground") else {
+        return false;
+    };
+    match (
+        current.get("video").filter(|value| !value.is_null()),
+        entry.video.as_ref(),
+    ) {
+        (Some(video), Some(expected)) => serde_json::from_value::<WallpaperVideo>(video.clone())
+            .is_ok_and(|video| video == *expected),
+        (None, None) => {
+            current.get("dataUrl").and_then(Value::as_str) == Some(entry.data_url.as_str())
+        }
+        _ => false,
+    }
 }
 struct GallerySnapshot {
     revision: i32,
@@ -150,15 +173,11 @@ fn capture_gallery(
 ) -> NativeResult<GallerySnapshot> {
     let snapshot = settings.snapshot()?;
     let images = library.list(legacy(&snapshot.settings))?;
-    let current = snapshot
-        .settings
-        .pointer("/customBackground/dataUrl")
-        .and_then(Value::as_str);
     let active_id = if snapshot.settings.get("background").and_then(Value::as_str) == Some("custom")
     {
         images
             .iter()
-            .find(|entry| current == Some(entry.data_url.as_str()))
+            .find(|entry| matches_background(&snapshot.settings, entry))
             .map(|entry| entry.id.clone())
     } else {
         None
@@ -229,7 +248,7 @@ fn next_settings(settings: &Value, image: Option<&Wallpaper>, fit: &str) -> Nati
         "customBackground".into(),
         image.map_or(
             Value::Null,
-            |image| json!({"name":image.name,"dataUrl":image.data_url,"fit":fit}),
+            |image| json!({"name":image.name,"dataUrl":image.data_url,"fit":fit,"video":image.video}),
         ),
     );
     Ok(value)
@@ -281,13 +300,10 @@ fn remove_image_from_snapshot(
         .list(legacy(&snapshot.settings))?
         .into_iter()
         .find(|entry| entry.id == id);
-    let next = if entry.as_ref().is_some_and(|entry| {
-        snapshot
-            .settings
-            .pointer("/customBackground/dataUrl")
-            .and_then(Value::as_str)
-            == Some(entry.data_url.as_str())
-    }) {
+    let next = if entry
+        .as_ref()
+        .is_some_and(|entry| matches_background(&snapshot.settings, entry))
+    {
         next_settings(&snapshot.settings, None, "cover")?
     } else {
         snapshot.settings
@@ -311,12 +327,7 @@ fn rename_image(
         .into_iter()
         .find(|entry| entry.id == id)
         .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Wallpaper no longer exists"))?;
-    if snapshot
-        .settings
-        .pointer("/customBackground/dataUrl")
-        .and_then(Value::as_str)
-        != Some(entry.data_url.as_str())
-    {
+    if !matches_background(&snapshot.settings, &entry) {
         return Ok((None, library.rename(id, name).map(|_| ())));
     }
     let mut next = snapshot.settings;
@@ -360,9 +371,11 @@ pub(crate) async fn request(
                 permit.check()?;
                 let data_url = gallery_image(&owner, &identity, &resource_id)?;
                 let (entry, snapshot) = permit.commit(|| {
-                    let entry = app
-                        .state::<WallpaperStore>()
-                        .add(WallpaperInput { name, data_url })?;
+                    let entry = app.state::<WallpaperStore>().add(WallpaperInput {
+                        name,
+                        data_url,
+                        video: None,
+                    })?;
                     Ok((entry, read_gallery(&app)))
                 })?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
@@ -395,19 +408,21 @@ pub(crate) async fn request(
                     return Err(invalid("Select a regular wallpaper image"));
                 }
                 let mut bytes = Vec::new();
-                file.take(IMAGE_LIMIT as u64 + 1)
+                file.take(LOCAL_IMAGE_LIMIT as u64 + 1)
                     .read_to_end(&mut bytes)
                     .map_err(|_| failed("Cannot read selected wallpaper"))?;
-                let data_url = bounded_render_image(&bytes, "", false)?;
+                let data_url = render_local_wallpaper(&bytes)?;
                 let name = local_display_name(
                     path.file_stem()
                         .and_then(|name| name.to_str())
                         .unwrap_or("Imported wallpaper"),
                 );
                 let (entry, snapshot) = permit.commit(|| {
-                    let entry = app
-                        .state::<WallpaperStore>()
-                        .add(WallpaperInput { name, data_url })?;
+                    let entry = app.state::<WallpaperStore>().add(WallpaperInput {
+                        name,
+                        data_url,
+                        video: None,
+                    })?;
                     Ok((entry, read_gallery(&app)))
                 })?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
@@ -430,13 +445,19 @@ pub(crate) async fn request(
         } => {
             blocking::run(move || {
                 let (updated, snapshot) = permit.commit(|| {
-                    let updated = apply_settings(
-                        &app.state::<SettingsStore>(),
-                        &app.state::<WallpaperStore>(),
-                        &id,
-                        expected_revision,
-                        &fit,
-                    )?;
+                    let settings = app.state::<SettingsStore>();
+                    let library = app.state::<WallpaperStore>();
+                    let current = settings.snapshot()?;
+                    let video = library
+                        .list(legacy(&current.settings))?
+                        .into_iter()
+                        .find(|entry| entry.id == id)
+                        .and_then(|entry| entry.video);
+                    let updated = app
+                        .state::<crate::wallpaper_video::WallpaperVideoStore>()
+                        .with_video(video.as_ref(), || {
+                            apply_settings(&settings, &library, &id, expected_revision, &fit)
+                        })?;
                     Ok((updated, read_gallery(&app)))
                 })?;
                 broadcast_settings(&app, &updated);
@@ -570,6 +591,7 @@ mod tests {
         let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "Wallpaper".into(),
                 data_url,
             })
@@ -629,6 +651,7 @@ mod tests {
             .unwrap();
         let saved = library
             .add(WallpaperInput {
+                video: None,
                 name: "保留图片".into(),
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
@@ -671,6 +694,7 @@ mod tests {
             .unwrap();
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "Test wallpaper".into(),
                 data_url: render_image(&png, "image/png", false).unwrap(),
             })
@@ -711,6 +735,7 @@ mod tests {
                     .unwrap();
                 library
                     .add(WallpaperInput {
+                        video: None,
                         name: name.into(),
                         data_url: render_image(&bytes, "image/png", false).unwrap(),
                     })
@@ -769,6 +794,7 @@ mod tests {
             .unwrap();
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "海洋 / 天空".into(),
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
@@ -804,6 +830,81 @@ mod tests {
         assert!(next_settings(&json!({"schemaVersion":99}), None, "cover").is_err());
     }
     #[test]
+    fn same_poster_videos_keep_distinct_active_rename_and_removal_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let mut bytes = Vec::new();
+        image::DynamicImage::new_rgb8(64, 36)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let poster = render_image(&bytes, "image/png", false).unwrap();
+        let entries = [
+            None,
+            Some(WallpaperVideo {
+                id: "a".repeat(64),
+                mime: crate::wallpapers::WallpaperVideoMime::Mp4,
+            }),
+            Some(WallpaperVideo {
+                id: "b".repeat(64),
+                mime: crate::wallpapers::WallpaperVideoMime::Mp4,
+            }),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, video)| {
+            library
+                .add(WallpaperInput {
+                    name: format!("Wallpaper {index}"),
+                    data_url: poster.clone(),
+                    video,
+                })
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+        let active = apply_settings(&settings, &library, &entries[1].id, 0, "contain").unwrap();
+        assert_eq!(
+            capture_gallery(&settings, &library).unwrap().active_id,
+            Some(entries[1].id.clone())
+        );
+        for entry in [&entries[0], &entries[2]] {
+            let (updated, renamed) =
+                rename_image(&settings, &library, &entry.id, "Other wallpaper".into()).unwrap();
+            renamed.unwrap();
+            assert!(updated.is_none());
+            assert_eq!(settings.snapshot().unwrap(), active);
+        }
+        let mut revision = active.revision;
+        for entry in [&entries[0], &entries[2]] {
+            let (updated, removed) =
+                remove_image(&settings, &library, &entry.id, revision).unwrap();
+            removed.unwrap();
+            revision = updated.revision;
+            assert_eq!(updated.settings, active.settings);
+            assert_eq!(
+                capture_gallery(&settings, &library).unwrap().active_id,
+                Some(entries[1].id.clone())
+            );
+        }
+        let (updated, renamed) =
+            rename_image(&settings, &library, &entries[1].id, "Current video".into()).unwrap();
+        renamed.unwrap();
+        let updated = updated.unwrap();
+        assert_eq!(
+            updated.settings["customBackground"]["name"],
+            "Current video"
+        );
+        assert_eq!(
+            updated.settings["customBackground"]["video"],
+            json!(entries[1].video)
+        );
+        let (cleared, removed) =
+            remove_image(&settings, &library, &entries[1].id, updated.revision).unwrap();
+        removed.unwrap();
+        assert_eq!(cleared.settings["background"], "plain");
+        assert_eq!(cleared.settings["customBackground"], Value::Null);
+    }
+    #[test]
     fn stale_inactive_removal_cannot_delete_an_image_applied_after_its_snapshot() {
         let directory = tempfile::tempdir().unwrap();
         let settings =
@@ -817,6 +918,7 @@ mod tests {
             .unwrap();
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "Concurrently selected wallpaper".into(),
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
@@ -870,6 +972,7 @@ mod tests {
             .unwrap();
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "Inactive image".into(),
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
@@ -919,6 +1022,7 @@ mod tests {
             .unwrap();
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "Not yet removed".into(),
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
@@ -984,6 +1088,7 @@ mod tests {
             .unwrap();
         let entry = library
             .add(WallpaperInput {
+                video: None,
                 name: "Kept on I/O failure".into(),
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
@@ -1062,6 +1167,7 @@ mod tests {
         let (saved, snapshot) = permit
             .commit(|| {
                 let saved = library.add(WallpaperInput {
+                    video: None,
                     name: "保留已完成的图库写入".into(),
                     data_url,
                 })?;

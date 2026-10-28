@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src extension-ui: http://extension-ui.localhost https://extension-ui.localhost; media-src 'self' blob:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; connect-src 'self' ipc: http://ipc.localhost https://httpbin.org https://jsonplaceholder.typicode.com wss://echo.websocket.events",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src extension-ui: http://extension-ui.localhost https://extension-ui.localhost; media-src 'self' blob: wallpaper-media: http://wallpaper-media.localhost https://wallpaper-media.localhost; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; connect-src 'self' ipc: http://ipc.localhost https://httpbin.org https://jsonplaceholder.typicode.com wss://echo.websocket.events",
       "devCsp": null
     }
   },

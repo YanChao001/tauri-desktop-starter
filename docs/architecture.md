@@ -42,6 +42,7 @@ flowchart LR
 | `storage.rs` / `database.rs` / `data_commands.rs`                               | 原子设置；SQLite 迁移、事务、版本、草稿及逻辑备份                      |
 | `network.rs` / `demo_http.rs` / `network_commands.rs`                           | 原生 HTTP 连接偏好与请求头规则；有界演示请求及按窗口取消               |
 | `workbench.rs` / `workbench_commands.rs`                                        | 文件授权、条件保存、扫描 / 哈希队列和持久历史                          |
+| `wallpapers.rs` / `wallpaper_commands.rs` / `wallpaper_video.rs`                | 壁纸图库、受控视频副本、容量与播放协议                                 |
 | `desktop.rs` / `window_geometry.rs` / `autostart.rs`                            | 窗口与托盘、逻辑尺寸和位置适配、平台自启动                             |
 | `lifecycle.rs` / `system_commands.rs` / `recovery.rs`                           | 退出协商；工作区、激活、凭据与固定 worker；启动隔离和重启恢复          |
 | `extensions.rs` / `extension_*.rs`                                              | 扩展安装、执行、授权、受控服务、界面、市场与旧数据恢复，分工见扩展指南 |
@@ -119,7 +120,7 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 恢复默认设置同时恢复已打开及已记忆窗口的默认尺寸，并约束到工作区；启动位置恢复 `remember`，保留当前位置及必要的可见性修正。尺寸与偏好依次持久化，各有独立失败边界，失败保留确认与重试；不删除笔记、日志、图库或 WebView 数据，也不修改系统自启动。自定义背景与独立图库的存储关系见下节。
 
-`browserStorageNamespace` 隔离设置键、主题缓存、图库 IndexedDB 与广播通道。初始化改应用标识时默认改用新 identifier，切换不会删除或自动导入旧数据；它区分同源应用数据，不构成脚本安全隔离，见 [项目初始化](./development.md#项目初始化)。
+`browserStorageNamespace` 隔离设置键、主题缓存、图库 / 视频 IndexedDB 与广播通道。初始化改应用标识时默认改用新 identifier，切换不会删除或自动导入旧数据；它区分同源应用数据，不构成脚本安全隔离，见 [项目初始化](./development.md#项目初始化)。
 
 ## 数据存储
 
@@ -130,6 +131,7 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 | 笔记备份                | `appDataDir/backups/`；版本化逻辑 JSON，包含全部笔记、回收站与窗口草稿                                      |
 | 文件与任务              | 外部文件须明确授权；记录、任务历史与报告在 `appDataDir/workbench/`                                          |
 | 壁纸图库                | 桌面 `appDataDir/wallpapers.json` 原子更新；浏览器为独立 IndexedDB；不在笔记备份内，隔离恢复使用临时图库    |
+| 壁纸视频                | 桌面图库同级 `wallpaper-media/` 的受控副本；浏览器为独立 IndexedDB Blob；不在笔记备份或恢复归档内           |
 | 扩展安装与市场信任      | `appDataDir/extensions/` 与 `extension-market/`，不在笔记备份或恢复归档内                                   |
 | 扩展私有数据与 LAN 历史 | `appDataDir/extension-data/`；KV / 凭据别名与 `lan/` 聊天历史及有界附件缓存分别管理，不随会话导出或笔记备份 |
 | 扩展图片资源            | 有界短期内存缓存，与插件身份、窗口和有效期绑定，不持久化或随会话恢复授权                                    |
@@ -138,7 +140,11 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 数据目录由 Tauri 路径 API 决定，不写入 exe 所在目录。扩展各存储、系统凭据及生命周期的边界统一见 [扩展指南](./extensions.md#执行存储与生命周期)，日志见 [排障手册](./troubleshooting.md#先看日志)，测试目录隔离见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。
 
-壁纸图库最多 24 张，每张保存经重编码的 JPEG / WebP data URL，连同前缀最多 96 KiB；以内容 SHA-256 去重，不保存原图路径、远端 URL 或 SVG。设置与插件导入均先在当前尺寸逐级调整编码质量，再按预算缩小图片；浏览器优先使用 WebP，原生插件使用 JPEG，因此相同原图的编码结果不要求一致。图库卡片按显示尺寸和屏幕像素密度生成平滑的临时 PNG 缩略图，不写回图库或当前背景。设置中的 `customBackground` 另存当前选择的自包含副本、名称和填充方式：切换内置皮肤保留选择，取消图片背景或重置偏好清除副本但保留图库，缺少合法图片时回落纯色。首次建立图库可导入旧设置副本，已有图库不重复迁入；未知版本或损坏内容拒绝写入，不清空重建。额度与兼容实现见 [`wallpapers.rs`](../src-tauri/src/wallpapers.rs)、[`wallpaper-library.ts`](../src/lib/wallpaper-library.ts) 和 [`background-image.ts`](../src/lib/background-image.ts)，历史决策见 [ADR 0004](./adr/0004-wallpaper-library.md)。
+壁纸图库最多 24 项，图片及视频封面保存为经重编码的 JPEG / WebP data URL，连同前缀最多 96 KiB；图片以内容 SHA-256 去重，视频身份包含媒体引用，避免相同封面合并不同视频。图库不保存用户原始路径、远端 URL 或 SVG。本机图片输入允许至多 64 MiB、1 亿像素，先检查尺寸再解码，自动调整编码质量和尺寸直至适合存档；浏览器优先使用 WebP，原生插件使用 JPEG，因此相同原图的编码结果不要求一致。远程图片下载和解码仍使用扩展服务自己的额度，不随本机输入放宽。图库卡片按显示尺寸和屏幕像素密度生成平滑的临时 PNG 缩略图，不写回图库或当前背景。
+
+本机 MP4 / WebM 视频独立保存，单个最多 128 MiB，媒体总量最多 512 MiB；原生选择经系统对话框并复制到图库同级 `wallpaper-media/<SHA-256>.<固定后缀>`，浏览器存入独立 IndexedDB Blob。`customBackground` 另存当前选择的封面、名称、填充方式及可选 `video: { id, mime }`，不把视频字节或播放 URL 放入设置。主 / 次窗口经 `wallpaper-media` 专用协议按有界字节范围读取受控文件；浏览器在播放期间创建并释放 object URL。独立插件窗口仅显示视频封面，不请求主 / 次窗口的媒体协议。前端实际解码后提取封面再加入图库，播放失败或视频副本缺失时保留封面，并遵循全局动效活动策略。媒体选择、校验和流式读取的安全边界见[入参校验](./security.md#入参校验)。
+
+切换内置皮肤保留当前选择，取消背景或重置偏好清除设置副本但保留图库；缺少合法封面时回落纯色。首次建立图库可导入旧设置副本，已有图库不重复迁入。设置 schema 5 和图库格式 2 支持视频引用，旧纯图片图库可读取并在后续写入时迁移；未知版本或损坏内容拒绝写入，不清空重建。删除图库条目不立即删除媒体；导入前回收仅处理未被当前设置或图库引用、且超过最近 10 分钟导入保护期的副本，不能把损坏或未来存档当作空引用集。隔离恢复使用临时图库及同级媒体目录，现有笔记备份和启动恢复归档都不携带视频。当前规则见 [`wallpapers.rs`](../src-tauri/src/wallpapers.rs)、[`wallpaper_video.rs`](../src-tauri/src/wallpaper_video.rs)、[`wallpaper-library.ts`](../src/lib/wallpaper-library.ts)、[`video-wallpaper.ts`](../src/lib/video-wallpaper.ts) 和 [`background-image.ts`](../src/lib/background-image.ts)，取舍见 [ADR 0004](./adr/0004-wallpaper-library.md) 与 [ADR 0021](./adr/0021-managed-video-wallpapers.md)。
 
 SQLite 用 `PRAGMA user_version` 标记 schema，迁移在事务中完成，未来版本拒绝修改。查询分页，更新与批量回收 / 恢复 / 永久删除校验 `expectedVersion`，整批冲突回滚；不向前端开放任意 SQL、数据库路径或通用文件权限。笔记草稿按窗口标签持久化，读取完成前暂停编辑与备份写入，保存正式笔记和放弃草稿各有独立动作并参加退出协商。
 

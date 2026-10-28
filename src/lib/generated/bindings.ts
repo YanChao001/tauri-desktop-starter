@@ -284,17 +284,26 @@ export const commands = {
     legacy: {
       name: string;
       dataUrl: string;
+      video?: WallpaperVideo | null;
     } | null,
   ) =>
-    typedError<Wallpaper[], NativeError>(
+    typedError<Wallpaper_Serialize[], NativeError>(
       __TAURI_INVOKE("list_wallpapers", { legacy }),
     ),
-  addWallpaper: (input: WallpaperInput) =>
-    typedError<Wallpaper, NativeError>(
+  chooseWallpaperVideo: () =>
+    typedError<
+      {
+        name: string;
+        video: WallpaperVideo;
+      } | null,
+      NativeError
+    >(__TAURI_INVOKE("choose_wallpaper_video")),
+  addWallpaper: (input: WallpaperInput_Deserialize) =>
+    typedError<Wallpaper_Serialize, NativeError>(
       __TAURI_INVOKE("add_wallpaper", { input }),
     ),
   renameWallpaper: (id: string, name: string) =>
-    typedError<Wallpaper, NativeError>(
+    typedError<Wallpaper_Serialize, NativeError>(
       __TAURI_INVOKE("rename_wallpaper", { id, name }),
     ),
   removeWallpaper: (id: string) =>
@@ -1379,15 +1388,47 @@ export type UpdateStatus = {
   date: string | null;
 };
 
-export type Wallpaper = {
+export type Wallpaper = Wallpaper_Serialize | Wallpaper_Deserialize;
+
+export type WallpaperInput =
+  WallpaperInput_Serialize | WallpaperInput_Deserialize;
+
+export type WallpaperInput_Deserialize = {
+  name: string;
+  dataUrl: string;
+  video?: WallpaperVideo | null;
+};
+
+export type WallpaperInput_Serialize = {
+  name: string;
+  dataUrl: string;
+  video?: WallpaperVideo | null;
+};
+
+export type WallpaperVideo = {
+  id: string;
+  mime: WallpaperVideoMime;
+};
+
+export type WallpaperVideoChoice = {
+  name: string;
+  video: WallpaperVideo;
+};
+
+export type WallpaperVideoMime = "video/mp4" | "video/webm";
+
+export type Wallpaper_Deserialize = {
   id: string;
   name: string;
   dataUrl: string;
+  video?: WallpaperVideo | null;
 };
 
-export type WallpaperInput = {
+export type Wallpaper_Serialize = {
+  id: string;
   name: string;
   dataUrl: string;
+  video?: WallpaperVideo | null;
 };
 
 export type WindowGeometry = {

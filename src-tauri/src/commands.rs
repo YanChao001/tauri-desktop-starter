@@ -75,9 +75,18 @@ pub async fn save_settings_snapshot(
         NativeError::operation(ErrorCode::InvalidArgument, "Settings JSON is invalid", e)
     })?;
     blocking::run(move || {
+        let video = settings
+            .pointer("/customBackground/video")
+            .filter(|value| !value.is_null())
+            .and_then(|value| {
+                serde_json::from_value::<crate::wallpapers::WallpaperVideo>(value.clone()).ok()
+            });
         let snapshot = app
-            .state::<SettingsStore>()
-            .save(settings, expected_revision)?;
+            .state::<crate::wallpaper_video::WallpaperVideoStore>()
+            .with_video(video.as_ref(), || {
+                app.state::<SettingsStore>()
+                    .save(settings, expected_revision)
+            })?;
         if let Err(error) = desktop::refresh_tray(&app) {
             log::warn!("{error}");
         }

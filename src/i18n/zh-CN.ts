@@ -177,17 +177,26 @@ export const zhCN = {
   "settings.customImageHint":
     "可多选导入、切换、重命名和删除；图片仅在本机保存。",
   "settings.importBackground": "添加壁纸",
+  "settings.importVideoBackground": "添加视频",
+  "settings.videoWallpaper": "动态壁纸",
+  "settings.videoTypeError": "请选择 MP4 或 WebM 视频。",
+  "settings.videoSizeError": "视频过大，请选择不超过 128MB 的视频。",
+  "settings.videoDecodeError":
+    "无法播放这个视频，请换一个 MP4 或 WebM 视频重试。",
+  "settings.videoStorageError": "视频未能保存或读取，请检查可用空间后重试。",
+  "settings.videoPlaybackError":
+    "动态壁纸无法播放，已显示封面。可重新导入视频或更换壁纸。",
   "settings.replaceBackground": "更换图片",
   "settings.removeBackground": "移除背景图片",
   "settings.backgroundFit": "图片显示方式",
   "settings.backgroundCover": "填满窗口",
   "settings.backgroundContain": "完整显示",
   "settings.imageFormats":
-    "支持 PNG、JPEG、WebP，原图最大 10MB；会自动优化大小。",
+    "支持 PNG、JPEG、WebP，大图会自动优化。视频支持 MP4、WebM。",
   "settings.imageProcessing": "正在保存壁纸…",
   "settings.imageTypeError": "请选择 PNG、JPEG 或 WebP 图片。",
   "settings.imageSizeError":
-    "图片过大，请选择不超过 10MB、4000 万像素的图片，或先缩小后重试。",
+    "图片超出处理范围，请选择不超过 64MB、一亿像素的图片。",
   "settings.imageDecodeError":
     "无法读取这张图片，请确认文件有效，或换一张重试。",
   "settings.bgStarlight": "星星手帐",

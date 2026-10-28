@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
-pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 4;
+pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 5;
 const MAX_SETTINGS_SIZE: usize = 128 * 1024;
 pub(crate) const MAX_SETTINGS_FILE_SIZE: usize = MAX_SETTINGS_SIZE + 1024;
 const MAX_BACKGROUND_DATA_LENGTH: usize = 96 * 1024;
@@ -172,6 +172,13 @@ pub(crate) fn validate_custom_background(value: &Value) -> NativeResult<()> {
         )
     };
     let image = value.as_object().ok_or_else(invalid)?;
+    if let Some(video) = image.get("video").filter(|value| !value.is_null()) {
+        let video: crate::wallpapers::WallpaperVideo =
+            serde_json::from_value(video.clone()).map_err(|_| invalid())?;
+        if !video.valid() {
+            return Err(invalid());
+        }
+    }
     let name = image
         .get("name")
         .and_then(Value::as_str)
@@ -383,6 +390,72 @@ impl SettingsStore {
             .map_err(|_| NativeError::new(ErrorCode::Internal, "Settings lock is unavailable"))
     }
 
+    /// 清理媒体前核对持久存档；曾被隔离的损坏副本可能仍持有唯一引用。
+    pub(crate) fn wallpaper_media_cleanup_settings(&self) -> NativeResult<Value> {
+        let snapshot = self.snapshot()?;
+        if future_settings_schema(&snapshot.settings) {
+            return Err(NativeError::new(
+                ErrorCode::StorageCorrupt,
+                "Future settings prevent media cleanup",
+            ));
+        }
+        if let Some(parent) = self.path.parent() {
+            for entry in fs::read_dir(parent).map_err(|error| {
+                NativeError::operation(
+                    ErrorCode::StorageIo,
+                    "Cannot inspect settings directory",
+                    error,
+                )
+            })? {
+                let entry = entry.map_err(|error| {
+                    NativeError::operation(
+                        ErrorCode::StorageIo,
+                        "Cannot inspect settings directory",
+                        error,
+                    )
+                })?;
+                if entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("settings-corrupt-")
+                {
+                    return Err(NativeError::new(
+                        ErrorCode::StorageCorrupt,
+                        "Preserved settings prevent media cleanup",
+                    ));
+                }
+            }
+        }
+        match read_settings_file(&self.path) {
+            Ok(bytes) => {
+                let saved: SettingsSnapshot = serde_json::from_slice(&bytes).map_err(|_| {
+                    NativeError::new(
+                        ErrorCode::StorageCorrupt,
+                        "Invalid settings prevent media cleanup",
+                    )
+                })?;
+                validate_settings(&saved.settings)?;
+                if future_settings_schema(&saved.settings) {
+                    return Err(NativeError::new(
+                        ErrorCode::StorageCorrupt,
+                        "Future settings prevent media cleanup",
+                    ));
+                }
+                Ok(saved.settings)
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound && snapshot.revision == 0 =>
+            {
+                Ok(snapshot.settings)
+            }
+            Err(error) => Err(NativeError::operation(
+                ErrorCode::StorageIo,
+                "Cannot read settings for media cleanup",
+                error,
+            )),
+        }
+    }
+
     pub fn save(&self, settings: Value, expected_revision: i32) -> NativeResult<SettingsSnapshot> {
         self.save_and(settings, expected_revision, || ())
             .map(|(snapshot, ())| snapshot)
@@ -509,9 +582,15 @@ mod tests {
     #[test]
     fn fractional_future_schema_versions_keep_the_future_version_guard() {
         assert!(!future_settings_schema(&json!({"schemaVersion": 3})));
-        assert!(!future_settings_schema(&json!({"schemaVersion": 4})));
-        assert!(future_settings_schema(&json!({"schemaVersion": 4.5})));
-        assert!(future_settings_schema(&json!({"schemaVersion": 5})));
+        assert!(!future_settings_schema(
+            &json!({"schemaVersion": SETTINGS_SCHEMA_VERSION})
+        ));
+        assert!(future_settings_schema(
+            &json!({"schemaVersion": f64::from(SETTINGS_SCHEMA_VERSION) + 0.5})
+        ));
+        assert!(future_settings_schema(
+            &json!({"schemaVersion": SETTINGS_SCHEMA_VERSION + 1})
+        ));
     }
 
     #[test]
@@ -666,8 +745,7 @@ mod tests {
 
     #[test]
     fn future_image_formats_remain_intact_for_frontend_future_version_protection() {
-        let settings =
-            json!({"schemaVersion": 5, "customBackground": {"futureImage": "new-format"}});
+        let settings = json!({"schemaVersion": SETTINGS_SCHEMA_VERSION + 1, "customBackground": {"futureImage": "new-format"}});
         assert!(validate_settings(&settings).is_ok());
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("settings.json");

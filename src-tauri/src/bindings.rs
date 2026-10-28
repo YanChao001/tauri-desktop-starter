@@ -44,6 +44,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             crate::network_commands::request_demo_http,
             crate::network_commands::cancel_demo_http,
             wallpaper_commands::list_wallpapers,
+            wallpaper_commands::choose_wallpaper_video,
             wallpaper_commands::add_wallpaper,
             wallpaper_commands::rename_wallpaper,
             wallpaper_commands::remove_wallpaper,

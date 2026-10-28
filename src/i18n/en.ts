@@ -187,17 +187,27 @@ export const en = {
   "settings.customImageHint":
     "Add several images, switch, rename or delete. Your collection stays on this device.",
   "settings.importBackground": "Add wallpapers",
+  "settings.importVideoBackground": "Add video",
+  "settings.videoWallpaper": "Video wallpaper",
+  "settings.videoTypeError": "Choose an MP4 or WebM video.",
+  "settings.videoSizeError": "The video is too large. Choose one under 128MB.",
+  "settings.videoDecodeError":
+    "This video cannot be played. Try another MP4 or WebM video.",
+  "settings.videoStorageError":
+    "The video could not be saved or read. Check available storage and try again.",
+  "settings.videoPlaybackError":
+    "The video wallpaper cannot play, so its cover is shown. Import the video again or choose another wallpaper.",
   "settings.replaceBackground": "Replace image",
   "settings.removeBackground": "Remove background image",
   "settings.backgroundFit": "Image fit",
   "settings.backgroundCover": "Fill window",
   "settings.backgroundContain": "Show full image",
   "settings.imageFormats":
-    "PNG, JPEG or WebP, up to 10MB. Images are automatically optimized.",
+    "PNG, JPEG and WebP. Large images are automatically optimized. Videos support MP4 and WebM.",
   "settings.imageProcessing": "Saving wallpapers…",
   "settings.imageTypeError": "Choose a PNG, JPEG or WebP image.",
   "settings.imageSizeError":
-    "The image is too large. Choose one under 10MB and 40 million pixels, or resize it and try again.",
+    "The image exceeds processing limits. Choose one under 64MB and 100 million pixels.",
   "settings.imageDecodeError":
     "This image could not be read. Check the file or try another image.",
   "settings.bgStarlightDescription":

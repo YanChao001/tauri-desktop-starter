@@ -28,6 +28,8 @@
 
 dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 由 Rust 服务调用；前端没有通用文件、任意 Shell、SQL 或 updater 插件接口。HTTP 演示同样改由类型化 Rust 命令处理，仅允许主 / 次窗口访问既有两个演示 HTTPS 域名，禁止重定向、凭据及传输控制头，保留请求、响应与超时预算和按窗口取消；不再授予前端 HTTP 插件权限，以免绕过宿主直连设置。窗口状态由 Rust 插件管理。注册插件不等于开放其全部前端权限，Rust 直接调用插件时仍由自定义服务负责安全边界。
 
+视频壁纸选择和媒体协议只接受主 / 次窗口。原生命令自行打开系统文件对话框，不接受前端提供的任意文件路径；`wallpaper-media` 仅定位应用管理的内容副本，不赋予扩展 iframe、独立插件窗口或远程页面读取权限。
+
 权限变更必须说明用途和窗口范围，避免 `core:all`、通配符和无关授权，删除不再使用的能力。展示外部内容的窗口不应继承可信宿主的权限。配置变化与验证结果放在同一 PR。
 
 宿主网络设置仅选择后续原生 HTTP 的直连 / 系统代理传输，不新增授权或扩大来源、方法、TLS、更新签名和 DNS 校验范围。扩展使用代理仍需独立授权，缺省继承、旧显式模式及环回规则见 [来源与授权](./extensions.md#来源与授权)。该设置不改变浏览器 fetch、WebView WSS、系统浏览器外链或 LAN 的连接方式。
@@ -56,7 +58,7 @@ dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 
 - `style-src 'unsafe-inline'` 用于 Radix 浮层定位，脚本仍只允许本地来源。
 - `connect-src` 保留 `ipc:` 与 `http://ipc.localhost` 供 IPC 使用；宿主网络仅开放配置中的演示 HTTPS / WSS 来源。浏览器同源策略、桌面 CSP 与原生 HTTP 命令的来源校验各自生效，不能互代。
 - `devCsp: null` 回退生产 `csp`，适用于 Tauri 提供的本地应用资源；Windows 地址可能为 `http://tauri.localhost`。`app:dev` 从 Vite 加载，开发能运行不能证明正式包 CSP 正确；改用本地 `dist` 或接入新开发资源时重新验证，不预先放开 HMR 端口。
-- 本地图片使用同源资源、`data:` / `blob:`，媒体仅本地和 `blob:`；未启用的 asset 协议不列入来源。只为用户选取的附件构造固定 MIME，并释放不用的 object URL。Markdown 不执行原始 HTML，媒体 Markdown 禁止远端图片和危险协议。
+- 本地图片使用同源资源、`data:` / `blob:`；`media-src` 仅允许同源、`blob:` 及视频壁纸专用 `wallpaper-media:`、`http://wallpaper-media.localhost`、`https://wallpaper-media.localhost`。未启用的通用 asset 协议不列入来源。只为用户选取的附件 / 视频构造固定 MIME，并释放不用的 object URL。Markdown 不执行原始 HTML，媒体 Markdown 禁止远端图片和危险协议。
 - `object-src`、`base-uri`、`form-action` 和 `frame-ancestors` 均为 `'none'`；宿主不接受对象嵌入、基础 URL 改写、表单导航或被外部页面嵌入。
 - 扩展专用 frame 来源不授予远程页面 Tauri API；自定义界面的独立 CSP 按上节维护。
 
@@ -67,7 +69,8 @@ dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 
 前端及外部存档均不可信。生成绑定提供编译期类型，Rust 提交边界仍须校验类型、大小、层级、标识、数值范围与当前身份；按 [实际风险](./conventions/code-style.md#约束与复杂度) 选规则，不给展示名称、JSON 成员键或语义相同的配置排版增加无关白名单。
 
 - 自有数据使用固定目录和受控 ID，外部文件由原生选择、拖入或关联授权，后续 IPC 接收资源 ID。不要开放任意绝对路径、数据库路径、SQL 或整个临时目录。
-- 设置使用 revision CAS；背景只接受本机重绘的有界栅格 data URL，Rust 复核名称、格式、文件头与体积，拒绝路径、远端 URL 和 SVG。图库路径由服务决定，配额与存档规则见 [数据存储](./architecture.md#数据存储)。笔记校验长度 / ID / 版本并使用参数化查询。
+- 设置使用 revision CAS；背景图片和视频封面只接受本机重绘的有界栅格 data URL，Rust 复核名称、格式、文件头与体积，拒绝路径、远端 URL 和 SVG。可选视频引用严格限定为 SHA-256 内容 ID 与 MP4 / WebM MIME，不接受路径或播放 URL。图库路径由服务决定，配额与存档规则见 [数据存储](./architecture.md#数据存储)。笔记校验长度 / ID / 版本并使用参数化查询。
+- 视频导入校验普通文件、容量、媒体头及固定 MIME，复制到受控目录后由前端实际解码并生成封面；后缀或头部通过不等于当前 WebView 可以播放。媒体协议复核调用窗口、ID、后缀及文件归属，处理 Range 并限制单次读取量，不能把长视频完整装入一次 IPC 或设置快照。清理只针对应用副本，保留当前设置、图库和近期导入引用；未来 / 损坏存档或引用读取失败时拒绝清理，不删除原始文件或用户数据来恢复导入。实现见 [`wallpaper_video.rs`](../src-tauri/src/wallpaper_video.rs)。
 - 文件访问规范化根与目标，按路径组件校验归属，并处理链接、特殊文件、大小及检查后被替换的竞态。阻塞 I/O 移入既有 blocking 服务，字符串前缀检查不能建立文件边界。
 - [`workbench.rs`](../src-tauri/src/workbench.rs) 保存授权规范路径，重开核对未重定向，遍历不跟随链接；文本限 UTF-8、图片查文件头，JSON / 应用专属文档保存前校验。同目录临时写入和磁盘 revision 检查保留外部冲突。最后检查与替换仍有竞态窗口，不能抵御同账户恶意并发进程。
 - 任务保留执行 / 排队、深度、文件数与哈希大小限额；页面卸载或停止等待不代表 worker 已停止。深链 / 文件关联只处理 [品牌配置](../app.config.json) 的 scheme、后缀和路由；初始化按 [派生流程](./development.md#项目初始化) 同步，不占用通用协议或后缀。

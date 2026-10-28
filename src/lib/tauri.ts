@@ -32,6 +32,8 @@ import type {
   WindowGeometry,
   Wallpaper,
   WallpaperInput,
+  WallpaperVideo,
+  WallpaperVideoChoice,
 } from "./generated/bindings";
 
 export type {
@@ -80,6 +82,9 @@ export type {
   WindowGeometry,
   Wallpaper,
   WallpaperInput,
+  WallpaperVideo,
+  WallpaperVideoChoice,
+  WallpaperVideoMime,
 } from "./generated/bindings";
 
 export function extensionSnapshot(): Promise<ExtensionSnapshot> {
@@ -368,6 +373,29 @@ export function listWallpapers(
 }
 export function addWallpaper(input: WallpaperInput): Promise<Wallpaper> {
   return callNative((commands) => commands.addWallpaper(input));
+}
+export function chooseWallpaperVideo(): Promise<WallpaperVideoChoice | null> {
+  return callNative((commands) => commands.chooseWallpaperVideo());
+}
+export async function wallpaperVideoUrl(
+  video: WallpaperVideo,
+): Promise<string> {
+  requireDesktop();
+  if (
+    !/^[a-f0-9]{64}$/.test(video.id) ||
+    !["video/mp4", "video/webm"].includes(video.mime)
+  ) {
+    throw new NativeBridgeError({
+      code: "INVALID_ARGUMENT",
+      message: "Invalid wallpaper video reference",
+      retryable: false,
+    });
+  }
+  const { convertFileSrc } = await import("@tauri-apps/api/core");
+  return convertFileSrc(
+    `${video.id}.${video.mime === "video/mp4" ? "mp4" : "webm"}`,
+    "wallpaper-media",
+  );
 }
 export function renameWallpaper(id: string, name: string): Promise<Wallpaper> {
   return callNative((commands) => commands.renameWallpaper(id, name));

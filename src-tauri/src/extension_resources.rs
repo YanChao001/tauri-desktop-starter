@@ -21,7 +21,9 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 pub(crate) const IMAGE_LIMIT: usize = 16 * 1024 * 1024;
+pub(crate) const LOCAL_IMAGE_LIMIT: usize = 64 * 1024 * 1024;
 const MAX_PIXELS: u64 = 16_000_000;
+const MAX_LOCAL_PIXELS: u64 = 100_000_000;
 const RESOURCE_TTL: Duration = Duration::from_secs(10 * 60);
 const OWNER_COUNT_LIMIT: usize = 8;
 const OWNER_BYTES_LIMIT: usize = 32 * 1024 * 1024;
@@ -260,16 +262,27 @@ fn image_capacity() -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
 }
 
 pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::DynamicImage> {
+    decode_with_limits(bytes, mime, false)
+}
+
+fn decode_with_limits(bytes: &[u8], mime: &str, local: bool) -> NativeResult<image::DynamicImage> {
     if bytes.is_empty() {
         return Err(NativeError::new(
             ErrorCode::ExtensionImageInvalid,
             "图片内容为空",
         ));
     }
-    if bytes.len() > IMAGE_LIMIT {
+    let byte_limit = if local {
+        LOCAL_IMAGE_LIMIT
+    } else {
+        IMAGE_LIMIT
+    };
+    let pixel_limit = if local { MAX_LOCAL_PIXELS } else { MAX_PIXELS };
+    let edge_limit = if local { 32_768 } else { 8192 };
+    if bytes.len() > byte_limit {
         return Err(NativeError::new(
             ErrorCode::ExtensionImageTooLarge,
-            "图片不超过 16 MiB",
+            "图片文件超过可处理的大小",
         ));
     }
     let format = image::guess_format(bytes).map_err(|_| image_decode_error("图片内容无效"))?;
@@ -283,9 +296,9 @@ pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::Dyna
         return Err(image_decode_error("图片 MIME 与实际内容不一致"));
     }
     let mut limits = image::Limits::default();
-    limits.max_image_width = Some(8192);
-    limits.max_image_height = Some(8192);
-    limits.max_alloc = Some(128 * 1024 * 1024);
+    limits.max_image_width = Some(edge_limit);
+    limits.max_image_height = Some(edge_limit);
+    limits.max_alloc = Some(if local { 512 } else { 128 } * 1024 * 1024);
     let mut metadata_reader = ImageReader::with_format(Cursor::new(bytes), format);
     metadata_reader.limits(limits.clone());
     let (width, height) = metadata_reader
@@ -293,13 +306,13 @@ pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::Dyna
         .map_err(|error| image_reader_error(error, "无法读取图片尺寸"))?;
     if width == 0
         || height == 0
-        || width > 8192
-        || height > 8192
-        || u64::from(width) * u64::from(height) > MAX_PIXELS
+        || width > edge_limit
+        || height > edge_limit
+        || u64::from(width) * u64::from(height) > pixel_limit
     {
         return Err(NativeError::new(
             ErrorCode::ExtensionImageTooLarge,
-            "图片每边最多 8192 像素，总计最多 1600 万像素",
+            "图片尺寸超过可处理的范围",
         ));
     }
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
@@ -327,15 +340,19 @@ fn image_reader_error(error: image::ImageError, message: &str) -> NativeError {
 /// 调用方已经持有处理名额时使用；本机文件和图库应调用有界入口。
 pub(crate) fn render_image(bytes: &[u8], mime: &str, thumbnail: bool) -> NativeResult<String> {
     let decoded = decode_image(bytes, mime)?;
+    render_decoded(&decoded, thumbnail)
+}
+
+fn render_decoded(decoded: &image::DynamicImage, thumbnail: bool) -> NativeResult<String> {
     let qualities = if thumbnail {
         &[85, 76, 65][..]
     } else {
         &[82, 64, 46][..]
     };
     for edge in if thumbnail {
-        &[320, 240, 160][..]
+        &[320, 240, 160, 96, 64][..]
     } else {
-        &[1600, 1200, 800, 480][..]
+        &[1600, 1200, 900, 675, 506, 379, 284, 213, 159, 119, 89, 64][..]
     } {
         // 使用平滑重采样，先调编码质量再缩小尺寸，避免复杂壁纸过早丢失细节。
         let resized = decoded
@@ -376,6 +393,13 @@ pub(crate) fn bounded_render_image(
     thumbnail: bool,
 ) -> NativeResult<String> {
     render_with_capacity(bytes, mime, thumbnail, image_workers())
+}
+
+/// 用户主动选择的本机大图先查尺寸再解码，与网络图片共用处理名额但使用独立输入额度。
+pub(crate) fn render_local_wallpaper(bytes: &[u8]) -> NativeResult<String> {
+    let _capacity = image_capacity()?;
+    let decoded = decode_with_limits(bytes, "", true)?;
+    render_decoded(&decoded, false)
 }
 
 fn metadata(resource: &Resource) -> Value {
@@ -912,6 +936,27 @@ mod tests {
         ] {
             assert_eq!(decode_image(&bytes, mime).unwrap_err().code, code);
         }
+    }
+
+    #[test]
+    fn local_large_photos_are_optimized_without_raising_network_limits() {
+        let bytes = png(4001, 4000);
+        assert_eq!(
+            decode_image(&bytes, "image/png").unwrap_err().code,
+            ErrorCode::ExtensionImageTooLarge
+        );
+        let decoded = decode_with_limits(&bytes, "image/png", true).unwrap();
+        let rendered = render_decoded(&decoded, false).unwrap();
+        assert!(rendered.len() <= 96 * 1024);
+        let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let optimized = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert!(optimized.width() <= 1600 && optimized.height() <= 1600);
+        assert_eq!(
+            decode_with_limits(&png(32_769, 1), "image/png", true)
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionImageTooLarge
+        );
     }
 
     #[test]
