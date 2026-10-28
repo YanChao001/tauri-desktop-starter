@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/providers/i18n";
+import { nativeErrorText } from "@/lib/native-error";
 import {
   isTauri,
   onLifecycleRequest,
@@ -56,7 +57,8 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
   const [executing, setExecuting] = useState(false);
   const [listening, setListening] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const errorText = error === null ? null : nativeErrorText(error, t);
   const errorToastId = useId();
   const notifiedError = useRef<string | null>(null);
   const register = useCallback((work: UnsavedWork) => {
@@ -77,10 +79,16 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
     [register, unregister],
   );
   useEffect(() => {
+    let stopped = false;
     if (isTauri() && listening)
       void setWindowWorkState(
         [...items.current.values()].filter((v) => v.dirty).map((v) => v.label),
-      ).catch((reason: unknown) => setError(String(reason)));
+      ).catch((reason: unknown) => {
+        if (!stopped) setError(reason);
+      });
+    return () => {
+      stopped = true;
+    };
   }, [revision, listening]);
   useEffect(() => {
     let stopped = false;
@@ -136,7 +144,7 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch((reason: unknown) => {
-        if (!stopped) setError(String(reason));
+        if (!stopped) setError(reason);
       });
     const warn = (event: BeforeUnloadEvent) => {
       if ([...items.current.values()].some((v) => v.dirty)) {
@@ -169,7 +177,7 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
             setBusy(false);
           }
         } catch (reason) {
-          if (requestId.current === id) setError(String(reason));
+          if (requestId.current === id) setError(reason);
         }
         return;
       }
@@ -190,7 +198,7 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
         if (requestId.current === id) setWaiting(true);
       } catch (reason) {
         if (!controller.signal.aborted && requestId.current === id)
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError(reason);
       } finally {
         if (operation.current === controller) {
           operation.current = null;
@@ -205,20 +213,20 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
       request &&
       !busy &&
       !waiting &&
-      !error &&
+      error === null &&
       ![...items.current.values()].some((work) => work.dirty)
     )
       void answer("save");
   }, [request, revision, busy, waiting, error, answer]);
   useEffect(() => {
-    if (!error || request) {
+    if (!errorText || request) {
       notifiedError.current = null;
       toast.dismiss(errorToastId);
       return;
     }
-    if (notifiedError.current === error) return;
-    notifiedError.current = error;
-    toast.error(error, {
+    if (notifiedError.current === errorText) return;
+    notifiedError.current = errorText;
+    toast.error(errorText, {
       id: errorToastId,
       duration: Infinity,
       action: {
@@ -230,7 +238,7 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
         },
       },
     });
-  }, [error, request, errorToastId, t]);
+  }, [errorText, request, errorToastId, t]);
   useEffect(
     () => () => {
       toast.dismiss(errorToastId);
@@ -280,12 +288,12 @@ export function UnsavedWorkProvider({ children }: { children: ReactNode }) {
           </ul>
           <div
             className="h-16 overflow-y-auto text-sm"
-            tabIndex={error ? 0 : undefined}
+            tabIndex={errorText ? 0 : undefined}
             data-lifecycle-status
           >
-            {error ? (
+            {errorText ? (
               <p role="alert" className="text-destructive">
-                {error}
+                {errorText}
               </p>
             ) : busy || waiting || executing ? (
               <p role="status">
