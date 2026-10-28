@@ -23,9 +23,6 @@
         max-width: 260px;
         overflow-wrap: anywhere;
       }
-      thead {
-        background: var(--muted);
-      }
       .error {
         color: var(--destructive);
         font-size: 0.85em;
@@ -154,7 +151,6 @@
         white-space: normal;
         text-align: left;
         color: var(--foreground);
-        background: var(--card);
         border: 1px solid var(--border);
         border-radius: var(--studio-radius);
         transition:
@@ -170,12 +166,12 @@
         --nav-tone: var(--art-rose);
       }
       .studio-nav > button:hover {
-        background: color-mix(in oklab, var(--nav-tone) 4%, var(--card));
+        background: var(--surface-state-hover);
         border-color: color-mix(in oklab, var(--nav-tone) 45%, var(--border));
         transform: translateY(-2px);
       }
       .studio-nav > button[aria-selected="true"] {
-        background: color-mix(in oklab, var(--nav-tone) 9%, var(--card));
+        background: var(--surface-state-selected);
         border-color: color-mix(in oklab, var(--nav-tone) 60%, var(--border));
         box-shadow: inset 0 -2px 0
           color-mix(in oklab, var(--nav-tone) 60%, transparent);
@@ -188,7 +184,7 @@
         height: 2rem;
         border: 1px solid
           color-mix(in oklab, var(--nav-tone) 20%, var(--border));
-        background: color-mix(in oklab, var(--nav-tone) 7%, var(--background));
+        background: var(--surface-state-selected);
         border-radius: calc(var(--radius, 0.625rem) + 0.125rem);
         color: var(--nav-tone);
       }
@@ -468,7 +464,6 @@
         white-space: normal;
         text-align: left;
         color: var(--foreground);
-        background: var(--card);
         border: 1px solid
           color-mix(in oklab, var(--node-tone) 28%, var(--border));
         border-radius: calc(var(--radius, 0.625rem) + 0.25rem);
@@ -489,7 +484,7 @@
         --node-tone: var(--art-orange);
       }
       .canvas-node:hover {
-        background: color-mix(in oklab, var(--node-tone) 5%, var(--card));
+        background: var(--surface-state-hover);
         border-color: var(--node-tone);
         box-shadow: 0 8px 20px -10px
           color-mix(in oklab, var(--node-tone) 30%, transparent);
@@ -501,7 +496,7 @@
           0 0 0 3px color-mix(in oklab, var(--node-tone) 11%, transparent),
           0 8px 20px -12px
             color-mix(in oklab, var(--node-tone) 25%, transparent);
-        background: color-mix(in oklab, var(--node-tone) 5%, var(--card));
+        background: var(--surface-state-selected);
       }
       .node-icon {
         flex-shrink: 0;
@@ -511,11 +506,7 @@
         height: 1.6rem;
         color: var(--node-tone);
         border-radius: calc(var(--radius, 0.625rem) * 0.65);
-        background: color-mix(
-          in oklab,
-          var(--node-tone) 10%,
-          var(--background)
-        );
+        background: var(--surface-state-selected);
       }
       .node-icon svg {
         width: 0.9rem;
@@ -640,7 +631,6 @@
         padding: 0.65rem 0.75rem;
         border: 1px solid var(--border);
         border-radius: var(--radius, 0.625rem);
-        background: var(--background);
       }
       .stat strong {
         display: block;
@@ -787,7 +777,6 @@
         border: 0;
         border-radius: 0;
         padding: 0.15rem 0.75rem 0.15rem 0;
-        background: none;
       }
       .data-summary .stat + .stat {
         border-left: 1px solid var(--border);
@@ -822,13 +811,12 @@
         font-size: 0.6875rem;
         font-weight: 500;
         color: var(--muted-foreground);
-        background: var(--card);
       }
       .data-table-wrapper tbody tr:last-child td {
         border-bottom: 0;
       }
       .data-table-wrapper tbody tr:hover {
-        background: color-mix(in oklab, var(--primary) 3%, var(--card));
+        background: var(--surface-state-hover);
       }
       .data-table-wrapper td {
         font-variant-numeric: tabular-nums;
@@ -853,7 +841,6 @@
         padding: 0.8rem 1rem;
         border: 1px solid var(--studio-line);
         border-radius: calc(var(--radius, 0.625rem) + 0.25rem);
-        background: var(--card);
         transition:
           border-color 180ms,
           background 180ms,
@@ -865,7 +852,7 @@
       }
       .pipeline-node[data-state="running"] {
         border-color: var(--art-violet);
-        background: color-mix(in oklab, var(--art-violet) 5%, var(--card));
+        background: var(--surface-state-selected);
         box-shadow: 0 0 0 3px
           color-mix(in oklab, var(--art-violet) 8%, transparent);
       }
@@ -879,7 +866,7 @@
           color-mix(in oklab, var(--step-tone) 24%, var(--border));
         border-radius: 50%;
         color: var(--foreground);
-        background: color-mix(in oklab, var(--step-tone) 6%, var(--background));
+        background: var(--surface-state-selected);
         font:
           0.75rem/1 ui-monospace,
           monospace;
@@ -1234,6 +1221,7 @@
         id="studio-nav"
       >
         <button
+          data-surface="control"
           type="button"
           role="tab"
           id="studio-tab-canvas"
@@ -1248,6 +1236,7 @@
           ><span class="nav-index">01</span>
         </button>
         <button
+          data-surface="control"
           type="button"
           role="tab"
           id="studio-tab-lens"
@@ -1263,6 +1252,7 @@
           ><span class="nav-index">02</span>
         </button>
         <button
+          data-surface="control"
           type="button"
           role="tab"
           id="studio-tab-flow"
@@ -1322,6 +1312,7 @@
           </div>
           <div class="canvas-grid">
             <div
+              data-surface="artwork"
               class="node-stage"
               id="node-stage"
               role="group"
@@ -1376,11 +1367,11 @@
               ></button>
               <div class="inspector-summary">
                 <div class="mini-stats">
-                  <div class="stat">
+                  <div class="stat" data-surface="control">
                     <strong id="node-count">0</strong
                     ><span data-zh="节点" data-en="nodes"></span>
                   </div>
-                  <div class="stat">
+                  <div class="stat" data-surface="control">
                     <strong id="edge-count">0</strong
                     ><span data-zh="连接" data-en="links"></span>
                   </div>
@@ -1456,21 +1447,21 @@
             </div>
           </div>
           <div class="data-summary">
-            <div class="stat">
+            <div class="stat" data-surface="transparent">
               <span data-zh="当前记录" data-en="Visible rows"></span
               ><strong id="lens-count">0</strong>
             </div>
-            <div class="stat">
+            <div class="stat" data-surface="transparent">
               <span data-zh="数值总和" data-en="Total value"></span
               ><strong id="lens-total">0</strong>
             </div>
-            <div class="stat">
+            <div class="stat" data-surface="transparent">
               <span data-zh="平均值" data-en="Average"></span
               ><strong id="lens-average">0</strong>
             </div>
           </div>
           <div class="lens-grid">
-            <div class="chart-stage">
+            <div data-surface="artwork" class="chart-stage">
               <div class="chart-toolbar">
                 <strong
                   data-zh="数值分布"
@@ -1634,8 +1625,12 @@
             </div>
           </div>
           <div class="flow-grid">
-            <div class="pipeline-stage" id="pipeline-stage">
-              <div class="pipeline-node" data-step="0">
+            <div
+              data-surface="artwork"
+              class="pipeline-stage"
+              id="pipeline-stage"
+            >
+              <div class="pipeline-node" data-surface="control" data-step="0">
                 <span class="step-number">01</span>
                 <div class="step-copy">
                   <strong data-zh="读取数据" data-en="Read source"></strong>
@@ -1647,7 +1642,7 @@
                 <span class="step-state"></span>
               </div>
               <div class="pipeline-connector" aria-hidden="true"><i></i></div>
-              <div class="pipeline-node" data-step="1">
+              <div class="pipeline-node" data-surface="control" data-step="1">
                 <span class="step-number">02</span>
                 <div class="step-copy">
                   <strong data-zh="过滤数值" data-en="Filter values"></strong>
@@ -1656,7 +1651,7 @@
                 <span class="step-state"></span>
               </div>
               <div class="pipeline-connector" aria-hidden="true"><i></i></div>
-              <div class="pipeline-node" data-step="2">
+              <div class="pipeline-node" data-surface="control" data-step="2">
                 <span class="step-number">03</span>
                 <div class="step-copy">
                   <strong
@@ -1668,7 +1663,7 @@
                 <span class="step-state"></span>
               </div>
               <div class="pipeline-connector" aria-hidden="true"><i></i></div>
-              <div class="pipeline-node" data-step="3">
+              <div class="pipeline-node" data-surface="control" data-step="3">
                 <span class="step-number">04</span>
                 <div class="step-copy">
                   <strong
@@ -2339,6 +2334,7 @@
             const button = create("button");
             button.type = "button";
             button.className = "canvas-node";
+            button.dataset.surface = "control";
             button.dataset.node = node.id;
             button.dataset.tone = node.tone;
             const icon = create(
@@ -2353,6 +2349,7 @@
             title.className = "node-title";
             detail.className = "node-detail";
             port.className = "node-port";
+            port.dataset.surface = "artwork";
             button.append(icon, title, detail, port);
             button.style.left = node.x + "%";
             button.style.top = node.y + "%";
@@ -2612,9 +2609,11 @@
           node.append(caption);
           columns.forEach((label) => {
             const cell = create("th", label);
+            cell.dataset.surface = "reading";
             cell.scope = "col";
             header.append(cell);
           });
+          head.dataset.surface = "transparent";
           head.append(header);
           rows.forEach((row) => {
             const line = create("tr");
