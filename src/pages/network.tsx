@@ -410,7 +410,7 @@ function NetworkLab() {
                 2,
               )}
               language="json"
-              className="max-h-72 rounded-md bg-muted p-3"
+              className="max-h-72 rounded-md p-3"
             />
           </section>
         </CardContent>

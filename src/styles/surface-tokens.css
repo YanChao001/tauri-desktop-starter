@@ -1,0 +1,257 @@
+/* 材质配置的唯一入口：宿主与插件共用此文件，不在业务页面另定透明比例。 */
+:root {
+  --skin-exposure: 0.5;
+  --ui-page-reveal-at-half: 0.25;
+  --ui-page-reveal-at-full: 0.32;
+  --ui-panel-opacity-at-half: 30%;
+  --ui-panel-opacity-at-full: 24%;
+  --ui-control-opacity-at-half: 30%;
+  --ui-control-opacity-at-full: 35%;
+  --ui-popup-opacity-at-half: 30%;
+  --ui-popup-opacity-at-full: 70%;
+  --ui-dialog-opacity-at-half: 50%;
+  --ui-dialog-opacity-at-full: 78%;
+  --ui-reading-opacity-at-half: 55%;
+  --ui-reading-opacity-at-full: 85%;
+  --ui-control-blur: 18px;
+  --ui-popup-blur: 28px;
+  --ui-reading-blur: 20px;
+
+  /* 高档继续增加实际透色，同时为裸正文和导航保留阅读保护。 */
+  --ui-page-reveal-slope: calc(
+    2 * (var(--ui-page-reveal-at-full) - var(--ui-page-reveal-at-half))
+  );
+  --ui-page-reveal-offset: calc(
+    2 * var(--ui-page-reveal-at-half) - var(--ui-page-reveal-at-full)
+  );
+  --skin-overlay-opacity: max(
+    calc(100% * (1 - var(--skin-exposure))),
+    calc(
+      100% * (1 - var(--ui-page-reveal-slope)) - 100% *
+        var(--ui-page-reveal-offset) / max(var(--skin-exposure), 0.25)
+    )
+  );
+  --skin-chrome-opacity: var(--skin-overlay-opacity);
+  --skin-sidebar-opacity: var(--skin-overlay-opacity);
+  --skin-card-opacity: max(
+    calc(
+      100% - 2 * (100% - var(--ui-panel-opacity-at-half)) * var(--skin-exposure)
+    ),
+    calc(
+      2 * var(--ui-panel-opacity-at-half) - var(--ui-panel-opacity-at-full) +
+        2 *
+        (var(--ui-panel-opacity-at-full) - var(--ui-panel-opacity-at-half)) *
+        var(--skin-exposure)
+    )
+  );
+  --surface-card: color-mix(
+    in oklab,
+    var(--card) var(--skin-card-opacity),
+    transparent
+  );
+  --surface-card-muted: color-mix(
+    in oklab,
+    var(--muted) var(--skin-card-opacity),
+    transparent
+  );
+
+  /* 无背景模糊能力时使用实体阅读底色，不能只降低 alpha。 */
+  --surface-control-opacity: 100%;
+  --surface-popup-opacity: 100%;
+  --surface-dialog-opacity: 100%;
+  --surface-reading-opacity: 100%;
+  --surface-control-blur: 0px;
+  --surface-popup-blur: 0px;
+  --surface-reading-blur: 0px;
+  --glass-muted-foreground: var(--muted-foreground);
+  --surface-link-foreground: var(--primary);
+  --surface-control-border: color-mix(
+    in oklab,
+    var(--foreground) 65%,
+    var(--input)
+  );
+  --surface-border: color-mix(in oklab, var(--foreground) 30%, var(--border));
+  --control-background: color-mix(
+    in oklab,
+    var(--popover) var(--surface-control-opacity),
+    transparent
+  );
+  --surface-popover: color-mix(
+    in oklab,
+    var(--popover) var(--surface-popup-opacity),
+    transparent
+  );
+  --surface-dialog: color-mix(
+    in oklab,
+    var(--popover) var(--surface-dialog-opacity),
+    transparent
+  );
+  --surface-reading: color-mix(
+    in oklab,
+    var(--muted) var(--surface-reading-opacity),
+    transparent
+  );
+  --surface-state-hover: color-mix(
+    in oklab,
+    var(--foreground) 8%,
+    var(--control-background)
+  );
+  --surface-state-selected: color-mix(
+    in oklab,
+    var(--primary) 18%,
+    var(--control-background)
+  );
+  --surface-selected-foreground: var(--foreground);
+  --control-disabled-color: color-mix(
+    in oklab,
+    var(--input) 50%,
+    var(--background)
+  );
+  --control-disabled-background: color-mix(
+    in oklab,
+    var(--control-disabled-color) var(--surface-control-opacity),
+    transparent
+  );
+  --control-select-hover-background: var(--surface-state-hover);
+
+  /* 阅读材质中的语法色也参与同一主题快照，避免插件另抄一份调色板。 */
+  --code-property: #4338ca;
+  --code-string: #065f46;
+  --code-number: #92400e;
+  --code-boolean: #6d28d9;
+  --code-null: #9f1239;
+  --code-punctuation: var(--glass-muted-foreground);
+  --code-keyword: var(--code-boolean);
+  --code-lifetime: var(--code-boolean);
+  --code-type: var(--code-number);
+  --code-macro: var(--code-number);
+  --code-function: var(--code-property);
+  --code-comment: var(--glass-muted-foreground);
+  --code-operator: var(--code-null);
+}
+.dark {
+  --control-disabled-color: color-mix(
+    in oklab,
+    var(--input) 80%,
+    var(--background)
+  );
+  --code-property: #a5b4fc;
+  --code-string: #6ee7b7;
+  --code-number: #fcd34d;
+  --code-boolean: #c4b5fd;
+  --code-null: #fda4af;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  :root {
+    --surface-control-opacity: max(
+      calc(
+        100% - 2 * (100% - var(--ui-control-opacity-at-half)) *
+          var(--skin-exposure)
+      ),
+      calc(
+        2 * var(--ui-control-opacity-at-half) -
+          var(--ui-control-opacity-at-full) + 2 *
+          (
+            var(--ui-control-opacity-at-full) -
+              var(--ui-control-opacity-at-half)
+          ) *
+          var(--skin-exposure)
+      )
+    );
+    --surface-popup-opacity: max(
+      calc(
+        100% - 2 * (100% - var(--ui-popup-opacity-at-half)) *
+          var(--skin-exposure)
+      ),
+      calc(
+        2 * var(--ui-popup-opacity-at-half) - var(--ui-popup-opacity-at-full) +
+          2 *
+          (var(--ui-popup-opacity-at-full) - var(--ui-popup-opacity-at-half)) *
+          var(--skin-exposure)
+      )
+    );
+    --surface-dialog-opacity: max(
+      calc(
+        100% - 2 * (100% - var(--ui-dialog-opacity-at-half)) *
+          var(--skin-exposure)
+      ),
+      calc(
+        2 * var(--ui-dialog-opacity-at-half) -
+          var(--ui-dialog-opacity-at-full) + 2 *
+          (
+            var(--ui-dialog-opacity-at-full) - var(--ui-dialog-opacity-at-half)
+          ) *
+          var(--skin-exposure)
+      )
+    );
+    --surface-reading-opacity: max(
+      calc(
+        100% - 2 * (100% - var(--ui-reading-opacity-at-half)) *
+          var(--skin-exposure)
+      ),
+      calc(
+        2 * var(--ui-reading-opacity-at-half) -
+          var(--ui-reading-opacity-at-full) + 2 *
+          (
+            var(--ui-reading-opacity-at-full) -
+              var(--ui-reading-opacity-at-half)
+          ) *
+          var(--skin-exposure)
+      )
+    );
+    --surface-control-blur: calc(var(--ui-control-blur) * var(--skin-exposure));
+    --surface-popup-blur: calc(var(--ui-popup-blur) * var(--skin-exposure));
+    --surface-reading-blur: calc(var(--ui-reading-blur) * var(--skin-exposure));
+    --glass-muted-foreground: color-mix(
+      in oklab,
+      var(--foreground) 80%,
+      var(--muted-foreground)
+    );
+    --surface-link-foreground: color-mix(
+      in oklab,
+      var(--foreground) 75%,
+      var(--primary)
+    );
+  }
+}
+
+html[data-background="plain"],
+html[data-background-intensity="0"] {
+  --skin-overlay-opacity: 100%;
+  --skin-card-opacity: 100%;
+  --surface-control-opacity: 100%;
+  --surface-popup-opacity: 100%;
+  --surface-dialog-opacity: 100%;
+  --surface-reading-opacity: 100%;
+  --surface-control-blur: 0px;
+  --surface-popup-blur: 0px;
+  --surface-reading-blur: 0px;
+  --glass-muted-foreground: var(--muted-foreground);
+  --surface-link-foreground: var(--primary);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  :root {
+    --skin-overlay-opacity: 100%;
+    --skin-card-opacity: 100%;
+  }
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  :root {
+    --skin-overlay-opacity: 100%;
+    --skin-card-opacity: 100%;
+    --surface-control-opacity: 100%;
+    --surface-popup-opacity: 100%;
+    --surface-dialog-opacity: 100%;
+    --surface-reading-opacity: 100%;
+    --surface-control-blur: 0px;
+    --surface-popup-blur: 0px;
+    --surface-reading-blur: 0px;
+    --glass-muted-foreground: var(--muted-foreground);
+    --surface-link-foreground: var(--foreground);
+  }
+}

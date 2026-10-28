@@ -608,7 +608,8 @@ export default function Database() {
       ) : mutationError && inlineConflict ? (
         <div
           role="alert"
-          className="rounded-lg border border-destructive/40 bg-background p-3 text-sm"
+          data-surface="solid"
+          className="rounded-lg border border-destructive/40 p-3 text-sm"
         >
           {nativeErrorText(mutationError, t)}
         </div>
@@ -821,12 +822,14 @@ export default function Database() {
                             }
                           />
                           <button
+                            data-surface="transparent"
+                            data-variant="ghost"
                             type="button"
                             disabled={pending}
                             aria-pressed={draft.id === note.id}
                             onClick={() => editNote(note)}
                             className={cn(
-                              "min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted",
+                              "min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-(--surface-state-hover)",
                               draft.id === note.id && "bg-primary/10",
                             )}
                           >

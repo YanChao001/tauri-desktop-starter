@@ -291,10 +291,16 @@ export function ResourceLibrary({ active }: { active: boolean }) {
                   data-palette={resource.palette}
                 >
                   <button
+                    data-surface="transparent"
+                    data-variant="ghost"
                     className="resource-open"
                     onClick={() => setSelected(resource)}
                   >
-                    <div className="resource-art" aria-hidden="true">
+                    <div
+                      data-surface="artwork"
+                      className="resource-art"
+                      aria-hidden="true"
+                    >
                       <span className="resource-art-ring" />
                       <span className="resource-art-gem" />
                       <span className="resource-art-initials">
@@ -337,6 +343,8 @@ export function ResourceLibrary({ active }: { active: boolean }) {
                     <TableRow key={resource.id}>
                       <TableCell>
                         <button
+                          data-surface="transparent"
+                          data-variant="ghost"
                           className="resource-table-name"
                           onClick={() => setSelected(resource)}
                         >
@@ -441,6 +449,7 @@ export function ResourceLibrary({ active }: { active: boolean }) {
                 </DialogDescription>
               </DialogHeader>
               <div
+                data-surface="artwork"
                 className="resource-detail-art"
                 data-palette={selected.palette}
                 aria-hidden="true"

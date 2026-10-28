@@ -134,7 +134,8 @@ export function ResourceError({
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-background p-3 text-sm"
+      data-surface="solid"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3 text-sm"
     >
       <span className="flex items-center gap-2">
         <AlertCircleIcon className="size-4 shrink-0 text-destructive" />

@@ -256,6 +256,7 @@ export function AppSidebar({
           <TooltipTrigger asChild>
             <button
               type="button"
+              data-surface="control"
               className="app-sidebar-command flex w-full items-center gap-2.5 overflow-hidden rounded-lg px-3"
               aria-label={`${t("navContext.commands")} ${formatShortcut({ key: "k", primary: true })}`}
               aria-keyshortcuts={isMacOS() ? "Meta+K" : "Control+K"}

@@ -346,14 +346,15 @@ export default function Settings() {
                 return (
                   <button
                     key={item.value}
+                    data-surface="control"
                     type="button"
                     aria-pressed={active}
                     onClick={() => setTheme(item.value)}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-lg border px-3 py-3 text-xs transition-colors",
                       active
-                        ? "border-primary bg-primary/5 font-medium"
-                        : "text-muted-foreground hover:bg-muted/50",
+                        ? "border-primary bg-(--surface-state-selected) font-medium"
+                        : "text-muted-foreground hover:bg-(--surface-state-hover)",
                     )}
                   >
                     <item.icon className="size-4" />
@@ -375,6 +376,7 @@ export default function Settings() {
                 const active = settings.accent === accent;
                 return (
                   <button
+                    data-surface="artwork"
                     key={accent}
                     type="button"
                     aria-label={t(`settings.color.${accent}`)}
@@ -604,6 +606,7 @@ export default function Settings() {
               const control = (
                 <button
                   key={preset.id}
+                  data-surface="control"
                   data-window-preset={preset.id}
                   type="button"
                   aria-pressed={active}
@@ -618,8 +621,8 @@ export default function Settings() {
                   className={cn(
                     "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                     active
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-muted/50",
+                      ? "border-primary bg-(--surface-state-selected)"
+                      : "hover:bg-(--surface-state-hover)",
                     unavailable && "pointer-events-none h-full w-full",
                   )}
                 >
@@ -810,7 +813,7 @@ export default function Settings() {
                 <ExternalLink
                   key={link.url}
                   href={link.url}
-                  className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-(--surface-state-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span>{link.label}</span>{" "}
                   <span className="flex min-w-0 items-center gap-1.5 break-all font-mono text-xs text-muted-foreground">

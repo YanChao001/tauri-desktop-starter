@@ -10,6 +10,7 @@ import * as native from "@/lib/tauri";
 import { THEME_REVEAL_EVENT } from "@/hooks/use-theme-switch";
 import { ExtensionCustomUi } from "./extension-custom-ui";
 import { ExtensionActivityProvider } from "./extension-activity";
+import { UI_STYLES } from "@/lib/ui-theme";
 
 const environment = vi.hoisted(() => ({
   language: "en" as "en" | "zh",
@@ -48,7 +49,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   document.documentElement.classList.remove("dark");
-  document.documentElement.style.removeProperty("font-size");
+  document.documentElement.removeAttribute("style");
+  document.documentElement.removeAttribute("data-background-intensity");
   document.documentElement.removeAttribute("data-font-size");
   environment.language = "en";
   environment.inputWide = true;
@@ -541,7 +543,23 @@ it("updates environment and drafts without rereading the palette or reloading th
     "--surface-control-blur": "9px",
     "--surface-popup-blur": "14px",
     "--glass-muted-foreground": "oklch(0.948 0 0)",
+    "--future-widget-surface": "rgba(24, 24, 24, 0.65)",
   };
+  // 真实浏览器从计算样式枚举这些变量，测试不再依赖手写同步名单。
+  for (const [name, value] of Object.entries(glassTokens))
+    document.documentElement.style.setProperty(name, value);
+  document.documentElement.style.setProperty(
+    "--control-input-font-size",
+    "0.875rem",
+  );
+  document.documentElement.style.setProperty(
+    "--control-input-line-height",
+    "1.25rem",
+  );
+  document.documentElement.style.setProperty(
+    "--tw-internal-fixture",
+    "private",
+  );
   const readProperty = CSSStyleDeclaration.prototype.getPropertyValue;
   vi.spyOn(
     CSSStyleDeclaration.prototype,
@@ -610,7 +628,11 @@ it("updates environment and drafts without rereading the palette or reloading th
           value: {
             locale: string;
             fields: Record<string, string>;
-            theme: { mode: string; tokens: Record<string, string> };
+            theme: {
+              mode: string;
+              tokens: Record<string, string>;
+              styles: string;
+            };
             grantedPermissions: string[];
           };
         } =>
@@ -634,6 +656,15 @@ it("updates environment and drafts without rereading the palette or reloading th
   expect(native.openExtensionUi).toHaveBeenCalledOnce();
   expect(state().theme.tokens["--control-input-font-size"]).toBe("0.875rem");
   expect(state().theme.tokens).toMatchObject(glassTokens);
+  expect(state().theme.tokens).not.toHaveProperty("--tw-internal-fixture");
+  expect(state().theme.styles).toBe(UI_STYLES);
+  glassTokens["--control-background"] = "rgba(24, 24, 24, 0.35)";
+  document.documentElement.setAttribute("data-background-intensity", "100");
+  await waitFor(() =>
+    expect(state().theme.tokens["--control-background"]).toBe(
+      glassTokens["--control-background"],
+    ),
+  );
   const priorResize = paletteReads();
   await act(async () => {
     window.dispatchEvent(new Event("resize"));

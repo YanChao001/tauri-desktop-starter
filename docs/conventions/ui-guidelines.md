@@ -32,7 +32,7 @@
 
 背景在 `lib/backgrounds.ts` 注册，由 `window-background.tsx` 装配、`skin-artwork.tsx` 加载 [皮肤 SVG](../../resources/skins/README.md)。新增时同步映射、风格标识与中英文文案，画廊从注册表生成；展示名称与持久化 ID 分离，旧 ID 保持兼容。纯色模式隐藏装饰并禁用强度控制。本机图片导入保留部分成功项并列出失败文件，晚到结果不覆盖用户新选择，取消背景不删除收藏。存储预算与兼容边界见 [数据存储](../architecture.md#数据存储)，历史取舍见 [ADR 0004](../adr/0004-wallpaper-library.md)。
 
-背景透明度使用 0%–100% 的 11 档滑条，每档 10%，默认 50%。0% 隐藏皮肤并恢复实体表面，100% 完整显示壁纸并让标题栏、侧栏、主体遮罩和普通卡片底色透明。图片与线稿直接跟随滑条，主体保留线性阅读遮罩；普通卡片和磨砂控件按实际叠层补偿中间档位，减少重复盖色，默认档保留正文阅读底色。滑条支持拖动、方向键和 Home / End，显示当前百分比和等距刻度，端点标为“不透明 / 透明”，不额外显示默认值提示。图片原色、控件与弹层的磨砂阅读遮罩、独立设计的插件内容背景继续由各自规则绘制；高对比度模式优先实体表面。
+背景透明度使用 0%–100% 的 11 档滑条，每档 10%，默认 50%。0% 隐藏皮肤并恢复实体表面，100% 使壁纸本身完整显现，同时为裸正文、导航和控件保留必要阅读保护，不要求所有前景底色归零。图片与线稿直接跟随滑条，主体与控件补偿叠层后的实际透色，避免中间档重复盖色。材质参数和曲线只在 [surface-tokens.css](../../src/styles/surface-tokens.css) 维护；纯色、高对比度和缺少模糊能力时使用实体降级。滑条支持拖动、方向键和 Home / End，显示当前百分比和等距刻度，端点标为“不透明 / 透明”，不额外显示默认值提示。
 
 窗口尺寸归原生几何状态，不重复存为主题或布局偏好。预设来自应用配置，标明逻辑像素宽高，选择后立即应用并记忆；工作区不足时适配并提示，其他无效预设禁用并说明原因。界面显示实际尺寸，手动拖动无需匹配预设；失败保留状态与重试入口。浏览器禁用原生尺寸操作，不模拟成功。
 
@@ -61,18 +61,20 @@
 
 ## 颜色：只用语义 token
 
-| Token                                            | 用在哪                                 |
-| ------------------------------------------------ | -------------------------------------- |
-| `bg-background` / `text-foreground`              | 页面底色与主文字                       |
-| `Card` / `.app-surface` / `text-card-foreground` | 随皮肤强度变化的普通卡片与手写面板     |
-| `--surface-card-muted`                           | 随皮肤强度变化的次级面板与卡片页脚     |
-| `bg-card`                                        | 需要实体底色的表头、绘图内容等局部表面 |
-| `bg-muted` / `text-muted-foreground`             | 次级区块（代码块、只读区）、次要文字   |
-| `bg-primary` / `text-primary-foreground`         | 主按钮、强调元素                       |
-| `bg-destructive`                                 | 删除、不可逆操作                       |
-| `text-destructive-foreground`                    | 实心警示背景上的文字或图标             |
-| `border` / `border-sidebar-border`               | 分隔线                                 |
-| `bg-sidebar` / `text-sidebar-foreground`         | 侧边栏                                 |
+| Token                                            | 用在哪                               |
+| ------------------------------------------------ | ------------------------------------ |
+| `bg-background` / `text-foreground`              | 页面底色与主文字                     |
+| `Card` / `.app-surface` / `text-card-foreground` | 随皮肤强度变化的普通卡片与手写面板   |
+| `--surface-card-muted`                           | 随皮肤强度变化的次级面板与卡片页脚   |
+| `--surface-reading`                              | 代码、日志、诊断与吸顶表头的阅读材质 |
+| `--control-background`                           | 输入、次级按钮与一般状态的控件材质   |
+| `--surface-state-hover` / `selected`             | 普通交互的悬停与选中底色             |
+| `text-muted-foreground`                          | 次要文字，材质中消费受保护的前景色   |
+| `bg-primary` / `text-primary-foreground`         | 主按钮、强调元素                     |
+| `bg-destructive`                                 | 删除、不可逆操作                     |
+| `text-destructive-foreground`                    | 实心警示背景上的文字或图标           |
+| `border` / `border-sidebar-border`               | 分隔线                               |
+| `bg-sidebar` / `text-sidebar-foreground`         | 侧边栏                               |
 
 **禁止**：
 
@@ -87,11 +89,23 @@
 
 主体阅读遮罩独立绘制在 `.window-reading-surface`，不放在滚动主体的背景或子树中，避免控件的背景模糊再次合成祖先底色。遮罩和主体共用 `--app-content-inset`，窄屏、全屏与侧栏调宽沿用同一几何规则。
 
-普通内容容器统一消费 `--surface-card`（`Card` 默认样式或 `.app-surface`）；次级容器使用 `--surface-card-muted`，两者共用皮肤强度曲线。不要在页面里另写固定透明比例，也不要用后代选择器覆盖所有 `bg-card`，以免透明的吸顶表头露出滚动正文。同一外层面板内的分组可保持无底色，避免重复叠层。
+默认绘制规则集中在 [control-styles.css](../../src/styles/control-styles.css)，宿主与插件消费同一原文。React / Radix 入口通过 `data-slot`、语义角色和稳定的 `ui-*` 类适配；普通 HTML 元素同样有默认规则。调用者的布局 utility 和插件作者未分层 CSS 保留定制优先级，不把整份应用 CSS 注入插件，也不复制宿主组件实例。
 
-输入框、多行编辑、搜索和下拉触发器使用 `--control-background` 与局部背景模糊，不依赖它们位于页面还是 Portal 弹层；禁用底色共用 `--control-disabled-background`，同时保留禁用淡化。运行中暂时锁定的扩展字段保留原底色与文字强度，避免内容闪变。下拉悬停复用 `--control-select-hover-background`。菜单、选择列表、搜索结果浮层与 toast 使用 `--surface-popover`，对话框和命令面板使用 `--surface-dialog`；业务手写控件与浮层分别复用 `.app-control-surface`、`.app-overlay-surface`，不再用局部实体底色覆盖共享控件。
+| `data-surface` | 用途                                          | 绘制规则                                              |
+| -------------- | --------------------------------------------- | ----------------------------------------------------- |
+| `transparent`  | 布局、同一阅读面板内部的分组、嵌套代码        | 无底色或模糊，文字由上层阅读面保护                    |
+| `panel`        | 普通含文卡片、手写业务面板                    | `--surface-card`，保留最低阅读底色，不加整块模糊      |
+| `control`      | 输入、次级按钮、kbd、一般输出 / 会话状态      | `--control-background` 与局部模糊                     |
+| `popover`      | 菜单、选择列表、搜索结果、通知                | 覆盖阅读材质与局部模糊；对话框使用专用 dialog token   |
+| `reading`      | 长代码、日志、诊断、复杂输出、吸顶表头        | 更强的 `--surface-reading` 与语法色，防止滚动正文叠字 |
+| `solid`        | 关键错误、恢复失败、平台原生选项              | 稳定实体底色，使用配对的前景色                        |
+| `artwork`      | 图片、视频、Canvas / SVG 内容、作品或品牌场景 | 内容专用配色；外部工具栏和说明仍消费上述材质          |
 
-磨砂按已经淡化的窗口背景补偿自身遮罩，卡片在中档同时减轻底色，避免页面、卡片与控件重复盖色。50% 档位下，输入和菜单自身底色约 30%，对话框约 50%；100% 档位下分别保留 65% 和 75% 的阅读遮罩，最终透出的壁纸仍随滑条增加。输入底色沿用 `--popover`，避免深色主题的近黑底色再次压暗；占位文字与浮层弱说明共用 `--glass-muted-foreground`，同时检查明暗主题的极端背景。背景模糊由 0 增至输入 18px、弹层 28px，保证文字、焦点、禁用与选中态可辨。纯色、0% 透明度、高对比度及不支持背景模糊的环境恢复实体底色；不对应用外壳或大面积祖先添加模糊。Tooltip、代码 / 日志阅读区、关键错误、吸顶表头和绘图内容保持实体；次要按钮、标签、开关、复选框及选中 / 悬停色继续按各自状态绘制。图片、图表、画布对象和独立设计的插件背景不强制套用容器透明度。扩展接入规则与跨文档模糊边界见 [SDK 主题与样式](../../sdk/README.md#默认外观与动效)。
+共享 `Card` 与 `.app-surface` 对应 panel，`.app-control-surface`、`.app-overlay-surface`、`.app-reading-surface` 分别对应 control、popover、reading。手写容器优先声明用途，不另写固定透明比例，不使用后代选择器把所有 `bg-card` 改透明。已处于 reading 的嵌套 `CodeBlock` 可显式 `data-surface="transparent"`，避免重复叠层。主按钮、危险按钮、checked 标记、开关 / 进度轨道与 slider thumb 保留可辨识的实体语义状态，不为小图元逐一增加模糊。
+
+placeholder 与弱说明消费 `--glass-muted-foreground`，链接消费可读前景色；hover / selected 复用共享状态规则。选中态同时使用边框、勾选或其他结构标记，不能仅依赖透明比例差。短暂锁定的扩展字段保留原底色和文字强度，避免内容闪变。增加控件或 slot 时须接入共同规则，或明确标注继承 / 内容专用角色；[样式门禁](../../scripts/ui-style-policy.test.mjs) 由 `pnpm test:scripts` 收集，防止新增控件只改宿主。
+
+高透明度下须同时检查深浅主题、纯黑 / 纯白壁纸、正文、placeholder、选中态和语法色的最终合成结果，不能仅比较 CSS alpha。不要给应用外壳或大面积祖先添加模糊；iframe 不能跨文档模糊宿主壁纸。插件的自动同步、作者覆盖和 Shadow DOM 边界见 [SDK 主题与样式](../../sdk/README.md#默认外观与动效)，取舍见 [ADR 0022](../adr/0022-shared-control-materials.md)。
 
 图表、主题插画的调色板和无法覆盖的第三方组件可以有专用颜色；将它们集中在对应 token 或绘制规则中，并在 PR 说明。主题插画需同时检查明暗主题与强调色，业务页面继续使用语义 token。
 

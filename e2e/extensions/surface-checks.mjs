@@ -63,6 +63,19 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
           return context.getImageData(0, 0, 1, 1).data[3];
         });
       });
+    const configuredAlpha = (intensity) =>
+      page.locator("html").evaluate((node, intensity) => {
+        if (intensity === 0) return 255;
+        const property =
+          intensity === 50
+            ? "--ui-panel-opacity-at-half"
+            : "--ui-panel-opacity-at-full";
+        return (
+          (255 *
+            parseFloat(getComputedStyle(node).getPropertyValue(property))) /
+          100
+        );
+      }, intensity);
     if (inheritsSkin) {
       expect(await frame.locator(surfaceSelector).count()).toBeGreaterThan(0);
       for (const intensity of [0, 50, 100]) {
@@ -71,10 +84,7 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
             window.__extensionSettingsTest.update({ backgroundIntensity }),
           intensity,
         );
-        const exposure = intensity / 100;
-        const alpha = Math.round(
-          255 * Math.max(1 - 1.4 * exposure, 0.6 - 0.6 * exposure),
-        );
+        const alpha = await configuredAlpha(intensity);
         await expect
           .poll(async () =>
             (await surfaceAlpha()).every(
@@ -87,9 +97,12 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
       await page.evaluate(() =>
         window.__extensionSettingsTest.update({ backgroundIntensity: 50 }),
       );
+      const halfAlpha = await configuredAlpha(50);
       await expect
         .poll(async () =>
-          (await surfaceAlpha()).every((value) => Math.abs(value - 76.5) <= 1),
+          (await surfaceAlpha()).every(
+            (value) => Math.abs(value - halfAlpha) <= 1,
+          ),
         )
         .toBe(true);
     }

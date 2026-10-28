@@ -44,7 +44,11 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
   }, [replay]);
   return (
     <>
-      <div className="lab-stage lab-layout-stage" ref={stageRef}>
+      <div
+        data-surface="artwork"
+        className="lab-stage lab-layout-stage"
+        ref={stageRef}
+      >
         <StageGuides label={t("lab.layout")} />
         <LayoutGroup id={group}>
           <div
@@ -54,6 +58,8 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
           >
             {CARDS.map((card, index) => (
               <button
+                data-surface="transparent"
+                data-variant="ghost"
                 key={card.label}
                 type="button"
                 aria-pressed={selected === index}
@@ -81,6 +87,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
           <div className="lab-space-cards" data-composition={composition}>
             {CARDS.map((card, index) => (
               <motion.button
+                data-surface="artwork"
                 key={card.label}
                 type="button"
                 layout={active && !reduced}
@@ -137,6 +144,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
         >
           {CARDS.map((card, index) => (
             <button
+              data-surface="control"
               key={card.label}
               type="button"
               aria-pressed={selected === index}
@@ -153,6 +161,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
           <div>
             {(["fan", "grid"] as const).map((value) => (
               <button
+                data-surface="control"
                 key={value}
                 type="button"
                 aria-pressed={composition === value}
@@ -167,6 +176,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
           <span>{t("lab.layoutSpeed")}</span>
           <div>
             <button
+              data-surface="control"
               type="button"
               aria-pressed={!snappy}
               onClick={() => setSnappy(false)}
@@ -174,6 +184,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
               {t("lab.smooth")}
             </button>
             <button
+              data-surface="control"
               type="button"
               aria-pressed={snappy}
               onClick={() => setSnappy(true)}

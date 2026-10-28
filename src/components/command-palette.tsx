@@ -75,7 +75,8 @@ export function CommandPalette() {
             <Command.Input
               value={query}
               onValueChange={setQuery}
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              data-surface="transparent"
+              className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-(--glass-muted-foreground)"
               placeholder={t("commands.placeholder")}
               aria-label={t("commands.title")}
             />

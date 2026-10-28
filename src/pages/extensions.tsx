@@ -587,7 +587,7 @@ export default function Extensions() {
                 {t("ext.installConsent")}
               </p>
               {review.previous ? (
-                <p className="rounded-md bg-muted p-3 text-sm">
+                <p data-surface="control" className="rounded-md p-3 text-sm">
                   {t("ext.upgradeHint", { version: review.previous })}
                 </p>
               ) : null}

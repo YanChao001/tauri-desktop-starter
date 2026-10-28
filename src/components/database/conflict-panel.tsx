@@ -35,7 +35,8 @@ export function ConflictPanel({
     titleSelection.revision === revision ? titleSelection.choice : "local";
   return (
     <section
-      className="space-y-3 rounded-lg border border-amber-500/50 bg-background p-4"
+      data-surface="solid"
+      className="space-y-3 rounded-lg border border-amber-500/50 p-4"
       aria-label={t("data.conflict")}
     >
       <div className="flex items-center gap-2">
@@ -86,7 +87,10 @@ export function ConflictPanel({
           <h4 className="mt-2 truncate font-medium" title={remote.title}>
             {remote.title}
           </h4>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">
+          <pre
+            data-surface="transparent"
+            className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm"
+          >
             {remote.body}
           </pre>
         </details>

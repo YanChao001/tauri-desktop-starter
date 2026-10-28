@@ -50,7 +50,8 @@ export function SettingsPersistence({
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-background px-3 py-2 text-xs"
+      data-surface="solid"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 px-3 py-2 text-xs"
     >
       <span className="flex items-center gap-2">
         <AlertCircleIcon className="size-4 shrink-0 text-destructive" />

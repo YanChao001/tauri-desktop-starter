@@ -111,7 +111,7 @@ export function MediaPreview({ active = true }: { active?: boolean }) {
           }}
         />
         {preview ? (
-          <div className="space-y-3 rounded-md bg-muted p-3">
+          <div data-surface="control" className="space-y-3 rounded-md p-3">
             <p className="break-all text-xs text-muted-foreground">
               {preview.name}
             </p>

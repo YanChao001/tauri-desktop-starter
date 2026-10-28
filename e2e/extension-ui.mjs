@@ -267,6 +267,9 @@ const sharedInputs = Object.fromEntries(
   await Promise.all(
     [
       "sdk/extension-ui.js",
+      "src/lib/ui-theme.ts",
+      "src/styles/surface-tokens.css",
+      "src/styles/control-styles.css",
       "e2e/extension-ui.mjs",
       "src/features/extensions/extension-custom-ui.tsx",
       "src/features/extensions/extension-app.tsx",

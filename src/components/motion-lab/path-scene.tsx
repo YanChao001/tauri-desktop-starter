@@ -114,7 +114,11 @@ export function PathScene({ active, reduced, replay, stageRef }: SceneProps) {
   }, [duration, loop, replay, reduced, progress, playing]);
   return (
     <>
-      <div className="lab-stage lab-path-stage" ref={stageRef}>
+      <div
+        data-surface="artwork"
+        className="lab-stage lab-path-stage"
+        ref={stageRef}
+      >
         <StageGuides label={t("lab.paths")} />
         <svg
           viewBox="0 0 640 320"

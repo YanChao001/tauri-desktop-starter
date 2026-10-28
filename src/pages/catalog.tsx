@@ -205,7 +205,7 @@ export default function Catalog() {
                 aria-labelledby="catalog-rust-example"
                 code={rustIpcExample}
                 language="rust"
-                className="max-h-96 rounded-md bg-muted"
+                className="max-h-96 rounded-md"
               />
             </div>
             <div className="min-w-0 space-y-2">
@@ -219,7 +219,7 @@ export default function Catalog() {
                 aria-labelledby="catalog-typescript-example"
                 code={typescriptIpcExample}
                 language="typescript"
-                className="max-h-96 rounded-md bg-muted"
+                className="max-h-96 rounded-md"
               />
             </div>
             <div className="flex flex-wrap gap-3 text-sm">

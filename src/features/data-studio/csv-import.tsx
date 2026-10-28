@@ -179,6 +179,8 @@ export function CsvImport({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
+                        data-surface="transparent"
+                        data-variant="ghost"
                         id="csv-source-error"
                         type="button"
                         className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -362,7 +364,8 @@ export function CsvImport({
                       <th
                         key={header}
                         scope="col"
-                        className="whitespace-nowrap bg-muted p-2"
+                        data-surface="reading"
+                        className="whitespace-nowrap p-2"
                       >
                         {header}
                       </th>

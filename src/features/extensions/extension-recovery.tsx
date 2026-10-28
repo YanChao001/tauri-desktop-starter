@@ -194,7 +194,8 @@ export function ExtensionRecovery({
           <p
             aria-label={t("ext.recovery.archiveLocation")}
             tabIndex={0}
-            className="max-h-24 overflow-auto break-all rounded-md bg-muted p-3 font-mono text-xs select-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-surface="reading"
+            className="max-h-24 overflow-auto break-all rounded-md p-3 font-mono text-xs select-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {archivePath}
           </p>

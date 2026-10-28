@@ -440,7 +440,10 @@ export function CustomBackgroundPicker() {
                       data-wallpaper-id={entry.id}
                       data-selected={selected}
                     >
-                      <label className="wallpaper-thumbnail">
+                      <label
+                        data-surface="artwork"
+                        className="wallpaper-thumbnail"
+                      >
                         <input
                           type="radio"
                           name="background-skin"
@@ -454,7 +457,10 @@ export function CustomBackgroundPicker() {
                         />
                         <WallpaperThumbnail dataUrl={entry.dataUrl} />
                         {entry.video ? (
-                          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-xs text-foreground">
+                          <span
+                            data-surface="control"
+                            className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-foreground"
+                          >
                             <PlayIcon className="size-3" aria-hidden="true" />
                             {t("settings.videoWallpaper")}
                           </span>

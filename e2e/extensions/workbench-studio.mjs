@@ -17,10 +17,13 @@ await Promise.all([
   mkdir(output, { recursive: true }),
 ]);
 const temporary = await mkdtemp(join(cache, "workbench-studio-"));
-const [html, sdk] = await Promise.all([
+const [html, sdk, surfaceTokens, controlStyles] = await Promise.all([
   readFile(join(root, "examples/extensions/apps/ui/main.html"), "utf8"),
   readFile(join(root, "sdk/extension-ui.js"), "utf8"),
+  readFile(join(root, "src/styles/surface-tokens.css"), "utf8"),
+  readFile(join(root, "src/styles/control-styles.css"), "utf8"),
 ]);
+const styles = `@layer starter-defaults {\n${surfaceTokens}\n${controlStyles}\n}`;
 // The fixture uses srcdoc rather than the packaged extension-ui protocol.
 const fixtureSdk = sdk.replace(
   /location\.protocol !== "extension-ui:" &&\s*location\.hostname !== "extension-ui\.localhost"/,
@@ -94,7 +97,7 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${address.port}`);
     await page.evaluate(
-      ({ embedded, profile }) => {
+      ({ embedded, profile, styles }) => {
         const root = document.documentElement;
         root.classList.toggle("dark", profile.mode === "dark");
         root.classList.toggle("light", profile.mode !== "dark");
@@ -120,7 +123,7 @@ try {
         window.studioState = {
           active: true,
           locale: profile.locale,
-          theme: { mode: profile.mode, motion: "full", tokens },
+          theme: { mode: profile.mode, motion: "full", tokens, styles },
           view: initialView,
           fields: {},
           checkpoint: null,
@@ -173,7 +176,7 @@ try {
         iframe.srcdoc = embedded;
         document.body.append(iframe);
       },
-      { embedded, profile },
+      { embedded, profile, styles },
     );
     const frame = page.frames().find((candidate) => candidate.parentFrame());
     await expect(frame.locator("#node-count")).toHaveText("5");

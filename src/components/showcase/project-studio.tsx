@@ -159,10 +159,15 @@ export function ProjectStudio({ active }: { active: boolean }) {
               <label
                 key={item.value}
                 className="studio-swatch"
+                data-surface="control"
                 data-palette={item.value}
               >
                 <RadioGroupItem value={item.value} aria-label={t(item.label)} />
-                <span className="studio-swatch-dot" aria-hidden="true" />
+                <span
+                  data-surface="artwork"
+                  className="studio-swatch-dot"
+                  aria-hidden="true"
+                />
                 <span>{t(item.label)}</span>
               </label>
             ))}
@@ -244,6 +249,7 @@ export function ProjectStudio({ active }: { active: boolean }) {
         </div>
       </div>
       <div
+        data-surface="artwork"
         className="studio-canvas"
         data-palette={project.palette}
         data-composition={project.composition}

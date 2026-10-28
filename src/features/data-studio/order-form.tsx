@@ -114,6 +114,8 @@ export function OrderForm() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button
+              data-surface="transparent"
+              data-variant="ghost"
               type="button"
               id={`${fieldId(name)}-error`}
               className="min-w-0 flex-1 truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

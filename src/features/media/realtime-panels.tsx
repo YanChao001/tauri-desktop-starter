@@ -221,7 +221,8 @@ export function WebSocketPanel() {
         <ol
           aria-label={t("labs.socket.log")}
           aria-live="polite"
-          className="h-52 space-y-1 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"
+          data-surface="reading"
+          className="h-52 space-y-1 overflow-auto rounded-md p-3 font-mono text-xs"
         >
           {log.length ? (
             log.map((entry, index) => (
@@ -301,6 +302,8 @@ export function SidecarPanel() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
+                          data-surface="transparent"
+                          data-variant="ghost"
                           id="sidecar-error"
                           type="button"
                           className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -340,7 +343,8 @@ export function SidecarPanel() {
         </form>
         <section
           aria-label={t("labs.sidecar.output")}
-          className="space-y-3 rounded-md bg-muted p-3 text-sm"
+          data-surface="reading"
+          className="space-y-3 rounded-md p-3 text-sm"
         >
           {output ? (
             <>
@@ -389,6 +393,7 @@ export function SidecarPanel() {
                 </dl>
               ) : (
                 <pre
+                  data-surface="transparent"
                   tabIndex={0}
                   className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -399,6 +404,7 @@ export function SidecarPanel() {
                 <div className="space-y-1 text-destructive">
                   <h4 className="font-medium">{t("labs.sidecar.errors")}</h4>
                   <pre
+                    data-surface="transparent"
                     tabIndex={0}
                     className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
@@ -406,15 +412,19 @@ export function SidecarPanel() {
                   </pre>
                 </div>
               ) : null}
-              <details className="rounded-md border bg-background p-3">
+              <details
+                data-surface="transparent"
+                className="rounded-md border p-3"
+              >
                 <summary className="cursor-pointer text-xs text-muted-foreground">
                   {t("labs.sidecar.details")}
                 </summary>
                 <CodeBlock
+                  data-surface="transparent"
                   aria-label={t("labs.sidecar.details")}
                   code={JSON.stringify(output, null, 2)}
                   language="json"
-                  className="mt-3 max-h-56 bg-transparent p-0"
+                  className="mt-3 max-h-56 p-0"
                 />
               </details>
             </>

@@ -1,9 +1,12 @@
+@layer theme, base, starter-defaults, components, utilities;
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./styles/shadcn.css";
 @import "@fontsource-variable/geist";
 @import "./styles/showcase.css";
 @import "./styles/window-skins.css";
+@import "./styles/surface-tokens.css";
+@import "./styles/control-styles.css" layer(starter-defaults);
 
 @custom-variant dark (&:is(.dark *));
 
@@ -305,133 +308,6 @@ html[data-font-size="lg"] {
   font-size: 17px;
 }
 
-/* 主体保留阅读遮罩，卡片减轻中档叠色，避免磨砂控件重复压暗。 */
-:root {
-  --skin-exposure: 0.5;
-  --skin-overlay-opacity: calc(100% * (1 - var(--skin-exposure)));
-  --skin-chrome-opacity: var(--skin-overlay-opacity);
-  --skin-sidebar-opacity: var(--skin-overlay-opacity);
-  --skin-card-opacity: max(
-    calc(100% - 140% * var(--skin-exposure)),
-    calc(60% - 60% * var(--skin-exposure))
-  );
-  --surface-card: color-mix(
-    in oklab,
-    var(--card) var(--skin-card-opacity),
-    transparent
-  );
-  --surface-card-muted: color-mix(
-    in oklab,
-    var(--muted) var(--skin-card-opacity),
-    transparent
-  );
-  --surface-control-opacity: 100%;
-  --surface-popup-opacity: 100%;
-  --surface-dialog-opacity: 100%;
-  --surface-control-blur: 0px;
-  --surface-popup-blur: 0px;
-  --glass-muted-foreground: var(--muted-foreground);
-  --control-background: color-mix(
-    in oklab,
-    var(--popover) var(--surface-control-opacity),
-    transparent
-  );
-  --surface-popover: color-mix(
-    in oklab,
-    var(--popover) var(--surface-popup-opacity),
-    transparent
-  );
-  --surface-dialog: color-mix(
-    in oklab,
-    var(--popover) var(--surface-dialog-opacity),
-    transparent
-  );
-  --control-disabled-color: color-mix(
-    in oklab,
-    var(--input) 50%,
-    var(--background)
-  );
-  --control-disabled-background: color-mix(
-    in oklab,
-    var(--control-disabled-color) var(--surface-control-opacity),
-    transparent
-  );
-  --control-select-hover-color: var(--muted);
-  --control-select-hover-background: color-mix(
-    in oklab,
-    var(--control-select-hover-color) var(--surface-control-opacity),
-    transparent
-  );
-}
-.dark {
-  --control-disabled-color: color-mix(
-    in oklab,
-    var(--input) 80%,
-    var(--background)
-  );
-  --control-select-hover-color: color-mix(
-    in oklab,
-    var(--input) 50%,
-    var(--background)
-  );
-}
-/* 仅模糊控件和浮层自身；旧运行时保留实体底色，不做全窗口滤镜。 */
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  :root {
-    /* 窗口背景已含遮罩，控件补偿这层淡化，避免中间档被重复压暗。 */
-    --surface-control-opacity: max(
-      calc(100% - 140% * var(--skin-exposure)),
-      calc(100% - 35% / max(var(--skin-exposure), 0.35))
-    );
-    --surface-popup-opacity: var(--surface-control-opacity);
-    --surface-dialog-opacity: max(
-      calc(100% - 100% * var(--skin-exposure)),
-      calc(100% - 25% / max(var(--skin-exposure), 0.25))
-    );
-    --surface-control-blur: calc(18px * var(--skin-exposure));
-    --surface-popup-blur: calc(28px * var(--skin-exposure));
-    --glass-muted-foreground: color-mix(
-      in oklab,
-      var(--foreground) 80%,
-      var(--muted-foreground)
-    );
-  }
-}
-html[data-background="plain"],
-html[data-background-intensity="0"] {
-  --skin-overlay-opacity: 100%;
-  --skin-card-opacity: 100%;
-  --surface-control-opacity: 100%;
-  --surface-popup-opacity: 100%;
-  --surface-dialog-opacity: 100%;
-  --surface-control-blur: 0px;
-  --surface-popup-blur: 0px;
-  --glass-muted-foreground: var(--muted-foreground);
-}
-.app-control-surface {
-  background-color: var(--control-background);
-  -webkit-backdrop-filter: blur(var(--surface-control-blur));
-  backdrop-filter: blur(var(--surface-control-blur));
-}
-.app-overlay-surface {
-  background-color: var(--surface-popover);
-  -webkit-backdrop-filter: blur(var(--surface-popup-blur));
-  backdrop-filter: blur(var(--surface-popup-blur));
-}
-
-/* 浮层弱说明与占位文字采用相同的磨砂对比色，正文仍使用各自语义色。 */
-.app-overlay-surface,
-[data-slot="select-content"],
-[data-slot="popover-content"],
-[data-slot="dropdown-menu-content"],
-[data-slot="dropdown-menu-sub-content"],
-[data-slot="context-menu-content"],
-[data-slot="context-menu-sub-content"],
-[data-slot="dialog-content"],
-.toaster .cn-toast[data-styled="true"] {
-  --muted-foreground: var(--glass-muted-foreground);
-}
-
 /* 通知继承应用的字体、字号和语义色，与页面外观偏好保持一致。 */
 .toaster[data-sonner-toaster] {
   font-family: var(--font-sans);
@@ -516,21 +392,7 @@ html[data-background-intensity="0"] {
   scroll-padding-block: 1.25rem;
   background: transparent;
 }
-.app-surface {
-  background-color: var(--surface-card);
-}
-
 @media (prefers-contrast: more), (forced-colors: active) {
-  :root {
-    --skin-overlay-opacity: 100%;
-    --skin-card-opacity: 100%;
-    --surface-control-opacity: 100%;
-    --surface-popup-opacity: 100%;
-    --surface-dialog-opacity: 100%;
-    --surface-control-blur: 0px;
-    --surface-popup-blur: 0px;
-    --glass-muted-foreground: var(--muted-foreground);
-  }
   .window-background,
   .pattern-artwork--preview {
     display: none;
@@ -683,62 +545,5 @@ html[data-motion="reduced"] *::after {
   .app-sidebar,
   .app-sidebar-label {
     transition: none !important;
-  }
-}
-
-/* 代码通过 React 文本节点渲染，配色跟随应用主题 */
-.code-block {
-  --code-property: #4338ca;
-  --code-string: #047857;
-  --code-number: #b45309;
-  --code-boolean: #6d28d9;
-  --code-null: #be123c;
-}
-.dark .code-block {
-  --code-property: #a5b4fc;
-  --code-string: #6ee7b7;
-  --code-number: #fcd34d;
-  --code-boolean: #c4b5fd;
-  --code-null: #fda4af;
-}
-.code-token--property {
-  color: var(--code-property);
-}
-.code-token--string {
-  color: var(--code-string);
-}
-.code-token--number {
-  color: var(--code-number);
-}
-.code-token--boolean {
-  color: var(--code-boolean);
-}
-.code-token--null {
-  color: var(--code-null);
-}
-.code-token--punctuation {
-  color: var(--muted-foreground);
-}
-.code-token--keyword,
-.code-token--lifetime {
-  color: var(--code-boolean);
-}
-.code-token--type,
-.code-token--macro {
-  color: var(--code-number);
-}
-.code-token--function {
-  color: var(--code-property);
-}
-.code-token--comment {
-  color: var(--muted-foreground);
-  font-style: italic;
-}
-.code-token--operator {
-  color: var(--code-null);
-}
-@media (forced-colors: active) {
-  .code-token {
-    color: inherit;
   }
 }

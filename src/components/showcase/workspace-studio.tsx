@@ -342,6 +342,8 @@ export function WorkspaceStudio() {
             {nodes.map((node) => {
               const button = (
                 <button
+                  data-surface="transparent"
+                  data-variant="ghost"
                   type="button"
                   role="treeitem"
                   key={node.id}

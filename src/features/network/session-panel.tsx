@@ -89,7 +89,10 @@ export function SessionPanel() {
           </div>
           <Button disabled={!name.trim()}>{t("labs.session.signIn")}</Button>
         </form>
-        <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-sm">
+        <div
+          data-surface="control"
+          className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 rounded-md p-3 text-sm"
+        >
           {session ? (
             <>
               <TooltipProvider>

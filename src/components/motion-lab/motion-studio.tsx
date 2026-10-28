@@ -100,6 +100,7 @@ export function MotionStudio({ enabled }: { enabled: boolean }) {
       >
         {SCENES.map((item, index) => (
           <button
+            data-surface="control"
             key={item.id}
             ref={(element) => {
               tabRefs.current[index] = element;

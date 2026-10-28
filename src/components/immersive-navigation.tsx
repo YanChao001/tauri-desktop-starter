@@ -202,6 +202,8 @@ export function ImmersiveNavigation() {
     <>
       {(["top", "left"] as const).map((edge) => (
         <button
+          data-surface="transparent"
+          data-variant="ghost"
           key={edge}
           type="button"
           className="immersive-edge"

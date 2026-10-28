@@ -54,7 +54,7 @@ function ViewTable({
       >
         <table className="w-full text-left text-sm">
           {label ? <caption className="sr-only">{label}</caption> : null}
-          <thead className="bg-muted/50">
+          <thead data-surface="reading">
             <tr>
               {columns.map((column, i) => (
                 <th scope="col" key={i} className="px-4 py-3 font-medium">
@@ -360,7 +360,7 @@ export function ExtensionView({
               className={cn(
                 "grid gap-2",
                 group.board &&
-                  "mx-auto w-full max-w-[22rem] rounded-2xl border bg-muted/30 p-3",
+                  "mx-auto w-full max-w-[22rem] rounded-2xl border app-surface p-3",
               )}
               style={{
                 gridTemplateColumns: `repeat(${group.columns}, minmax(0, 1fr))`,
@@ -369,11 +369,12 @@ export function ExtensionView({
               {group.actions.map((action) =>
                 group.board && action.disabled ? (
                   <span
+                    data-surface="solid"
                     key={action.id}
                     role={action.ariaLabel ? "group" : undefined}
                     aria-label={action.ariaLabel ?? undefined}
                     className={cn(
-                      "flex aspect-square min-w-0 items-center justify-center rounded-xl border bg-card p-0 text-center font-semibold leading-none text-card-foreground",
+                      "flex aspect-square min-w-0 items-center justify-center rounded-xl border p-0 text-center font-semibold leading-none text-card-foreground",
                       group.columns >= 6 || action.label.length >= 5
                         ? "text-sm"
                         : action.label.length >= 3
@@ -437,7 +438,7 @@ export function ExtensionView({
       }}
     >
       <TabsList
-        className="mb-4 grid w-full gap-1 bg-muted/50 p-1 group-data-horizontal/tabs:h-auto"
+        className="mb-4 grid w-full gap-1 p-1 group-data-horizontal/tabs:h-auto"
         style={{
           gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 8rem), 1fr))",
         }}

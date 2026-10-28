@@ -45,7 +45,7 @@
 }
 .experience-route:hover {
   border-color: var(--primary);
-  background: var(--accent);
+  background: var(--surface-state-hover);
 }
 .experience-route:focus-visible {
   outline: 2px solid var(--ring);

@@ -146,7 +146,8 @@ export default function Bridge() {
           </form>
 
           <div
-            className="flex min-w-0 items-start gap-3 rounded-md border bg-muted px-3 py-2.5"
+            data-surface="control"
+            className="flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5"
             role="status"
             aria-live="polite"
           >

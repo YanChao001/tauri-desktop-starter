@@ -133,7 +133,7 @@
 }
 .studio-swatch:hover {
   border-color: var(--studio-accent);
-  background: color-mix(in oklch, var(--studio-accent) 4%, var(--card));
+  background: var(--surface-state-hover);
 }
 .studio-swatch::after {
   content: "";
@@ -149,7 +149,7 @@
 }
 .studio-swatch:has([data-state="checked"]) {
   border-color: var(--studio-accent);
-  background: color-mix(in oklch, var(--studio-accent) 8%, var(--card));
+  background: var(--surface-state-selected);
 }
 .studio-swatch:has([data-state="checked"])::after {
   opacity: 1;
@@ -698,8 +698,8 @@
   cursor: pointer;
 }
 .resource-table-name:hover {
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--surface-state-hover);
+  color: var(--foreground);
 }
 .resource-table-name > span {
   white-space: normal;

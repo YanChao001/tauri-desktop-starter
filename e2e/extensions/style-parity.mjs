@@ -81,6 +81,7 @@ try {
     import { Select, SelectTrigger, SelectValue } from ${sourcePath("src/components/ui/select.tsx")};
     import { Checkbox } from ${sourcePath("src/components/ui/checkbox.tsx")};
     import { RadioGroup, RadioGroupItem } from ${sourcePath("src/components/ui/radio-group.tsx")};
+    import { Tabs, TabsList, TabsTrigger } from ${sourcePath("src/components/ui/tabs.tsx")};
     import { ExtensionCustomUi } from ${sourcePath("src/features/extensions/extension-custom-ui.tsx")};
     import "./fixture.css";
     createRoot(document.getElementById("root")!).render(
@@ -104,6 +105,7 @@ try {
         <Textarea id="host-textarea-disabled" disabled value="Disabled textarea" />
         <Select defaultValue="one" disabled><SelectTrigger id="host-select-disabled"><SelectValue>Disabled select</SelectValue></SelectTrigger></Select>
         <Input id="host-readonly" readOnly value="Read only" />
+        <Tabs defaultValue="one"><TabsList variant="line"><TabsTrigger id="host-line-one" value="one">Line one</TabsTrigger><TabsTrigger value="two">Line two</TabsTrigger></TabsList></Tabs>
       </main>
       {createPortal(<aside style={{position:"fixed",left:1080,top:16,width:180}}>
         <Input id="portal-input" placeholder="Portal input" />
@@ -303,14 +305,35 @@ try {
       );
     }
     // 比较实际合成像素，覆盖外壳、iframe 和文档画布，避免透明 CSS 仍被某层底色遮住。
-    for (const [index, clip] of samples.entries()) {
-      const actual = await page.screenshot({ clip });
-      assert.equal(
-        actual.equals(expected[index]),
-        transparent,
-        transparent
-          ? "页面留白应透出宿主背景"
-          : "作者设置的背景应继续覆盖宿主背景",
+    // 控件多少和是否后来新增不应改变“文档画布背景”的采样位置。
+    const hideContents = await frame.addStyleTag({
+      content:
+        "body > :not(style):not(script) { visibility:hidden !important; }",
+    });
+    try {
+      await frame.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      for (const [index, clip] of samples.entries()) {
+        const actual = await page.screenshot({ clip });
+        assert.equal(
+          actual.equals(expected[index]),
+          transparent,
+          transparent
+            ? "页面留白应透出宿主背景"
+            : "作者设置的背景应继续覆盖宿主背景",
+        );
+      }
+    } finally {
+      await hideContents.evaluate((node) => node.remove());
+      await frame.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
       );
     }
   };
@@ -343,6 +366,70 @@ try {
     "backgroundColor",
     "color",
   ];
+  // 首个主题就绪后才出现的控件也必须自动获得完整规则，而不是按已有 DOM 裁剪样式。
+  const addRareControls = (prefix) => {
+    const section = document.createElement("section");
+    section.innerHTML = `
+      <fieldset id="${prefix}-rare-fieldset"><legend>Rare controls</legend>
+        <input id="${prefix}-rare-date" type="date" value="2026-10-29">
+        <input id="${prefix}-rare-time" type="time" value="12:30">
+        <input id="${prefix}-rare-color" type="color" value="#336699">
+        <input id="${prefix}-rare-file" type="file">
+        <select id="${prefix}-rare-multiple" multiple size="3"><option>One</option><option>Two</option><option>Three</option></select>
+      </fieldset>
+      <output id="${prefix}-rare-output">Result</output>
+      <pre id="${prefix}-rare-pre"><code><span class="code-token--property">name</span></code></pre>
+      <details open><summary id="${prefix}-rare-summary">Details</summary>Details content</details>
+      <kbd id="${prefix}-rare-kbd">Ctrl K</kbd>
+      <kbd id="${prefix}-rare-kbd-control" data-surface="control">Ctrl K</kbd>
+      <table><thead id="${prefix}-rare-header"><tr><th>Column</th></tr></thead><tbody><tr><td>Cell</td></tr></tbody></table>
+      <progress id="${prefix}-rare-progress" value="60" max="100"></progress>
+      <meter id="${prefix}-rare-meter" value="0.6"></meter>`;
+    (document.querySelector("main") || document.body).append(section);
+  };
+  await page.evaluate(addRareControls, "host");
+  await frame.evaluate(addRareControls, "sdk");
+  const rareControls = [
+    "fieldset",
+    "date",
+    "time",
+    "color",
+    "file",
+    "multiple",
+    "output",
+    "pre",
+    "summary",
+    "kbd",
+    "kbd-control",
+    "header",
+    "progress",
+    "meter",
+  ];
+  const rareProperties = [
+    "backgroundColor",
+    "color",
+    "borderColor",
+    "borderRadius",
+    "backdropFilter",
+    "fontFamily",
+  ];
+  const configuredAlpha = (kind, exposure) =>
+    page.evaluate(
+      ({ kind, exposure }) => {
+        if (exposure === 0) return 255;
+        const point = exposure === 0.5 ? "half" : "full";
+        return Math.round(
+          (255 *
+            parseFloat(
+              getComputedStyle(document.documentElement).getPropertyValue(
+                `--ui-${kind}-opacity-at-${point}`,
+              ),
+            )) /
+            100,
+        );
+      },
+      { kind, exposure },
+    );
   for (const dark of [false, true]) {
     await page.mouse.click(1200, 780);
     await sendTheme(dark, dark);
@@ -418,25 +505,22 @@ try {
       const { backgroundColor } = await measure(page.locator("#host-card"), [
         "backgroundColor",
       ]);
-      assert.ok(
-        Math.abs(
-          backgroundColor[3] -
-            Math.round(
-              255 * Math.max(1 - 1.4 * exposure, 0.6 - 0.6 * exposure),
-            ),
-        ) <= 1,
-        `card opacity at exposure ${exposure}`,
-      );
       const fieldAlpha = (
         await measure(page.locator("#host-input"), ["backgroundColor"])
       ).backgroundColor[3];
-      const expectedAlpha = Math.round(
-        255 * Math.max(1 - 1.4 * exposure, 1 - 0.35 / Math.max(exposure, 0.35)),
-      );
-      assert.ok(
-        Math.abs(fieldAlpha - expectedAlpha) <= 1,
-        `input opacity ${fieldAlpha} != ${expectedAlpha} at exposure ${exposure}`,
-      );
+      if ([0, 0.5, 1].includes(exposure)) {
+        assert.ok(
+          Math.abs(
+            backgroundColor[3] - (await configuredAlpha("panel", exposure)),
+          ) <= 1,
+          `configured panel at ${exposure}`,
+        );
+        assert.ok(
+          Math.abs(fieldAlpha - (await configuredAlpha("control", exposure))) <=
+            1,
+          `configured input at ${exposure}`,
+        );
+      }
       await compare("input", "input", [
         "backgroundColor",
         "backdropFilter",
@@ -448,6 +532,33 @@ try {
         "placeholderColor",
       ]);
       await compare("select", "select", ["backgroundColor", "backdropFilter"]);
+      if ([0.5, 1].includes(exposure)) {
+        for (const control of rareControls)
+          await compare(`rare-${control}`, `rare-${control}`, rareProperties);
+        const explicit = await measure(frame.locator("#sdk-rare-kbd-control"), [
+          "backgroundColor",
+        ]);
+        assert.ok(
+          Math.abs(
+            explicit.backgroundColor[3] -
+              (await configuredAlpha("control", exposure)),
+          ) <= 1,
+          "explicit material overrides the native element default",
+        );
+        assert.ok(
+          await frame
+            .locator("#sdk-rare-multiple")
+            .evaluate(
+              (node) =>
+                parseFloat(getComputedStyle(node).height) >=
+                4 *
+                  parseFloat(
+                    getComputedStyle(document.documentElement).fontSize,
+                  ),
+            ),
+          "multi-select retains multiple rows at the host font size",
+        );
+      }
     }
     for (const check of ["checkbox", "unchecked", "indeterminate", "radio"])
       await compare(check, check, checkProperties);
@@ -477,6 +588,39 @@ try {
         )
         .toEqual(expected);
     }
+    const marker = await page.locator("#host-line-one").evaluate((node) => {
+      const after = getComputedStyle(node, "::after");
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d");
+      const rgba = (color) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data];
+      };
+      return {
+        opacity: after.opacity,
+        width: parseFloat(after.width),
+        height: parseFloat(after.height),
+        background: rgba(after.backgroundColor),
+        foreground: rgba(getComputedStyle(node).color),
+      };
+    });
+    assert.equal(
+      marker.opacity,
+      "1",
+      "selected line tab keeps its visible marker",
+    );
+    assert.ok(
+      marker.width > 0 && marker.height > 0,
+      "line marker retains real host geometry",
+    );
+    assert.deepEqual(
+      marker.background,
+      marker.foreground,
+      "line marker uses the shared foreground paint",
+    );
     console.log(
       `PASS real host / SDK default controls: ${dark ? "dark, small font, round radius" : "light"}`,
     );
@@ -538,11 +682,31 @@ try {
     root.innerHTML =
       '<button id="shadow-button">Shadow</button><select aria-label="Choice"><option>One</option><option>Two</option></select>';
     window.shadowCleanup = starter.applyStyles(root);
+    // 接入样式后才插入未曾使用的标准控件，无需第二次 applyStyles。
+    const later = document.createElement("div");
+    later.innerHTML =
+      '<meter id="shadow-meter" value="0.6"></meter><output id="shadow-output">Result</output><kbd id="shadow-kbd">Ctrl K</kbd>';
+    root.append(later);
   });
   const shadowButton = frame.locator("#shadow-host #shadow-button");
   await expect
     .poll(() => measure(shadowButton, buttonProperties))
     .toEqual(await measure(frame.locator("#sdk-button"), buttonProperties));
+  for (const dark of [false, true]) {
+    await sendTheme(dark);
+    for (const kind of ["meter", "output", "kbd"])
+      await expect
+        .poll(() =>
+          measure(
+            frame.locator(`#shadow-host #shadow-${kind}`),
+            rareProperties,
+          ),
+        )
+        .toEqual(
+          await measure(page.locator(`#host-rare-${kind}`), rareProperties),
+        );
+  }
+  await sendTheme(false);
   const shadowSelect = frame.locator("#shadow-host select");
   await shadowSelect.click();
   await expect(
@@ -589,7 +753,7 @@ try {
   assert.equal(
     (await measure(frame.locator("#sdk-card"), ["backgroundColor"]))
       .backgroundColor[3],
-    0,
+    await configuredAlpha("panel", 1),
   );
   await page.emulateMedia({ forcedColors: "active" });
   await compare("card", "card", ["backgroundColor"]);

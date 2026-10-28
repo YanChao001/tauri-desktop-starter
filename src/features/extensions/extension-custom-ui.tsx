@@ -7,6 +7,7 @@ import { useSettings, type Motion } from "@/providers/settings";
 import { THEME_REVEAL_EVENT, type ThemeReveal } from "@/hooks/use-theme-switch";
 import hostFont from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?inline";
 import { nativeErrorText } from "@/lib/native-error";
+import { UI_STYLES, readUiTokens } from "@/lib/ui-theme";
 import {
   openExtensionUi,
   closeExtensionUi,
@@ -20,57 +21,15 @@ import {
 import { ExtensionLoading } from "./extension-loading";
 import { useExtensionActivity } from "./extension-activity";
 
-const TOKENS = [
-  "--background",
-  "--foreground",
-  "--card",
-  "--card-foreground",
-  "--surface-card",
-  "--surface-card-muted",
-  "--control-background",
-  "--control-disabled-background",
-  "--control-select-hover-background",
-  "--surface-popover",
-  "--surface-dialog",
-  "--surface-control-blur",
-  "--surface-popup-blur",
-  "--glass-muted-foreground",
-  "--popover",
-  "--popover-foreground",
-  "--primary",
-  "--primary-foreground",
-  "--secondary",
-  "--secondary-foreground",
-  "--accent",
-  "--accent-foreground",
-  "--muted",
-  "--muted-foreground",
-  "--border",
-  "--input",
-  "--destructive",
-  "--destructive-foreground",
-  "--ring",
-  "--radius",
-  "--control-input-font-size",
-  "--control-input-line-height",
-  "--chart-1",
-  "--chart-2",
-  "--chart-3",
-  "--chart-4",
-  "--chart-5",
-];
 function readTheme(motion: Motion) {
   const styles = getComputedStyle(document.documentElement);
-  const tokens: Record<string, string> = Object.fromEntries(
-    TOKENS.map((name) => [name, styles.getPropertyValue(name).trim()]),
-  );
-  tokens["--host-font-size"] = styles.fontSize;
-  tokens["--host-font-family"] = styles.fontFamily;
+  const tokens = readUiTokens(styles);
   return {
     mode: document.documentElement.classList.contains("dark")
       ? "dark"
       : "light",
     motion,
+    styles: UI_STYLES,
     font: { family: "Geist Variable", dataUrl: hostFont },
     tokens,
   };
@@ -142,6 +101,8 @@ export function ExtensionCustomUi({
         "data-font-size",
         "data-radius",
         "data-motion",
+        "data-background",
+        "data-background-intensity",
       ],
     });
     return () => {
@@ -426,7 +387,8 @@ export function ExtensionCustomUi({
       {error ? (
         <div
           role="alert"
-          className="space-y-3 rounded-lg border bg-background p-4"
+          data-surface="solid"
+          className="space-y-3 rounded-lg border p-4"
         >
           <p>{t("ext.uiUnavailable")}</p>
           <p className="text-sm text-muted-foreground">

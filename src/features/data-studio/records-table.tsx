@@ -461,7 +461,7 @@ export function RecordsTable() {
                   <col key={id} style={{ width }} />
                 ))}
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-card">
+            <thead data-surface="reading" className="sticky top-0 z-10">
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
                   {group.headers
@@ -483,6 +483,8 @@ export function RecordsTable() {
                       >
                         {header.column.getCanSort() ? (
                           <button
+                            data-surface="transparent"
+                            data-variant="ghost"
                             type="button"
                             className="inline-flex min-h-9 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={header.column.getToggleSortingHandler()}
@@ -542,7 +544,7 @@ export function RecordsTable() {
                         index +
                         2
                   }
-                  className="border-b last:border-0 hover:bg-muted/50"
+                  className="border-b last:border-0 hover:bg-(--surface-state-hover)"
                   style={{ height: 48 }}
                   data-state={row.getIsSelected() ? "selected" : undefined}
                 >

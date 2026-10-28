@@ -98,6 +98,162 @@ async function renderedControlPixel(page: Page, locator: Locator) {
   );
 }
 
+async function renderedTextContrast(
+  page: Page,
+  locator: Locator,
+  placeholder = false,
+) {
+  await locator.scrollIntoViewIfNeeded();
+  await locator.evaluate(async (element) => {
+    const animations = new Set<Animation>();
+    for (let node: Element | null = element; node; node = node.parentElement)
+      for (const animation of node.getAnimations())
+        if (animation.effect?.getComputedTiming().iterations !== Infinity)
+          animations.add(animation);
+    await Promise.all(
+      [...animations].map((animation) =>
+        animation.finished.catch(() => undefined),
+      ),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  const text = await locator.evaluateHandle((element, usePlaceholder) => {
+    if (usePlaceholder) return element as HTMLElement;
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let child = walker.nextNode(); child; child = walker.nextNode())
+      if (child.textContent?.trim()) return child.parentElement!;
+    throw new Error("The contrast target has no rendered text");
+  }, placeholder);
+  const paint = await text.evaluate((element, usePlaceholder) => {
+    const style = getComputedStyle(
+      element,
+      usePlaceholder ? "::placeholder" : null,
+    );
+    const bounds = element.getBoundingClientRect();
+    let x = bounds.right - 24;
+    let y = bounds.top + bounds.height / 2;
+    if (!usePlaceholder) {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      for (let child = walker.nextNode(); child; child = walker.nextNode()) {
+        if (!child.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(child);
+        const line = range.getClientRects()[0]!;
+        x = line.left + line.width / 2;
+        y = line.top + line.height / 2;
+        break;
+      }
+    }
+    const result = {
+      x,
+      y,
+      color: style.color,
+      opacity: Number(style.opacity),
+      hadStyle: element.hasAttribute("style"),
+      previousFill: element.style.getPropertyValue("-webkit-text-fill-color"),
+      fillPriority: element.style.getPropertyPriority(
+        "-webkit-text-fill-color",
+      ),
+      previousShadow: element.style.getPropertyValue("text-shadow"),
+      shadowPriority: element.style.getPropertyPriority("text-shadow"),
+      previousTransition: element.style.getPropertyValue("transition"),
+      transitionPriority: element.style.getPropertyPriority("transition"),
+    };
+    if (!usePlaceholder) {
+      // 只隐藏字形填充；保留 color/currentColor 和背景，避免触发颜色过渡。
+      element.style.setProperty("transition", "none", "important");
+      element.style.setProperty(
+        "-webkit-text-fill-color",
+        "transparent",
+        "important",
+      );
+      element.style.setProperty("text-shadow", "none", "important");
+    }
+    return result;
+  }, placeholder);
+  let encoded: string;
+  try {
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    encoded = (await page.screenshot()).toString("base64");
+  } finally {
+    await text.evaluate(
+      (element, { previous, usePlaceholder }) => {
+        if (usePlaceholder) return;
+        for (const [name, value, priority] of [
+          [
+            "-webkit-text-fill-color",
+            previous.previousFill,
+            previous.fillPriority,
+          ],
+          ["text-shadow", previous.previousShadow, previous.shadowPriority],
+        ]) {
+          if (value) element.style.setProperty(name!, value, priority);
+          else element.style.removeProperty(name!);
+        }
+        // 先提交还原后的字形样式，再恢复 transition，避免下一次采样读到中间帧。
+        getComputedStyle(element).getPropertyValue("-webkit-text-fill-color");
+        if (previous.previousTransition)
+          element.style.setProperty(
+            "transition",
+            previous.previousTransition,
+            previous.transitionPriority,
+          );
+        else element.style.removeProperty("transition");
+        if (!previous.hadStyle && element.style.length === 0)
+          element.removeAttribute("style");
+      },
+      { previous: paint, usePlaceholder: placeholder },
+    );
+    await text.dispose();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  }
+  return page.evaluate(
+    async ({ encoded, paint }) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${encoded}`;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, paint.x, paint.y, 1, 1, 0, 0, 1, 1);
+      const background = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      context.globalAlpha = paint.opacity;
+      context.fillStyle = paint.color;
+      context.fillRect(0, 0, 1, 1);
+      const foreground = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      const luminance = (rgb: number[]) =>
+        rgb.reduce((total, value, index) => {
+          const channel = value / 255;
+          const linear =
+            channel <= 0.04045
+              ? channel / 12.92
+              : ((channel + 0.055) / 1.055) ** 2.4;
+          return total + linear * [0.2126, 0.7152, 0.0722][index]!;
+        }, 0);
+      const values = [luminance(background), luminance(foreground)];
+      return {
+        background,
+        foreground,
+        sample: { x: paint.x, y: paint.y },
+        contrast: (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05),
+      };
+    },
+    { encoded, paint },
+  );
+}
+
 async function measureFrostedText(locator: Locator, placeholder = false) {
   return locator.evaluate(async (node, usePlaceholder) => {
     const image = document.querySelector<HTMLImageElement>(
@@ -256,36 +412,31 @@ for (const theme of ["light", "dark"]) {
               context.fillRect(0, 0, 1, 1);
               return context.getImageData(0, 0, 1, 1).data[3]!;
             };
-            const panels = document.querySelectorAll(
-              'main :is([data-slot="card"], [data-slot="card-footer"], .app-surface, .studio-panel, .experience-route, .journey-guide, .native-flow li, .workspace-demo, .workspace-tree-panel, .lab-console, .lab-control-panel, .playground-surface, .resource-card, .wallpaper-library, .wallpaper-card)',
-            );
             const failures: string[] = [];
-            for (const panel of panels) {
-              // About has one outer surface; its nested cards deliberately share it.
-              const expected = panel.closest(".settings-about-content")
-                ? 0
-                : Math.round(
-                    255 * Math.max(1 - 1.4 * value, 0.6 - 0.6 * value),
-                  );
-              if (Math.abs(alpha(panel) - expected) > 1)
-                failures.push(
-                  `${panel.tagName}.${panel.className}: ${alpha(panel)} != ${expected}`,
-                );
-            }
+            const reading = alpha(
+              document.querySelector("[data-window-reading-surface]")!,
+            );
+            if (value === 0 ? reading !== 255 : reading <= 0 || reading >= 255)
+              failures.push(`page reading surface: ${reading}`);
             for (const field of document.querySelectorAll(
               'main :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):not(:disabled)',
             )) {
-              const expected = Math.round(
-                255 *
-                  (value === 0
-                    ? 1
-                    : Math.max(
-                        1 - 1.4 * value,
-                        1 - 0.35 / Math.max(value, 0.35),
-                      )),
+              // 明确透明的内层控件共享父级阅读表面，不再重复叠加底色。
+              if (field.getAttribute("data-surface") === "transparent")
+                continue;
+              const opacity = alpha(field);
+              const blur = Number(
+                getComputedStyle(field).backdropFilter.match(/[\d.]+/)?.[0] ??
+                  0,
               );
-              if (Math.abs(alpha(field) - expected) > 1)
-                failures.push(`field ${field.id}: ${alpha(field)}`);
+              if (
+                value === 0
+                  ? opacity !== 255
+                  : opacity <= 0 || opacity >= 255 || blur <= 0
+              )
+                failures.push(
+                  `field ${field.id || field.getAttribute("data-slot")}: alpha=${opacity}, blur=${blur}`,
+                );
             }
             return failures;
           }, exposure);
@@ -323,21 +474,27 @@ for (const theme of ["light", "dark"]) {
           blur: Number(style.backdropFilter.match(/[\d.]+/)?.[0] ?? 0),
         };
       });
+    let previousExposure = -1;
+    let previousBlur = 0;
     for (const value of [0, 10, 30, 50, 70, 100]) {
       await slider.press("Home");
       for (let step = 0; step < value / 10; step++)
         await slider.press("ArrowRight");
       await expect(slider).toHaveAttribute("aria-valuenow", String(value));
-      await expect
-        .poll(async () => (await measure('input[type="search"]')).blur)
-        .toBeCloseTo(value * 0.18, 4);
-      const field = await measure('input[type="search"]');
-      const intensity = value / 100;
-      const expectedAlpha = Math.max(
-        1 - 1.4 * intensity,
-        1 - 0.35 / Math.max(intensity, 0.35),
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
       );
-      expect(field.alpha).toBeCloseTo(expectedAlpha, 2);
+      const field = await measure('input[type="search"]');
+      if (value === 0) expect(field).toEqual({ alpha: 1, blur: 0 });
+      else {
+        expect(field.alpha).toBeGreaterThan(0);
+        expect(field.alpha).toBeLessThan(1);
+        expect(field.blur).toBeGreaterThan(previousBlur);
+      }
+      previousBlur = field.blur;
       // 图片与主体阅读底色位于控件下方，中间档仍应明显透出壁纸。
       const exposure = await search.evaluate((node) => {
         const canvas = document.createElement("canvas");
@@ -366,7 +523,9 @@ for (const theme of ["light", "dark"]) {
         }
         return transmission;
       });
-      expect(exposure).toBeCloseTo(intensity ** 2 * (1 - expectedAlpha), 2);
+      expect(exposure).toBeGreaterThan(previousExposure);
+      if (value === 50) expect(exposure).toBeGreaterThan(0.15);
+      previousExposure = exposure;
       await font.click();
       const menu = page.locator('[data-slot="select-content"]');
       await expect(menu).toHaveCSS("opacity", "1");
@@ -381,8 +540,12 @@ for (const theme of ["light", "dark"]) {
         );
       });
       const popup = await measure('[data-slot="select-content"]');
-      expect(popup.alpha).toBeCloseTo(expectedAlpha, 2);
-      expect(popup.blur).toBeCloseTo(value * 0.28, 4);
+      if (value === 0) expect(popup).toEqual({ alpha: 1, blur: 0 });
+      else {
+        expect(popup.alpha).toBeGreaterThan(0);
+        expect(popup.alpha).toBeLessThan(1);
+        expect(popup.blur).toBeGreaterThanOrEqual(field.blur);
+      }
       if (value === 50)
         await page.screenshot({
           path: testInfo.outputPath(`frost-50-${theme}.png`),
@@ -601,6 +764,219 @@ for (const theme of ["light", "dark"]) {
       path: testInfo.outputPath(`frost-50-color-${theme}.png`),
     });
     await page.keyboard.press("Escape");
+  });
+
+  test(`100% wallpaper keeps shared materials readable and translucent: ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await seed(page, { theme, backgroundIntensity: 100 });
+    const pixels = new Map<string, number[][]>();
+    const measurements: {
+      wallpaper: string;
+      label: string;
+      contrast: number;
+      background: number[];
+      foreground: number[];
+      sample: { x: number; y: number };
+    }[] = [];
+    let wallpaper = "";
+    const check = async (
+      label: string,
+      locator: Locator,
+      placeholder = false,
+      translucent = false,
+    ) => {
+      const result = await renderedTextContrast(page, locator, placeholder);
+      measurements.push({
+        wallpaper,
+        label,
+        contrast: result.contrast,
+        background: result.background,
+        foreground: result.foreground,
+        sample: result.sample,
+      });
+      expect(
+        result.contrast,
+        `${theme} ${wallpaper} ${label}: background=${JSON.stringify(result.background)}, foreground=${JSON.stringify(result.foreground)}`,
+      ).toBeGreaterThanOrEqual(4.5);
+      if (translucent)
+        pixels.set(label, [...(pixels.get(label) ?? []), result.background]);
+    };
+    for (const background of ["black", "white"]) {
+      wallpaper = background;
+      await page.goto("./#/settings");
+      const source = await page.evaluate((color) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 16;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = color;
+        context.fillRect(0, 0, 16, 16);
+        return canvas.toDataURL("image/png").split(",")[1]!;
+      }, background);
+      await page.locator('input[type="file"]').setInputFiles({
+        name: `material-${background}.png`,
+        mimeType: "image/png",
+        buffer: Buffer.from(source, "base64"),
+      });
+      const image = page.locator("[data-custom-background]");
+      await expect
+        .poll(() =>
+          image.evaluate(async (element) => {
+            const bitmap = element as HTMLImageElement;
+            await bitmap.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(bitmap, 0, 0, 1, 1);
+            return context.getImageData(0, 0, 1, 1).data[0];
+          }),
+        )
+        .toBe(background === "black" ? 0 : 255);
+      await expect(image).toHaveCSS("opacity", "1");
+      await expect(
+        page.getByRole("slider", {
+          name: "Background transparency",
+          exact: true,
+        }),
+      ).toHaveAttribute("aria-valuenow", "100");
+      await check(
+        "input placeholder",
+        page.getByRole("searchbox", { name: "Search settings", exact: true }),
+        true,
+        true,
+      );
+      const selectedToggle = page.locator(
+        '#settings-appMode [data-slot="toggle-group-item"][data-state="on"]',
+      );
+      await expect(selectedToggle).toHaveText("Full showcase");
+      await check("selected toggle", selectedToggle);
+
+      await page.goto("./#/");
+      await check(
+        "bare introductory copy",
+        page.locator(".showroom-lede"),
+        false,
+        true,
+      );
+      await check(
+        "navigation",
+        page.locator('#app-sidebar a[href="#/workbench"]'),
+        false,
+        true,
+      );
+      await check(
+        "shortcut key",
+        page.locator(".showroom-command-link kbd"),
+        false,
+        true,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `materials-100-${theme}-${background}-overview.png`,
+        ),
+      });
+
+      await page.goto("./#/media");
+      await page
+        .getByRole("textbox", { name: "Markdown content", exact: true })
+        .fill(
+          [
+            "# Reading material",
+            "",
+            "[Reference](https://example.com)",
+            "",
+            "```json",
+            '{ "label": "clear text", "count": 42, "active": true, "missing": null }',
+            "```",
+          ].join("\n"),
+        );
+      const preview = page.getByRole("region", {
+        name: "Preview",
+        exact: true,
+      });
+      const code = preview.locator(".code-block");
+      await expect(code).toBeVisible();
+      await check(
+        "reading link",
+        preview.getByRole("link", { name: "Reference", exact: true }),
+      );
+      for (const kind of [
+        "property",
+        "string",
+        "number",
+        "boolean",
+        "null",
+        "punctuation",
+      ])
+        await check(
+          `syntax ${kind}`,
+          code.locator(`[data-token="${kind}"]`).first(),
+          false,
+          kind === "property",
+        );
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `materials-100-${theme}-${background}-code.png`,
+        ),
+      });
+
+      await page.goto("./#/data-studio");
+      const selectedTab = page.getByRole("tab", {
+        name: "Records",
+        exact: true,
+      });
+      await expect(selectedTab).toHaveAttribute("aria-selected", "true");
+      await check("selected tab", selectedTab);
+      const records = page.getByRole("region", {
+        name: "Demo records",
+        exact: true,
+      });
+      await records.evaluate((element) => element.scrollTo(0, 180));
+      expect(
+        await records.evaluate((element) => element.scrollTop),
+      ).toBeGreaterThan(0);
+      const heading = records
+        .getByRole("columnheader", { name: /^Name\b/ })
+        .locator("button")
+        .first();
+      await check("sticky table heading", heading, false, true);
+      await expect(records.locator("thead")).toHaveCSS("position", "sticky");
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `materials-100-${theme}-${background}-table.png`,
+        ),
+      });
+
+      await page.goto("./#/media");
+      await page
+        .getByRole("tab", { name: "Live connections", exact: true })
+        .click();
+      await check(
+        "message output",
+        page
+          .getByRole("list", { name: "Message log", exact: true })
+          .locator("li")
+          .first(),
+        false,
+        true,
+      );
+    }
+    await testInfo.attach("material-contrast-pixels", {
+      body: JSON.stringify(measurements, null, 2),
+      contentType: "application/json",
+    });
+    for (const [label, [black, white]] of pixels) {
+      expect(black, `${label} black wallpaper sample`).toBeDefined();
+      expect(white, `${label} white wallpaper sample`).toBeDefined();
+      // 同一控件的实际底色必须仍随壁纸变化，防止退回不透明的固定色块。
+      expect(
+        Math.max(
+          ...white!.map((value, channel) => Math.abs(value - black![channel]!)),
+        ),
+        `${label} transmits wallpaper color: black=${JSON.stringify(black)}, white=${JSON.stringify(white)}`,
+      ).toBeGreaterThan(1);
+    }
   });
 
   test(
@@ -2004,7 +2380,7 @@ test("a local background imports, survives reload, keeps the last good image on 
 });
 
 for (const theme of ["light", "dark"]) {
-  test(`skin intensity has eleven stops, opaque and transparent endpoints, and persists: ${theme}`, async ({
+  test(`skin intensity has eleven stops, full wallpaper with protected reading surfaces, and persists: ${theme}`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({
@@ -2091,37 +2467,31 @@ for (const theme of ["light", "dark"]) {
         "aria-valuetext",
         `${value}% · Stop ${value / 10 + 1} of 11`,
       );
-      await expect
-        .poll(async () => {
-          const sample = await layers();
-          return [
-            sample.image,
-            ...sample.surfaces.map((alpha) => Math.round(alpha * 100)),
-          ];
-        })
-        .toEqual([
-          value / 100,
-          100 - value,
-          100 - value,
-          100 - value,
-          Math.round(
-            100 * Math.max(1 - (1.4 * value) / 100, 0.6 - (0.6 * value) / 100),
-          ),
-        ]);
+      await expect.poll(async () => (await layers()).image).toBe(value / 100);
       const actual = await layers();
       expect(actual.image).toBeGreaterThan(previous.image);
-      actual.surfaces.forEach((alpha, index) =>
-        expect(alpha).toBeLessThanOrEqual(previous.surfaces[index]!),
+      // 滑条控制壁纸显现，文字所在的表面继续保留阅读保护。
+      for (const alpha of actual.surfaces) {
+        expect(alpha).toBeGreaterThan(0);
+        expect(alpha).toBeLessThan(1);
+      }
+      expect(actual.image * (1 - actual.surfaces[2]!)).toBeGreaterThan(
+        previous.image * (1 - previous.surfaces[2]!),
       );
       if (value === 50) {
-        expect(actual.surfaces[3]).toBeCloseTo(0.3, 2);
+        expect(actual.surfaces[3]).toBeLessThan(0.5);
         await page.screenshot({
           path: testInfo.outputPath(`intensity-${theme}-50.png`),
         });
       }
       previous = actual;
     }
-    await expect.poll(layers).toEqual({ image: 1, surfaces: [0, 0, 0, 0] });
+    const fullyShown = await layers();
+    expect(fullyShown.image).toBe(1);
+    for (const alpha of fullyShown.surfaces) {
+      expect(alpha).toBeGreaterThan(0);
+      expect(alpha).toBeLessThan(1);
+    }
     await page.screenshot({
       path: testInfo.outputPath(`intensity-${theme}-100.png`),
     });

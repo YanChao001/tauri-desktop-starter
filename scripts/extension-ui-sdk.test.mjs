@@ -10,6 +10,7 @@ const source = await readFile(
   new URL("../sdk/extension-ui.js", import.meta.url),
   "utf8",
 );
+const sharedStyles = `@layer starter-defaults {\n${await readFile(new URL("../src/styles/surface-tokens.css", import.meta.url), "utf8")}\n${await readFile(new URL("../src/styles/control-styles.css", import.meta.url), "utf8")}\n}`;
 function fixture({
   reduced = false,
   schedule = setTimeout,
@@ -30,7 +31,10 @@ function fixture({
   };
   const root = {
     dataset: {},
-    style: { setProperty: (key, value) => tokens.set(key, value) },
+    style: {
+      setProperty: (key, value) => tokens.set(key, value),
+      removeProperty: (key) => tokens.delete(key),
+    },
     classList: {
       toggle: (name, enabled) =>
         enabled ? classes.add(name) : classes.delete(name),
@@ -582,12 +586,14 @@ function snapshot(overrides = {}) {
     dirty: false,
     locale: "en",
     grantedPermissions: [],
+    ...overrides,
     theme: {
       mode: "light",
       motion: "full",
       tokens: { "--host-font-size": "17px", "--primary": "blue" },
+      styles: sharedStyles,
+      ...overrides.theme,
     },
-    ...overrides,
   };
 }
 
@@ -1365,6 +1371,61 @@ test("explicit shadow styles retain native select semantics, share one picker an
     assert.equal(select.hasAttribute("aria-expanded"), false);
     pointer(select);
     assert.equal(shadowPopup(), null);
+  } finally {
+    close();
+  }
+});
+
+test("one complete host stylesheet reaches current and future controls and registered shadow trees", () => {
+  const { window, send, close } = selectFixture();
+  try {
+    const before = window.document.createElement("section");
+    window.document.body.append(before);
+    const shadow = before.attachShadow({ mode: "open" });
+    const dispose = window.starter.applyStyles(shadow);
+    const author = window.document.createElement("style");
+    author.textContent = "button { background: rebeccapurple; }";
+    window.document.head.append(author);
+    send({
+      type: "state",
+      value: snapshot({ theme: { tokens: { "--retired-material": "red" } } }),
+    });
+    const documentStyle = window.document.querySelector(
+      "[data-starter-defaults]",
+    );
+    const shadowStyle = shadow.querySelector("[data-starter-defaults]");
+    assert.equal(documentStyle.textContent, sharedStyles);
+    assert.equal(shadowStyle.textContent, sharedStyles);
+    // 首帧未使用的少见控件以后插入时，已有的完整样式无需再做 DOM 检测或请求。
+    const rare = window.document.createElement("meter");
+    rare.value = 0.5;
+    window.document.body.append(rare);
+    assert.match(documentStyle.textContent, /meter/);
+    const later = window.document.createElement("section");
+    window.document.body.append(later);
+    const laterRoot = later.attachShadow({ mode: "closed" });
+    const disposeLater = window.starter.applyStyles(laterRoot);
+    assert.equal(
+      laterRoot.querySelector("[data-starter-defaults]").textContent,
+      sharedStyles,
+    );
+    const updated = `${sharedStyles}\n@layer starter-defaults { output { border-style: dashed; } }`;
+    send({ type: "state", value: snapshot({ theme: { styles: updated } }) });
+    assert.equal(documentStyle.textContent, updated);
+    assert.equal(shadowStyle.textContent, updated);
+    assert.equal(
+      laterRoot.querySelector("[data-starter-defaults]").textContent,
+      updated,
+    );
+    assert.equal(
+      window.document.documentElement.style.getPropertyValue(
+        "--retired-material",
+      ),
+      "",
+    );
+    assert.equal(author.textContent, "button { background: rebeccapurple; }");
+    dispose();
+    disposeLater();
   } finally {
     close();
   }

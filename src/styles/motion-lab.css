@@ -366,7 +366,7 @@
 }
 .lab-presets button:hover,
 .lab-presets button[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
   color: var(--foreground);
 }
@@ -378,7 +378,6 @@
   margin-top: 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--background);
 }
 .lab-response > div {
   flex-shrink: 0;
@@ -449,7 +448,7 @@
   cursor: pointer;
 }
 .lab-layout-tabs button:hover {
-  background: var(--accent);
+  background: var(--surface-state-hover);
   color: var(--foreground);
 }
 .lab-layout-tabs button > span:last-child {
@@ -462,7 +461,7 @@
 .lab-layout-selection {
   position: absolute;
   inset: 0;
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
@@ -627,11 +626,11 @@
   cursor: pointer;
 }
 .lab-focus-options button[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border-color: var(--primary);
 }
 .lab-focus-options button:hover {
-  background: var(--accent);
+  background: var(--surface-state-hover);
   border-color: var(--primary);
 }
 .lab-focus-options button > svg {

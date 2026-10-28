@@ -227,7 +227,8 @@ export function RecoveryContent({
                     {backups.map((backup) => (
                       <li
                         key={backup.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"
+                        data-surface="control"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3"
                       >
                         <div className="min-w-0 text-sm">
                           <p>

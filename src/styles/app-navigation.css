@@ -60,12 +60,12 @@
 }
 
 .app-sidebar-link:hover {
-  background: color-mix(in oklab, var(--sidebar-accent) 58%, transparent);
+  background: var(--surface-state-hover);
   color: var(--sidebar-foreground);
 }
 
 .app-sidebar-link[aria-current="page"] {
-  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
+  background: var(--surface-state-selected);
   color: var(--sidebar-foreground);
   font-weight: 500;
 }
@@ -86,7 +86,7 @@
   min-width: 0;
   align-items: center;
   border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
+  background: var(--surface-state-selected);
 }
 
 .app-sidebar-extension .app-sidebar-link {
@@ -124,7 +124,7 @@
 .app-sidebar-command {
   min-height: 36px;
   border: 1px solid var(--sidebar-border);
-  background: color-mix(in oklab, var(--sidebar-accent) 22%, transparent);
+  background: var(--control-background);
   color: var(--muted-foreground);
   font-size: 0.72rem;
   transition:
@@ -133,7 +133,7 @@
 }
 
 .app-sidebar-command:hover {
-  background: color-mix(in oklab, var(--sidebar-accent) 66%, transparent);
+  background: var(--surface-state-hover);
   color: var(--sidebar-foreground);
 }
 
@@ -270,7 +270,7 @@
 }
 .app-title-menu-trigger:is(:hover, [data-state="open"]),
 .app-title-language:is(:hover, [data-state="open"]) {
-  background-color: var(--muted);
+  background-color: var(--surface-state-hover);
   color: var(--foreground);
 }
 .app-title-menu-trigger:focus-visible {

@@ -178,7 +178,12 @@ export function TitleBar({
           >
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.file")}
                 </button>
               </DropdownMenuTrigger>
@@ -192,7 +197,12 @@ export function TitleBar({
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.edit")}
                 </button>
               </DropdownMenuTrigger>
@@ -204,7 +214,12 @@ export function TitleBar({
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.view")}
                 </button>
               </DropdownMenuTrigger>
@@ -242,7 +257,12 @@ export function TitleBar({
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.help")}
                 </button>
               </DropdownMenuTrigger>
@@ -341,11 +361,13 @@ export function TitleBar({
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
+                  data-surface="transparent"
                   type="button"
                   aria-label={t("title.minimize")}
                   data-window-control
+                  data-variant="ghost"
                   onClick={() => void execute("minimize-window")}
-                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-(--surface-state-hover) hover:text-foreground"
                 >
                   <MinusIcon className="size-4" />
                 </button>
@@ -357,13 +379,15 @@ export function TitleBar({
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
+                  data-surface="transparent"
                   type="button"
                   aria-label={
                     maximized ? t("title.restore") : t("title.maximize")
                   }
                   data-window-control
+                  data-variant="ghost"
                   onClick={() => void execute("toggle-maximize")}
-                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-(--surface-state-hover) hover:text-foreground"
                 >
                   <Maximize2Icon className="size-3.5" />
                 </button>
@@ -375,9 +399,11 @@ export function TitleBar({
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
+                  data-surface="transparent"
                   type="button"
                   aria-label={t("title.close")}
                   data-window-control
+                  data-variant="ghost"
                   onClick={() => void execute("close-window")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
                 >

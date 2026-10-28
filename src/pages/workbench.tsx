@@ -514,8 +514,10 @@ export default function Workbench() {
                 {recent.map((entry) => (
                   <li key={entry.id}>
                     <button
+                      data-surface="transparent"
+                      data-variant="ghost"
                       disabled={pending}
-                      className="w-full truncate rounded-md px-2 py-2 text-left text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                      className="w-full truncate rounded-md px-2 py-2 text-left text-xs hover:bg-(--surface-state-hover) focus-visible:ring-2 focus-visible:ring-ring"
                       title={entry.path}
                       onClick={() =>
                         void perform(async () =>

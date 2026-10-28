@@ -278,19 +278,22 @@ export default function Overview() {
             </Button>
           </div>
           <button
+            data-surface="transparent"
+            data-variant="ghost"
             type="button"
             onClick={() => setPaletteOpen(true)}
             className="showroom-command-link"
           >
             <CommandIcon size={15} />
             <span>{t("showroom.shortcut")}</span>
-            <kbd>⌘ / Ctrl K</kbd>
+            <kbd data-surface="control">⌘ / Ctrl K</kbd>
             <span className="sr-only">{t("showroom.commands")}</span>
           </button>
         </div>
         <div className="showroom-preview">
           <div
             ref={scene}
+            data-surface="artwork"
             className="showroom-scene"
             data-vibe={vibe.id}
             data-active={active}
@@ -350,7 +353,11 @@ export default function Overview() {
                 </span>
               </div>
             </motion.div>
-            <div className="showroom-floating-note" aria-hidden="true">
+            <div
+              data-surface="reading"
+              className="showroom-floating-note"
+              aria-hidden="true"
+            >
               <span className="showroom-note-icon">
                 <LayersIcon size={18} />
               </span>
@@ -379,6 +386,7 @@ export default function Overview() {
                 <label
                   key={item.id}
                   className="showroom-vibe"
+                  data-surface="control"
                   data-vibe={item.id}
                   data-selected={vibeIndex === index}
                 >
@@ -390,7 +398,11 @@ export default function Overview() {
                     checked={vibeIndex === index}
                     onChange={() => setVibeIndex(index)}
                   />
-                  <span className="showroom-vibe-swatch" aria-hidden="true" />
+                  <span
+                    data-surface="artwork"
+                    className="showroom-vibe-swatch"
+                    aria-hidden="true"
+                  />
                   <span>{t(item.label)}</span>
                   {vibeIndex === index ? <CheckIcon size={12} /> : null}
                 </label>

@@ -31,6 +31,7 @@ export function LanguageSwitch({
   const locale = getLocale(settings.language);
   const trigger = (
     <SelectTrigger
+      data-surface={compact ? "transparent" : undefined}
       size="sm"
       aria-label={t("common.language")}
       aria-description={locale.nativeName}

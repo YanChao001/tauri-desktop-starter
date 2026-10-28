@@ -16,7 +16,7 @@
   height: 1.2rem;
   font-size: 0.75rem;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--surface-state-selected);
   color: var(--foreground);
 }
 .workspace-demo {
@@ -67,10 +67,10 @@
   text-overflow: ellipsis;
 }
 .workspace-node:hover {
-  background: var(--muted);
+  background: var(--surface-state-hover);
 }
 .workspace-node[aria-selected="true"] {
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
 }
 .workspace-node:focus-visible {

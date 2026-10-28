@@ -47,11 +47,13 @@ export function SkinPicker() {
                 <Tooltip key={kind}>
                   <TooltipTrigger asChild>
                     <label
+                      data-surface="control"
+                      data-selected={active}
                       className={cn(
                         "skin-gallery-card group relative cursor-pointer rounded-xl border p-2 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
                         active
-                          ? "border-primary bg-primary/5"
-                          : "border-border/70 bg-background/25 hover:border-primary/50 hover:bg-background/45",
+                          ? "border-primary bg-(--surface-state-selected)"
+                          : "border-border/70 hover:border-primary/50 hover:bg-(--surface-state-hover)",
                       )}
                     >
                       <input
@@ -64,7 +66,10 @@ export function SkinPicker() {
                         aria-describedby={descriptionId}
                         onChange={() => update({ background: kind })}
                       />
-                      <span className="relative block aspect-[1.6] overflow-hidden rounded-lg border border-foreground/8 bg-background">
+                      <span
+                        data-surface="artwork"
+                        className="relative block aspect-[1.6] overflow-hidden rounded-lg border border-foreground/8 bg-background"
+                      >
                         <PatternArtwork
                           kind={kind}
                           preview
