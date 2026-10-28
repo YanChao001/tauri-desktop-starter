@@ -2420,7 +2420,7 @@ try {
         await idle(page, frame);
         expect(
           calls.slice(studioCallsBefore).map((call) => call.action),
-        ).toEqual(["tab-studio", "workspace-export"]);
+        ).toEqual(["workspace-export"]);
         const artifact = await page.evaluate(() =>
           window.__extensionUiTest.artifacts.at(-1),
         );
@@ -2473,30 +2473,7 @@ try {
             checkpointRetained: true,
           },
         };
-        await frame.locator("#studio-tab-tools").click();
-        await expect(frame.locator('[data-action="tab-text"]')).toHaveAttribute(
-          "aria-selected",
-          "true",
-          { timeout: 60000 },
-        );
-        await expect(frame.locator('[data-field="text"]')).toBeVisible();
-        await idle(page, frame);
-        await frame.locator('[data-field="text"]').fill("hello 你好");
-        await frame.locator('[data-field="mode"]').selectOption("upper");
-        await action("analyze");
-        await expect(frame.locator("#results pre")).toContainText("HELLO 你好");
-        await action("tab-data");
-        await action("data-sample-csv");
-        await expect(
-          frame.locator("#results table:visible").first(),
-        ).toBeVisible();
-        await action("tab-todo");
-        await frame.locator('[data-field="todo"]').fill("Retain task draft");
-        await action("tab-connections");
-        await action("tab-todo");
-        await expect(frame.locator('[data-field="todo"]')).toHaveValue(
-          "Retain task draft",
-        );
+        await frame.locator("#node-title").fill("Retain canvas draft");
       }
       // Import an unchanged export from real Wasm. Only the read-only Rust view
       // validation boundary is substituted; this must never execute another Wasm action.
@@ -2565,7 +2542,7 @@ try {
       if (name === "scientific-calculator")
         await pasteCalculatorExpression(frame, "999");
       else if (name === "lab")
-        await frame.locator('[data-field="todo"]').fill("Changed after export");
+        await frame.locator("#node-title").fill("Changed after export");
       else if (name === "lan-chat") {
         expect(
           JSON.parse(JSON.parse(exported.content).ui.state).layout,
@@ -2728,8 +2705,8 @@ try {
           "true",
         );
       } else
-        await expect(frame.locator('[data-field="todo"]')).toHaveValue(
-          "Retain task draft",
+        await expect(frame.locator("#node-title")).toHaveValue(
+          "Retain canvas draft",
         );
       const beforeShort = await page.locator("iframe").boundingBox();
       await page.evaluate(() => {
@@ -2818,11 +2795,11 @@ try {
       expect(defaults.scrollbar).toBe("8px");
       if (name === "lab") {
         expect(
-          defaults.controls.find((control) => control.id === "field-todo")
+          defaults.controls.find((control) => control.id === "node-title")
             .height,
         ).toBeCloseTo(hostDefaultControl.height, 0);
         defaults.tabs = await frame
-          .locator("#tabs button")
+          .locator("#studio-nav button")
           .evaluateAll((nodes) =>
             nodes.map((node) => ({
               selected: node.getAttribute("aria-selected") === "true",
@@ -2832,7 +2809,7 @@ try {
           );
         const selectedTab = defaults.tabs.find((tab) => tab.selected);
         const otherTabs = defaults.tabs.filter((tab) => !tab.selected);
-        expect(otherTabs).toHaveLength(3);
+        expect(otherTabs).toHaveLength(2);
         for (const tab of otherTabs)
           expect(tab.background).not.toBe(selectedTab.background);
       }
@@ -3254,7 +3231,7 @@ try {
       );
       const consentNames = wallpaperSelectedOnly
         ? ["wallpaper-browser"]
-        : ["lab", "scientific-calculator", "wallpaper-browser"];
+        : ["scientific-calculator", "wallpaper-browser"];
       for (const name of consentNames) {
         const permissions = await checkPermissionConsent(
           page,
@@ -3709,7 +3686,7 @@ try {
                   .slice(0, 40),
               },
               defaultControl: [
-                ...document.querySelectorAll("#start,#field-todo,#fit"),
+                ...document.querySelectorAll("#start,#canvas-add,#fit"),
               ].map((node) => ({
                 id: node.id,
                 boxSizing: getComputedStyle(node).boxSizing,

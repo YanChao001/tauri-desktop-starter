@@ -64,16 +64,18 @@ const configuration = (await fetch(
       "all",
   })}`,
 ).then((response) => response.json())) as { snapshot: ExtensionSnapshot };
-// A separate host-data dialog case grants only this declared optional permission.
-// The regular profiles retain their ungranted offline Lab experience.
+// 宿主数据对话框用例单独合成文本声明和授权，不给真实工作台增加权限或调用已移除的数据动作。
 if (
   new URLSearchParams(location.search).get("hostDataBoundaryMock") === "true"
 ) {
   const lab = configuration.snapshot.items.find(
     (item) => item.package.manifest.id === "starter.extension-lab",
   );
-  if (!lab?.package.manifest.optionalPermissions.includes("text:read"))
-    throw new Error("The host-data fixture requires declared text:read");
+  if (!lab) throw new Error("The host-data fixture requires a UI package");
+  lab.package.manifest.optionalPermissions = [
+    ...lab.package.manifest.optionalPermissions,
+    "text:read",
+  ];
   lab.grantedPermissions = [...lab.grantedPermissions, "text:read"];
   window.__extensionUiTest.permissionGrantBoundaryMock = true;
 }

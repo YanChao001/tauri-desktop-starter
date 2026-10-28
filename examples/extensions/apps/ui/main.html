@@ -5,180 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>本地工作台</title>
     <style>
-      main {
-        max-width: 1080px;
-        margin: auto;
-        padding: 18px;
-      }
-      .app-header {
-        margin-bottom: 18px;
-      }
-      #app-name {
-        margin: 0 0 16px;
-      }
-      nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      nav button {
-        flex: 1 0 auto;
-        white-space: nowrap;
-      }
-      main[data-motion="full"] nav button {
-        transition:
-          background-color 150ms ease,
-          color 150ms ease,
-          border-color 150ms ease;
-      }
-      nav [data-pending="true"] {
-        border-color: var(--primary);
-        cursor: progress;
-      }
-      nav [aria-selected="true"] {
-        background: var(--primary);
-        color: var(--primary-foreground);
-      }
-      /* 切工具只临时锁定交互，保持旧内容亮度；真正不可用的操作仍显示禁用样式。 */
-      #scene-tools[data-switching="true"]
-        [aria-disabled="true"]:not([data-disabled="true"]),
-      #scene-tools[data-switching="true"] #tools-to-lens {
-        opacity: 1;
-      }
-      h1 {
-        margin: 0;
-        font-size: 1.6em;
-        line-height: 1.3;
-      }
-      h2 {
-        font-size: 1.15em;
-        margin: 0 0 10px;
-      }
-      #heading {
-        margin: 0;
-        flex: 0 0 auto;
-      }
-      .tool-heading {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-width: 0;
-      }
-      h3 {
-        font-size: 1em;
-      }
-      #description {
-        margin: 8px 0 0;
-        color: var(--muted-foreground);
-      }
-      .layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-        gap: 18px;
-        margin-top: 16px;
-        align-items: start;
-      }
-      .layout.single {
-        grid-template-columns: 1fr;
-      }
-      .fields,
-      .blocks {
-        display: grid;
-        gap: 16px;
-        min-width: 0;
-      }
-      .field {
-        display: grid;
-        gap: 6px;
-        min-width: 0;
-      }
-      .field > span:first-child {
-        font-size: 0.9em;
-      }
-      .check {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-      input:not([type="checkbox"]),
-      select,
-      #scene-tools textarea {
-        width: 100%;
-      }
-      textarea {
-        min-height: 240px;
-        resize: vertical;
-        font-family: ui-monospace, monospace;
-        line-height: 1.65;
-      }
-      .actions,
-      #artifacts {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 14px;
-      }
-      .actions button {
-        flex: 0 1 auto;
-      }
-      .primary {
-        background: var(--primary);
-        color: var(--primary-foreground);
-      }
-      .block {
-        min-width: 0;
-      }
-      .block p {
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        margin: 0 0 10px;
-      }
-      .block pre {
-        background: var(--muted);
-        padding: 14px;
-        border-radius: var(--radius, 8px);
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        max-height: 48vh;
-        overflow: auto;
-        margin: 0;
-      }
-      .block code {
-        font-family: ui-monospace, monospace;
-      }
-      .metrics {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px;
-      }
-      .metric {
-        min-width: 80px;
-      }
-      .metric small {
-        display: block;
-        color: var(--muted-foreground);
-      }
-      .metric strong {
-        font-size: 1.15em;
-        font-weight: 600;
-      }
-      details {
-        border-top: 1px solid var(--border);
-        padding-top: 12px;
-      }
-      details > summary {
-        cursor: pointer;
-        font-size: 0.9em;
-      }
-      details > div {
-        margin-top: 12px;
-      }
-      .table-scroll {
-        overflow: auto;
-        max-width: 100%;
-        border: 1px solid var(--border);
-        border-radius: var(--radius, 8px);
-      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -200,81 +26,9 @@
       thead {
         background: var(--muted);
       }
-      .pager {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        margin-top: 8px;
-        font-size: 0.85em;
-      }
-      .chart {
-        width: 100%;
-        height: 170px;
-      }
-      .task-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: grid;
-        gap: 8px;
-      }
-      .task-row {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        align-items: start;
-        gap: 10px;
-        border-bottom: 1px solid var(--border);
-        padding: 10px 0;
-      }
-      .task-row p {
-        margin: 0;
-        overflow-wrap: anywhere;
-      }
-      .task-row small {
-        color: var(--muted-foreground);
-      }
-      .task-row .done {
-        text-decoration: line-through;
-        color: var(--muted-foreground);
-      }
-      progress {
-        width: 100%;
-        accent-color: var(--primary);
-      }
       .error {
         color: var(--destructive);
         font-size: 0.85em;
-      }
-      .field-error:empty,
-      #error:empty,
-      #operation-status:empty,
-      #artifacts:empty {
-        display: none;
-      }
-      #operation-status {
-        color: var(--muted-foreground);
-        font-size: 0.85em;
-        margin: 0;
-        min-width: 0;
-        max-width: 50%;
-        overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-      }
-      #error {
-        margin-top: 14px;
-      }
-      @media (max-width: 680px) {
-        main {
-          padding: 14px;
-        }
-        .layout {
-          grid-template-columns: 1fr;
-          gap: 18px;
-        }
-        #scene-tools textarea {
-          min-height: 210px;
-        }
       }
       body {
         padding: 0;
@@ -382,7 +136,7 @@
       }
       .studio-nav {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.6rem;
         margin-bottom: 1.5rem;
       }
@@ -414,9 +168,6 @@
       }
       .studio-nav > button:nth-child(3) {
         --nav-tone: var(--art-rose);
-      }
-      .studio-nav > button:nth-child(4) {
-        --nav-tone: var(--art-orange);
       }
       .studio-nav > button:hover {
         background: color-mix(in oklab, var(--nav-tone) 4%, var(--card));
@@ -608,7 +359,7 @@
         border: 1px solid var(--studio-line);
         border-radius: calc(var(--studio-radius) + 0.25rem);
         overflow: clip;
-        background: var(--card);
+        background: var(--surface-card, var(--card));
       }
       .canvas-grid,
       .lens-grid,
@@ -808,7 +559,7 @@
         min-width: 0;
         padding: 1.25rem;
         border-left: 1px solid var(--studio-line);
-        background: var(--card);
+        background: var(--surface-card, var(--card));
       }
       .inspector h3,
       .side-panel h3 {
@@ -914,7 +665,7 @@
         gap: 0.65rem 1rem;
         padding: 0.8rem 1.25rem;
         border-top: 1px solid var(--studio-line);
-        background: var(--card);
+        background: var(--surface-card, var(--card));
       }
       .scene-footer > p,
       .scene-footer > span {
@@ -937,58 +688,6 @@
         vertical-align: middle;
         border-radius: 50%;
         background: var(--art-cyan);
-      }
-      .capability-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.75rem;
-        margin-top: 1rem;
-      }
-      .capability-card {
-        --capability-tone: var(--art-violet);
-        position: relative;
-        min-width: 0;
-        padding: 1.1rem;
-        border: 1px solid var(--border);
-        border-radius: var(--studio-radius);
-        background: var(--card);
-      }
-      .capability-card:nth-child(2) {
-        --capability-tone: var(--art-cyan);
-      }
-      .capability-card:nth-child(3) {
-        --capability-tone: var(--art-rose);
-      }
-      .capability-icon {
-        display: grid;
-        place-items: center;
-        width: 1.8rem;
-        height: 1.8rem;
-        margin-bottom: 0.8rem;
-        border: 1px solid
-          color-mix(in oklab, var(--capability-tone) 20%, var(--border));
-        border-radius: calc(var(--radius, 0.625rem) * 0.85);
-        color: var(--capability-tone);
-        background: color-mix(
-          in oklab,
-          var(--capability-tone) 6%,
-          var(--background)
-        );
-      }
-      .capability-icon svg {
-        width: 0.95rem;
-        height: 0.95rem;
-      }
-      .capability-card h3 {
-        font-size: 0.8125rem;
-        font-weight: 550;
-        line-height: 1.5;
-      }
-      .capability-card p {
-        margin-top: 0.4rem;
-        color: var(--muted-foreground);
-        font-size: 0.75rem;
-        line-height: 1.8;
       }
       .chart-stage {
         position: relative;
@@ -1245,7 +944,7 @@
         padding: 1rem;
         border: 1px solid var(--studio-line);
         border-radius: var(--radius, 0.625rem);
-        background: var(--background);
+        background: var(--surface-card, var(--card));
       }
       .flow-results strong {
         display: block;
@@ -1304,9 +1003,6 @@
         }
       }
       @container workbench-studio (max-width: 980px) {
-        .studio-nav {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
         .studio-nav > button {
           height: 4rem;
         }
@@ -1346,9 +1042,6 @@
         }
         .side-panel .control-field {
           margin-top: 1rem;
-        }
-        .capability-card {
-          padding: 1rem;
         }
       }
       @container workbench-studio (max-width: 580px) {
@@ -1419,23 +1112,6 @@
         .inspector,
         .side-panel {
           padding: 1rem;
-        }
-        .capability-grid {
-          grid-template-columns: minmax(0, 1fr);
-          gap: 0.6rem;
-        }
-        .capability-card {
-          display: grid;
-          grid-template-columns: 1.8rem minmax(0, 1fr);
-          gap: 0 0.8rem;
-          padding: 0.9rem 1rem;
-        }
-        .capability-icon {
-          grid-row: span 2;
-          margin: 0;
-        }
-        .capability-card p {
-          margin-top: 0.2rem;
         }
         .chart-stage {
           padding-inline: 1.25rem;
@@ -1604,24 +1280,6 @@
             ></small></span
           ><span class="nav-index">03</span>
         </button>
-        <button
-          type="button"
-          role="tab"
-          id="studio-tab-tools"
-          aria-controls="scene-tools"
-          aria-selected="false"
-          tabindex="-1"
-          data-scene="tools"
-        >
-          <span class="nav-icon" aria-hidden="true">⊞</span
-          ><span class="nav-copy"
-            ><strong data-zh="工具与连接" data-en="Tools & connections"></strong
-            ><small
-              data-zh="接入真实能力"
-              data-en="Connect to your files"
-            ></small></span
-          ><span class="nav-index">04</span>
-        </button>
       </nav>
       <section
         class="studio-scene"
@@ -1756,38 +1414,6 @@
             </div>
           </div>
         </div>
-        <div class="capability-grid">
-          <article class="capability-card">
-            <span class="capability-icon" aria-hidden="true">↗</span>
-            <div>
-              <h3 data-zh="想法随手移动" data-en="Ideas in motion"></h3>
-              <p
-                data-zh="指针拖动、键盘微调、自动排列。布局由你决定。"
-                data-en="Drag, nudge with keys, or arrange everything at once."
-              ></p>
-            </div>
-          </article>
-          <article class="capability-card">
-            <span class="capability-icon" aria-hidden="true">⌁</span>
-            <div>
-              <h3 data-zh="数据可以接力" data-en="Keep the data flowing"></h3>
-              <p
-                data-zh="在数据透镜中探索，再送入流程编排继续处理。"
-                data-en="Explore in Data lens, then pass the rows to your pipeline."
-              ></p>
-            </div>
-          </article>
-          <article class="capability-card">
-            <span class="capability-icon" aria-hidden="true">▣</span>
-            <div>
-              <h3 data-zh="连接本地能力" data-en="Made for local work"></h3>
-              <p
-                data-zh="文件、私有存储与网络按需授权，成果由你保存。"
-                data-en="Connect files, storage and network with your permission."
-              ></p>
-            </div>
-          </article>
-        </div>
       </section>
       <section
         class="studio-scene"
@@ -1916,8 +1542,8 @@
               ></button>
               <p
                 class="panel-note"
-                data-zh="支持 JSON 对象数组：label、category、value。最多 120 条；也可在工具与连接中接收文件后载入。"
-                data-en="JSON rows with label, category and value. Up to 120 rows. You can also load a file through Tools & connections."
+                data-zh="支持 JSON 对象数组：label、category、value，最多 120 条。"
+                data-en="JSON rows with label, category and value. Up to 120 rows."
               ></p>
             </aside>
           </div>
@@ -2124,42 +1750,6 @@
           </div>
         </div>
       </section>
-      <section
-        class="studio-scene"
-        id="scene-tools"
-        role="tabpanel"
-        aria-labelledby="studio-tab-tools"
-        hidden
-      >
-        <header class="app-header">
-          <nav id="tabs" role="tablist" aria-label="工具"></nav>
-          <div class="scene-actions">
-            <button
-              type="button"
-              id="tools-to-lens"
-              data-variant="outline"
-              data-zh="将数据载入透镜"
-              data-en="Load into Data lens"
-            ></button>
-          </div>
-        </header>
-        <section id="panel" role="tabpanel">
-          <div class="tool-heading">
-            <h2 id="heading">文本工具</h2>
-            <p id="operation-status" role="status"></p>
-          </div>
-          <p id="description" class="muted"></p>
-          <div id="layout" class="layout">
-            <section id="form-pane">
-              <div id="fields" class="fields"></div>
-              <div id="actions" class="actions"></div>
-            </section>
-            <section id="results" class="blocks"></section>
-          </div>
-          <div id="artifacts"></div>
-          <p id="error" class="error" role="alert"></p>
-        </section>
-      </section>
       <p id="studio-error" class="error" role="alert"></p>
       <p
         id="studio-announcement"
@@ -2178,23 +1768,10 @@
           };
         let current,
           working = false,
-          renderedTab = null,
-          pendingTab = null,
-          panelVisible = true,
-          force = false,
-          localFields = {},
-          pages = {};
-        const signatures = new Map(),
-          paneMemory = new Map(),
-          reducedMotion = window.matchMedia?.(
-            "(prefers-reduced-motion: reduce)",
-          );
-        function changed(key, value) {
-          const signature = JSON.stringify(value);
-          if (signatures.get(key) === signature) return false;
-          signatures.set(key, signature);
-          return true;
-        }
+          panelVisible = true;
+        const reducedMotion = window.matchMedia?.(
+          "(prefers-reduced-motion: reduce)",
+        );
         function stopMotion() {
           canvasAnimations.forEach((animation) => animation.cancel());
           canvasAnimations.clear();
@@ -2227,728 +1804,22 @@
             }
           }
         }
-        function rememberPane(id) {
-          if (!id) return;
-          paneMemory.set(
-            id,
-            [
-              ...$("panel").querySelectorAll(
-                "[data-field],.table-scroll,pre,details",
-              ),
-            ].map((node, index) => ({
-              key: node.dataset.field ?? `result-${index}`,
-              top: node.scrollTop,
-              left: node.scrollLeft,
-              start: node.selectionStart,
-              end: node.selectionEnd,
-              open: node instanceof HTMLDetailsElement ? node.open : undefined,
-            })),
-          );
-        }
-        function restorePane(id) {
-          const memory = paneMemory.get(id);
-          if (!memory) return;
-          [
-            ...$("panel").querySelectorAll(
-              "[data-field],.table-scroll,pre,details",
-            ),
-          ].forEach((node, index) => {
-            const saved = memory.find(
-              (item) => item.key === (node.dataset.field ?? `result-${index}`),
-            );
-            if (!saved) return;
-            if (node instanceof HTMLDetailsElement)
-              node.open = saved.open ?? false;
-            if (
-              typeof saved.start === "number" &&
-              typeof node.setSelectionRange === "function"
-            )
-              node.setSelectionRange(saved.start, saved.end);
-            node.scrollTop = saved.top;
-            node.scrollLeft = saved.left;
-          });
-        }
         const tr = (zh, en) => (current?.locale === "en" ? en : zh);
-        const values = () =>
-          Object.fromEntries(
-            [...document.querySelectorAll("[data-field]")].map((input) => [
-              input.dataset.field,
-              input.type === "checkbox" ? String(input.checked) : input.value,
-            ]),
-          );
-        const fieldValue = (field) => {
-          const retained = force
-            ? undefined
-            : current.checkpoint?.fields?.[field.id];
-          return (
-            localFields[field.id] ??
-            (typeof retained === "string"
-              ? retained
-              : (current.fields[field.id] ?? field.value))
-          );
-        };
-        function retain(dirty = true, fields = values()) {
+        function retain(dirty = true) {
           studioDirty ||= dirty;
-          return starter.checkpoint(
-            { studio, fields, pages },
-            dirty || studioDirty,
-          );
-        }
-        function inline(node, text) {
-          for (const token of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
-            if (token.startsWith("**") && token.endsWith("**"))
-              node.append(create("strong", token.slice(2, -2)));
-            else if (token.startsWith("`") && token.endsWith("`"))
-              node.append(create("code", token.slice(1, -1)));
-            else node.append(document.createTextNode(token));
-          }
-        }
-        function markdown(text) {
-          const box = create("div");
-          let code = [],
-            list;
-          const flush = () => {
-            if (code.length) {
-              box.append(create("pre", code.join("\n")));
-              code = [];
-            }
-          };
-          for (const line of text.split("\n")) {
-            if (line.startsWith("    ")) {
-              code.push(line.slice(4));
-              continue;
-            }
-            flush();
-            if (!line.trim()) {
-              list = undefined;
-              continue;
-            }
-            const heading = line.match(/^(#{1,4})\s+(.*)/);
-            if (heading) {
-              const node = create(heading[1].length === 1 ? "h2" : "h3");
-              inline(node, heading[2]);
-              box.append(node);
-              list = undefined;
-            } else if (/^[-*] /.test(line)) {
-              if (!list) {
-                list = create("ul");
-                box.append(list);
-              }
-              const li = create("li");
-              inline(li, line.slice(2));
-              list.append(li);
-            } else {
-              list = undefined;
-              const p = create("p");
-              inline(p, line);
-              box.append(p);
-            }
-          }
-          flush();
-          return box;
-        }
-        function table(columns, rows, key, label) {
-          const wrap = create("div"),
-            scroll = create("div"),
-            node = create("table"),
-            head = create("thead"),
-            header = create("tr"),
-            body = create("tbody");
-          scroll.className = "table-scroll";
-          scroll.tabIndex = 0;
-          scroll.setAttribute("role", "region");
-          scroll.setAttribute(
-            "aria-label",
-            label ?? tr("数据表", "Data table"),
-          );
-          node.append(create("caption", label ?? tr("数据表", "Data table")));
-          columns.forEach((column) => {
-            const cell = create("th", column);
-            cell.scope = "col";
-            header.append(cell);
-          });
-          head.append(header);
-          node.append(head, body);
-          scroll.append(node);
-          wrap.append(scroll);
-          let page = Number.isInteger(pages[key])
-            ? Math.min(pages[key], Math.max(0, Math.ceil(rows.length / 20) - 1))
-            : 0;
-          const pager = create("div"),
-            previous = create("button", tr("上一页", "Previous")),
-            next = create("button", tr("下一页", "Next")),
-            status = create("span");
-          pager.className = "pager";
-          previous.type = next.type = "button";
-          status.setAttribute("role", "status");
-          function draw() {
-            body.replaceChildren(
-              ...rows.slice(page * 20, (page + 1) * 20).map((row) => {
-                const tr = create("tr");
-                row.forEach((value) => tr.append(create("td", String(value))));
-                return tr;
-              }),
-            );
-            status.textContent = `${page + 1} / ${Math.max(1, Math.ceil(rows.length / 20))}`;
-            previous.disabled = page === 0;
-            next.disabled = (page + 1) * 20 >= rows.length;
-          }
-          previous.onclick = () => {
-            page--;
-            pages[key] = page;
-            draw();
-            void retain(current.dirty).catch(report);
-          };
-          next.onclick = () => {
-            page++;
-            pages[key] = page;
-            draw();
-            void retain(current.dirty).catch(report);
-          };
-          draw();
-          if (rows.length > 20) {
-            pager.append(previous, status, next);
-            wrap.append(pager);
-          }
-          return wrap;
-        }
-        function chart(block, key) {
-          const wrap = create("div"),
-            svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
-            title = document.createElementNS(svg.namespaceURI, "title");
-          svg.classList.add("chart");
-          svg.setAttribute("viewBox", "0 0 640 170");
-          svg.setAttribute("role", "img");
-          svg.setAttribute("aria-label", block.label);
-          title.textContent = block.label;
-          svg.append(title);
-          const numbers = block.series
-              .flatMap((series) => series.values)
-              .filter((value) => typeof value === "number"),
-            min = Math.min(0, ...numbers),
-            max = Math.max(1, ...numbers),
-            range = max - min;
-          block.series.forEach((series, index) => {
-            const points = series.values.map((value, i) =>
-              typeof value === "number"
-                ? [
-                    24 + (i * 592) / Math.max(1, block.labels.length - 1),
-                    146 - ((value - min) * 124) / range,
-                  ]
-                : null,
-            );
-            if (block.chartType === "line") {
-              let segment = [];
-              const flush = () => {
-                if (segment.length) {
-                  const line = document.createElementNS(
-                    svg.namespaceURI,
-                    "polyline",
-                  );
-                  line.setAttribute(
-                    "points",
-                    segment.map((point) => point.join(",")).join(" "),
-                  );
-                  line.setAttribute("fill", "none");
-                  line.setAttribute("stroke", "var(--primary)");
-                  line.setAttribute("stroke-width", "3");
-                  line.setAttribute("opacity", String(1 - index * 0.18));
-                  svg.append(line);
-                  segment = [];
-                }
-              };
-              points.forEach((point) =>
-                point ? segment.push(point) : flush(),
-              );
-              flush();
-            } else
-              points.forEach((point, i) => {
-                if (!point) return;
-                const rect = document.createElementNS(svg.namespaceURI, "rect"),
-                  zero = 146 - ((0 - min) * 124) / range,
-                  width = Math.max(
-                    3,
-                    500 /
-                      Math.max(1, block.labels.length) /
-                      Math.max(1, block.series.length),
-                  );
-                rect.setAttribute(
-                  "x",
-                  String(
-                    22 +
-                      (i * 592) / Math.max(1, block.labels.length) -
-                      (width * block.series.length) / 2 +
-                      index * width,
-                  ),
-                );
-                rect.setAttribute("y", String(Math.min(zero, point[1])));
-                rect.setAttribute("width", String(width));
-                rect.setAttribute(
-                  "height",
-                  String(Math.max(1, Math.abs(zero - point[1]))),
-                );
-                rect.setAttribute("fill", "var(--primary)");
-                rect.setAttribute("opacity", String(1 - index * 0.18));
-                svg.append(rect);
-              });
-          });
-          wrap.append(
-            svg,
-            table(
-              [
-                tr("项目", "Item"),
-                ...block.series.map((series) => series.label),
-              ],
-              block.labels.map((label, index) => [
-                label,
-                ...block.series.map((series) => series.values[index] ?? "—"),
-              ]),
-              `${key}-data`,
-              block.label,
-            ),
-          );
-          return wrap;
-        }
-        function blocks(view) {
-          const activeTab = view.tabs?.find((tab) => tab.active)?.id;
-          const ordered = [...(view.blocks ?? [])].filter(
-            (block) => !(activeTab === "tab-text" && block.kind === "table"),
-          );
-          if (activeTab === "tab-text")
-            ordered.sort(
-              (a, b) =>
-                Number(b.kind === "markdown" && b.text.startsWith("###")) -
-                Number(a.kind === "markdown" && a.text.startsWith("###")),
-            );
-          $("results").replaceChildren(
-            ...ordered.map((block, index) => {
-              let node;
-              if (block.kind === "markdown") node = markdown(block.text);
-              else if (block.kind === "metrics") {
-                node = create("div");
-                node.className = "metrics";
-                block.items.forEach((item) => {
-                  const card = create("div");
-                  card.className = "metric";
-                  card.append(
-                    create("small", item.label),
-                    create("strong", item.value),
-                  );
-                  node.append(card);
-                });
-              } else if (block.kind === "table") {
-                if (activeTab === "tab-todo") {
-                  node = create("ul");
-                  node.className = "task-list";
-                  const actions = view.groups.flatMap((group) => group.actions);
-                  block.rows.forEach((row, index) => {
-                    const item = create("li"),
-                      content = create("div"),
-                      title = create("p", row[0]);
-                    item.className = "task-row";
-                    const toggle = actions.find(
-                      (action) => action.id === `todo-toggle-${index}`,
-                    );
-                    const remove = actions.find(
-                      (action) => action.id === `todo-remove-${index}`,
-                    );
-                    const completed = row[2] === tr("已完成", "Done");
-                    title.classList.toggle("done", completed);
-                    content.append(title);
-                    if (row[1]) content.append(create("small", row[1]));
-                    if (toggle) {
-                      const button = actionButton(toggle);
-                      button.textContent = completed
-                        ? tr("恢复", "Reopen")
-                        : tr("完成", "Done");
-                      item.append(button);
-                    }
-                    item.append(content);
-                    if (remove) {
-                      const button = actionButton(remove);
-                      button.textContent = tr("删除", "Remove");
-                      item.append(button);
-                    }
-                    node.append(item);
-                  });
-                } else
-                  node = table(block.columns, block.rows, `table-${index}`);
-              } else if (block.kind === "chart") {
-                node = create("details");
-                node.append(
-                  create("summary", block.label),
-                  chart(block, `chart-${index}`),
-                );
-              } else if (block.kind === "image") {
-                node = create("img");
-                node.alt = block.alt;
-                if (block.src.startsWith("data:image/")) node.src = block.src;
-              } else {
-                node = create("label", block.label);
-                const progress = create("progress");
-                if (block.value !== null) progress.value = block.value;
-                if (block.max !== null) progress.max = block.max;
-                node.append(progress);
-              }
-              node.classList.add("block");
-              return node;
-            }),
-          );
-        }
-        function actionButton(action) {
-          const button = create("button", action.label);
-          button.type = "button";
-          button.dataset.action = action.id;
-          button.dataset.disabled = String(!!action.disabled);
-          button.classList.toggle("primary", action.primary);
-          button.setAttribute("aria-label", action.ariaLabel ?? action.label);
-          button.onclick = () => void act(action.id);
-          return button;
-        }
-        function updateTabs(view) {
-          const retained = new Map(
-            [...$("tabs").children].map((button) => [
-              button.dataset.action,
-              button,
-            ]),
-          );
-          (view.tabs ?? [])
-            .filter((tab) => tab.id !== "tab-studio")
-            .forEach((tab, index) => {
-              const button = retained.get(tab.id) ?? actionButton(tab);
-              retained.delete(tab.id);
-              if (button.textContent !== tab.label)
-                button.textContent = tab.label;
-              button.setAttribute("aria-label", tab.label);
-              button.classList.toggle("primary", tab.active);
-              button.dataset.variant = "outline";
-              button.dataset.pending = String(pendingTab === tab.id);
-              button.setAttribute("aria-busy", String(pendingTab === tab.id));
-              button.setAttribute("role", "tab");
-              button.setAttribute("aria-selected", String(tab.active));
-              button.setAttribute("aria-controls", "panel");
-              button.id = `tab-${tab.id}`;
-              button.tabIndex = tab.active ? 0 : -1;
-              if (tab.active)
-                $("panel").setAttribute("aria-labelledby", button.id);
-              if ($("tabs").children[index] !== button)
-                $("tabs").insertBefore(
-                  button,
-                  $("tabs").children[index] ?? null,
-                );
-            });
-          retained.forEach((button) => button.remove());
-        }
-        function build(view) {
-          const active = document.hasFocus() ? document.activeElement : null,
-            focus =
-              active?.dataset.field !== undefined
-                ? ["field", active.dataset.field]
-                : active?.dataset.action !== undefined
-                  ? ["action", active.dataset.action]
-                  : active?.dataset.artifact !== undefined
-                    ? ["artifact", active.dataset.artifact]
-                    : null,
-            selection =
-              typeof active?.selectionStart === "number"
-                ? [active.selectionStart, active.selectionEnd]
-                : null,
-            activeTab = view.tabs?.find((tab) => tab.active)?.id;
-          if (
-            changed("fields", [
-              activeTab,
-              view.fields.map(({ value, ...field }) => field),
-            ])
-          ) {
-            $("fields").replaceChildren(
-              ...[...view.fields]
-                .sort(
-                  (a, b) => (a.kind === "textarea") - (b.kind === "textarea"),
-                )
-                .map((field) => {
-                  const label = create("label"),
-                    caption = create("span", field.label),
-                    input = create(
-                      field.kind === "textarea"
-                        ? "textarea"
-                        : field.kind === "select"
-                          ? "select"
-                          : "input",
-                    ),
-                    error = create("span");
-                  label.className =
-                    field.kind === "checkbox" ? "check" : "field";
-                  input.dataset.field = field.id;
-                  input.id = `field-${field.id}`;
-                  caption.id = `label-${field.id}`;
-                  input.setAttribute("aria-labelledby", caption.id);
-                  error.id = `error-${field.id}`;
-                  error.className = "field-error error";
-                  input.setAttribute("aria-describedby", error.id);
-                  if (input instanceof HTMLInputElement)
-                    input.type =
-                      field.kind === "checkbox"
-                        ? "checkbox"
-                        : field.kind === "date"
-                          ? "date"
-                          : field.kind === "number"
-                            ? "number"
-                            : "text";
-                  if (input instanceof HTMLSelectElement)
-                    (field.options ?? []).forEach((option) =>
-                      input.append(new Option(option.label, option.value)),
-                    );
-                  if (input.type === "checkbox")
-                    input.checked = fieldValue(field) === "true";
-                  else input.value = fieldValue(field);
-                  input.addEventListener(
-                    field.kind === "checkbox" || field.kind === "select"
-                      ? "change"
-                      : "input",
-                    () => {
-                      if (working || current.busy) {
-                        force = true;
-                        render();
-                        return;
-                      }
-                      localFields[field.id] =
-                        input.type === "checkbox"
-                          ? String(input.checked)
-                          : input.value;
-                      if (
-                        current.view.tabs?.some(
-                          (tab) =>
-                            tab.active &&
-                            ["tab-text", "tab-data"].includes(tab.id),
-                        )
-                      )
-                        $("operation-status").textContent = tr(
-                          "输入已修改，处理后更新结果。",
-                          "Input changed. Apply to update the result.",
-                        );
-                      void retain(true).catch(report);
-                    },
-                  );
-                  if (field.kind === "textarea")
-                    input.onkeydown = (event) => {
-                      if (
-                        (event.ctrlKey || event.metaKey) &&
-                        event.key === "Enter"
-                      ) {
-                        event.preventDefault();
-                        void act(
-                          field.id === "data-source"
-                            ? "data-preview"
-                            : "analyze",
-                        );
-                      }
-                    };
-                  label.append(caption, input, error);
-                  return label;
-                }),
-            );
-          }
-          if (changed("actions", [activeTab, view.groups])) {
-            $("actions").replaceChildren();
-            view.groups.forEach((group) =>
-              group.actions.forEach((action) => {
-                if (
-                  activeTab === "tab-todo" &&
-                  /^todo-(toggle|remove)-/.test(action.id)
-                )
-                  return;
-                $("actions").append(actionButton(action));
-              }),
-            );
-          }
-          $("form-pane").hidden =
-            view.fields.length === 0 && view.groups.length === 0;
-          $("layout").classList.toggle("single", view.fields.length === 0);
-          if (
-            changed("blocks", [
-              activeTab,
-              current.locale,
-              view.blocks,
-              activeTab === "tab-todo" ? view.groups : null,
-            ])
-          )
-            blocks(view);
-          if (changed("artifacts", [current.locale, view.artifacts])) {
-            $("artifacts").replaceChildren(
-              ...(view.artifacts ?? []).map((artifact, index) => {
-                const button = create(
-                  "button",
-                  tr("保存 ", "Save ") + artifact.name,
-                );
-                button.type = "button";
-                button.dataset.artifact = String(index);
-                button.onclick = () => {
-                  if (working || current.busy) return;
-                  working = true;
-                  render();
-                  void starter
-                    .saveArtifact(index)
-                    .catch(report)
-                    .finally(() => {
-                      working = false;
-                      render();
-                    });
-                };
-                return button;
-              }),
-            );
-          }
-          if (focus) {
-            const replacement = [
-              ...document.querySelectorAll(
-                "[data-field],[data-action],[data-artifact]",
-              ),
-            ].find((node) => node.dataset[focus[0]] === focus[1]);
-            replacement?.focus({ preventScroll: true });
-            if (
-              selection &&
-              typeof replacement?.setSelectionRange === "function"
-            )
-              replacement.setSelectionRange(...selection);
-          }
+          return starter.checkpoint({ studio }, dirty || studioDirty);
         }
         function render() {
           if (!current?.view) return;
-          // 宿主空闲快照可能晚于请求回执，保持切换样式直到两侧都已完成。
-          if (!working && !current.busy) pendingTab = null;
           syncMotion();
-          $("scene-tools").dataset.switching = String(pendingTab !== null);
           document
             .querySelector("main")
             .setAttribute("aria-busy", String(working || current.busy));
-          document
-            .querySelectorAll("#fields input, #fields select, #fields textarea")
-            .forEach((input) => {
-              input.disabled = false;
-            });
-          const view = current.view,
-            activeTab = view.tabs?.find((tab) => tab.active)?.id ?? null;
-          rememberPane(renderedTab);
-          updateTabs(view);
-          build(view);
-          $("heading").textContent = view.display;
-          $("description").textContent = view.description;
-          $("tabs").setAttribute("aria-label", tr("工具", "Tools"));
           $("app-name").textContent = tr("本地工作台", "Local workspace");
           document.title = tr("本地工作台", "Local workspace");
-          for (const field of view.fields) {
-            const input = document.querySelector(`[data-field="${field.id}"]`);
-            if (!input) continue;
-            const value = fieldValue(field);
-            if (!working && (force || document.activeElement !== input)) {
-              if (input.type === "checkbox") input.checked = value === "true";
-              else if (input.value !== value) input.value = value;
-            }
-            input.readOnly = working || current.busy;
-            input.setAttribute(
-              "aria-disabled",
-              String(working || current.busy),
-            );
-            const error = view.errors?.[field.id] ?? "";
-            document.getElementById(`error-${field.id}`).textContent = error;
-            input.setAttribute("aria-invalid", String(!!error));
-          }
-          force = false;
-          const actions = [
-            ...view.groups.flatMap((group) => group.actions),
-            ...(view.tabs ?? []).map((tab) => ({ ...tab, disabled: false })),
-          ];
-          document.querySelectorAll("[data-action]").forEach((button) => {
-            const action = actions.find(
-              (action) => action.id === button.dataset.action,
-            );
-            button.setAttribute(
-              "aria-disabled",
-              String(working || current.busy || !action || action.disabled),
-            );
-          });
-          document
-            .querySelectorAll("[data-artifact]")
-            .forEach((button) =>
-              button.setAttribute(
-                "aria-disabled",
-                String(working || current.busy),
-              ),
-            );
-          restorePane(activeTab);
-          renderedTab = activeTab;
           studioControls();
         }
-        function report() {
-          $("error").textContent = tr(
-            "操作未完成，输入与上次结果已保留。",
-            "The operation did not finish. Your input and last result were retained.",
-          );
-        }
-        async function act(id) {
-          if (studioInvalid) return;
-          const view = current?.view,
-            tab = view?.tabs?.find((tab) => tab.id === id),
-            action = view?.groups
-              .flatMap((group) => group.actions)
-              .find((action) => action.id === id);
-          if (
-            working ||
-            current?.busy ||
-            tab?.active ||
-            (!tab && (!action || action.disabled))
-          )
-            return;
-          const submitted = values(),
-            previousDirty = current.dirty;
-          working = true;
-          pendingTab = tab ? id : null;
-          $("operation-status").textContent = tab
-            ? ""
-            : tr("正在处理…", "Working…");
-          render();
-          try {
-            $("error").textContent = "";
-            const next = await starter.run(id, submitted);
-            current = {
-              ...current,
-              view: next,
-              fields: Object.fromEntries(
-                next.fields.map((field) => [field.id, field.value]),
-              ),
-            };
-            localFields = {};
-            force = true;
-            await retain(
-              tab ? previousDirty : true,
-              Object.fromEntries(
-                next.fields.map((field) => [field.id, field.value]),
-              ),
-            );
-          } catch {
-            report();
-          } finally {
-            working = false;
-            $("operation-status").textContent = "";
-            render();
-          }
-        }
-        $("tabs").onkeydown = (event) => {
-          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-            return;
-          const tabs = [...$("tabs").children],
-            index = tabs.indexOf(document.activeElement);
-          event.preventDefault();
-          const next =
-            event.key === "Home"
-              ? 0
-              : event.key === "End"
-                ? tabs.length - 1
-                : (index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
-                  tabs.length;
-          tabs[next]?.focus();
-        };
-        const SCENES = ["canvas", "lens", "flow", "tools"];
+        const SCENES = ["canvas", "lens", "flow"];
         const svgNode = (tag, attributes = {}) => {
           const node = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -3231,7 +2102,7 @@
             current?.active === false;
           document
             .querySelectorAll(
-              ".studio-scene input, .studio-scene select, .studio-scene textarea, .studio-scene button:not([data-action]):not([data-artifact])",
+              ".studio-scene input, .studio-scene select, .studio-scene textarea, .studio-scene button",
             )
             .forEach((node) => {
               node.disabled = !!blocked;
@@ -3308,9 +2179,7 @@
           studio.scene = scene;
           panelVisible = true;
           visibility?.disconnect();
-          visibility?.observe(
-            $(scene === "tools" ? "panel" : "scene-" + scene),
-          );
+          visibility?.observe($("scene-" + scene));
           document.querySelectorAll(".studio-scene").forEach((node) => {
             node.hidden = node.id !== `scene-${scene}`;
           });
@@ -3339,15 +2208,6 @@
             );
           }
           if (persist) retainStudio(false);
-          if (
-            scene === "tools" &&
-            current?.view?.tabs?.some(
-              (tab) => tab.id === "tab-studio" && tab.active,
-            ) &&
-            !working &&
-            !current.busy
-          )
-            void act("tab-text");
           studioControls();
         }
         $("studio-nav").onclick = (event) => {
@@ -3368,8 +2228,10 @@
             event.key === "Home"
               ? 0
               : event.key === "End"
-                ? 3
-                : (index + (event.key === "ArrowRight" ? 1 : 3)) % 4;
+                ? SCENES.length - 1
+                : (index +
+                    (event.key === "ArrowRight" ? 1 : SCENES.length - 1)) %
+                  SCENES.length;
           setScene(SCENES[next]);
           $("studio-tab-" + SCENES[next]).focus();
         };
@@ -4198,21 +3060,12 @@
             );
             return;
           }
-          const drafts = values();
           studioError("");
           working = true;
           studioControls();
           try {
             await retain(studioDirty || current.dirty);
-            let view = await starter.run("tab-studio", drafts);
-            current = {
-              ...current,
-              view,
-              fields: Object.fromEntries(
-                view.fields.map((field) => [field.id, field.value]),
-              ),
-            };
-            view = await starter.run("workspace-export", {
+            let view = await starter.run("workspace-export", {
               workspace: payload,
               "workspace-format": format,
             });
@@ -4237,8 +3090,6 @@
             );
           } finally {
             working = false;
-            localFields = {};
-            force = true;
             render();
             retainStudio(false);
           }
@@ -4276,26 +3127,6 @@
               flowResult.map((row) => [row.label, row.category, row.value]),
               "csv",
             );
-        };
-        $("tools-to-lens").onclick = () => {
-          try {
-            const state = JSON.parse(current.view.state),
-              raw =
-                values()["data-source"] ||
-                state.data?.source ||
-                state.data?.received;
-            if (!raw) throw new Error("empty");
-            applyRows(JSON.parse(raw), "custom");
-            setScene("lens");
-          } catch {
-            notifyStudio(
-              tr(
-                "请先在 CSV / JSON 工具载入含 label、category、value 的 JSON 数据，或从文件与网络接收后载入。",
-                "Load JSON rows with label, category and value in CSV / JSON, or receive and load a file first.",
-              ),
-              "error",
-            );
-          }
         };
         function studioSnapshot(snapshot) {
           if (!studioLoaded) {
@@ -4375,11 +3206,6 @@
             studioDirty = false;
           current = snapshot;
           studioSnapshot(snapshot);
-          if (
-            snapshot.checkpoint?.pages &&
-            typeof snapshot.checkpoint.pages === "object"
-          )
-            pages = snapshot.checkpoint.pages;
           render();
         });
       })();

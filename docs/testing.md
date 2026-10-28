@@ -163,7 +163,7 @@ node e2e/extension-ui.mjs wallpaper-browser --wallpaper-local-only
 node e2e/extensions/workbench-studio.mjs
 ```
 
-该 [定向检查](../e2e/extensions/workbench-studio.mjs) 加载真实工作台 HTML 和 SDK，以 fixture 消息传输验证画布、图表、流程、工具箱、检查点、语言、活动状态与布局；明暗及窗口尺寸 profile 以脚本为准，截图和报告写入 `artifacts/browser/workbench-studio/`。它不运行真实 Wasm、Tauri IPC 或系统对话框，不等同于上面的生产外壳加真实离线 Wasm runner，也不证明安装版或目标 WebView 通过验收。
+该 [定向检查](../e2e/extensions/workbench-studio.mjs) 加载真实工作台 HTML 和 SDK，以 fixture 消息传输验证画布、图表、流程、检查点、语言、活动状态与布局；明暗及窗口尺寸 profile 以脚本为准，截图和报告写入 `artifacts/browser/workbench-studio/`。它不运行真实 Wasm、Tauri IPC 或系统对话框，不等同于上面的生产外壳加真实离线 Wasm runner，也不证明安装版或目标 WebView 通过验收。
 
 宿主页面保留的回归还须验证：动态入口预载不执行 IPC；反复切换保留同一 iframe 且不重排 DOM；隐藏页面不进入布局 / 焦点顺序、不发新 SDK 请求并暂停观察、语言刷新和首屏计时；在途回执继续完成；LRU 移出后草稿可恢复；身份变化或必需授权撤销立即移除旧界面。SDK 验证缺省 `active` 兼容、CSS 动画暂停与隐藏请求拒绝，宿主桥另验证绕过 SDK 的隐藏请求同样失败。浏览器测量只能说明对应构建和 fixture 的行为，冷 / 热启动与正式安装版性能仍按 [安装版与启动验收](#安装版与启动验收) 采样。
 
