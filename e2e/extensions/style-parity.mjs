@@ -397,8 +397,14 @@ try {
       assert.equal(
         (await measure(page.locator("#host-input"), ["backgroundColor"]))
           .backgroundColor[3],
-        255,
+        Math.round(255 * (1 - 0.22 * exposure)),
       );
+      await compare("input", "input", ["backgroundColor", "backdropFilter"]);
+      await compare("textarea", "textarea", [
+        "backgroundColor",
+        "backdropFilter",
+      ]);
+      await compare("select", "select", ["backgroundColor", "backdropFilter"]);
     }
     for (const check of ["checkbox", "unchecked", "indeterminate", "radio"])
       await compare(check, check, checkProperties);

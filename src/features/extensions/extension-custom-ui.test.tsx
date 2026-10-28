@@ -534,6 +534,13 @@ it("updates environment and drafts without rereading the palette or reloading th
   });
   vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
   document.documentElement.style.fontSize = "17px";
+  const glassTokens: Record<string, string> = {
+    "--control-background": "rgba(0, 0, 0, 0.89)",
+    "--surface-popover": "rgba(0, 0, 0, 0.89)",
+    "--surface-dialog": "rgba(0, 0, 0, 0.93)",
+    "--surface-control-blur": "6px",
+    "--surface-popup-blur": "9px",
+  };
   const readProperty = CSSStyleDeclaration.prototype.getPropertyValue;
   vi.spyOn(
     CSSStyleDeclaration.prototype,
@@ -543,6 +550,8 @@ it("updates environment and drafts without rereading the palette or reloading th
       return environment.inputWide ? "0.875rem" : "1rem";
     if (property === "--control-input-line-height")
       return environment.inputWide ? "1.25rem" : "1.5rem";
+    const glassValue = glassTokens[property];
+    if (glassValue !== undefined) return glassValue;
     return readProperty.call(this, property);
   });
   const styles = vi.spyOn(window, "getComputedStyle");
@@ -623,6 +632,7 @@ it("updates environment and drafts without rereading the palette or reloading th
   expect(paletteReads()).toBe(before);
   expect(native.openExtensionUi).toHaveBeenCalledOnce();
   expect(state().theme.tokens["--control-input-font-size"]).toBe("0.875rem");
+  expect(state().theme.tokens).toMatchObject(glassTokens);
   const priorResize = paletteReads();
   await act(async () => {
     window.dispatchEvent(new Event("resize"));

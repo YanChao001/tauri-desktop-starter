@@ -105,6 +105,7 @@ export function MotionStudio({ enabled }: { enabled: boolean }) {
               tabRefs.current[index] = element;
             }}
             type="button"
+            className="app-control-surface"
             role="tab"
             id={`lab-tab-${item.id}`}
             aria-controls={`lab-panel-${item.id}`}

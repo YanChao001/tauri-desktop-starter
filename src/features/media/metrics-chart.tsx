@@ -62,7 +62,9 @@ export function MetricsChart() {
               <YAxis stroke="var(--muted-foreground)" />
               <Tooltip
                 contentStyle={{
-                  background: "var(--card)",
+                  background: "var(--surface-popover)",
+                  backdropFilter: "blur(var(--surface-popup-blur))",
+                  WebkitBackdropFilter: "blur(var(--surface-popup-blur))",
                   borderColor: "var(--border)",
                   color: "var(--foreground)",
                 }}

@@ -14,7 +14,7 @@ function ContextMenuContent({
       <Primitive.Content
         data-slot="context-menu-content"
         className={cn(
-          "z-50 min-w-44 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-none",
+          "z-50 min-w-44 rounded-lg border bg-(--surface-popover) backdrop-blur-(--surface-popup-blur) p-1 text-popover-foreground shadow-md outline-none",
           className,
         )}
         {...props}

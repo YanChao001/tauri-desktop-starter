@@ -107,7 +107,6 @@
   resize: vertical;
   padding: 1.2rem;
   font: 0.8rem/1.85 var(--font-mono, monospace);
-  background: var(--background);
 }
 .workspace-editor .workspace-textarea:focus-visible {
   box-shadow: inset 0 0 0 2px var(--ring);

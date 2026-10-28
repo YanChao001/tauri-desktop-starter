@@ -68,7 +68,7 @@ export default function Components() {
       <Tabs value={stage} onValueChange={setStage} className="playground-tabs">
         <TabsList
           aria-label={t("playground.stages")}
-          className="playground-stage-list"
+          className="playground-stage-list app-control-surface"
         >
           {STAGES.map(({ id, label, icon: Icon }, index) => (
             <TabsTrigger

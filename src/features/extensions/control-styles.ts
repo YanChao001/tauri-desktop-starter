@@ -2,4 +2,4 @@
 export const LOCKED_CONTROL_CLASS =
   "data-[operation-locked=true]:disabled:opacity-100";
 
-export const LOCKED_INPUT_CLASS = `${LOCKED_CONTROL_CLASS} data-[operation-locked=true]:disabled:bg-background`;
+export const LOCKED_INPUT_CLASS = `${LOCKED_CONTROL_CLASS} data-[operation-locked=true]:disabled:bg-(--control-background)`;

@@ -48,7 +48,7 @@ export function LayoutScene({ active, reduced, replay, stageRef }: SceneProps) {
         <StageGuides label={t("lab.layout")} />
         <LayoutGroup id={group}>
           <div
-            className="lab-layout-tabs"
+            className="lab-layout-tabs app-control-surface"
             role="group"
             aria-label={t("lab.layoutChoice")}
           >

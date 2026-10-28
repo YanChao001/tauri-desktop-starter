@@ -322,28 +322,83 @@ html[data-font-size="lg"] {
     var(--muted) var(--skin-card-opacity),
     transparent
   );
-  --control-disabled-background: color-mix(
+  --surface-control-opacity: 100%;
+  --surface-popup-opacity: 100%;
+  --surface-dialog-opacity: 100%;
+  --surface-control-blur: 0px;
+  --surface-popup-blur: 0px;
+  --control-background: color-mix(
+    in oklab,
+    var(--background) var(--surface-control-opacity),
+    transparent
+  );
+  --surface-popover: color-mix(
+    in oklab,
+    var(--popover) var(--surface-popup-opacity),
+    transparent
+  );
+  --surface-dialog: color-mix(
+    in oklab,
+    var(--popover) var(--surface-dialog-opacity),
+    transparent
+  );
+  --control-disabled-color: color-mix(
     in oklab,
     var(--input) 50%,
     var(--background)
   );
-  --control-select-hover-background: var(--muted);
+  --control-disabled-background: color-mix(
+    in oklab,
+    var(--control-disabled-color) var(--surface-control-opacity),
+    transparent
+  );
+  --control-select-hover-color: var(--muted);
+  --control-select-hover-background: color-mix(
+    in oklab,
+    var(--control-select-hover-color) var(--surface-control-opacity),
+    transparent
+  );
 }
 .dark {
-  --control-disabled-background: color-mix(
+  --control-disabled-color: color-mix(
     in oklab,
     var(--input) 80%,
     var(--background)
   );
-  --control-select-hover-background: color-mix(
+  --control-select-hover-color: color-mix(
     in oklab,
     var(--input) 50%,
     var(--background)
   );
 }
+/* 仅模糊控件和浮层自身；旧运行时保留实体底色，不做全窗口滤镜。 */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  :root {
+    --surface-control-opacity: calc(100% - 22% * var(--skin-exposure));
+    --surface-popup-opacity: calc(100% - 22% * var(--skin-exposure));
+    --surface-dialog-opacity: calc(100% - 14% * var(--skin-exposure));
+    --surface-control-blur: calc(12px * var(--skin-exposure));
+    --surface-popup-blur: calc(18px * var(--skin-exposure));
+  }
+}
 html[data-background="plain"] {
   --skin-overlay-opacity: 100%;
   --skin-card-opacity: 100%;
+  --surface-control-opacity: 100%;
+  --surface-popup-opacity: 100%;
+  --surface-dialog-opacity: 100%;
+  --surface-control-blur: 0px;
+  --surface-popup-blur: 0px;
+}
+.app-control-surface {
+  background-color: var(--control-background);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+.app-overlay-surface {
+  background-color: var(--surface-popover);
+  -webkit-backdrop-filter: blur(var(--surface-popup-blur));
+  backdrop-filter: blur(var(--surface-popup-blur));
 }
 
 /* 通知继承应用的字体、字号和语义色，与页面外观偏好保持一致。 */
@@ -431,6 +486,11 @@ html[data-background="plain"] {
   :root {
     --skin-overlay-opacity: 100%;
     --skin-card-opacity: 100%;
+    --surface-control-opacity: 100%;
+    --surface-popup-opacity: 100%;
+    --surface-dialog-opacity: 100%;
+    --surface-control-blur: 0px;
+    --surface-popup-blur: 0px;
   }
   .window-background,
   .pattern-artwork--preview {

@@ -30,7 +30,6 @@
   padding: 0.25rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--card) 85%, transparent);
 }
 .playground-stage-trigger {
   justify-content: flex-start;

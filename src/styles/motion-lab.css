@@ -48,7 +48,6 @@
   padding: 0.75rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--card);
   font-size: 0.8rem;
   text-align: left;
   white-space: nowrap;
@@ -440,7 +439,6 @@
   padding: 0.25rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--card);
 }
 .lab-layout-tabs button {
   position: relative;

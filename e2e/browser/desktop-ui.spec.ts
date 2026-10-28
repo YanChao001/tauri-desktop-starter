@@ -76,7 +76,7 @@ async function seed(page: Page, settings: Record<string, unknown> = {}) {
 }
 
 for (const theme of ["light", "dark"]) {
-  test(`page panels share skin opacity and fields stay solid on every route: ${theme}`, async ({
+  test(`page panels and fields share their skin transparency on every route: ${theme}`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -117,7 +117,8 @@ for (const theme of ["light", "dark"]) {
             for (const field of document.querySelectorAll(
               'main :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):not(:disabled)',
             )) {
-              if (alpha(field) !== 255)
+              const expected = Math.round(255 * (1 - 0.22 * value));
+              if (alpha(field) !== expected)
                 failures.push(`field ${field.id}: ${alpha(field)}`);
             }
             return failures;
@@ -127,6 +128,85 @@ for (const theme of ["light", "dark"]) {
           .toEqual([]);
       }
     }
+  });
+
+  test(`fields and popups use readable frost and restore solid fallback: ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await seed(page, { theme, background: "aurora" });
+    await page.goto("./#/settings");
+    const search = page.getByRole("searchbox", {
+      name: "Search settings",
+      exact: true,
+    });
+    const slider = page.getByRole("slider", {
+      name: "Background transparency",
+      exact: true,
+    });
+    const font = page.getByRole("combobox", { name: "Font", exact: true });
+    const measure = async (selector: string) =>
+      page.locator(selector).evaluate((node) => {
+        const style = getComputedStyle(node);
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = style.backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return {
+          alpha: context.getImageData(0, 0, 1, 1).data[3]! / 255,
+          blur: Number(style.backdropFilter.match(/[\d.]+/)?.[0] ?? 0),
+        };
+      });
+    let previous = { alpha: 2, blur: -1 };
+    for (const value of [0, 50, 100]) {
+      await slider.press("Home");
+      for (let step = 0; step < value / 10; step++)
+        await slider.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuenow", String(value));
+      await expect
+        .poll(() => measure('input[type="search"]'))
+        .toMatchObject({
+          blur: value === 0 ? 0 : value * 0.12,
+        });
+      const field = await measure('input[type="search"]');
+      expect(field.alpha).toBeGreaterThanOrEqual(0.75);
+      expect(field.alpha).toBeLessThan(previous.alpha);
+      expect(field.blur).toBeGreaterThan(previous.blur);
+      await font.click();
+      const popup = await measure('[data-slot="select-content"]');
+      expect(popup.alpha).toBeGreaterThanOrEqual(0.75);
+      expect(popup.alpha).toBeLessThanOrEqual(1);
+      expect(popup.blur).toBe(value === 0 ? 0 : value * 0.18);
+      if (value === 0) expect(popup.alpha).toBe(1);
+      else expect(popup.alpha).toBeLessThan(1);
+      if (value === 100)
+        await page.screenshot({
+          path: testInfo.outputPath(`frost-${theme}.png`),
+        });
+      await page.keyboard.press("Escape");
+      previous = field;
+    }
+    await search.fill("font");
+    await expect(
+      page.getByRole("dialog", { name: "Search settings", exact: true }),
+    ).toBeVisible();
+    expect((await measure('[data-slot="popover-content"]')).alpha).toBeLessThan(
+      1,
+    );
+    await search.press("Escape");
+    await page
+      .locator('label:has(input[name="background-skin"][value="plain"])')
+      .click();
+    await expect
+      .poll(() => measure('input[type="search"]'))
+      .toEqual({ alpha: 1, blur: 0 });
+    await page
+      .locator('label:has(input[name="background-skin"][value="aurora"])')
+      .click();
+    await page.emulateMedia({ forcedColors: "active" });
+    await expect
+      .poll(() => measure('input[type="search"]'))
+      .toEqual({ alpha: 1, blur: 0 });
   });
 
   test(
