@@ -7,16 +7,29 @@ import { reportClientError } from "@/lib/report-error";
 import { errorMessage } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
 
-class PageBoundary extends Component<
-  {
-    children: ReactNode;
-    t: Translate;
-    onBack: () => void;
-    backLabel: MessageKey;
-  },
-  { error: Error | null }
-> {
-  state: { error: Error | null } = { error: null };
+type PageBoundaryProps = {
+  children: ReactNode;
+  t: Translate;
+  onBack: () => void;
+  backLabel: MessageKey;
+  resetKey: string;
+};
+type PageBoundaryState = { error: Error | null; resetKey: string };
+
+class PageBoundary extends Component<PageBoundaryProps, PageBoundaryState> {
+  state: PageBoundaryState = {
+    error: null,
+    resetKey: this.props.resetKey,
+  };
+  static getDerivedStateFromProps(
+    props: PageBoundaryProps,
+    state: PageBoundaryState,
+  ) {
+    // 导航只清除旧错误；用 React key 重建会丢失健康页面的状态并重触发加载。
+    if (props.resetKey !== state.resetKey)
+      return { error: null, resetKey: props.resetKey };
+    return null;
+  }
   static getDerivedStateFromError(error: unknown) {
     return {
       error: error instanceof Error ? error : new Error(errorMessage(error)),
@@ -67,7 +80,7 @@ export function RouteErrorBoundary({
   const { t } = useI18n();
   return (
     <PageBoundary
-      key={resetKey ?? key}
+      resetKey={resetKey ?? key}
       t={t}
       onBack={onBack ?? (() => navigate("/"))}
       backLabel={backLabel}
