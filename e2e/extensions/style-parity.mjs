@@ -431,6 +431,68 @@ try {
   console.log(
     "PASS shadow styles/select, author CSS overrides, native keyboard semantics and forced-colors fallback",
   );
+  await page.emulateMedia({ forcedColors: "none" });
+  await frame.evaluate(() => {
+    document.body.style.cssText =
+      "margin:0;padding:0;min-height:100vh;background:linear-gradient(120deg,#7c3aed,#0891b2)";
+    const probe = document.createElement("div");
+    probe.id = "sdk-width-probe";
+    probe.style.cssText = "width:100%;height:120px;background:#7c3aed";
+    document.body.replaceChildren(probe);
+  });
+  await expect(frame.locator("body")).toHaveCSS("padding", "0px");
+  const documentLayout = () =>
+    frame.evaluate(() => {
+      const root = document.scrollingElement;
+      return {
+        right: document
+          .querySelector("#sdk-width-probe")
+          .getBoundingClientRect().right,
+        width: innerWidth,
+        height: innerHeight,
+        contentHeight: root.scrollHeight,
+        overflowX: root.scrollWidth > innerWidth,
+        overflowY: root.scrollHeight > innerHeight,
+        scrollTop: root.scrollTop,
+      };
+    });
+  let layout = await documentLayout();
+  assert.equal(
+    layout.right,
+    layout.width,
+    "short authored content must reach the iframe edge without an empty scrollbar gutter",
+  );
+  assert.equal(layout.overflowX, false);
+  assert.equal(layout.overflowY, false);
+  const longHeight = await frame.evaluate(() => {
+    const height = innerHeight * 2;
+    document.querySelector("#sdk-width-probe").style.height = `${height}px`;
+    return height;
+  });
+  await expect(frame.locator("#sdk-width-probe")).toHaveCSS(
+    "height",
+    `${longHeight}px`,
+  );
+  await frame.evaluate(() => window.scrollTo(0, 80));
+  layout = await documentLayout();
+  assert.equal(layout.overflowX, false);
+  assert.equal(layout.overflowY, true, JSON.stringify(layout));
+  assert.ok(
+    layout.scrollTop > 0,
+    "long content must retain document scrolling",
+  );
+  await frame.evaluate(() => {
+    document.querySelector("#sdk-width-probe").style.height = "120px";
+    window.scrollTo(0, 0);
+  });
+  await expect(frame.locator("#sdk-width-probe")).toHaveCSS("height", "120px");
+  layout = await documentLayout();
+  assert.equal(layout.right, layout.width);
+  assert.equal(layout.overflowX, false);
+  assert.equal(layout.overflowY, false);
+  console.log(
+    "PASS authored backgrounds fill short iframe documents and retain native scrolling for long content",
+  );
 } finally {
   await browser?.close();
   if (server)

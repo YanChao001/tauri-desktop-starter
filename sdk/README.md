@@ -69,6 +69,8 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 
 SDK 注入 `starter-defaults` CSS layer，提供宿主字体、字号、语义色、圆角、焦点、禁用反馈、基础表格 / 图片 / 文本样式和 8px 滚动条；按钮 / 文本输入默认高 2rem，页面 padding 为 1rem。`button` 与 `input[type="button"/"submit"/"reset"]` 使用相同按钮规则；`data-variant` 支持宿主的 default、outline、secondary、ghost、destructive 和 link 基础变体。复选与单选保留原生 input 的值、键盘和无障碍语义，通过 CSS 对齐宿主形态；强制颜色模式保留系统可辨识反馈。普通作者 CSS 优先于该 layer，可直接覆盖，无需 `!important` 或复制宿主组件库。
 
+隔离文档沿用浏览器默认的按需滚动槽，不为无需整页滚动的内容预留空槽，避免自定义背景右侧露出宿主底色；实际溢出时仍由文档原生滚动条占位。宿主普通页面和侧栏的稳定滚动槽不受影响。
+
 默认样式直接覆盖普通文档 DOM，不会穿透 Web Components 的 Shadow DOM。当前宿主提供 `starter.applyStyles(root)`，组件可在创建 shadow root 后显式接入，并在卸载时调用返回的清理函数；重复接入按引用计数释放，不改写 `attachShadow`、不扫描其他组件，也不增加原生能力。使用当前 SDK 的插件声明 `minHostVersion: "0.1.7"`，并随当前开发宿主一起验证；开发快照不维护旧 SDK 的适配分支或历史宿主验证矩阵。
 
 ```javascript
