@@ -16,7 +16,7 @@ use std::{
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard, TryLockError},
 };
 use tauri::Manager;
 
@@ -38,6 +38,7 @@ pub struct RecoveryState {
     paths: DataPaths,
     temporary: Option<tempfile::TempDir>,
     status: Mutex<RecoveryStatus>,
+    operation: Mutex<()>,
 }
 
 pub struct InitializedStorage {
@@ -417,6 +418,7 @@ pub fn initialize(paths: &DataPaths) -> NativeResult<InitializedStorage> {
             recovery: RecoveryState {
                 paths: paths.clone(),
                 temporary: None,
+                operation: Mutex::new(()),
                 status: Mutex::new(RecoveryStatus {
                     active: false,
                     reason: None,
@@ -444,18 +446,18 @@ pub fn initialize(paths: &DataPaths) -> NativeResult<InitializedStorage> {
             notes = result.restored;
         }
     }
-    let pending = false;
     Ok(InitializedStorage {
         settings: SettingsStore::open(temporary.path().join("settings.json"))?,
         database: isolated,
         recovery: RecoveryState {
             paths: paths.clone(),
             temporary: Some(temporary),
+            operation: Mutex::new(()),
             status: Mutex::new(RecoveryStatus {
                 active: true,
                 reason,
                 restored,
-                pending,
+                pending: false,
                 notes,
                 archive_id: None,
             }),
@@ -464,6 +466,15 @@ pub fn initialize(paths: &DataPaths) -> NativeResult<InitializedStorage> {
 }
 
 impl RecoveryState {
+    fn enter(&self) -> NativeResult<MutexGuard<'_, ()>> {
+        self.operation.try_lock().map_err(|error| match error {
+            TryLockError::WouldBlock => NativeError::new(
+                ErrorCode::NativeBusy,
+                "Another recovery operation is in progress",
+            ),
+            TryLockError::Poisoned(_) => invalid("Recovery operation is unavailable"),
+        })
+    }
     pub fn is_isolated(&self) -> bool {
         self.temporary.is_some()
     }
@@ -508,7 +519,11 @@ pub fn recovery_status(state: tauri::State<'_, RecoveryState>) -> NativeResult<R
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_recovery_backups(app: tauri::AppHandle) -> NativeResult<Vec<BackupInfo>> {
+pub async fn list_recovery_backups(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<Vec<BackupInfo>> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || {
         let state = app.state::<RecoveryState>();
         state.temporary_backups()?;
@@ -527,7 +542,11 @@ pub async fn list_recovery_backups(app: tauri::AppHandle) -> NativeResult<Vec<Ba
 
 #[tauri::command]
 #[specta::specta]
-pub async fn pick_recovery_backup(app: tauri::AppHandle) -> NativeResult<Option<BackupPreview>> {
+pub async fn pick_recovery_backup(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<Option<BackupPreview>> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || {
         let state = app.state::<RecoveryState>();
         let directory = state.temporary_backups()?;
@@ -545,8 +564,10 @@ pub async fn pick_recovery_backup(app: tauri::AppHandle) -> NativeResult<Option<
 #[specta::specta]
 pub async fn preview_recovery_backup(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     id: String,
 ) -> NativeResult<BackupPreview> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || {
         let state = app.state::<RecoveryState>();
         let database = app.state::<Database>();
@@ -563,14 +584,14 @@ pub async fn preview_recovery_backup(
 #[specta::specta]
 pub async fn restore_recovery_backup(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     id: String,
 ) -> NativeResult<RecoveryStatus> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || {
         let state = app.state::<RecoveryState>();
-        let mut status = state
-            .status
-            .lock()
-            .map_err(|_| invalid("Recovery status is unavailable"))?;
+        let _operation = state.enter()?;
+        let status = state.report()?;
         if !status.active || status.pending {
             return Err(invalid(
                 "Recovery workspace is not available for another trial restore",
@@ -581,6 +602,10 @@ pub async fn restore_recovery_backup(
         let (source, id) = state.backup_location(&id)?;
         let imported = database.copy_backup(&source, &directory, &id)?;
         let result = database.restore_backup(&directory, &imported.info.id)?;
+        let mut status = state
+            .status
+            .lock()
+            .map_err(|_| invalid("Recovery status is unavailable"))?;
         status.restored = true;
         status.notes = result.restored;
         Ok(status.clone())
@@ -594,10 +619,8 @@ fn stage(
     settings: &SettingsStore,
     reset_settings: bool,
 ) -> NativeResult<RecoveryStatus> {
-    let mut status = state
-        .status
-        .lock()
-        .map_err(|_| invalid("Recovery status is unavailable"))?;
+    let _operation = state.enter()?;
+    let status = state.report()?;
     if !status.active || !status.restored {
         return Err(invalid(
             "Preview and restore a backup in the isolated workspace first",
@@ -650,6 +673,10 @@ fn stage(
             reset_settings,
         },
     )?;
+    let mut status = state
+        .status
+        .lock()
+        .map_err(|_| invalid("Recovery status is unavailable"))?;
     status.pending = true;
     Ok(status.clone())
 }
@@ -658,8 +685,10 @@ fn stage(
 #[specta::specta]
 pub async fn stage_recovery(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     reset_settings: bool,
 ) -> NativeResult<RecoveryStatus> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || {
         stage(
             &app.state::<RecoveryState>(),
@@ -705,6 +734,29 @@ mod tests {
             .unwrap();
         initialized.recovery.status.lock().unwrap().restored = true;
         initialized
+    }
+
+    #[test]
+    fn long_recovery_operations_do_not_lock_the_status_and_reject_overlapping_changes() {
+        let (_root, paths) = fixture();
+        let initialized = recovered(&paths);
+        let state = &initialized.recovery;
+        let operation = state.enter().unwrap();
+        assert!(state.report().unwrap().restored);
+        assert_eq!(
+            stage(state, &initialized.database, &initialized.settings, false)
+                .unwrap_err()
+                .code,
+            ErrorCode::NativeBusy
+        );
+        assert!(!state.report().unwrap().pending);
+        assert!(!paths.data.join(PENDING).exists());
+        drop(operation);
+        assert!(
+            stage(state, &initialized.database, &initialized.settings, false)
+                .unwrap()
+                .pending
+        );
     }
 
     #[test]

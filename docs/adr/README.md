@@ -93,3 +93,4 @@ ADR 采纳后保留原始决策与上下文。结论改变时新增 ADR 并标�
 | [0017](./0017-precompile-enabled-extensions.md) | 启用时预编译并保持独立执行实例         | 已采纳       | 2026-10-27 |
 | [0018](./0018-lan-attachments-and-loopback.md)  | 通过受控附件与真实回环扩展内网通信     | 已采纳       | 2026-10-27 |
 | [0019](./0019-bounded-extension-compute.md)     | 按命令声明有界计算预算                 | 已采纳       | 2026-10-27 |
+| [0020](./0020-pin-updater-trust-root.md)        | 将应用更新验签公钥固定在安装包内       | 已采纳       | 2026-10-28 |

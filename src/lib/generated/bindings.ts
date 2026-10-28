@@ -535,6 +535,14 @@ export const commands = {
     ),
   deleteDemoCredential: () =>
     typedError<null, NativeError>(__TAURI_INVOKE("delete_demo_credential")),
+  registerDemoShortcut: (shortcut: string) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("register_demo_shortcut", { shortcut }),
+    ),
+  unregisterDemoShortcut: (shortcut: string) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("unregister_demo_shortcut", { shortcut }),
+    ),
   runDemoSidecar: (input: string) =>
     typedError<DemoWorkerOutput, NativeError>(
       __TAURI_INVOKE("run_demo_sidecar", { input }),
@@ -633,6 +641,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "PLATFORM_UNAVAILABLE"
+  | "NATIVE_BUSY"
   | "HTTP_TIMEOUT"
   | "AUTOSTART_ERROR"
   | "UPDATE_NOT_CONFIGURED"

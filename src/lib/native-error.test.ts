@@ -45,6 +45,7 @@ describe("native error presentation", () => {
     );
   });
   it.each([
+    ["NATIVE_BUSY", "nativeError.busy"],
     ["MARKET_INCOMPATIBLE", "ext.market.incompatible"],
     ["MARKET_EXPIRED", "ext.market.expired"],
     ["MARKET_INVALID", "ext.market.invalid"],

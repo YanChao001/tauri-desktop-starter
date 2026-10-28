@@ -4,7 +4,10 @@
   "description": "可信宿主扩展窗口的事件、窗口控制与外链；插件 HTML 在无同源权限的内容框运行，不授予 Tauri API 或直接文件 / 网络能力",
   "windows": ["extension-*"],
   "permissions": [
-    "core:default",
+    "core:app:allow-version",
+    "core:app:allow-tauri-version",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",

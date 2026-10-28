@@ -7,6 +7,7 @@ import {
   onWorkbenchTasksChanged,
   sendSystemNotification,
   type WorkbenchTaskStatus,
+  NativeBridgeError,
 } from "@/lib/tauri";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { reportClientError } from "@/lib/report-error";
@@ -17,6 +18,39 @@ export function useTaskNotifications() {
   const t = useLatestTranslator();
   const [pending, setPending] = useState(0);
   async function settle(cancel: boolean, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    const timer = window.setTimeout(
+      () =>
+        controller.abort(
+          new NativeBridgeError({
+            code: "NATIVE_BUSY",
+            message:
+              "Background tasks did not settle within two minutes; tasks remain active",
+            retryable: true,
+          }),
+        ),
+      120_000,
+    );
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const stopped = () => reject(controller.signal.reason);
+        controller.signal.addEventListener("abort", stopped, { once: true });
+        void poll(cancel, controller.signal)
+          .then(resolve, reject)
+          .finally(() => {
+            controller.signal.removeEventListener("abort", stopped);
+          });
+      });
+    } finally {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      controller.abort();
+    }
+  }
+  async function poll(cancel: boolean, signal: AbortSignal) {
     for (;;) {
       signal?.throwIfAborted();
       const snapshot = await getWorkbenchTaskSnapshot();

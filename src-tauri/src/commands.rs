@@ -13,6 +13,17 @@ use crate::{
     window_geometry::{self, WindowGeometry},
 };
 
+pub(crate) fn require_host_window(label: &str) -> NativeResult<()> {
+    if matches!(label, "main" | "secondary") {
+        Ok(())
+    } else {
+        Err(NativeError::new(
+            ErrorCode::PlatformUnavailable,
+            "This operation is available only in the main and secondary windows",
+        ))
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn greet(name: &str, language: Option<&str>) -> NativeResult<String> {
@@ -149,13 +160,22 @@ pub fn get_desktop_status(app: tauri::AppHandle) -> NativeResult<DesktopStatus> 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_autostart_enabled(app: tauri::AppHandle) -> NativeResult<bool> {
+pub async fn get_autostart_enabled(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<bool> {
+    require_host_window(window.label())?;
     blocking::run(move || desktop::get_autostart(&app)).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn set_autostart_enabled(app: tauri::AppHandle, enabled: bool) -> NativeResult<bool> {
+pub async fn set_autostart_enabled(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    enabled: bool,
+) -> NativeResult<bool> {
+    require_host_window(window.label())?;
     blocking::run(move || desktop::set_autostart(&app, enabled)).await
 }
 
@@ -180,7 +200,11 @@ pub async fn get_diagnostics_report(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn check_for_update(app: tauri::AppHandle) -> NativeResult<UpdateStatus> {
+pub async fn check_for_update(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<UpdateStatus> {
+    require_host_window(window.label())?;
     app.state::<UpdateManager>().check(&app).await
 }
 
@@ -194,20 +218,26 @@ pub fn get_update_snapshot(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn download_and_install_update(app: tauri::AppHandle) -> NativeResult<()> {
+pub async fn download_and_install_update(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<()> {
+    require_host_window(window.label())?;
     app.state::<UpdateManager>().install(&app).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn relaunch_app(app: tauri::AppHandle) -> NativeResult<()> {
+pub fn relaunch_app(app: tauri::AppHandle, window: tauri::WebviewWindow) -> NativeResult<()> {
+    require_host_window(window.label())?;
     crate::lifecycle::request_action(&app, crate::lifecycle::LifecycleAction::Restart, None);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn quit_app(app: tauri::AppHandle) -> NativeResult<()> {
+pub fn quit_app(app: tauri::AppHandle, window: tauri::WebviewWindow) -> NativeResult<()> {
+    require_host_window(window.label())?;
     crate::lifecycle::request_action(&app, crate::lifecycle::LifecycleAction::Quit, None);
     Ok(())
 }
@@ -215,6 +245,24 @@ pub fn quit_app(app: tauri::AppHandle) -> NativeResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn host_management_rejects_extension_and_unknown_windows() {
+        for label in ["main", "secondary"] {
+            assert!(require_host_window(label).is_ok());
+        }
+        for label in [
+            "",
+            "extension-main",
+            "extension-123",
+            "main-1",
+            "https://remote",
+        ] {
+            assert_eq!(
+                require_host_window(label).unwrap_err().code,
+                ErrorCode::PlatformUnavailable
+            );
+        }
+    }
     #[test]
     fn greet_contract_validates_trim_language_and_size() {
         assert_eq!(

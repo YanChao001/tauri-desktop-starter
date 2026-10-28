@@ -66,7 +66,11 @@ fn logging_plugin(
         targets.push(tauri_plugin_log::Target::new(target));
     }
     tauri_plugin_log::Builder::new()
-        .targets(targets)
+        .targets(targets.into_iter().map(|target| {
+            target.format(|out, message, _record| {
+                out.finish(format_args!("{}", redaction::redact(&message.to_string())));
+            })
+        }))
         .level(log::LevelFilter::Info)
         .max_file_size(1_000_000)
         .rotation_strategy(RotationStrategy::KeepSome(3))
@@ -314,10 +318,10 @@ pub fn run() {
                         .approved_exit
                         .load(std::sync::atomic::Ordering::Acquire)
                 {
-                    window
-                        .app_handle()
-                        .state::<system_commands::SystemState>()
-                        .secondary_closed();
+                    let app = window.app_handle().clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        desktop::persist_secondary_closed(&app)
+                    });
                 }
             }
         })

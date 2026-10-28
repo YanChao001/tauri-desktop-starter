@@ -31,6 +31,7 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   STORAGE_CORRUPT: "errors.IO",
   DATABASE_ERROR: "errors.DATABASE",
   PLATFORM_UNAVAILABLE: "errors.UNSUPPORTED",
+  NATIVE_BUSY: "nativeError.busy",
   HTTP_TIMEOUT: "nativeError.httpTimeout",
   AUTOSTART_ERROR: "errors.AUTOSTART_ERROR",
   UPDATE_BUSY: "errors.UPDATE_BUSY",

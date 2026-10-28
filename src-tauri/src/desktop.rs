@@ -302,6 +302,19 @@ pub fn open_secondary(app: &tauri::AppHandle) -> NativeResult<()> {
     }
 }
 
+pub fn persist_secondary_closed(app: &tauri::AppHandle) {
+    let state = app.state::<DesktopState>();
+    let Ok(_creation) = state.window_creation.lock() else {
+        log::warn!("Cannot persist the closed workspace window: window creation unavailable");
+        return;
+    };
+    // 延迟执行的旧关闭事件不能覆盖已经重开的次窗口。
+    if app.get_webview_window("secondary").is_none() {
+        app.state::<crate::system_commands::SystemState>()
+            .secondary_closed();
+    }
+}
+
 pub fn status(app: &tauri::AppHandle) -> DesktopStatus {
     DesktopStatus {
         tray_available: app

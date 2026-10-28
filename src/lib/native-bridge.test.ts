@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS, settingsDocument } from "@/lib/settings-model";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -67,11 +68,11 @@ describe("generated native bridge", () => {
   });
 
   it("persists a detached JSON settings document with the expected revision", async () => {
-    const document = {
-      schemaVersion: 2,
+    const document = settingsDocument({
+      ...DEFAULT_SETTINGS,
       language: "en",
       runInBackground: false,
-    };
+    });
     const snapshot = { revision: 2, settings: document };
     vi.mocked(invoke).mockResolvedValue(snapshot);
     await expect(saveSettingsSnapshot(document, 1)).resolves.toEqual(snapshot);

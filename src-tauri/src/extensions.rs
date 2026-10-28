@@ -819,8 +819,9 @@ fn read_binary(path: &Path) -> NativeResult<Vec<u8>> {
         ));
     }
     let mut binary = Vec::new();
-    fs::File::open(path)
-        .and_then(|file| file.take(BINARY_LIMIT as u64 + 1).read_to_end(&mut binary))
+    crate::extension_paths::open_regular(path)?
+        .take(BINARY_LIMIT as u64 + 1)
+        .read_to_end(&mut binary)
         .map_err(|error| io("Cannot read extension module", error))?;
     if binary.is_empty() || binary.len() > BINARY_LIMIT {
         return Err(invalid("Extension module must be at most 16 MiB"));
@@ -1084,22 +1085,21 @@ impl ExtensionStore {
                 }) {
                     return Ok(None);
                 }
-                let module = read_binary(&self.asset(&item.package.sha256)?)?;
-                if digest(&module) != item.package.sha256 {
-                    return Err(NativeError::new(
-                        ErrorCode::StorageCorrupt,
-                        "Installed module changed; preparation preserved the original data",
-                    ));
-                }
-                Ok(Some((
-                    module,
-                    self.compilation_lease(&item.package.manifest.id, &item.package.sha256, true)?,
-                )))
+                self.compilation_lease(&item.package.manifest.id, &item.package.sha256, true)
+                    .map(Some)
             })();
             let result = match preparation {
-                Ok(Some((module, lease))) => {
+                Ok(Some(lease)) => (|| {
+                    // 租约在读盘期间保留包；注册表锁不随大文件读取或哈希计算占用。
+                    let module = read_binary(&self.asset(&item.package.sha256)?)?;
+                    if digest(&module) != item.package.sha256 {
+                        return Err(NativeError::new(
+                            ErrorCode::StorageCorrupt,
+                            "Installed module changed; preparation preserved the original data",
+                        ));
+                    }
                     self.compile_leased(&lease, &module, &item.package.manifest, started)
-                }
+                })(),
                 Ok(None) => continue,
                 Err(error) => Err(error),
             };
@@ -1207,8 +1207,9 @@ impl ExtensionStore {
             return Ok(Registry::default());
         }
         let mut bytes = Vec::new();
-        fs::File::open(&path)
-            .and_then(|file| file.take(REGISTRY_LIMIT as u64 + 1).read_to_end(&mut bytes))
+        crate::extension_paths::open_regular(&path)?
+            .take(REGISTRY_LIMIT as u64 + 1)
+            .read_to_end(&mut bytes)
             .map_err(|error| io("Cannot read extension registry", error))?;
         if bytes.len() > REGISTRY_LIMIT {
             return Err(invalid("Extension registry exceeds its limit"));
@@ -1395,7 +1396,8 @@ impl ExtensionStore {
             // 取消也会析构租约；每个存储最多保留一个执行器之外的清理任务。
             runtime.spawn_blocking(cleanup);
         } else {
-            cleanup();
+            // 同步调用方也不能在租约析构中重入注册表写锁。
+            tauri::async_runtime::spawn_blocking(cleanup);
         }
     }
     fn drain_cache_cleanup(&self) {
@@ -2221,7 +2223,7 @@ impl ExtensionStore {
         expected_generation: i32,
         token: WindowRunToken,
     ) -> NativeResult<PreparedRun> {
-        let (package, module, grants, stop) = {
+        let (package, grants, stop) = {
             let _guard = self
                 .0
                 .writing
@@ -2241,13 +2243,6 @@ impl ExtensionStore {
             item.package.manifest.validate()?;
             if item.package.sha256 != expected_hash || item.generation != expected_generation {
                 return Err(conflict());
-            }
-            let module = read_binary(&self.asset(expected_hash)?)?;
-            if digest(&module) != expected_hash {
-                return Err(NativeError::new(
-                    ErrorCode::StorageCorrupt,
-                    "Installed module changed; reinstall the trusted package",
-                ));
             }
             let mut runs = self
                 .0
@@ -2279,18 +2274,20 @@ impl ExtensionStore {
                 ));
             }
             self.0.run_changed.notify_all();
-            (
-                item.package.clone(),
-                module,
-                item.granted_permissions.clone(),
-                stop,
-            )
+            (item.package.clone(), item.granted_permissions.clone(), stop)
         };
         // Queued work owns a lease, but never holds the registry write lock while waiting.
         let lease = RunLease {
             store: self.clone(),
             stop: stop.clone(),
         };
+        let module = read_binary(&self.asset(expected_hash)?)?;
+        if digest(&module) != expected_hash {
+            return Err(NativeError::new(
+                ErrorCode::StorageCorrupt,
+                "Installed module changed; reinstall the trusted package",
+            ));
+        }
         {
             let mut runs = self
                 .0
@@ -3688,6 +3685,10 @@ mod tests {
         let path = store.asset(hash).unwrap();
         assert!(path.exists());
         drop(run);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while path.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         assert!(!path.exists());
     }
     #[test]
@@ -3927,6 +3928,42 @@ mod tests {
         assert!(!cleanup.requested);
         assert!(admission_released);
         assert!(retained_while_locked);
+        assert!(!module.exists());
+    }
+
+    #[test]
+    fn synchronous_lease_cleanup_does_not_wait_for_the_registry_lock() {
+        use std::sync::mpsc;
+        let (_dir, store) = store();
+        let snapshot = enable(&store, &install(&store));
+        let item = &snapshot.items[0];
+        let run = store
+            .prepare(&item.package.manifest.id, &item.package.sha256)
+            .unwrap();
+        let module = store.asset(&item.package.sha256).unwrap();
+        store
+            .uninstall(&item.package.manifest.id, snapshot.revision)
+            .unwrap();
+        let writing = store.0.writing.lock().unwrap();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            // 此调用方没有 Tokio runtime，析构仍必须把磁盘清理交给 worker。
+            drop(run);
+            done_tx.send(()).unwrap();
+        });
+        let completed = done_rx.recv_timeout(Duration::from_secs(5));
+        let retained = module.exists();
+        drop(writing);
+        worker.join().unwrap();
+        assert!(
+            completed.is_ok(),
+            "Synchronous lease drop waited on the registry"
+        );
+        assert!(retained);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while module.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         assert!(!module.exists());
     }
 

@@ -19,6 +19,7 @@ use std::{
     },
 };
 use tauri::{Emitter, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 const MAX_WORKSPACE_BYTES: usize = 16 * 1024;
 const MAX_ACTIVATIONS: usize = 20;
@@ -441,7 +442,12 @@ fn credential(app: &tauri::AppHandle) -> NativeResult<keyring::Entry> {
 }
 #[tauri::command]
 #[specta::specta]
-pub async fn set_demo_credential(app: tauri::AppHandle, value: String) -> NativeResult<()> {
+pub async fn set_demo_credential(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    value: String,
+) -> NativeResult<()> {
+    crate::commands::require_host_window(window.label())?;
     bounded_text(&value, 1000, "Credential")?;
     if value.is_empty() {
         return Err(NativeError::new(
@@ -462,7 +468,11 @@ pub async fn set_demo_credential(app: tauri::AppHandle, value: String) -> Native
 }
 #[tauri::command]
 #[specta::specta]
-pub async fn get_demo_credential(app: tauri::AppHandle) -> NativeResult<Option<String>> {
+pub async fn get_demo_credential(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<Option<String>> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || match credential(&app)?.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -476,7 +486,11 @@ pub async fn get_demo_credential(app: tauri::AppHandle) -> NativeResult<Option<S
 }
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_demo_credential(app: tauri::AppHandle) -> NativeResult<()> {
+pub async fn delete_demo_credential(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> NativeResult<()> {
+    crate::commands::require_host_window(window.label())?;
     blocking::run(move || match credential(&app)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(NativeError::operation(
@@ -484,6 +498,77 @@ pub async fn delete_demo_credential(app: tauri::AppHandle) -> NativeResult<()> {
             "Cannot delete demo credential",
             error,
         )),
+    })
+    .await
+}
+
+fn validate_demo_shortcut(shortcut: &str) -> NativeResult<()> {
+    if matches!(
+        shortcut,
+        "CommandOrControl+Shift+Space" | "CommandOrControl+Shift+Y" | "Alt+Shift+Y"
+    ) {
+        Ok(())
+    } else {
+        Err(NativeError::new(
+            ErrorCode::InvalidArgument,
+            "Unsupported demo shortcut",
+        ))
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn register_demo_shortcut(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    shortcut: String,
+) -> NativeResult<()> {
+    crate::commands::require_host_window(window.label())?;
+    validate_demo_shortcut(&shortcut)?;
+    blocking::run(move || {
+        let plugin = app.global_shortcut();
+        if plugin.is_registered(shortcut.as_str()) {
+            return Err(NativeError::new(
+                ErrorCode::Conflict,
+                "Shortcut is already registered",
+            ));
+        }
+        plugin
+            .on_shortcut(shortcut.as_str(), |app, _, event| {
+                if event.state == ShortcutState::Pressed {
+                    desktop::request_show_main(app);
+                }
+            })
+            .map_err(|error| {
+                NativeError::operation(
+                    ErrorCode::WindowError,
+                    "Cannot register demo shortcut",
+                    error,
+                )
+            })
+    })
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn unregister_demo_shortcut(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    shortcut: String,
+) -> NativeResult<()> {
+    crate::commands::require_host_window(window.label())?;
+    validate_demo_shortcut(&shortcut)?;
+    blocking::run(move || {
+        app.global_shortcut()
+            .unregister(shortcut.as_str())
+            .map_err(|error| {
+                NativeError::operation(
+                    ErrorCode::WindowError,
+                    "Cannot unregister demo shortcut",
+                    error,
+                )
+            })
     })
     .await
 }
@@ -528,6 +613,27 @@ pub async fn run_demo_sidecar(input: String) -> NativeResult<DemoWorkerOutput> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn demo_shortcut_allowlist_is_enforced_at_the_native_boundary() {
+        for value in [
+            "CommandOrControl+Shift+Space",
+            "CommandOrControl+Shift+Y",
+            "Alt+Shift+Y",
+        ] {
+            assert!(validate_demo_shortcut(value).is_ok());
+        }
+        for value in [
+            "CommandOrControl+Q",
+            "Alt+F4",
+            "",
+            "CommandOrControl+Shift+Y\0",
+        ] {
+            assert_eq!(
+                validate_demo_shortcut(value).unwrap_err().code,
+                ErrorCode::InvalidArgument
+            );
+        }
+    }
 
     #[test]
     fn completed_file_activations_remain_loadable_from_the_startup_snapshot() {

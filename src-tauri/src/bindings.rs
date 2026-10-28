@@ -102,6 +102,8 @@ pub fn builder() -> Builder<tauri::Wry> {
             system_commands::set_demo_credential,
             system_commands::get_demo_credential,
             system_commands::delete_demo_credential,
+            system_commands::register_demo_shortcut,
+            system_commands::unregister_demo_shortcut,
             system_commands::run_demo_sidecar,
             recovery::recovery_status,
             recovery::list_recovery_backups,

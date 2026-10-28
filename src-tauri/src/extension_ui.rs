@@ -116,11 +116,9 @@ impl ExtensionStore {
             ));
         }
         let mut bytes = Vec::new();
-        fs::File::open(path)
-            .and_then(|file| {
-                file.take(UI_DOCUMENT_LIMIT as u64 + 1)
-                    .read_to_end(&mut bytes)
-            })
+        crate::extension_paths::open_regular(&path)?
+            .take(UI_DOCUMENT_LIMIT as u64 + 1)
+            .read_to_end(&mut bytes)
             .map_err(|error| io("Cannot read UI document", error))?;
         if bytes.len() != document.bytes as usize || digest(&bytes) != document.sha256 {
             return Err(NativeError::new(
@@ -268,18 +266,21 @@ impl ExtensionUiStore {
         Ok(token)
     }
 
-    fn document(&self, store: &ExtensionStore, owner: &str, token: &str) -> NativeResult<String> {
+    fn lease(&self, owner: &str, token: &str) -> NativeResult<Lease> {
         if !valid_digest(token) {
             return Err(invalid("Invalid UI lease"));
         }
-        let lease = self
-            .0
+        self.0
             .lock()
             .map_err(|_| io("UI leases unavailable", "lock poisoned"))?
             .get(token)
             .cloned()
             .filter(|lease| lease.owner == owner)
-            .ok_or_else(|| invalid("UI lease is not available to this window"))?;
+            .ok_or_else(|| invalid("UI lease is not available to this window"))
+    }
+
+    fn document(&self, store: &ExtensionStore, owner: &str, token: &str) -> NativeResult<String> {
+        let lease = self.lease(owner, token)?;
         store.ui_document(&lease.id, &lease.command, &lease.hash, lease.generation)
     }
 
@@ -381,13 +382,18 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
             let owner = context.webview_label().to_owned();
             let path = request.uri().path().trim_start_matches('/');
             let token = path.to_owned();
-            let valid =
-                request.method() == tauri::http::Method::GET && request.uri().query().is_none();
+            if request.method() != tauri::http::Method::GET
+                || request.uri().query().is_some()
+                || app
+                    .state::<ExtensionUiStore>()
+                    .lease(&owner, &token)
+                    .is_err()
+            {
+                responder.respond(document_response(Err(invalid("Unsupported UI request"))));
+                return;
+            }
             tauri::async_runtime::spawn(async move {
                 let document = crate::blocking::run(move || {
-                    if !valid {
-                        return Err(invalid("Unsupported UI request"));
-                    }
                     app.state::<ExtensionUiStore>().document(
                         &app.state::<ExtensionStore>(),
                         &owner,

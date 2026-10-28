@@ -1,4 +1,5 @@
 import type { Language } from "@/i18n/registry";
+import type { settingsDocument } from "./settings-model";
 import type {
   DesktopStatus,
   DiagnosticsReport,
@@ -613,10 +614,10 @@ export function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
 }
 
 export function saveSettingsSnapshot(
-  settings: object,
+  settings: ReturnType<typeof settingsDocument>,
   expectedRevision: number,
 ): Promise<SettingsSnapshot> {
-  const document = JSON.parse(JSON.stringify(settings));
+  const document = structuredClone(settings);
   return callNative((commands) =>
     commands.saveSettingsSnapshot(document, expectedRevision),
   );
@@ -1032,22 +1033,10 @@ export async function registerGlobalShortcut(
   shortcut: string,
 ): Promise<() => Promise<void>> {
   requireDesktop();
-  if (
-    ![
-      "CommandOrControl+Shift+Space",
-      "CommandOrControl+Shift+Y",
-      "Alt+Shift+Y",
-    ].includes(shortcut)
-  )
-    throw new Error("Unsupported demo shortcut");
-  const plugin = await import("@tauri-apps/plugin-global-shortcut");
-  if (await plugin.isRegistered(shortcut))
-    throw new Error("Shortcut is already registered");
-  await plugin.register(shortcut, (event) => {
-    if (event.state === "Pressed")
-      void callNative((c) => c.activateMain()).catch(console.error);
-  });
-  return () => plugin.unregister(shortcut);
+  await callNative((commands) => commands.registerDemoShortcut(shortcut));
+  return async () => {
+    await callNative((commands) => commands.unregisterDemoShortcut(shortcut));
+  };
 }
 
 export type HttpDemoRequest = import("./generated/bindings").HttpDemoRequest;

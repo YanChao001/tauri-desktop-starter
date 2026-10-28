@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    fs::File,
     io::Read,
     path::{Path, PathBuf},
     sync::{
@@ -109,7 +108,7 @@ impl ExtensionStorageStore {
                 values: BTreeMap::new(),
             });
         }
-        let file = File::open(path).map_err(|error| io("Cannot open extension storage", error))?;
+        let file = crate::extension_paths::open_regular(path)?;
         if file
             .metadata()
             .map_err(|error| io("Cannot inspect extension storage", error))?

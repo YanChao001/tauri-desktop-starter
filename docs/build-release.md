@@ -218,13 +218,13 @@ Rust updater 经 [`src/lib/tauri.ts`](../src/lib/tauri.ts) 的生成命令提供
 4. 按正式流程发版。CI 临时启用 `createUpdaterArtifacts: true`，收集后用 [Rust 验证器](../src-tauri/src/bin/verify-updater.rs) 核对最终文件、公钥、`.sig` 与签名版本；本地默认构建不额外生成更新签名。
 5. 独立 job 汇总四个目标元数据，与 draft 实际资产按文件名 / 上传标签匹配，再生成唯一 `latest.json`。下载 URL 使用 GitHub 返回的正式资产名，不猜重命名或使用草稿临时地址。正文取自 Release，最多 8000 字符，优先保留摘要、限制与完整说明链接。
 
-初始无公钥客户端须手动安装带公钥版本，或通过可信部署迁移。首轮验收使用两个不同版本完成发现、下载、验签和安装；同版本安装或仅生成清单不足以证明升级可用。便携版更新会转为安装版。
+初始无公钥客户端须手动安装带公钥版本；运行期部署文件不能新增或替换信任公钥。首轮验收使用两个不同版本完成发现、下载、验签和安装；同版本安装或仅生成清单不足以证明升级可用。便携版更新会转为安装版。
 
 默认 `/releases/latest/` 不分发 draft / prerelease，详见 [GitHub Release 规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。测试通道须另行设计端点、版本比较与发布校验；tag 加 `beta` 不会进入默认通道。手动生成更新签名也须提供匹配 `--app-version`，不得复用不同版本的签名；内部工具见 [release-lib.mjs](../scripts/release-lib.mjs)。
 
 ### 运行时策略与安装行为
 
-默认策略编译自 `app.config.json`。受控部署可在 `appConfigDir/deployment.json` 写 `{ "updates": { "endpoint": "...", "publicKey": "..." } }` 整体覆盖；只放公钥和端点，安全限制见 [更新通道](./security.md#更新通道)。变更策略后须重新检查，旧安装句柄不能沿用。
+默认策略编译自 `app.config.json`。受控部署可在 `appConfigDir/deployment.json` 写 `{ "updates": { "endpoint": "https://mirror.example/latest.json" } }` 覆盖镜像，或将 `endpoint` 设为空字符串禁用更新。已有部署文件若包含 `publicKey`，必须与安装包内置值完全相同；不匹配时明确报错并保留文件。安全限制和换钥规则见 [更新通道](./security.md#更新通道)。变更策略后须重新检查，旧安装句柄不能沿用。
 
 检查、下载句柄与进度由 Rust 管理并跨窗口同步。下载验签后、实际安装前统一协商所有窗口的笔记草稿、文件编辑和任务；保存失败或取消则保留工作，安装期间冻结窗口。见 [更新与恢复架构](./architecture.md#恢复诊断与更新)。
 

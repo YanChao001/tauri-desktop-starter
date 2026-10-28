@@ -414,6 +414,56 @@ fn read_backup(directory: &Path, id: &str) -> NativeResult<String> {
 
 impl Database {
     pub fn open(path: &Path) -> NativeResult<Self> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            let file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .mode(0o600)
+                .open(path)
+                .map_err(|error| {
+                    NativeError::operation(
+                        ErrorCode::StorageIo,
+                        "Cannot create private notes database",
+                        error,
+                    )
+                })?;
+            // SQLite 的 WAL / SHM 继承数据库权限；已有存档也先收紧再打开连接。
+            file.set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|error| {
+                    NativeError::operation(
+                        ErrorCode::StorageIo,
+                        "Cannot protect notes database",
+                        error,
+                    )
+                })?;
+            for suffix in ["-wal", "-shm"] {
+                let mut sidecar = path.as_os_str().to_os_string();
+                sidecar.push(suffix);
+                match fs::OpenOptions::new().read(true).write(true).open(sidecar) {
+                    Ok(file) => file
+                        .set_permissions(fs::Permissions::from_mode(0o600))
+                        .map_err(|error| {
+                            NativeError::operation(
+                                ErrorCode::StorageIo,
+                                "Cannot protect notes journal",
+                                error,
+                            )
+                        })?,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(NativeError::operation(
+                            ErrorCode::StorageIo,
+                            "Cannot access notes journal",
+                            error,
+                        ));
+                    }
+                }
+            }
+        }
         let mut connection = Connection::open(path).map_err(database_error)?;
         connection
             .busy_timeout(Duration::from_secs(5))
@@ -782,6 +832,38 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn database_and_wal_sidecars_are_private_even_after_reopening_legacy_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("notes.db");
+        let database = Database::open(&path).unwrap();
+        let paths: Vec<_> = ["", "-wal", "-shm"]
+            .into_iter()
+            .map(|suffix| {
+                let mut value = path.as_os_str().to_os_string();
+                value.push(suffix);
+                std::path::PathBuf::from(value)
+            })
+            .collect();
+        for file in &paths {
+            assert_eq!(
+                fs::metadata(file).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            fs::set_permissions(file, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let reopened = Database::open(&path).unwrap();
+        for file in &paths {
+            assert_eq!(
+                fs::metadata(file).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        drop((database, reopened));
+    }
 
     fn search(db: &Database, text: &str) -> NotePage {
         db.query(NoteQuery {
