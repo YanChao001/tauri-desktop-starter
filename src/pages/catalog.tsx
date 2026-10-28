@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { Link } from "react-router-dom";
 import { APP_ROUTES } from "@/routes";
 import { JourneyLauncher } from "@/features/journeys/journey-launcher";
@@ -247,4 +248,3 @@ export default function Catalog() {
     </div>
   );
 }
-import { HelpTooltip } from "@/components/help-tooltip";

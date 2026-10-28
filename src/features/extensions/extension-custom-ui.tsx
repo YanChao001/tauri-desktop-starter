@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -99,10 +100,12 @@ export function ExtensionCustomUi({
   const [handshakeReady, setHandshakeReady] = useState(false);
   const bridge = useRef<ExtensionUiBridge | null>(null);
   const run = useRef(execute);
-  run.current = execute;
   const snapshot = useRef<unknown>(null);
   const hasView = useRef(view !== null);
-  hasView.current = view !== null;
+  useLayoutEffect(() => {
+    run.current = execute;
+    hasView.current = view !== null;
+  }, [execute, view]);
   const [palette, setPalette] = useState(0);
   useEffect(() => {
     if (!active) return;
@@ -162,7 +165,7 @@ export function ExtensionCustomUi({
       busy,
       dirty,
       active,
-      locale: language === "zh" ? "zh-CN" : "en",
+      locale: getLocale(language).documentLang,
       grantedPermissions: item.grantedPermissions,
       theme,
     },

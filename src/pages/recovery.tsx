@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
@@ -231,7 +232,7 @@ export function RecoveryContent({
                         <div className="min-w-0 text-sm">
                           <p>
                             {new Date(backup.createdAt).toLocaleString(
-                              language === "zh" ? "zh-CN" : "en",
+                              getLocale(language).documentLang,
                             )}
                           </p>
                           <p className="text-xs break-all text-muted-foreground">

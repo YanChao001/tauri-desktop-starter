@@ -145,7 +145,10 @@ test("virtual scrolling reaches the last of 10,000 records with a bounded DOM an
   page,
 }) => {
   await page.goto("./#/data-studio");
-  await page.getByRole("checkbox", { name: "Continuous scrolling" }).check();
+  await page.getByText("Continuous scrolling", { exact: true }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Continuous scrolling" }),
+  ).toBeChecked();
   const table = page.getByRole("region", { name: "Demo records" });
   await expect(table.getByRole("table")).toHaveAttribute(
     "aria-rowcount",

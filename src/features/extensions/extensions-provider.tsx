@@ -31,7 +31,9 @@ import {
 export function ExtensionsProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const translate = useRef(t);
-  translate.current = t;
+  useLayoutEffect(() => {
+    translate.current = t;
+  }, [t]);
   const [data, setData] = useState<ExtensionSnapshot | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(isTauri);

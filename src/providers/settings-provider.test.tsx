@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
   settingsDocument,
   STORAGE_KEY,
+  SETTINGS_VERSION,
   type AppSettings,
 } from "@/lib/settings-model";
 import { SettingsProvider, useSettings } from "./settings";
@@ -267,6 +268,42 @@ describe("settings provider persistence", () => {
     expect(result.current.settings).toEqual({
       ...DEFAULT_SETTINGS,
       language: "en",
+    });
+  });
+
+  it("keeps future-version caches protected after a reset fails until a later reset succeeds", async () => {
+    const futureCache = JSON.stringify({
+      schemaVersion: 99,
+      future: "preserve",
+    });
+    localStorage.setItem(STORAGE_KEY, futureCache);
+    vi.mocked(desktop.isTauri).mockReturnValue(true);
+    vi.mocked(desktop.onSettingsChanged).mockResolvedValue(vi.fn());
+    vi.mocked(desktop.loadSettingsSnapshot).mockResolvedValue({
+      revision: 5,
+      settings: { schemaVersion: 99 },
+    });
+    vi.mocked(desktop.saveSettingsSnapshot)
+      .mockRejectedValueOnce({ code: "STORAGE_IO" })
+      .mockImplementation(async (settings) => ({ revision: 6, settings }));
+    const { result } = renderHook(useSettings, { wrapper });
+    await waitFor(() =>
+      expect(result.current.persistenceError).toBe("FUTURE_SETTINGS_VERSION"),
+    );
+    await act(async () => {
+      await expect(result.current.reset()).rejects.toEqual({
+        code: "STORAGE_IO",
+      });
+    });
+    act(() => result.current.update({ language: "en" }));
+    expect(result.current.persistence).toBe("error");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(futureCache);
+    expect(desktop.saveSettingsSnapshot).toHaveBeenCalledOnce();
+    await act(async () => result.current.reset());
+    await waitFor(() => expect(result.current.persistence).toBe("saved"));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      language: "en",
+      schemaVersion: SETTINGS_VERSION,
     });
   });
 

@@ -104,6 +104,7 @@ describe("persisted application sidebar", () => {
   });
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -198,7 +199,8 @@ describe("persisted application sidebar", () => {
     );
     write.mockRestore();
   });
-  it("preloads the intended page on pointer entry and keyboard focus without navigating", () => {
+  it("waits for hover intent, cancels fly-by entry and preloads keyboard focus without navigating", () => {
+    vi.useFakeTimers();
     const preload = vi.fn();
     renderSidebar([
       routes[0]!,
@@ -207,13 +209,30 @@ describe("persisted application sidebar", () => {
     const link = screen.getByRole("link", { name: zhCN["nav.desktop"] });
     expect(preload).not.toHaveBeenCalled();
     fireEvent.pointerEnter(link);
-    expect(preload).toHaveBeenCalledTimes(1);
+    expect(preload).not.toHaveBeenCalled();
+    fireEvent.pointerLeave(link);
+    act(() => vi.advanceTimersByTime(200));
+    expect(preload).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(link);
+    act(() => vi.advanceTimersByTime(150));
+    expect(preload).toHaveBeenCalledOnce();
     fireEvent.focus(link);
     expect(preload).toHaveBeenCalledTimes(2);
     expect(link).not.toHaveAttribute("aria-current");
     expect(
       screen.getByRole("link", { name: zhCN["nav.overview"] }),
     ).toHaveAttribute("aria-current", "page");
+  });
+  it("cancels pending route preloads when the sidebar unmounts", () => {
+    vi.useFakeTimers();
+    const preload = vi.fn();
+    const view = renderSidebar([{ ...routes[0]!, preload }]);
+    fireEvent.pointerEnter(
+      screen.getByRole("link", { name: zhCN["nav.overview"] }),
+    );
+    view.unmount();
+    act(() => vi.advanceTimersByTime(200));
+    expect(preload).not.toHaveBeenCalled();
   });
   it("keeps collapsed navigation named and restores the saved width", () => {
     const view = renderSidebar();

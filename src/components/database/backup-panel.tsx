@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -256,7 +257,7 @@ export function BackupPanel({
                     <div>
                       <p className="text-sm">
                         {new Date(backup.createdAt).toLocaleString(
-                          language === "zh" ? "zh-CN" : "en",
+                          getLocale(language).documentLang,
                         )}
                       </p>
                       <p className="text-xs text-muted-foreground">

@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { TriangleAlertIcon } from "lucide-react";
@@ -224,10 +225,9 @@ export function OrderForm() {
             toast.success(
               t("labs.form.success", {
                 count: values.lines.length,
-                total: new Intl.NumberFormat(
-                  language === "zh" ? "zh-CN" : "en",
-                  { maximumFractionDigits: 2 },
-                ).format(orderTotal(values)),
+                total: new Intl.NumberFormat(getLocale(language).documentLang, {
+                  maximumFractionDigits: 2,
+                }).format(orderTotal(values)),
               }),
             );
           })}

@@ -15,7 +15,9 @@ import type { UnsavedWork } from "@/providers/unsaved-work";
 import Database from "./database";
 import { toast } from "sonner";
 
-vi.mock("@/lib/tauri", () => ({
+vi.mock("@/lib/tauri", async (original) => ({
+  NativeBridgeError: (await original<typeof import("@/lib/tauri")>())
+    .NativeBridgeError,
   isTauri: () => true,
   queryNotes: vi.fn(),
   getNote: vi.fn(),
@@ -51,7 +53,9 @@ vi.mock("@/providers/unsaved-work", () => ({
     lifecycle.current = work;
   },
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
+}));
 const first: Note = {
   id: 1,
   title: "First note",
@@ -452,9 +456,10 @@ describe("native note editor", () => {
     expect(body()).toHaveAttribute("aria-invalid", "false");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
-  it("ignores obsolete note subscriptions after search changes and cleanup", async () => {
+  it("keeps one subscription across filters and refreshes the current query until cleanup", async () => {
     const view = await open();
-    const obsolete = events[0]!;
+    const subscribed = events[0]!;
+    vi.mocked(native.queryNotes).mockClear();
     fireEvent.change(screen.getByRole("searchbox"), {
       target: { value: "new" },
     });
@@ -463,9 +468,14 @@ describe("native note editor", () => {
         expect.objectContaining({ search: "new" }),
       ),
     );
+    expect(native.onNotesChanged).toHaveBeenCalledOnce();
+    expect(native.queryNotes).toHaveBeenCalledOnce();
     const count = vi.mocked(native.queryNotes).mock.calls.length;
-    await act(async () => obsolete());
-    expect(native.queryNotes).toHaveBeenCalledTimes(count);
+    await act(async () => subscribed());
+    expect(native.queryNotes).toHaveBeenCalledTimes(count + 1);
+    expect(native.queryNotes).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: "new" }),
+    );
     view.unmount();
     const after = vi.mocked(native.queryNotes).mock.calls.length;
     await act(async () => events.forEach((handler) => handler()));

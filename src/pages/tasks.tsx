@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpenIcon, PlayIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -325,7 +326,7 @@ export default function Tasks() {
                   </Badge>
                   <span className="text-xs text-muted-foreground">
                     {new Date(Number(task.startedAt)).toLocaleString(
-                      language === "zh" ? "zh-CN" : "en",
+                      getLocale(language).documentLang,
                     )}
                   </span>
                 </div>

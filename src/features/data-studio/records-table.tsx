@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
+import { getLocale } from "@/i18n/registry";
 import {
   archiveDemoRecords,
   createDemoRecords,
@@ -100,6 +101,13 @@ export function RecordsTable() {
   const [detail, setDetail] = useState<DemoRecord | null>(null);
   const detailOrigin = useRef<HTMLButtonElement | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  const numberFormat = useMemo(
+    () =>
+      new Intl.NumberFormat(getLocale(language).documentLang, {
+        maximumFractionDigits: 2,
+      }),
+    [language],
+  );
   // 表格按 data 缓存 accessor 值；翻译变化必须同时更新行模型和搜索值。
   const data = useMemo(
     () =>
@@ -159,10 +167,7 @@ export function RecordsTable() {
         }),
         column.accessor("budget", {
           header: t("labs.data.budget"),
-          cell: ({ getValue }) =>
-            new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en", {
-              maximumFractionDigits: 2,
-            }).format(getValue()),
+          cell: ({ getValue }) => numberFormat.format(getValue()),
           sortFn: "basic",
         }),
         column.display({
@@ -187,7 +192,7 @@ export function RecordsTable() {
           ),
         }),
       ]),
-    [t, language],
+    [t, numberFormat],
   );
   const table = useTable({
     features,
@@ -211,11 +216,10 @@ export function RecordsTable() {
   const items = virtualizer.getVirtualItems();
   const visible = virtual
     ? items.length
-      ? items.flatMap((item) =>
-          rows[item.index]
-            ? [{ row: rows[item.index]!, index: item.index }]
-            : [],
-        )
+      ? items.flatMap((item) => {
+          const row = rows[item.index];
+          return row ? [{ row, index: item.index }] : [];
+        })
       : rows.slice(0, 12).map((row, index) => ({ row, index }))
     : rows.map((row, index) => ({ row, index }));
   const selected = table.getSelectedRowIds();
@@ -243,7 +247,6 @@ export function RecordsTable() {
         `records.${format}`,
         format === "csv" ? recordsCsv(data) : JSON.stringify(data, null, 2),
       );
-      signal?.throwIfAborted();
       if (path === null)
         throw new NativeBridgeError({
           code: "USER_CANCELLED",

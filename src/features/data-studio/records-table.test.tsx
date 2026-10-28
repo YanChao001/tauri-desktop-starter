@@ -92,6 +92,33 @@ it("retains imported data through filtered and cancelled exports, and clears dir
   );
 });
 
+it("keeps a completed export saved when lifecycle waiting is cancelled during the native save", async () => {
+  const controller = new AbortController();
+  vi.mocked(saveTextExport).mockImplementationOnce(async () => {
+    controller.abort();
+    return "records.csv";
+  });
+  render(<RecordsTable />);
+  fireEvent.click(screen.getByText("Import, validate and export"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load sample with errors" }),
+  );
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "Import valid rows only and retain invalid rows in the report",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Import valid records" }));
+  expect(lifecycle.work?.dirty).toBe(true);
+  await act(async () => {
+    await expect(
+      lifecycle.work!.save(controller.signal),
+    ).resolves.toBeUndefined();
+  });
+  expect(saveTextExport).toHaveBeenCalledOnce();
+  expect(lifecycle.work?.dirty).toBe(false);
+});
+
 it("uses stable selection through filtering and retains failed bulk records", () => {
   render(<RecordsTable />);
   fireEvent.click(screen.getByLabelText("Select record 2"));

@@ -2,7 +2,6 @@ import {
   UnsavedWorkContext as Context,
   type UnsavedWork,
 } from "./unsaved-work-context";
-export type { UnsavedWork } from "./unsaved-work-context";
 import {
   useCallback,
   useContext,
@@ -34,6 +33,8 @@ import {
   setWindowWorkState,
   type LifecycleRequest,
 } from "@/lib/tauri";
+
+export type { UnsavedWork } from "./unsaved-work-context";
 
 /** 脏工作在离页后仍保留最后一个保存动作，保存成功或明确放弃后移除。 */
 export function useUnsavedWork(work: UnsavedWork) {

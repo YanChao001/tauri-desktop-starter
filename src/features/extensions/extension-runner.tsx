@@ -1,7 +1,7 @@
 import { ExtensionOutput } from "./extension-output";
 import { toast } from "sonner";
 import { ExtensionHelp } from "./extension-help";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,7 +105,9 @@ export function ExtensionRunner({
   const exportLock = useRef(false);
   const selector = useRef<HTMLButtonElement>(null);
   const latestItems = useRef(items);
-  latestItems.current = items;
+  useLayoutEffect(() => {
+    latestItems.current = items;
+  }, [items]);
   const enabled = items.filter((item) => item.enabled);
   const choices = enabled.flatMap((item) =>
     item.package.manifest.commands
