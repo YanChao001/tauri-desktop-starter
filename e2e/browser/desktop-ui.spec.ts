@@ -1672,6 +1672,124 @@ test("immersive edges animate over the content and keep portalled menus usable",
   await expect(sidebar).toHaveCSS("width", "280px");
 });
 
+test("immersive title bar stays open on the topmost pixel across WebView boundary events", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await seed(page, { motion: "full" });
+  await page.goto("./#/settings");
+  await page.mouse.move(640, 400);
+  await page.keyboard.press("F11");
+  const chrome = page.locator("#app-chrome");
+  const edge = page.getByRole("button", {
+    name: "Show menu and window controls",
+  });
+  await expect(chrome).toBeHidden();
+  const reveal = async () => {
+    await page.mouse.move(640, 400);
+    await page.mouse.move(640, 0);
+    await expect(chrome).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+    await expect(chrome).toHaveCSS("opacity", "1");
+  };
+  const staysOpen = async (target = edge) => {
+    // 持续取样覆盖收起延迟和退出动画，避免只检查刚被唤出的瞬间。
+    const stable = await target.evaluate(async (trigger) => {
+      const panel = document.getElementById(
+        trigger.getAttribute("aria-controls")!,
+      )!;
+      const until = performance.now() + 650;
+      return new Promise<boolean>((resolve) => {
+        const sample = () => {
+          const style = getComputedStyle(panel);
+          if (
+            trigger.getAttribute("aria-expanded") !== "true" ||
+            style.visibility !== "visible" ||
+            style.opacity !== "1"
+          ) {
+            resolve(false);
+          } else if (performance.now() >= until) resolve(true);
+          else requestAnimationFrame(sample);
+        };
+        sample();
+      });
+    });
+    expect(
+      stable,
+      "the revealed panel remains fully open while the pointer rests at the window edge",
+    ).toBe(true);
+  };
+  await reveal();
+  await staysOpen();
+  // 模拟 WebView 在客户区与系统顶边之间交接指针；不改变实际鼠标位置。
+  for (const clientY of [0, -1]) {
+    await page.evaluate((clientY) => {
+      const leave = () =>
+        new PointerEvent("pointerleave", {
+          pointerType: "mouse",
+          clientX: 640,
+          clientY,
+        });
+      document.documentElement.dispatchEvent(leave());
+      document.getElementById("app-chrome")!.dispatchEvent(leave());
+      document
+        .querySelector('.immersive-edge[data-edge="top"]')!
+        .dispatchEvent(leave());
+    }, clientY);
+    await staysOpen();
+  }
+  await page.locator("main").evaluate((node) => {
+    const frame = document.createElement("iframe");
+    frame.dataset.immersiveProbe = "";
+    frame.title = "Extension pointer boundary";
+    frame.srcdoc = "<p>Extension content</p>";
+    frame.style.cssText =
+      "position:fixed;top:300px;right:60px;width:300px;height:150px;border:0";
+    node.append(frame);
+  });
+  await page
+    .frameLocator("[data-immersive-probe]")
+    .getByText("Extension content")
+    .waitFor();
+  await page.mouse.move(1000, 350);
+  await expect(chrome).toBeHidden();
+  await page
+    .locator("[data-immersive-probe]")
+    .evaluate((node) => node.remove());
+
+  await reveal();
+  await page.evaluate(() =>
+    document.documentElement.dispatchEvent(
+      new PointerEvent("pointerleave", {
+        pointerType: "mouse",
+        clientX: 640,
+        clientY: -20,
+      }),
+    ),
+  );
+  await expect(chrome).toBeHidden();
+  await reveal();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(chrome).toBeHidden();
+
+  await page.mouse.move(0, 250);
+  const sidebar = page.locator("#app-sidebar");
+  await expect(sidebar).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  await page.evaluate(() =>
+    document.documentElement.dispatchEvent(
+      new PointerEvent("pointerleave", {
+        pointerType: "mouse",
+        clientX: 0,
+        clientY: 250,
+      }),
+    ),
+  );
+  await staysOpen(
+    page.getByRole("button", { name: "Show navigation", exact: true }),
+  );
+  await page.mouse.move(640, 400);
+  await expect(sidebar).toBeHidden();
+});
+
 test("immersive navigation supports narrow screens and reduced motion without changing preferences", async ({
   page,
 }) => {

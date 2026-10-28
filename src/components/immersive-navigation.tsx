@@ -48,10 +48,32 @@ export function ImmersiveNavigation() {
       )!,
     };
     const hovered = new Set<HTMLElement>();
+    let pointerEdge: Edge | null = null;
+    const edgeAt = (event: PointerEvent, boundary = false): Edge | null => {
+      // 系统顶边与 WebView 客户区交接允许 1px 舍入误差，不扩大正常唤出区。
+      const outside = 1;
+      const depth = boundary ? 1 : 10;
+      if (
+        event.clientX >= 0 &&
+        event.clientX < window.innerWidth &&
+        event.clientY >= -outside &&
+        event.clientY <= depth
+      )
+        return "top";
+      if (
+        event.clientY > 10 &&
+        event.clientY < window.innerHeight &&
+        event.clientX >= -outside &&
+        event.clientX <= depth
+      )
+        return "left";
+      return null;
+    };
 
     const retained = (edge: Edge) => {
       const panel = panels[edge];
       return (
+        pointerEdge === edge ||
         hovered.has(panel) ||
         hovered.has(edges[edge]) ||
         edges[edge] === document.activeElement ||
@@ -78,8 +100,8 @@ export function ImmersiveNavigation() {
     };
     const move = (event: PointerEvent) => {
       if (event.pointerType === "touch") return;
-      if (event.clientY <= 10) reveal("top");
-      if (event.clientX <= 10 && event.clientY > 10) reveal("left");
+      pointerEdge = edgeAt(event);
+      if (pointerEdge) reveal(pointerEdge);
       reconcile();
     };
     const focus = () => {
@@ -96,7 +118,16 @@ export function ImmersiveNavigation() {
         }
       reconcile();
     };
-    const leaveWindow = () => {
+    const leaveWindow = (event: PointerEvent) => {
+      hovered.clear();
+      const boundary =
+        event.pointerType === "touch" ? null : edgeAt(event, true);
+      // 停在最外侧像素仍算贴边，不能仅凭 pointerleave 就启动收起。
+      pointerEdge = boundary && current.current[boundary] ? boundary : null;
+      reconcile();
+    };
+    const blurWindow = () => {
+      pointerEdge = null;
       hovered.clear();
       reconcile();
     };
@@ -114,9 +145,10 @@ export function ImmersiveNavigation() {
           hovered.add(node);
           reveal(edge);
         };
-        const leave = () => {
+        const leave = (event: PointerEvent) => {
           // iframe 有独立事件树，不依赖父文档的 pointermove 或 :hover 状态。
           hovered.delete(node);
+          if (event.pointerType !== "touch") pointerEdge = edgeAt(event);
           reconcile();
         };
         node.addEventListener("pointerenter", enter);
@@ -129,12 +161,14 @@ export function ImmersiveNavigation() {
     }
     document.addEventListener("pointermove", move);
     document.documentElement.addEventListener("pointerleave", leaveWindow);
+    window.addEventListener("blur", blurWindow);
     document.addEventListener("focusin", focus);
     document.addEventListener("focusout", reconcile);
     return () => {
       observer.disconnect();
       document.removeEventListener("pointermove", move);
       document.documentElement.removeEventListener("pointerleave", leaveWindow);
+      window.removeEventListener("blur", blurWindow);
       document.removeEventListener("focusin", focus);
       document.removeEventListener("focusout", reconcile);
       for (const stop of unsubscribe) stop();
