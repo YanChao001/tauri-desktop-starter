@@ -34,6 +34,7 @@ const TOKENS = [
   "--surface-dialog",
   "--surface-control-blur",
   "--surface-popup-blur",
+  "--glass-muted-foreground",
   "--popover",
   "--popover-foreground",
   "--primary",

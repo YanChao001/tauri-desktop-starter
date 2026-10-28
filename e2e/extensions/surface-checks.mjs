@@ -71,10 +71,15 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
             window.__extensionSettingsTest.update({ backgroundIntensity }),
           intensity,
         );
-        const alpha = Math.round(255 * (1 - intensity / 100));
+        const exposure = intensity / 100;
+        const alpha = Math.round(
+          255 * Math.max(1 - 1.4 * exposure, 0.6 - 0.6 * exposure),
+        );
         await expect
           .poll(async () =>
-            (await surfaceAlpha()).every((value) => value === alpha),
+            (await surfaceAlpha()).every(
+              (value) => Math.abs(value - alpha) <= 1,
+            ),
           )
           .toBe(true);
         expect(await backgrounds()).toEqual(before);
@@ -84,7 +89,7 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
       );
       await expect
         .poll(async () =>
-          (await surfaceAlpha()).every((value) => value === 128),
+          (await surfaceAlpha()).every((value) => Math.abs(value - 76.5) <= 1),
         )
         .toBe(true);
     }

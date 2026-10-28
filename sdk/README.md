@@ -86,7 +86,7 @@ disposeStyles();
 
 一致性范围是语义 token 和基础控件状态，不是把宿主 React / Radix 组件复制进插件。多选列表、日期和文件选择等平台子控件仍有 WebView 差异；第三方组件库自己的 CSS、Canvas / SVG 绘图需主动消费主题 token。皮肤壁纸属于宿主窗口底层，扩展外壳、内容框和插件文档默认透明，让页面留白透出同一窗口皮肤。普通卡片 / 面板使用 `background: var(--surface-card, var(--card))`，次级面板使用 `var(--surface-card-muted, var(--muted))`，即可与宿主共用背景透明度和高对比度降级；`--background`、`--card`、`--muted` 等基础色保持实体颜色，供阅读区和绘图内容使用。需要独立视觉风格的插件通过作者 CSS 为 `html`、`body` 或自己的容器设置背景，继续保留原有背景设计。
 
-默认文本输入、多行编辑和单选触发器使用 `--control-background`，禁用与悬停分别消费 `--control-disabled-background`、`--control-select-hover-background`，磨砂半径消费 `--surface-control-blur`；增强下拉使用 `--surface-popover` 与 `--surface-popup-blur`。这些 token 随宿主背景透明度更新，保留最低遮罩，纯色背景、0% 和高对比度下恢复实体，不支持背景模糊时也使用实体底色。原生选项、关键错误及代码阅读区保持实体；不要直接用可完全透明的卡片 token 绘制输入或菜单。作者 CSS 仍可覆盖，独立弹窗可显式使用 `--surface-dialog`。模糊仅采样当前文档内的背景，不能跨 iframe 模糊宿主壁纸。
+默认文本输入、多行编辑和单选触发器使用 `--control-background`，以 `--popover` 作为阅读基色；禁用与悬停分别消费 `--control-disabled-background`、`--control-select-hover-background`，磨砂半径消费 `--surface-control-blur`。增强下拉使用 `--surface-popover` 与 `--surface-popup-blur`，placeholder 和浮层弱说明使用 `--glass-muted-foreground`。这些 token 根据已有窗口遮罩补偿中间档的透色：50% 时输入和菜单底色约为 30%，对话框约为 50%；主体遮罩也随滑条减弱，普通卡片采用独立补偿以减少中间档的重复压暗，因此不应仅按单层底色推断最终背景可见度。最透明档仍保留阅读底色，纯色背景、0% 和高对比度下恢复实体，不支持背景模糊时也使用实体底色。原生选项、关键错误及代码阅读区保持实体；不要直接用可完全透明的卡片 token 绘制输入或菜单。作者 CSS 仍可覆盖，独立弹窗可显式使用 `--surface-dialog`；自绘独立背景应同时检查自己的控件文字与底色。模糊仅采样当前文档内的背景，不能跨 iframe 模糊宿主壁纸。
 
 内容框占满侧栏右侧或独立窗口标题栏下的可用空间，宿主不叠加阅读宽度和外层 padding。以文档承担整页滚动，普通区块自然排版；需要居中时在内部容器设置 `max-width`、自动外边距和 padding，避免固定高度、嵌套滚动或视口最小高度叠加 padding 撑出第二条滚动条。
 

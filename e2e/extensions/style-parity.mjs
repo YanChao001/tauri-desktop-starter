@@ -212,12 +212,22 @@ try {
       );
       return Object.fromEntries(
         properties.map((name) => {
-          if (["backgroundColor", "borderColor", "color"].includes(name)) {
+          if (
+            [
+              "backgroundColor",
+              "borderColor",
+              "color",
+              "placeholderColor",
+            ].includes(name)
+          ) {
             // Equivalent computed colors can serialize as oklab or oklch after a transition.
             const canvas = document.createElement("canvas");
             canvas.width = canvas.height = 1;
             const context = canvas.getContext("2d");
-            context.fillStyle = style[name];
+            context.fillStyle =
+              name === "placeholderColor"
+                ? getComputedStyle(node, "::placeholder").color
+                : style[name];
             context.fillRect(0, 0, 1, 1);
             return [name, Array.from(context.getImageData(0, 0, 1, 1).data)];
           }
@@ -273,12 +283,24 @@ try {
     }));
     const surface = page.locator("[data-extension-custom-ui]");
     await surface.evaluate((node) => (node.style.visibility = "hidden"));
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
     const expected = [];
     try {
       for (const clip of samples)
         expected.push(await page.screenshot({ clip }));
     } finally {
       await surface.evaluate((node) => node.style.removeProperty("visibility"));
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
     }
     // 比较实际合成像素，覆盖外壳、iframe 和文档画布，避免透明 CSS 仍被某层底色遮住。
     for (const [index, clip] of samples.entries()) {
@@ -375,9 +397,12 @@ try {
       .poll(() => measure(frame.locator("#sdk-select"), ["backgroundColor"]))
       .toEqual(selectHover);
     await page.mouse.move(1200, 780);
-    for (const exposure of [0, 0.5, 1]) {
+    for (const exposure of [0, 0.1, 0.3, 0.5, 0.7, 1]) {
       await page.evaluate((value) => {
         document.documentElement.dataset.background = "aurora";
+        document.documentElement.dataset.backgroundIntensity = String(
+          value * 100,
+        );
         document.documentElement.style.setProperty(
           "--skin-exposure",
           String(value),
@@ -393,16 +418,34 @@ try {
       const { backgroundColor } = await measure(page.locator("#host-card"), [
         "backgroundColor",
       ]);
-      assert.equal(backgroundColor[3], Math.round(255 * (1 - exposure)));
-      assert.equal(
-        (await measure(page.locator("#host-input"), ["backgroundColor"]))
-          .backgroundColor[3],
-        Math.round(255 * (1 - 0.22 * exposure)),
+      assert.ok(
+        Math.abs(
+          backgroundColor[3] -
+            Math.round(
+              255 * Math.max(1 - 1.4 * exposure, 0.6 - 0.6 * exposure),
+            ),
+        ) <= 1,
+        `card opacity at exposure ${exposure}`,
       );
-      await compare("input", "input", ["backgroundColor", "backdropFilter"]);
+      const fieldAlpha = (
+        await measure(page.locator("#host-input"), ["backgroundColor"])
+      ).backgroundColor[3];
+      const expectedAlpha = Math.round(
+        255 * Math.max(1 - 1.4 * exposure, 1 - 0.35 / Math.max(exposure, 0.35)),
+      );
+      assert.ok(
+        Math.abs(fieldAlpha - expectedAlpha) <= 1,
+        `input opacity ${fieldAlpha} != ${expectedAlpha} at exposure ${exposure}`,
+      );
+      await compare("input", "input", [
+        "backgroundColor",
+        "backdropFilter",
+        "placeholderColor",
+      ]);
       await compare("textarea", "textarea", [
         "backgroundColor",
         "backdropFilter",
+        "placeholderColor",
       ]);
       await compare("select", "select", ["backgroundColor", "backdropFilter"]);
     }

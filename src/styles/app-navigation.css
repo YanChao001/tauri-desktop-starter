@@ -422,8 +422,8 @@
 .app-shell-immersive .app-route-context {
   display: none;
 }
-.app-shell-immersive .app-main {
-  inset: 0;
+.app-shell.app-shell-immersive {
+  --app-content-inset: 0;
 }
 .immersive-exit {
   position: fixed;

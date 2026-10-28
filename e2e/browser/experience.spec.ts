@@ -363,15 +363,24 @@ for (const [theme, motion] of [
     }
     await page.goto("./#/components");
     await page.getByRole("tab", { name: /Workspace/ }).click();
-    await page
-      .locator(".playground-stage:not([hidden])")
-      .evaluate((el) =>
-        Promise.all(
-          el
-            .getAnimations()
-            .map((animation) => animation.finished.catch(() => {})),
-        ),
+    const workspace = page.getByRole("tabpanel", { name: /Workspace/ });
+    await expect(workspace).toBeVisible();
+    // 先确认目标阶段已经提交，避免等待到尚未退出的旧面板。
+    await workspace.evaluate(async (el) => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );
+      await Promise.all(
+        el
+          .getAnimations({ subtree: true })
+          .filter(
+            (animation) =>
+              animation.effect?.getComputedTiming().iterations !== Infinity,
+          )
+          .map((animation) => animation.finished.catch(() => {})),
+      );
+    });
+    await expect(workspace).toHaveCSS("opacity", "1");
     const scan = await new AxeBuilder({ page })
       .include("main")
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

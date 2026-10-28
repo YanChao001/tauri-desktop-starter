@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { Buffer } from "node:buffer";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import appConfig from "../../app.config.json" with { type: "json" };
 
@@ -75,6 +75,159 @@ async function seed(page: Page, settings: Record<string, unknown> = {}) {
   );
 }
 
+async function renderedControlPixel(page: Page, locator: Locator) {
+  await locator.scrollIntoViewIfNeeded();
+  const bounds = (await locator.boundingBox())!;
+  const rendered = await page.screenshot({ animations: "disabled" });
+  return page.evaluate(
+    async ({ encoded, x, y }) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${encoded}`;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, x, y, 1, 1, 0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    },
+    {
+      encoded: rendered.toString("base64"),
+      x: bounds.x + bounds.width - 24,
+      y: bounds.y + bounds.height / 2,
+    },
+  );
+}
+
+async function measureFrostedText(locator: Locator, placeholder = false) {
+  return locator.evaluate(async (node, usePlaceholder) => {
+    const image = document.querySelector<HTMLImageElement>(
+      "[data-custom-background]",
+    )!;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    const probe = document.createElement("canvas");
+    probe.width = probe.height = 1;
+    const probeContext = probe.getContext("2d")!;
+    const alpha = (color: string) => {
+      probeContext.clearRect(0, 0, 1, 1);
+      probeContext.fillStyle = color;
+      probeContext.fillRect(0, 0, 1, 1);
+      return probeContext.getImageData(0, 0, 1, 1).data[3]! / 255;
+    };
+    const ancestors = (element: Element, stop: Element) => {
+      const layers: Element[] = [];
+      for (
+        let layer: Element | null = element;
+        layer;
+        layer = layer.parentElement
+      ) {
+        layers.unshift(layer);
+        if (layer === stop) return layers;
+      }
+      throw new Error("The measured text has no expected reading surface");
+    };
+    // 纯黑 / 白图片使背景模糊不依赖取样位置。
+    // 将实际图片、阅读表面和控件背景合成为像素，再计算文字对比度。
+    context.fillStyle = getComputedStyle(image.parentElement!).backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    context.globalAlpha = Number(getComputedStyle(image).opacity);
+    context.drawImage(image, 0, 0, 1, 1);
+    let wallpaperExposure = context.globalAlpha;
+    context.globalAlpha = 1;
+    const popup = node.closest(
+      '[data-slot="select-content"], [data-slot="popover-content"]',
+    );
+    let layers: Element[];
+    if (popup) {
+      const bounds = node.getBoundingClientRect();
+      const bodyPointerEvents =
+        document.body.style.getPropertyValue("pointer-events");
+      const bodyPriority =
+        document.body.style.getPropertyPriority("pointer-events");
+      const popupPointerEvents = (popup as HTMLElement).style.getPropertyValue(
+        "pointer-events",
+      );
+      const popupPriority = (popup as HTMLElement).style.getPropertyPriority(
+        "pointer-events",
+      );
+      let underneath: Element | undefined;
+      try {
+        // Radix 模态选择器会锁定页面命中；只在同步取样期间恢复命中，不改变绘制。
+        document.body.style.setProperty("pointer-events", "auto");
+        (popup as HTMLElement).style.setProperty("pointer-events", "none");
+        underneath = document
+          .elementsFromPoint(
+            bounds.left + bounds.width / 2,
+            bounds.top + bounds.height / 2,
+          )
+          .find(
+            (element) => !popup.contains(element) && element.closest("main"),
+          );
+      } finally {
+        if (bodyPointerEvents)
+          document.body.style.setProperty(
+            "pointer-events",
+            bodyPointerEvents,
+            bodyPriority,
+          );
+        else document.body.style.removeProperty("pointer-events");
+        if (popupPointerEvents)
+          (popup as HTMLElement).style.setProperty(
+            "pointer-events",
+            popupPointerEvents,
+            popupPriority,
+          );
+        else (popup as HTMLElement).style.removeProperty("pointer-events");
+      }
+      if (!underneath) throw new Error("No page surface behind the popup");
+      layers = [
+        ...ancestors(underneath, underneath.closest("main")!),
+        ...ancestors(node, popup),
+      ];
+    } else {
+      layers = ancestors(node, node.closest("main")!);
+    }
+    const readingSurfaceColor = getComputedStyle(
+      document.querySelector("[data-window-reading-surface]")!,
+    ).backgroundColor;
+    for (const layer of layers) {
+      const color = layer.matches("main")
+        ? readingSurfaceColor
+        : getComputedStyle(layer).backgroundColor;
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      wallpaperExposure *= 1 - alpha(color);
+    }
+    const background = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    const text = getComputedStyle(
+      node,
+      usePlaceholder ? "::placeholder" : null,
+    );
+    context.globalAlpha = Number(text.opacity);
+    context.fillStyle = text.color;
+    context.fillRect(0, 0, 1, 1);
+    const foreground = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    const luminance = (color: number[]) =>
+      color.reduce((total, value, index) => {
+        const channel = value / 255;
+        const linear =
+          channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4;
+        return total + linear * [0.2126, 0.7152, 0.0722][index]!;
+      }, 0);
+    const values = [luminance(background), luminance(foreground)];
+    return {
+      contrast: (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05),
+      wallpaperExposure,
+      background,
+      foreground,
+    };
+  }, placeholder);
+}
+
 for (const theme of ["light", "dark"]) {
   test(`page panels and fields share their skin transparency on every route: ${theme}`, async ({
     page,
@@ -90,6 +243,9 @@ for (const theme of ["light", "dark"]) {
             document.documentElement.style.setProperty(
               "--skin-exposure",
               String(value),
+            );
+            document.documentElement.dataset.backgroundIntensity = String(
+              value * 100,
             );
             const canvas = document.createElement("canvas");
             canvas.width = canvas.height = 1;
@@ -108,8 +264,10 @@ for (const theme of ["light", "dark"]) {
               // About has one outer surface; its nested cards deliberately share it.
               const expected = panel.closest(".settings-about-content")
                 ? 0
-                : Math.round(255 * (1 - value));
-              if (alpha(panel) !== expected)
+                : Math.round(
+                    255 * Math.max(1 - 1.4 * value, 0.6 - 0.6 * value),
+                  );
+              if (Math.abs(alpha(panel) - expected) > 1)
                 failures.push(
                   `${panel.tagName}.${panel.className}: ${alpha(panel)} != ${expected}`,
                 );
@@ -117,8 +275,16 @@ for (const theme of ["light", "dark"]) {
             for (const field of document.querySelectorAll(
               'main :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):not(:disabled)',
             )) {
-              const expected = Math.round(255 * (1 - 0.22 * value));
-              if (alpha(field) !== expected)
+              const expected = Math.round(
+                255 *
+                  (value === 0
+                    ? 1
+                    : Math.max(
+                        1 - 1.4 * value,
+                        1 - 0.35 / Math.max(value, 0.35),
+                      )),
+              );
+              if (Math.abs(alpha(field) - expected) > 1)
                 failures.push(`field ${field.id}: ${alpha(field)}`);
             }
             return failures;
@@ -157,34 +323,71 @@ for (const theme of ["light", "dark"]) {
           blur: Number(style.backdropFilter.match(/[\d.]+/)?.[0] ?? 0),
         };
       });
-    let previous = { alpha: 2, blur: -1 };
-    for (const value of [0, 50, 100]) {
+    for (const value of [0, 10, 30, 50, 70, 100]) {
       await slider.press("Home");
       for (let step = 0; step < value / 10; step++)
         await slider.press("ArrowRight");
       await expect(slider).toHaveAttribute("aria-valuenow", String(value));
       await expect
-        .poll(() => measure('input[type="search"]'))
-        .toMatchObject({
-          blur: value === 0 ? 0 : value * 0.12,
-        });
+        .poll(async () => (await measure('input[type="search"]')).blur)
+        .toBeCloseTo(value * 0.18, 4);
       const field = await measure('input[type="search"]');
-      expect(field.alpha).toBeGreaterThanOrEqual(0.75);
-      expect(field.alpha).toBeLessThan(previous.alpha);
-      expect(field.blur).toBeGreaterThan(previous.blur);
+      const intensity = value / 100;
+      const expectedAlpha = Math.max(
+        1 - 1.4 * intensity,
+        1 - 0.35 / Math.max(intensity, 0.35),
+      );
+      expect(field.alpha).toBeCloseTo(expectedAlpha, 2);
+      // 图片与主体阅读底色位于控件下方，中间档仍应明显透出壁纸。
+      const exposure = await search.evaluate((node) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        let transmission = Number(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--skin-exposure",
+          ),
+        );
+        const readingSurfaceColor = getComputedStyle(
+          document.querySelector("[data-window-reading-surface]")!,
+        ).backgroundColor;
+        for (
+          let layer: Element | null = node;
+          layer;
+          layer = layer.parentElement
+        ) {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = layer.matches("main")
+            ? readingSurfaceColor
+            : getComputedStyle(layer).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          transmission *= 1 - context.getImageData(0, 0, 1, 1).data[3]! / 255;
+          if (layer.matches("main")) break;
+        }
+        return transmission;
+      });
+      expect(exposure).toBeCloseTo(intensity ** 2 * (1 - expectedAlpha), 2);
       await font.click();
+      const menu = page.locator('[data-slot="select-content"]');
+      await expect(menu).toHaveCSS("opacity", "1");
+      await menu.evaluate(async (node) => {
+        await Promise.all(
+          node
+            .getAnimations({ subtree: true })
+            .map((animation) => animation.finished.catch(() => undefined)),
+        );
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
       const popup = await measure('[data-slot="select-content"]');
-      expect(popup.alpha).toBeGreaterThanOrEqual(0.75);
-      expect(popup.alpha).toBeLessThanOrEqual(1);
-      expect(popup.blur).toBe(value === 0 ? 0 : value * 0.18);
-      if (value === 0) expect(popup.alpha).toBe(1);
-      else expect(popup.alpha).toBeLessThan(1);
-      if (value === 100)
+      expect(popup.alpha).toBeCloseTo(expectedAlpha, 2);
+      expect(popup.blur).toBeCloseTo(value * 0.28, 4);
+      if (value === 50)
         await page.screenshot({
-          path: testInfo.outputPath(`frost-${theme}.png`),
+          path: testInfo.outputPath(`frost-50-${theme}.png`),
         });
       await page.keyboard.press("Escape");
-      previous = field;
     }
     await search.fill("font");
     await expect(
@@ -207,6 +410,197 @@ for (const theme of ["light", "dark"]) {
     await expect
       .poll(() => measure('input[type="search"]'))
       .toEqual({ alpha: 1, blur: 0 });
+  });
+
+  test(`50% frost exposes wallpaper and keeps placeholder and popup text readable: ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await seed(page, { theme, backgroundIntensity: 50 });
+    await page.goto("./#/settings");
+    const search = page.getByRole("searchbox", {
+      name: "Search settings",
+      exact: true,
+    });
+    const renderedInputs: number[][] = [];
+    const renderedSelects: number[][] = [];
+    for (const background of ["black", "white"]) {
+      const source = await page.evaluate((color) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 16;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = color;
+        context.fillRect(0, 0, 16, 16);
+        return canvas.toDataURL("image/png").split(",")[1]!;
+      }, background);
+      await page.locator('input[type="file"]').setInputFiles({
+        name: `frost-${background}.png`,
+        mimeType: "image/png",
+        buffer: Buffer.from(source, "base64"),
+      });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-background",
+        "custom",
+      );
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-background-intensity",
+        "50",
+      );
+      await expect
+        .poll(() =>
+          page.locator("[data-custom-background]").evaluate(async (element) => {
+            const image = element as HTMLImageElement;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0, 1, 1);
+            return context.getImageData(0, 0, 1, 1).data[0]!;
+          }),
+        )
+        .toBe(background === "black" ? 0 : 255);
+      const placeholder = await measureFrostedText(search, true);
+      expect(
+        placeholder.contrast,
+        `${background} input placeholder`,
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(placeholder.wallpaperExposure).toBeGreaterThan(0.15);
+      // 对照最终渲染像素，防止原生表单或合成层额外绘制不透明底色。
+      renderedInputs.push(await renderedControlPixel(page, search));
+      renderedSelects.push(
+        await renderedControlPixel(
+          page,
+          page.getByRole("combobox", { name: "Font", exact: true }),
+        ),
+      );
+
+      await page.getByRole("combobox", { name: "Font", exact: true }).click();
+      const select = page.locator('[data-slot="select-content"]');
+      await expect(select).toHaveCSS("opacity", "1");
+      await select.evaluate(async (node) => {
+        await Promise.all(
+          node
+            .getAnimations({ subtree: true })
+            .map((animation) => animation.finished.catch(() => undefined)),
+        );
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+      const option = await measureFrostedText(
+        select
+          .locator('[data-slot="select-item"]:not([data-highlighted])')
+          .first(),
+      );
+      expect(
+        option.contrast,
+        `${background} select option`,
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(option.wallpaperExposure).toBeGreaterThan(0.05);
+      await page.screenshot({
+        path: testInfo.outputPath(`frost-50-${theme}-${background}.png`),
+      });
+      await page.keyboard.press("Escape");
+
+      await search.fill("language");
+      await page.mouse.move(0, 0);
+      const popup = page.getByRole("dialog", {
+        name: "Search settings",
+        exact: true,
+      });
+      await expect(popup).toHaveCSS("opacity", "1");
+      await popup.evaluate(async (node) => {
+        await Promise.all(
+          node
+            .getAnimations({ subtree: true })
+            .map((animation) => animation.finished.catch(() => undefined)),
+        );
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+      for (const [label, locator] of [
+        ["search result", popup.locator("li button span.truncate").first()],
+        ["search status", popup.getByRole("status")],
+        [
+          "search description",
+          popup.locator("li .text-muted-foreground").first(),
+        ],
+      ] as const) {
+        const result = await measureFrostedText(locator);
+        expect(
+          result.contrast,
+          `${background} ${label}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          result.wallpaperExposure,
+          `${background} ${label}`,
+        ).toBeGreaterThan(0.05);
+      }
+      await search.press("Escape");
+    }
+
+    await testInfo.attach("rendered-input-pixels", {
+      body: JSON.stringify(renderedInputs),
+      contentType: "application/json",
+    });
+    for (let channel = 0; channel < 3; channel++)
+      expect(
+        (renderedInputs[1]![channel]! - renderedInputs[0]![channel]!) / 255,
+      ).toBeGreaterThan(0.15);
+
+    for (let channel = 0; channel < 3; channel++)
+      expect(
+        (renderedSelects[1]![channel]! - renderedSelects[0]![channel]!) / 255,
+      ).toBeGreaterThan(0.06);
+
+    const colorfulSource = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 360;
+      const context = canvas.getContext("2d")!;
+      const gradient = context.createLinearGradient(0, 0, 640, 360);
+      gradient.addColorStop(0, "#d89843");
+      gradient.addColorStop(0.45, "#318f91");
+      gradient.addColorStop(1, "#355f9c");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 640, 360);
+      context.fillStyle = "#ffffff24";
+      for (let x = 24; x < 640; x += 80) context.fillRect(x, 0, 16, 360);
+      return canvas.toDataURL("image/png").split(",")[1]!;
+    });
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "frost-colors.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(colorfulSource, "base64"),
+    });
+    await expect(
+      page.getByRole("radio", {
+        name: "Use wallpaper: frost-colors.png",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-background-intensity",
+      "50",
+    );
+    await page.locator("main").evaluate((node) => node.scrollTo(0, 0));
+    await page.getByRole("button", { name: "View", exact: true }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toHaveCSS("opacity", "1");
+    await menu.evaluate(async (node) => {
+      await Promise.all(
+        node
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished.catch(() => undefined)),
+      );
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`frost-50-color-${theme}.png`),
+    });
+    await page.keyboard.press("Escape");
   });
 
   test(
@@ -1354,9 +1748,14 @@ for (const theme of ["light", "dark"]) {
             .querySelector("#settings-backgroundIntensity")!
             .closest('[data-slot="card"]')!,
         ];
+        const readingSurfaceColor = getComputedStyle(
+          document.querySelector("[data-window-reading-surface]")!,
+        ).backgroundColor;
         const surfaces = nodes.map((node) => {
           context.clearRect(0, 0, 1, 1);
-          context.fillStyle = getComputedStyle(node).backgroundColor;
+          context.fillStyle = node.matches("main")
+            ? readingSurfaceColor
+            : getComputedStyle(node).backgroundColor;
           context.fillRect(0, 0, 1, 1);
           return context.getImageData(0, 0, 1, 1).data[3]! / 255;
         });
@@ -1396,7 +1795,9 @@ for (const theme of ["light", "dark"]) {
           100 - value,
           100 - value,
           100 - value,
-          100 - value,
+          Math.round(
+            100 * Math.max(1 - (1.4 * value) / 100, 0.6 - (0.6 * value) / 100),
+          ),
         ]);
       const actual = await layers();
       expect(actual.image).toBeGreaterThan(previous.image);
@@ -1404,7 +1805,7 @@ for (const theme of ["light", "dark"]) {
         expect(alpha).toBeLessThanOrEqual(previous.surfaces[index]!),
       );
       if (value === 50) {
-        expect(actual.surfaces[3]).toBeCloseTo(0.5, 2);
+        expect(actual.surfaces[3]).toBeCloseTo(0.3, 2);
         await page.screenshot({
           path: testInfo.outputPath(`intensity-${theme}-50.png`),
         });
@@ -1511,7 +1912,7 @@ for (const theme of ["light", "dark"]) {
           context.drawImage(mask, 0, 0);
           context.globalAlpha = 1;
           context.fillStyle = getComputedStyle(
-            document.querySelector(".app-main")!,
+            document.querySelector("[data-window-reading-surface]")!,
           ).backgroundColor;
           context.fillRect(0, 0, 160, 100);
           const backdrop = context.getImageData(0, 0, 160, 100).data;
@@ -1652,7 +2053,7 @@ for (const theme of ["light", "dark"]) {
         // 主体与导航各自保留阅读表面，计算实际叠加后的图片强度。
         context.clearRect(0, 0, 1, 1);
         context.fillStyle = getComputedStyle(
-          document.querySelector("main")!,
+          document.querySelector("[data-window-reading-surface]")!,
         ).backgroundColor;
         context.fillRect(0, 0, 1, 1);
         const surfaceAlpha = context.getImageData(0, 0, 1, 1).data[3]! / 255;

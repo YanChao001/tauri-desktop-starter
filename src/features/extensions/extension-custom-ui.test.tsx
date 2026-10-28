@@ -535,11 +535,12 @@ it("updates environment and drafts without rereading the palette or reloading th
   vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
   document.documentElement.style.fontSize = "17px";
   const glassTokens: Record<string, string> = {
-    "--control-background": "rgba(0, 0, 0, 0.89)",
-    "--surface-popover": "rgba(0, 0, 0, 0.89)",
-    "--surface-dialog": "rgba(0, 0, 0, 0.93)",
-    "--surface-control-blur": "6px",
-    "--surface-popup-blur": "9px",
+    "--control-background": "rgba(24, 24, 24, 0.3)",
+    "--surface-popover": "rgba(24, 24, 24, 0.3)",
+    "--surface-dialog": "rgba(24, 24, 24, 0.5)",
+    "--surface-control-blur": "9px",
+    "--surface-popup-blur": "14px",
+    "--glass-muted-foreground": "oklch(0.948 0 0)",
   };
   const readProperty = CSSStyleDeclaration.prototype.getPropertyValue;
   vi.spyOn(

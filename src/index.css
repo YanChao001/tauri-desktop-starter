@@ -305,13 +305,16 @@ html[data-font-size="lg"] {
   font-size: 17px;
 }
 
-/* 各表面共用线性透明度，避免卡片在最后几档才集中透出背景。 */
+/* 主体保留阅读遮罩，卡片减轻中档叠色，避免磨砂控件重复压暗。 */
 :root {
   --skin-exposure: 0.5;
   --skin-overlay-opacity: calc(100% * (1 - var(--skin-exposure)));
   --skin-chrome-opacity: var(--skin-overlay-opacity);
   --skin-sidebar-opacity: var(--skin-overlay-opacity);
-  --skin-card-opacity: var(--skin-overlay-opacity);
+  --skin-card-opacity: max(
+    calc(100% - 140% * var(--skin-exposure)),
+    calc(60% - 60% * var(--skin-exposure))
+  );
   --surface-card: color-mix(
     in oklab,
     var(--card) var(--skin-card-opacity),
@@ -327,9 +330,10 @@ html[data-font-size="lg"] {
   --surface-dialog-opacity: 100%;
   --surface-control-blur: 0px;
   --surface-popup-blur: 0px;
+  --glass-muted-foreground: var(--muted-foreground);
   --control-background: color-mix(
     in oklab,
-    var(--background) var(--surface-control-opacity),
+    var(--popover) var(--surface-control-opacity),
     transparent
   );
   --surface-popover: color-mix(
@@ -374,14 +378,27 @@ html[data-font-size="lg"] {
 /* 仅模糊控件和浮层自身；旧运行时保留实体底色，不做全窗口滤镜。 */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   :root {
-    --surface-control-opacity: calc(100% - 22% * var(--skin-exposure));
-    --surface-popup-opacity: calc(100% - 22% * var(--skin-exposure));
-    --surface-dialog-opacity: calc(100% - 14% * var(--skin-exposure));
-    --surface-control-blur: calc(12px * var(--skin-exposure));
-    --surface-popup-blur: calc(18px * var(--skin-exposure));
+    /* 窗口背景已含遮罩，控件补偿这层淡化，避免中间档被重复压暗。 */
+    --surface-control-opacity: max(
+      calc(100% - 140% * var(--skin-exposure)),
+      calc(100% - 35% / max(var(--skin-exposure), 0.35))
+    );
+    --surface-popup-opacity: var(--surface-control-opacity);
+    --surface-dialog-opacity: max(
+      calc(100% - 100% * var(--skin-exposure)),
+      calc(100% - 25% / max(var(--skin-exposure), 0.25))
+    );
+    --surface-control-blur: calc(18px * var(--skin-exposure));
+    --surface-popup-blur: calc(28px * var(--skin-exposure));
+    --glass-muted-foreground: color-mix(
+      in oklab,
+      var(--foreground) 80%,
+      var(--muted-foreground)
+    );
   }
 }
-html[data-background="plain"] {
+html[data-background="plain"],
+html[data-background-intensity="0"] {
   --skin-overlay-opacity: 100%;
   --skin-card-opacity: 100%;
   --surface-control-opacity: 100%;
@@ -389,6 +406,7 @@ html[data-background="plain"] {
   --surface-dialog-opacity: 100%;
   --surface-control-blur: 0px;
   --surface-popup-blur: 0px;
+  --glass-muted-foreground: var(--muted-foreground);
 }
 .app-control-surface {
   background-color: var(--control-background);
@@ -399,6 +417,19 @@ html[data-background="plain"] {
   background-color: var(--surface-popover);
   -webkit-backdrop-filter: blur(var(--surface-popup-blur));
   backdrop-filter: blur(var(--surface-popup-blur));
+}
+
+/* 浮层弱说明与占位文字采用相同的磨砂对比色，正文仍使用各自语义色。 */
+.app-overlay-surface,
+[data-slot="select-content"],
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="context-menu-content"],
+[data-slot="context-menu-sub-content"],
+[data-slot="dialog-content"],
+.toaster .cn-toast[data-styled="true"] {
+  --muted-foreground: var(--glass-muted-foreground);
 }
 
 /* 通知继承应用的字体、字号和语义色，与页面外观偏好保持一致。 */
@@ -418,6 +449,7 @@ html[data-background="plain"] {
 }
 
 .app-shell {
+  --app-content-inset: var(--app-chrome-height) 0 0 var(--app-sidebar-width);
   position: relative;
   isolation: isolate;
   height: 100dvh;
@@ -437,6 +469,16 @@ html[data-background="plain"] {
   pointer-events: none;
   user-select: none;
   background: var(--background);
+}
+/* 阅读遮罩与滚动内容分开，防止磨砂子控件重复采样滚动层的底色。 */
+.window-reading-surface {
+  position: absolute;
+  inset: var(--app-content-inset);
+  background: color-mix(
+    in oklab,
+    var(--background) var(--skin-overlay-opacity),
+    transparent
+  );
 }
 .app-title-bar {
   position: relative;
@@ -465,18 +507,14 @@ html[data-background="plain"] {
 }
 .app-main {
   position: absolute;
-  inset: var(--app-chrome-height) 0 0 var(--app-sidebar-width);
+  inset: var(--app-content-inset);
   z-index: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
   scroll-padding-block: 1.25rem;
-  background: color-mix(
-    in oklab,
-    var(--background) var(--skin-card-opacity),
-    transparent
-  );
+  background: transparent;
 }
 .app-surface {
   background-color: var(--surface-card);
@@ -491,6 +529,7 @@ html[data-background="plain"] {
     --surface-dialog-opacity: 100%;
     --surface-control-blur: 0px;
     --surface-popup-blur: 0px;
+    --glass-muted-foreground: var(--muted-foreground);
   }
   .window-background,
   .pattern-artwork--preview {

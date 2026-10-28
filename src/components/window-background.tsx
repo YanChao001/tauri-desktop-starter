@@ -37,6 +37,7 @@ export function WindowBackground({
       ) : (
         <PatternArtwork kind={settings.background} />
       )}
+      <div className="window-reading-surface" data-window-reading-surface />
     </div>
   );
 }
