@@ -47,6 +47,7 @@
     "test:coverage": "vitest run --coverage",
     "verify": "node scripts/verify.mjs",
     "clean": "node scripts/clean.mjs",
+    "clean:outputs": "node scripts/clean.mjs --outputs",
     "clean:artifacts": "node scripts/clean.mjs --artifacts",
     "clean:temporary": "node scripts/clean.mjs --temporary",
     "clean:all": "node scripts/clean.mjs --all",

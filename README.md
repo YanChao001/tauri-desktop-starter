@@ -74,7 +74,7 @@ pnpm app:portable  # Windows 便携 exe 与说明
 
 最终分发在 `artifacts/<version>/<target-triple>/installers/` 或 `portable/`，附 SHA-256 清单。平台格式、签名与更新见 [构建与发布](./docs/build-release.md)。
 
-便携版仍依赖 WebView2，数据保存在当前用户目录。清理前先用 `pnpm clean:temporary --dry-run` 检查范围；各模式的删除与保留边界见 [清理说明](./docs/development.md#清理构建产物)。
+便携版仍依赖 WebView2，数据保存在当前用户目录。只清理生成产物和临时文件、保留编译缓存时，先用 `pnpm clean:outputs --dry-run` 检查范围；各模式的删除与保留边界见 [清理说明](./docs/development.md#清理构建产物)。
 
 ## 文档与协作
 

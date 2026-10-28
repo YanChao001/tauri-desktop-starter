@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 
 const DISTRIBUTIONS = [["artifacts", "按版本归档的分发产物"]];
@@ -20,24 +20,29 @@ const TEMPORARY = [
   ["node_modules/.vite-temp", "Vite 临时缓存"],
   ["node_modules/.cache", "依赖工具缓存"],
 ];
+const OUTPUTS = [
+  ...BUILD_OUTPUT.filter(
+    ([path]) => path !== "artifacts" && path !== "src-tauri/target",
+  ),
+  ["examples/extensions/dist", "Extension example packages"],
+  ["marketplace/artifacts", "Marketplace packages"],
+  ["marketplace/dist", "Legacy marketplace packages"],
+  ["src-tauri/target/release/bundle", "Installer staging output"],
+];
+const MODES = ["--all", "--artifacts", "--temporary", "--outputs"];
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const TARGET = /^[a-zA-Z0-9][a-zA-Z0-9.+_-]*$/;
 const PORTABLE_BACKUP =
   /^\.portable-previous-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export function parseCleanupArgs(args) {
-  const modes = args.filter((arg) =>
-    ["--all", "--artifacts", "--temporary"].includes(arg),
-  );
+  const modes = args.filter((arg) => MODES.includes(arg));
   if (
     modes.length > 1 ||
-    args.some(
-      (arg) =>
-        !["--all", "--artifacts", "--temporary", "--dry-run"].includes(arg),
-    )
+    args.some((arg) => ![...MODES, "--dry-run"].includes(arg))
   )
     throw new Error(
-      "用法: pnpm clean [--all | --artifacts | --temporary] [--dry-run]；不接受自定义路径",
+      "Usage: pnpm clean [--all | --artifacts | --temporary | --outputs] [--dry-run]; custom paths are not accepted",
     );
   return {
     mode: modes[0]?.slice(2) ?? "default",
@@ -45,8 +50,8 @@ export function parseCleanupArgs(args) {
   };
 }
 
-/** 解析并逐级核对绝对路径；清理目标及其项目内祖先都必须是普通目录。 */
-export function validateCleanupTarget(root, path) {
+/** 逐级核对绝对路径；只有 outputs 模式允许删除计划中的普通文件。 */
+export function validateCleanupTarget(root, path, { allowFile = false } = {}) {
   const base = realpathSync(root);
   const target = resolve(base, path);
   const offset = relative(base, target);
@@ -67,10 +72,44 @@ export function validateCleanupTarget(root, path) {
       if (error.code === "ENOENT") return null;
       throw error;
     }
-    if (info.isSymbolicLink() || !info.isDirectory())
+    const isOutputFile = allowFile && ancestor === target && info.isFile();
+    if (info.isSymbolicLink() || (!info.isDirectory() && !isOutputFile))
       throw new Error(`拒绝通过链接或非目录清理：${ancestor}`);
   }
   return target;
+}
+
+/** 历史诊断目录曾混入 Cargo 缓存；按 Cargo 标记保留原路径，避免搬迁使缓存失效。 */
+function disposableOutput(root, path, label) {
+  const absolute = validateCleanupTarget(root, path, { allowFile: true });
+  if (!absolute) return { retained: false, targets: [[path, label]] };
+  if (path === join(".cache", "extension-tools"))
+    return { retained: true, targets: [] };
+  if (!lstatSync(absolute).isDirectory())
+    return { retained: false, targets: [[path, label]] };
+  const entries = readdirSync(absolute, { withFileTypes: true });
+  const cargoTag = entries.find(
+    (entry) => entry.name === "CACHEDIR.TAG" && entry.isFile(),
+  );
+  if (
+    cargoTag &&
+    readFileSync(join(absolute, cargoTag.name), "utf8")
+      .replaceAll("\r\n", "\n")
+      .startsWith(
+        "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.",
+      )
+  )
+    return { retained: true, targets: [] };
+  const children = entries.map((entry) => {
+    const child = join(path, entry.name);
+    // 删除父目录时 rm 不跟随内部链接；若父目录必须保留，最终预检会拒绝链接目标。
+    return entry.isDirectory()
+      ? disposableOutput(root, child, label)
+      : { retained: false, targets: [[child, label]] };
+  });
+  return children.some((child) => child.retained)
+    ? { retained: true, targets: children.flatMap((child) => child.targets) }
+    : { retained: false, targets: [[path, label]] };
 }
 
 function matchingDirectories(root, parent, pattern) {
@@ -93,6 +132,15 @@ export function cleanupTargets(root, mode) {
   if (mode === "default") return BUILD_OUTPUT;
   if (mode === "all") return [...BUILD_OUTPUT, ["node_modules", "依赖目录"]];
   if (mode === "artifacts") return DISTRIBUTIONS;
+  if (mode === "outputs")
+    return [
+      ...OUTPUTS,
+      ...["artifacts", ".cache"].flatMap(
+        (path) =>
+          disposableOutput(root, path, "Generated output and temporary files")
+            .targets,
+      ),
+    ];
   if (mode !== "temporary") throw new Error(`未知清理模式：${mode}`);
   const backups = [];
   for (const version of matchingDirectories(root, "artifacts", VERSION))
@@ -146,10 +194,12 @@ export function getWindowsProcesses(probe = spawnSync) {
 }
 
 export function assertNoRunningPrograms(target, processes) {
-  const prefix = `${win32.resolve(target).toLowerCase()}\\`;
-  const blocking = processes.filter((entry) =>
-    win32.resolve(entry.ExecutablePath).toLowerCase().startsWith(prefix),
-  );
+  const absolute = win32.resolve(target).toLowerCase();
+  const prefix = `${absolute}\\`;
+  const blocking = processes.filter((entry) => {
+    const executable = win32.resolve(entry.ExecutablePath).toLowerCase();
+    return executable === absolute || executable.startsWith(prefix);
+  });
   if (blocking.length)
     throw new Error(
       `存在运行中的项目内程序，未清理此目录：${blocking.map((entry) => `PID ${entry.ProcessId} ${entry.ExecutablePath}`).join("；")}`,
