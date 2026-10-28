@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   # SignPath 操作需要读取本次工作流运行的构建产物
   actions: read
 
@@ -27,13 +27,13 @@ jobs:
     outputs:
       release-id: ${{ steps.release.outputs.release-id }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: 验证发布代码属于主分支
         run: git merge-base --is-ancestor HEAD origin/main
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -48,6 +48,9 @@ jobs:
   build:
     name: 构建 ${{ matrix.platform }} ${{ matrix.args }}
     needs: validate
+    permissions:
+      # tauri-action 在本 job 上传草稿 Release 资产，必须保留写权限。
+      contents: write
     strategy:
       # 保留其他平台的执行结果，分别定位平台问题
       fail-fast: false
@@ -71,7 +74,7 @@ jobs:
       updater-enabled: ${{ steps.updater.outputs.enabled }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: 安装 Linux 系统依赖
         if: matrix.platform == 'ubuntu-22.04'
@@ -82,9 +85,9 @@ jobs:
           "${apt[@]}" update
           "${apt[@]}" install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -96,7 +99,7 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
         with:
           workspaces: src-tauri
 
@@ -107,53 +110,11 @@ jobs:
         id: version
         run: node scripts/version.mjs check
 
-      # 只在 secret 非空时写入环境变量：Tauri 用 env::var_os 判断是否签名，
-      # 空字符串同样会被当成“已配置”，导致 macOS 签名流程拿到空证书直接失败。
-      - name: 注入签名凭据
-        shell: bash
-        env:
-          IN_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          IN_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          IN_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          IN_APPLE_ID: ${{ secrets.APPLE_ID }}
-          IN_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          IN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          IN_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          IN_UPDATER_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -n "${IN_APPLE_CERTIFICATE:-}" ]; then
-            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-              input_name="IN_$name"
-              value="${!input_name}"
-              if [ -n "$value" ]; then
-                {
-                  echo "$name<<__ENV__"
-                  echo "$value"
-                  echo "__ENV__"
-                } >> "$GITHUB_ENV"
-              fi
-            done
-            echo "已注入 Apple 签名凭据"
-          else
-            echo "未配置 APPLE_CERTIFICATE，macOS 产物不签名、不公证"
-          fi
-          if [ -n "${IN_UPDATER_KEY:-}" ]; then
-            {
-              echo "TAURI_SIGNING_PRIVATE_KEY<<__ENV__"
-              echo "$IN_UPDATER_KEY"
-              echo "__ENV__"
-              echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD<<__ENV__"
-              echo "$IN_UPDATER_KEY_PASSWORD"
-              echo "__ENV__"
-            } >> "$GITHUB_ENV"
-            echo "已注入自动更新签名密钥"
-          fi
-
       - name: 检查自动更新配置并准备 v2 打包配置
         id: updater
         env:
           SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: node scripts/release-lib.mjs prepare
 
       # PFX 链路只用于仍有效、允许导出的证书（例如内部信任签名）。
@@ -201,6 +162,36 @@ jobs:
           # RUNNER_TEMP 不含空格，不加引号，避免 action 解析参数时把引号算进路径
           echo "SIGNING_ARGS=--config $RUNNER_TEMP/tauri-signing.json" >> "$GITHUB_ENV"
 
+      # 只在 secret 非空时写入环境变量：Tauri 用 env::var_os 判断是否签名，
+      # 空字符串同样会被当成“已配置”，导致 macOS 签名流程拿到空证书直接失败。
+      - name: 注入 Apple 签名凭据
+        shell: bash
+        env:
+          IN_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          IN_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IN_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          IN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          IN_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          IN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IN_APPLE_CERTIFICATE:-}" ]; then
+            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              input_name="IN_$name"
+              value="${!input_name}"
+              if [ -n "$value" ]; then
+                {
+                  echo "$name<<__ENV__"
+                  echo "$value"
+                  echo "__ENV__"
+                } >> "$GITHUB_ENV"
+              fi
+            done
+            echo "已注入 Apple 签名凭据"
+          else
+            echo "未配置 APPLE_CERTIFICATE，macOS 产物不签名、不公证"
+          fi
+
       # 未配置签名时产物可用，但用户会看到"未知发布者"（Windows）或无法通过公证（macOS）。
       # 需要的 secrets 见 docs/build-release.md 的「代码签名」一节：
       #   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD（Windows PFX，base64）
@@ -208,16 +199,26 @@ jobs:
       #   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID（macOS 公证）
       #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD（自动更新签名）
       # 证书不能进仓库，只能放 secrets。
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa # v1
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.validate.outputs.release-id }}
           # 各平台先验证自己的签名，最后由单一 job 汇总，避免矩阵并发覆盖 latest.json。
           uploadUpdaterJson: false
           uploadUpdaterSignatures: ${{ steps.updater.outputs.enabled == 'true' }}
           args: ${{ matrix.args }} ${{ env.SIGNING_ARGS }} ${{ steps.updater.outputs.args }}
+
+      - name: 清理后续步骤的 Apple 签名环境
+        if: always()
+        shell: bash
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            printf '%s=\n' "$name" >> "$GITHUB_ENV"
+          done
 
       - name: 校验 Windows 签名
         if: matrix.platform == 'windows-latest' && env.WINDOWS_CERT_THUMBPRINT != ''
@@ -255,7 +256,7 @@ jobs:
 
       - name: 保存本次平台的已验证更新元数据
         if: steps.updater.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: updater-metadata-${{ matrix.target }}
           path: ${{ steps.updater-metadata.outputs.metadata-file }}
@@ -279,7 +280,7 @@ jobs:
         run: tar -czf "$ARTIFACT_DIR.tar.gz" -C "$ARTIFACT_DIR/.." installers
 
       - name: 保存按版本归档的安装包
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: build-installers-${{ matrix.target }}
           path: ${{ matrix.platform == 'macos-latest' && format('{0}.tar.gz', steps.collect.outputs.artifact-dir) || steps.collect.outputs.artifact-dir }}
@@ -288,7 +289,7 @@ jobs:
       # 直接保存本次 Windows 构建，签名 job 不从可变的 Release 资产重新取包。
       - name: 保存未签名 Windows 安装包
         if: matrix.platform == 'windows-latest' && vars.SIGNPATH_ORGANIZATION_ID != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: unsigned-nsis
           path: ${{ steps.collect.outputs.artifact-dir }}/nsis/*-setup.exe
@@ -301,12 +302,14 @@ jobs:
     needs: [validate, build]
     if: needs.build.outputs.updater-enabled == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: updater-metadata-*
           path: updater-metadata
@@ -318,7 +321,7 @@ jobs:
           RELEASE_ID: ${{ needs.validate.outputs.release-id }}
           UPDATER_METADATA_DIR: updater-metadata
         run: node scripts/release-lib.mjs merge
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: updater-latest-json
           path: ${{ steps.manifest.outputs.manifest-file }}
@@ -335,10 +338,13 @@ jobs:
     needs: [validate, build]
     if: vars.SIGNPATH_ORGANIZATION_ID != ''
     runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
 
@@ -368,7 +374,7 @@ jobs:
 
       - name: 提交 SignPath 签名请求
         id: signpath
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -420,7 +426,7 @@ jobs:
           node scripts/collect-artifacts.mjs --signed-nsis
 
       - name: 保存签名后的安装包
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: signed-installers-x86_64-pc-windows-msvc
           path: ${{ steps.collect-signed.outputs.artifact-dir }}
@@ -452,6 +458,8 @@ jobs:
           && (needs.publish-updater.result == 'success' || needs.publish-updater.result == 'skipped')
           && (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: 发布并按版本确定 Latest
         env:
