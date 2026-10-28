@@ -1,13 +1,13 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { useLocation } from "react-router-dom";
-import { ChevronRightIcon, MinimizeIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TitleBar } from "@/components/title-bar";
 import { WindowBackground } from "@/components/window-background";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 import { useCommands } from "@/providers/commands";
-import { Button } from "@/components/ui/button";
+import { ImmersiveNavigation } from "@/components/immersive-navigation";
 import {
   APP_ROUTES,
   NAVIGATION_GROUPS,
@@ -40,7 +40,7 @@ export function AppShell() {
   const [sidebarPreviewWidth, setSidebarPreviewWidth] = useState<number | null>(
     null,
   );
-  const { fullscreen, execute } = useCommands();
+  const { fullscreen } = useCommands();
   const routes = [
     ...APP_ROUTES.filter(
       (route) =>
@@ -76,23 +76,8 @@ export function AppShell() {
         }
       >
         <WindowBackground />
-        {fullscreen ? (
-          <div className="immersive-exit">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void execute("exit-fullscreen")}
-              aria-label={t("title.exitFullscreen")}
-              aria-keyshortcuts="F11 Escape"
-              title={t("title.fullscreenHint")}
-            >
-              <MinimizeIcon className="size-3.5" />
-              <span>{t("title.exitFullscreen")}</span>
-              <kbd>F11 / Esc</kbd>
-            </Button>
-          </div>
-        ) : null}
-        <div ref={chrome} className="app-chrome">
+        {fullscreen ? <ImmersiveNavigation /> : null}
+        <div ref={chrome} id="app-chrome" className="app-chrome">
           <TitleBar />
         </div>
         <AppSidebar routes={routes} onWidthPreview={setSidebarPreviewWidth} />

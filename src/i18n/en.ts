@@ -263,6 +263,8 @@ export const en = {
   "settings.currentWallpaper": "Selected image: {name}",
   "settings.clearWallpaper": "Clear image background",
   "title.fullscreen": "Immersive fullscreen",
+  "title.showChrome": "Show menu and window controls",
+  "title.showNavigation": "Show navigation",
   "title.exitFullscreen": "Exit fullscreen",
   "title.fullscreenHint":
     "Press F11 or Esc to exit fullscreen and restore your layout",

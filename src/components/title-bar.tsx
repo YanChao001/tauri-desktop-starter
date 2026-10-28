@@ -5,6 +5,7 @@ import {
   CopyIcon,
   InfoIcon,
   Maximize2Icon,
+  MinimizeIcon,
   MinusIcon,
   MonitorIcon,
   MoonIcon,
@@ -75,7 +76,7 @@ export function TitleBar({
   const { t } = useI18n();
   const { settings } = useSettings();
   const { theme } = useThemeSwitch();
-  const { execute, aboutOpen, setAboutOpen } = useCommands();
+  const { execute, aboutOpen, setAboutOpen, fullscreen } = useCommands();
   const mac = isMacOS();
 
   const native = isTauri();
@@ -309,6 +310,25 @@ export function TitleBar({
           </TooltipContent>
         </Tooltip>
 
+        {fullscreen && !standalone ? (
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 rounded-none"
+                aria-label={t("title.exitFullscreen")}
+                aria-keyshortcuts="F11 Escape"
+                onClick={() => void execute("exit-fullscreen")}
+              >
+                <MinimizeIcon className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {t("title.fullscreenHint")}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         {standalone ? (
           <ExtensionChromeSlot
             placement="titlebar"

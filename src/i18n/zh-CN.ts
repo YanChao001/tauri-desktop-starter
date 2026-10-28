@@ -242,6 +242,8 @@ export const zhCN = {
   "settings.currentWallpaper": "已选图片：{name}",
   "settings.clearWallpaper": "取消图片背景",
   "title.fullscreen": "全屏沉浸",
+  "title.showChrome": "显示菜单和窗口按钮",
+  "title.showNavigation": "显示导航栏",
   "title.exitFullscreen": "退出全屏",
   "title.fullscreenHint": "F11 或 Esc 退出全屏，恢复原有布局",
 } as const;

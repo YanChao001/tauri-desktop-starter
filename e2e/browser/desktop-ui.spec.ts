@@ -1552,6 +1552,8 @@ test("full screen menu and F11 share real fullscreen state and restore the sideb
   const full = await page.locator("main").boundingBox();
   expect(full?.x).toBe(0);
   expect(full?.y).toBe(0);
+  await page.mouse.move(640, 1);
+  await expect(page.locator(".app-chrome")).toBeVisible();
   await page
     .getByRole("button", { name: "Exit fullscreen", exact: true })
     .click();
@@ -1575,6 +1577,195 @@ test("full screen menu and F11 share real fullscreen state and restore the sideb
   expect(settings.sidebarCollapsed).toBe(true);
   expect(settings.sidebarWidth).toBe(280);
   await expect(page.locator(".app-chrome")).toBeVisible();
+});
+
+test("immersive edges animate over the content and keep portalled menus usable", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await seed(page, { motion: "full", sidebarWidth: 280, background: "aurora" });
+  await page.goto("./#/settings");
+  await page.mouse.move(640, 400);
+  await page.keyboard.press("F11");
+  const chrome = page.locator("#app-chrome");
+  const sidebar = page.locator("#app-sidebar");
+  const main = page.locator("main");
+  await expect(chrome).toBeHidden();
+  await expect(sidebar).toBeHidden();
+  await main.evaluate((node) => node.scrollTo(0, 80));
+  const layout = () =>
+    main.evaluate((node) => ({
+      x: node.getBoundingClientRect().x,
+      y: node.getBoundingClientRect().y,
+      width: node.clientWidth,
+      height: node.clientHeight,
+      scroll: node.scrollTop,
+      reading: document
+        .querySelector("[data-window-reading-surface]")!
+        .getBoundingClientRect()
+        .toJSON(),
+    }));
+  const before = await layout();
+  expect(before.x).toBe(0);
+  expect(before.y).toBe(0);
+
+  await page.mouse.move(1, 250);
+  await expect(sidebar).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  expect(
+    await sidebar.evaluate((node) => getComputedStyle(node).transitionProperty),
+  ).toContain("transform");
+  expect(await layout()).toEqual(before);
+  await page.screenshot({ path: testInfo.outputPath("immersive-left.png") });
+  // 插件文档有独立事件树；直接移入 iframe 后也要能收起宿主导航。
+  await main.evaluate((node) => {
+    const frame = document.createElement("iframe");
+    frame.dataset.immersiveProbe = "";
+    frame.title = "Extension pointer boundary";
+    frame.srcdoc = "<p>Extension content</p>";
+    frame.style.cssText =
+      "position:fixed;top:300px;right:60px;width:300px;height:150px;border:0";
+    node.append(frame);
+  });
+  await page.mouse.move(1000, 350);
+  await expect(sidebar).toBeHidden();
+  await page
+    .locator("[data-immersive-probe]")
+    .evaluate((node) => node.remove());
+
+  await page.mouse.move(640, 1);
+  await expect(chrome).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  await expect(
+    page.getByRole("button", { name: "Exit fullscreen", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "View", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await menu.getByRole("menuitemcheckbox", { name: /Show menu bar/ }).hover();
+  await expect(chrome).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("immersive-top.png") });
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(".app-shell")).toHaveClass(/app-shell-immersive/);
+  await chrome.getByRole("combobox", { name: "Language", exact: true }).click();
+  await page.getByRole("option", { name: "English", exact: true }).hover();
+  await expect(chrome).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(page.locator(".app-shell")).toHaveClass(/app-shell-immersive/);
+  await main.focus();
+  await page.mouse.move(640, 400);
+  await expect(chrome).toBeHidden();
+  expect(await layout()).toEqual(before);
+
+  await page
+    .getByRole("button", { name: "Show menu and window controls" })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "File", exact: true }),
+  ).toBeFocused();
+  await page.mouse.move(640, 400);
+  await expect(chrome).toBeVisible();
+  await page.keyboard.press("F11");
+  await expect(page.locator(".immersive-edge")).toHaveCount(0);
+  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
+  await expect(sidebar).toHaveCSS("width", "280px");
+});
+
+test("immersive navigation supports narrow screens and reduced motion without changing preferences", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 620, height: 760 });
+  await seed(page, {
+    motion: "reduced",
+    sidebarCollapsed: true,
+    sidebarWidth: 280,
+  });
+  await page.goto("./#/settings");
+  await page.mouse.move(400, 400);
+  await page.keyboard.press("F11");
+  const sidebar = page.locator("#app-sidebar");
+  await page
+    .getByRole("button", { name: "Show navigation", exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(sidebar).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", { name: "Expand sidebar" }),
+  ).toBeFocused();
+  expect(
+    await sidebar.evaluate((node) =>
+      getComputedStyle(node)
+        .transitionDuration.split(",")
+        .every((value) => parseFloat(value) <= 0.001),
+    ),
+  ).toBe(true);
+  await page.locator("main").focus();
+  await expect(sidebar).toBeHidden();
+  await page
+    .getByRole("button", { name: "Show menu and window controls" })
+    .focus();
+  await page.keyboard.press("Enter");
+  const chrome = page.locator("#app-chrome");
+  await expect(chrome).toBeVisible();
+  expect(
+    await chrome.evaluate((node) =>
+      getComputedStyle(node)
+        .transitionDuration.split(",")
+        .every((value) => parseFloat(value) <= 0.001),
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("button", { name: "Exit fullscreen", exact: true })
+    .click();
+  await expect(page.locator(".app-shell")).not.toHaveClass(
+    /app-shell-immersive/,
+  );
+  await expect(sidebar).toBeHidden();
+  await page.keyboard.press("F11");
+  await expect(chrome).toBeHidden();
+  await expect(sidebar).toBeHidden();
+  await page.keyboard.press("Escape");
+  const settings = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!),
+    KEY,
+  );
+  expect(settings.sidebarCollapsed).toBe(true);
+  expect(settings.sidebarWidth).toBe(280);
+});
+
+test.describe("immersive touch navigation", () => {
+  test.use({ hasTouch: true });
+  test("touch edges finish their tap before moving focus into the revealed panel", async ({
+    page,
+  }) => {
+    await seed(page);
+    await page.goto("./#/settings");
+    await page.keyboard.press("F11");
+    expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(
+      true,
+    );
+    const navigation = page.getByRole("button", {
+      name: "Show navigation",
+      exact: true,
+    });
+    await navigation.tap();
+    await expect(page.locator("#app-sidebar")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Collapse sidebar" }),
+    ).toBeFocused();
+    const chrome = page.getByRole("button", {
+      name: "Show menu and window controls",
+    });
+    await chrome.tap();
+    await expect(
+      page.getByRole("button", { name: "File", exact: true }),
+    ).toBeFocused();
+    await page
+      .getByRole("button", { name: "Exit fullscreen", exact: true })
+      .tap();
+    await expect(page.locator(".immersive-edge")).toHaveCount(0);
+  });
 });
 
 test("a local background imports, survives reload, keeps the last good image on failure and can be removed", async ({
