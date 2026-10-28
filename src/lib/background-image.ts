@@ -112,6 +112,8 @@ export async function importBackgroundImage(
       throw new BackgroundImageError("size");
     const context = canvas.getContext("2d");
     if (!context) throw new BackgroundImageError("decode");
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
     const initialScale = Math.min(
       1,
       MAX_IMAGE_EDGE / Math.max(image.width, image.height),

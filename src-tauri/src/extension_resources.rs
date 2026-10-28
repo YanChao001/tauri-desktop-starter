@@ -7,7 +7,7 @@ use crate::{
     extensions::{ExtensionInfo, ExtensionPermission, valid_id},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use image::{ImageFormat, ImageReader, codecs::jpeg::JpegEncoder};
+use image::{ImageFormat, ImageReader, codecs::jpeg::JpegEncoder, imageops::FilterType};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -327,21 +327,33 @@ fn image_reader_error(error: image::ImageError, message: &str) -> NativeError {
 /// 调用方已经持有处理名额时使用；本机文件和图库应调用有界入口。
 pub(crate) fn render_image(bytes: &[u8], mime: &str, thumbnail: bool) -> NativeResult<String> {
     let decoded = decode_image(bytes, mime)?;
+    let qualities = if thumbnail {
+        &[85, 76, 65][..]
+    } else {
+        &[82, 64, 46][..]
+    };
     for edge in if thumbnail {
         &[320, 240, 160][..]
     } else {
-        &[1600, 1280, 960, 720, 480][..]
+        &[1600, 1200, 800, 480][..]
     } {
+        // 使用平滑重采样，先调编码质量再缩小尺寸，避免复杂壁纸过早丢失细节。
         let resized = decoded
-            .thumbnail((*edge).min(decoded.width()), (*edge).min(decoded.height()))
+            .resize(
+                (*edge).min(decoded.width()),
+                (*edge).min(decoded.height()),
+                FilterType::Triangle,
+            )
             .to_rgb8();
-        let mut output = Vec::new();
-        JpegEncoder::new_with_quality(&mut output, if thumbnail { 65 } else { 76 })
-            .encode_image(&resized)
-            .map_err(|_| failed("无法编码图片预览"))?;
-        let data = format!("data:image/jpeg;base64,{}", STANDARD.encode(output));
-        if data.len() <= if thumbnail { 24 * 1024 } else { 94 * 1024 } {
-            return Ok(data);
+        for quality in qualities {
+            let mut output = Vec::new();
+            JpegEncoder::new_with_quality(&mut output, *quality)
+                .encode_image(&resized)
+                .map_err(|_| failed("无法编码图片预览"))?;
+            let data = format!("data:image/jpeg;base64,{}", STANDARD.encode(output));
+            if data.len() <= if thumbnail { 24 * 1024 } else { 96 * 1024 } {
+                return Ok(data);
+            }
         }
     }
     Err(invalid("图片无法压缩到宿主预览额度内"))
@@ -937,7 +949,7 @@ mod tests {
         assert!(metadata(&first).get("content").is_none());
         for thumbnail in [true, false] {
             let rendered = render_image(&bytes, "image/png", thumbnail).unwrap();
-            assert!(rendered.len() <= if thumbnail { 24 * 1024 } else { 94 * 1024 });
+            assert!(rendered.len() <= if thumbnail { 24 * 1024 } else { 96 * 1024 });
             let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
             let rendered = STANDARD.decode(encoded).unwrap();
             let decoded = decode_image(&rendered, "image/jpeg").unwrap();
@@ -951,6 +963,35 @@ mod tests {
             assert!(decoded.width() <= edge);
             assert!(decoded.height() <= edge);
         }
+    }
+
+    #[test]
+    fn detailed_wallpapers_keep_full_resolution_before_reducing_dimensions() {
+        let mut state = 7_u32;
+        let source = image::RgbImage::from_fn(1600, 900, |x, y| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = ((state >> 24) % 16) as i16 - 8;
+            image::Rgb([
+                (48 + x as i16 / 10 + noise).clamp(0, 255) as u8,
+                (64 + y as i16 / 7 + noise).clamp(0, 255) as u8,
+                (176 + x as i16 / 20 - y as i16 / 20 + noise).clamp(0, 255) as u8,
+            ])
+        });
+        let mut fixed_quality = Vec::new();
+        JpegEncoder::new_with_quality(&mut fixed_quality, 76)
+            .encode_image(&source)
+            .unwrap();
+        // 旧固定质量策略会为这张有纹理的壁纸降低分辨率。
+        assert!(fixed_quality.len().div_ceil(3) * 4 + 23 > 96 * 1024);
+        let mut original = Vec::new();
+        image::DynamicImage::ImageRgb8(source)
+            .write_to(&mut Cursor::new(&mut original), ImageFormat::Png)
+            .unwrap();
+        let rendered = render_image(&original, "image/png", false).unwrap();
+        assert!(rendered.len() <= 96 * 1024);
+        let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (1600, 900));
     }
 
     #[test]

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { WallpaperThumbnail } from "@/components/wallpaper-thumbnail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -394,13 +395,7 @@ export function CustomBackgroundPicker() {
                           })}
                           onChange={() => apply(entry)}
                         />
-                        <img
-                          src={entry.dataUrl}
-                          alt=""
-                          draggable={false}
-                          loading="lazy"
-                          decoding="async"
-                        />
+                        <WallpaperThumbnail dataUrl={entry.dataUrl} />
                         {selected ? (
                           <span className="custom-skin-check">
                             <CheckIcon className="size-3" aria-hidden="true" />

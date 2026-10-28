@@ -138,7 +138,7 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 数据目录由 Tauri 路径 API 决定，不写入 exe 所在目录。扩展各存储、系统凭据及生命周期的边界统一见 [扩展指南](./extensions.md#执行存储与生命周期)，日志见 [排障手册](./troubleshooting.md#先看日志)，测试目录隔离见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。
 
-壁纸图库最多 24 张，每张保存经重编码的 JPEG / WebP data URL，连同前缀最多 96 KiB；以内容 SHA-256 去重，不保存原图路径、远端 URL 或 SVG。设置中的 `customBackground` 另存当前选择的自包含副本、名称和填充方式：切换内置皮肤保留选择，取消图片背景或重置偏好清除副本但保留图库，缺少合法图片时回落纯色。首次建立图库可导入旧设置副本，已有图库不重复迁入；未知版本或损坏内容拒绝写入，不清空重建。额度与兼容实现见 [`wallpapers.rs`](../src-tauri/src/wallpapers.rs)、[`wallpaper-library.ts`](../src/lib/wallpaper-library.ts) 和 [`background-image.ts`](../src/lib/background-image.ts)，历史决策见 [ADR 0004](./adr/0004-wallpaper-library.md)。
+壁纸图库最多 24 张，每张保存经重编码的 JPEG / WebP data URL，连同前缀最多 96 KiB；以内容 SHA-256 去重，不保存原图路径、远端 URL 或 SVG。设置与插件导入均先在当前尺寸逐级调整编码质量，再按预算缩小图片；浏览器优先使用 WebP，原生插件使用 JPEG，因此相同原图的编码结果不要求一致。图库卡片按显示尺寸和屏幕像素密度生成平滑的临时 PNG 缩略图，不写回图库或当前背景。设置中的 `customBackground` 另存当前选择的自包含副本、名称和填充方式：切换内置皮肤保留选择，取消图片背景或重置偏好清除副本但保留图库，缺少合法图片时回落纯色。首次建立图库可导入旧设置副本，已有图库不重复迁入；未知版本或损坏内容拒绝写入，不清空重建。额度与兼容实现见 [`wallpapers.rs`](../src-tauri/src/wallpapers.rs)、[`wallpaper-library.ts`](../src/lib/wallpaper-library.ts) 和 [`background-image.ts`](../src/lib/background-image.ts)，历史决策见 [ADR 0004](./adr/0004-wallpaper-library.md)。
 
 SQLite 用 `PRAGMA user_version` 标记 schema，迁移在事务中完成，未来版本拒绝修改。查询分页，更新与批量回收 / 恢复 / 永久删除校验 `expectedVersion`，整批冲突回滚；不向前端开放任意 SQL、数据库路径或通用文件权限。笔记草稿按窗口标签持久化，读取完成前暂停编辑与备份写入，保存正式笔记和放弃草稿各有独立动作并参加退出协商。
 
