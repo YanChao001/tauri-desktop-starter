@@ -138,6 +138,8 @@ export const enFeatures = {
   "updates.installed": "Update installed. Restart to apply it.",
   "updates.restart": "Restart application",
   "updates.releaseNotes": "Release notes",
+  "updates.releaseNotesTitle": "Release notes · {version}",
+  "updates.noReleaseNotes": "No release notes were provided for this version.",
   "updates.notConfigured":
     "In-app updates are unavailable. View version history for new versions.",
   "updates.configuration": "Update preferences",

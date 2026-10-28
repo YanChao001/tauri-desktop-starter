@@ -129,6 +129,8 @@ export const zhFeatures = {
   "updates.installed": "更新已安装，重新启动后生效",
   "updates.restart": "重新启动应用",
   "updates.releaseNotes": "版本说明",
+  "updates.releaseNotesTitle": "版本说明 · {version}",
+  "updates.noReleaseNotes": "此版本未提供更新说明。",
   "updates.notConfigured": "暂时无法在应用内更新，请前往版本记录查看新版本。",
   "updates.configuration": "更新偏好",
   "updates.configurationDescription":
