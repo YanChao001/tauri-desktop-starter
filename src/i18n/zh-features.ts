@@ -63,7 +63,7 @@ export const zhFeatures = {
   "desktop.title": "桌面集成",
   "desktop.settingsTitle": "窗口与运行",
   "desktop.browserOnly":
-    "登录启动、后台运行和多窗口需要桌面应用，浏览器中无法更改这些选项。",
+    "窗口大小和系统集成功能需要桌面应用，浏览器中无法更改。",
   "desktop.description": "管理开机启动、后台运行和多窗口，所有状态均来自本机。",
   "desktop.autostart": "登录时启动",
   "desktop.autostartDescription": "在当前用户登录系统后自动运行应用",

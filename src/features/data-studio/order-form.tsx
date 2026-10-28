@@ -2,7 +2,6 @@ import { getLocale } from "@/i18n/registry";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { TriangleAlertIcon } from "lucide-react";
-import { HelpTooltip } from "@/components/help-tooltip";
 import {
   Popover,
   PopoverContent,
@@ -147,9 +146,6 @@ export function OrderForm() {
             <CardTitle className="min-w-0 truncate">
               {t("labs.form.title")}
             </CardTitle>
-            <HelpTooltip label={`${t("labs.form.title")} · ${t("title.help")}`}>
-              {t("labs.form.hint")}
-            </HelpTooltip>
           </div>
           {summary.length ? (
             <div role="alert" className="shrink-0">

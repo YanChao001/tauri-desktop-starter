@@ -8,7 +8,6 @@ import {
   UsersIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,13 +118,6 @@ export function FeedbackStudio() {
             <div>
               <h4 className="flex items-center gap-2">
                 {t("playground.collaborators")}
-                <HelpTooltip
-                  label={t("common.helpFor", {
-                    name: t("playground.collaborators"),
-                  })}
-                >
-                  {t("playground.localOnly")}
-                </HelpTooltip>
               </h4>
               <p aria-live="polite">
                 {t("playground.memberCount", { count: members.length })}

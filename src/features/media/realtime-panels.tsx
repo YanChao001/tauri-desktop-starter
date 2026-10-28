@@ -275,11 +275,6 @@ export function SidecarPanel() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.sidecar.title")}
-          <HelpTooltip
-            label={`${t("labs.sidecar.title")} · ${t("title.help")}`}
-          >
-            {t("labs.sidecar.hint")}
-          </HelpTooltip>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3" aria-busy={pending}>

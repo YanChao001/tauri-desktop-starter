@@ -15,7 +15,7 @@
   mask-size: cover;
   mask-position: center;
   mask-repeat: no-repeat;
-  opacity: calc(var(--skin-exposure) * var(--skin-exposure));
+  opacity: var(--skin-exposure);
 }
 .pattern-artwork--preview {
   border-radius: inherit;
@@ -38,11 +38,4 @@ html:not([data-background="plain"]) {
 }
 html.dark:not([data-background="plain"]) {
   --muted-foreground: oklch(0.8 0 0);
-}
-html[data-background="custom"] .app-main {
-  background: color-mix(
-    in oklab,
-    var(--background) var(--skin-overlay-opacity),
-    transparent
-  );
 }

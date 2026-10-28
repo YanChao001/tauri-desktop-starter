@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,12 +63,8 @@ export function SessionPanel() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.session.title")}
-          <HelpTooltip
-            label={`${t("labs.session.title")} · ${t("title.help")}`}
-          >
-            {t("labs.session.hint")}
-          </HelpTooltip>
         </CardTitle>
+        <CardDescription>{t("labs.session.hint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form

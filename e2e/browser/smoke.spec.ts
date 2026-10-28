@@ -123,8 +123,7 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await expect(result).toContainText('"method": "GET"');
   await expect(
     page.locator("[data-sonner-toast]").filter({
-      hasText:
-        "Showing the last result offline. It may be out of date; no request was made.",
+      hasText: "Showing the last result. It may be out of date.",
     }),
   ).toBeVisible();
   expect(external).toEqual([]);

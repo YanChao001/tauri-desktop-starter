@@ -1,7 +1,6 @@
 import { CheckIcon } from "lucide-react";
 import { PatternArtwork } from "@/components/window-background";
 import { CustomBackgroundPicker } from "@/components/custom-background-picker";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -30,16 +29,9 @@ export function SkinPicker() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-1.5">
-          <CardTitle id="skin-gallery-heading" className="text-sm">
-            {t("settings.skinGallery")}
-          </CardTitle>
-          <HelpTooltip
-            label={t("common.helpFor", { name: t("settings.skinGallery") })}
-          >
-            {t("settings.skinGalleryDescription")}
-          </HelpTooltip>
-        </div>
+        <CardTitle id="skin-gallery-heading" className="text-sm">
+          {t("settings.skinGallery")}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
         <TooltipProvider delayDuration={650} skipDelayDuration={0}>
@@ -123,13 +115,6 @@ export function SkinPicker() {
             <Label id="skin-intensity-heading" className="text-xs">
               {t("settings.backgroundIntensity")}
             </Label>
-            <HelpTooltip
-              label={t("common.helpFor", {
-                name: t("settings.backgroundIntensity"),
-              })}
-            >
-              {t("settings.backgroundIntensityDescription")}
-            </HelpTooltip>
           </div>
           <div className="ml-auto w-full max-w-80 space-y-1">
             <div

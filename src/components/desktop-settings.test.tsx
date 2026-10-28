@@ -111,7 +111,9 @@ describe("desktop controls", () => {
     preferences.runInBackground = true;
     render(<DesktopSettings />);
     expect(
-      screen.getByText(/These options cannot be changed in the browser/),
+      screen.getByText(
+        /require the desktop app and cannot be changed in the browser/,
+      ),
     ).toBeVisible();
     const background = screen.getByRole("switch", {
       name: "Keep running after closing a window",

@@ -71,7 +71,7 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
             window.__extensionSettingsTest.update({ backgroundIntensity }),
           intensity,
         );
-        const alpha = Math.round(255 * (1 - (intensity / 100) ** 4));
+        const alpha = Math.round(255 * (1 - intensity / 100));
         await expect
           .poll(async () =>
             (await surfaceAlpha()).every((value) => value === alpha),
@@ -84,7 +84,7 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
       );
       await expect
         .poll(async () =>
-          (await surfaceAlpha()).every((value) => value === 239),
+          (await surfaceAlpha()).every((value) => value === 128),
         )
         .toBe(true);
     }

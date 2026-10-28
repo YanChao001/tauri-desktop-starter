@@ -241,7 +241,7 @@ describe("unified application commands", () => {
     fireEvent.click(screen.getByText("Palette"));
     await screen.findByRole("dialog");
     expect(
-      screen.queryByRole("option", { name: "交互场景" }),
+      screen.queryByRole("option", { name: "交互体验" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "创意展厅" })).toBeVisible();
   });

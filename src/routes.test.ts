@@ -37,6 +37,11 @@ describe("路由配置与匹配", () => {
       hidden: true,
     });
   });
+  it("动效、功能导览和简单通信示例不重复占用主导航", () => {
+    for (const path of ["/motion", "/catalog", "/bridge"])
+      expect(matchRoute(path)).toMatchObject({ path, hidden: true });
+    expect(matchRoute("/components").hidden).not.toBe(true);
+  });
   it("按命令类型、侧栏声明和可选授权过滤扩展入口", () => {
     const item: ExtensionInfo = {
       generation: 1,

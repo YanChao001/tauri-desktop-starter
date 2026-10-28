@@ -2,7 +2,6 @@ import { Command } from "cmdk";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useContentSearch } from "@/features/content-search/use-content-search";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { SearchIcon } from "lucide-react";
 import {
   Dialog,
@@ -80,11 +79,6 @@ export function CommandPalette() {
               placeholder={t("commands.placeholder")}
               aria-label={t("commands.title")}
             />
-            <HelpTooltip
-              label={t("common.helpFor", { name: t("commands.title") })}
-            >
-              {t(content.native ? "search.hint" : "search.browser")}
-            </HelpTooltip>
           </div>
           <p
             className="mx-4 h-5 overflow-auto text-xs text-muted-foreground"

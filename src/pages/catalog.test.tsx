@@ -51,6 +51,10 @@ it.each(["en", "zh"] as const)(
       screen.getByText(t("catalog.developerResources")).closest("details"),
     ).not.toHaveAttribute("open");
     fireEvent.click(screen.getByText(t("catalog.developerResources")));
+    expect(screen.getByRole("link", { name: t("nav.bridge") })).toHaveAttribute(
+      "href",
+      "/bridge",
+    );
     for (const [label, path] of [
       ["catalog.guide", "docs/development.md"],
       ["catalog.architecture", "docs/architecture.md"],

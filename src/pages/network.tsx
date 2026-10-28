@@ -303,11 +303,6 @@ function NetworkLab() {
               />
               {t("labs.network.offline")}
             </label>
-            <HelpTooltip
-              label={`${t("labs.network.offline")} · ${t("title.help")}`}
-            >
-              {t("labs.network.offlineHint")}
-            </HelpTooltip>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

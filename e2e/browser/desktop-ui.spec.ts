@@ -108,7 +108,7 @@ for (const theme of ["light", "dark"]) {
               // About has one outer surface; its nested cards deliberately share it.
               const expected = panel.closest(".settings-about-content")
                 ? 0
-                : Math.round(255 * (1 - value ** 4));
+                : Math.round(255 * (1 - value));
               if (alpha(panel) !== expected)
                 failures.push(
                   `${panel.tagName}.${panel.className}: ${alpha(panel)} != ${expected}`,
@@ -294,10 +294,8 @@ test("the browser fills the viewport with the desktop and keeps narrow navigatio
   const navigation = page.locator(".app-title-bar .app-compact-navigation");
   await expect(navigation).toBeVisible();
   await navigation.click();
-  await page
-    .getByRole("option", { name: "App communication", exact: true })
-    .click();
-  await expect(page).toHaveURL(/#\/bridge$/);
+  await page.getByRole("option", { name: "Interaction", exact: true }).click();
+  await expect(page).toHaveURL(/#\/components$/);
   expect((await page.locator(".app-chrome").boundingBox())?.height).toBe(40);
 });
 
@@ -339,7 +337,7 @@ for (const language of ["en", "zh"] as const) {
       await expect(filter).toBeFocused();
       await expect(
         page.locator('main [data-slot="card-title"]').filter({
-          hasText: chinese ? /^应用通信$/ : /^App communication$/,
+          hasText: chinese ? /^文件工作台$/ : /^File workbench$/,
         }),
       ).toHaveCount(0);
       await filter.click();
@@ -776,7 +774,7 @@ for (const motion of ["full", "reduced"]) {
       const sidebar = page.locator("#app-sidebar");
       const tips = page.locator('[data-slot="tooltip-content"]');
       const first = sidebar.locator('a[href="#/"]');
-      const second = sidebar.locator('a[href="#/catalog"]');
+      const second = sidebar.locator('a[href="#/data-studio"]');
       const firstLabel = await first.innerText();
       const secondLabel = await second.innerText();
       await first.focus();
@@ -794,7 +792,7 @@ for (const motion of ["full", "reduced"]) {
         await expect(tips).toHaveCount(1);
         await expect(page.getByRole("tooltip")).toContainText(secondLabel);
         await second.click();
-        await expect(page).toHaveURL(/#\/catalog$/);
+        await expect(page).toHaveURL(/#\/data-studio$/);
         await expect(tips).toHaveCount(0);
         await sidebar
           .getByRole("button", { name: "Expand sidebar", exact: true })
@@ -987,13 +985,17 @@ test("wallpaper library supports multi-import, rename, deletion and shared brows
     .getByRole("radio", { name: "Use wallpaper: sky.png", exact: true })
     .locator("..")
     .click();
-  await expect(page.locator("[data-custom-background]")).toHaveAttribute(
-    "src",
-    (await page
-      .locator(".wallpaper-card")
-      .first()
-      .locator("img")
-      .getAttribute("src")) as string,
+  const background = page.locator("[data-custom-background]");
+  await expect(background).toHaveAttribute("src", /^data:image\/(webp|jpeg);/);
+  await expect
+    .poll(() =>
+      background.evaluate((node) => (node as HTMLImageElement).naturalWidth),
+    )
+    .toBe(320);
+  const thumbnail = page.locator(".wallpaper-card").first().locator("img");
+  await expect(thumbnail).toHaveAttribute("src", /^data:image\/png;/);
+  expect(await background.getAttribute("src")).not.toBe(
+    await thumbnail.getAttribute("src"),
   );
   await page.locator('input[type="file"]').setInputFiles(first);
   await expect(
@@ -1233,7 +1235,7 @@ for (const theme of ["light", "dark"]) {
     });
     await page.goto("./#/settings");
     const slider = page.getByRole("slider", {
-      name: "Skin intensity",
+      name: "Background transparency",
       exact: true,
     });
     await expect(slider).toHaveAttribute("aria-valuenow", "50");
@@ -1306,19 +1308,23 @@ for (const theme of ["light", "dark"]) {
           const sample = await layers();
           return [
             sample.image,
-            ...sample.surfaces
-              .slice(0, 3)
-              .map((alpha) => Math.round(alpha * 100)),
+            ...sample.surfaces.map((alpha) => Math.round(alpha * 100)),
           ];
         })
-        .toEqual([value / 100, 100 - value, 100 - value, 100 - value]);
+        .toEqual([
+          value / 100,
+          100 - value,
+          100 - value,
+          100 - value,
+          100 - value,
+        ]);
       const actual = await layers();
       expect(actual.image).toBeGreaterThan(previous.image);
       actual.surfaces.forEach((alpha, index) =>
         expect(alpha).toBeLessThanOrEqual(previous.surfaces[index]!),
       );
       if (value === 50) {
-        expect(actual.surfaces[3]).toBeGreaterThan(0.9);
+        expect(actual.surfaces[3]).toBeCloseTo(0.5, 2);
         await page.screenshot({
           path: testInfo.outputPath(`intensity-${theme}-50.png`),
         });
@@ -1423,6 +1429,11 @@ for (const theme of ["light", "dark"]) {
           context.fillRect(0, 0, 160, 100);
           context.globalAlpha = Number(style.opacity);
           context.drawImage(mask, 0, 0);
+          context.globalAlpha = 1;
+          context.fillStyle = getComputedStyle(
+            document.querySelector(".app-main")!,
+          ).backgroundColor;
+          context.fillRect(0, 0, 160, 100);
           const backdrop = context.getImageData(0, 0, 160, 100).data;
           context.globalAlpha = 1;
           context.fillStyle = getComputedStyle(

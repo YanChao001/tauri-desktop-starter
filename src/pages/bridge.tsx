@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/code-block";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -108,9 +107,6 @@ export default function Bridge() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
             {t("bridge.demo")}
-            <HelpTooltip label={`${t("bridge.demo")} · ${t("title.help")}`}>
-              {t("bridge.demoHint")}
-            </HelpTooltip>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -193,11 +189,6 @@ export default function Bridge() {
             <CardHeader className="min-h-7">
               <CardTitle className="flex items-center gap-2 text-xs font-medium">
                 {t("bridge.frontend")}
-                <HelpTooltip
-                  label={`${t("bridge.frontend")} · ${t("title.help")}`}
-                >
-                  {t("bridge.note")}
-                </HelpTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>

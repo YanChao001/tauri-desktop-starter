@@ -248,10 +248,6 @@ export default function Tasks() {
                 ? `${t("tasks.active", { count: snapshot.active })} · ${t("tasks.queued", { count: snapshot.queued })}`
                 : t(error ? "tasks.countUnavailable" : "tasks.loading")}
             </p>
-            <HelpTooltip label={`${t("tasks.kind")} · ${t("title.help")}`}>
-              <p>{t("tasks.limits")}</p>
-              <p>{t("tasks.capacity")}</p>
-            </HelpTooltip>
           </div>
           {directoryId ? (
             <div className="flex min-w-0 items-center gap-1">
@@ -275,9 +271,6 @@ export default function Tasks() {
       </section>
       <div className="flex items-center gap-2">
         <h3 className="text-base font-medium">{t("tasks.history")}</h3>
-        <HelpTooltip label={`${t("tasks.history")} · ${t("title.help")}`}>
-          {t("tasks.historyHint")}
-        </HelpTooltip>
       </div>
       {!snapshot ? (
         error ? (

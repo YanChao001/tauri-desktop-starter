@@ -481,7 +481,6 @@ export default function Settings() {
             id="settings-motion"
             icon={ActivityIcon}
             label={t("settings.motion")}
-            hint={t("settings.motionHint")}
           >
             <ToggleGroup
               type="single"
@@ -514,7 +513,6 @@ export default function Settings() {
             id="settings-menuBar"
             icon={MenuIcon}
             label={t("settings.menuBar")}
-            hint={t("settings.menuBarHint")}
           >
             <Switch
               checked={settings.menuBar}
@@ -577,20 +575,9 @@ export default function Settings() {
 
       <Card id="settings-window" tabIndex={-1}>
         <CardHeader>
-          <div className="flex items-center gap-1.5">
-            <CardTitle className="text-sm">
-              {t("desktop.settingsTitle")}
-            </CardTitle>
-            <HelpTooltip
-              label={t("common.helpFor", { name: t("settings.windowSize") })}
-            >
-              {t(
-                native
-                  ? "settings.windowSizeHint"
-                  : "settings.windowBrowserHint",
-              )}
-            </HelpTooltip>
-          </div>
+          <CardTitle className="text-sm">
+            {t("desktop.settingsTitle")}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 [&>.settings-row]:py-0">
           <DesktopSettings />
@@ -683,25 +670,15 @@ export default function Settings() {
             })}
           </div>
           {native ? (
-            <div className="flex h-8 min-w-0 items-center justify-between gap-2 text-xs">
+            <div className="flex min-h-8 min-w-0 items-center justify-between gap-2 text-xs">
               {windowError ? (
                 <>
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span
-                      role="alert"
-                      className="min-w-0 truncate text-destructive"
-                    >
-                      {nativeErrorText(windowError, t)}
-                    </span>
-                    <HelpTooltip
-                      label={t("common.helpFor", {
-                        name: nativeErrorText(windowError, t),
-                      })}
-                      className="shrink-0"
-                    >
-                      {nativeErrorText(windowError, t)}
-                    </HelpTooltip>
-                  </div>
+                  <span
+                    role="alert"
+                    className="min-w-0 break-words text-destructive"
+                  >
+                    {nativeErrorText(windowError, t)}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"

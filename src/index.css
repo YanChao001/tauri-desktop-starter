@@ -305,19 +305,13 @@ html[data-font-size="lg"] {
   font-size: 17px;
 }
 
-/* 中间档保留较实的阅读表面，两个端点分别完全遮住和完全透出皮肤。 */
+/* 各表面共用线性透明度，避免卡片在最后几档才集中透出背景。 */
 :root {
   --skin-exposure: 0.5;
   --skin-overlay-opacity: calc(100% * (1 - var(--skin-exposure)));
   --skin-chrome-opacity: var(--skin-overlay-opacity);
   --skin-sidebar-opacity: var(--skin-overlay-opacity);
-  --skin-card-opacity: calc(
-    100% *
-      (
-        1 - var(--skin-exposure) * var(--skin-exposure) * var(--skin-exposure) *
-          var(--skin-exposure)
-      )
-  );
+  --skin-card-opacity: var(--skin-overlay-opacity);
   --surface-card: color-mix(
     in oklab,
     var(--card) var(--skin-card-opacity),
@@ -423,7 +417,11 @@ html[data-background="plain"] {
   overflow: auto;
   scrollbar-gutter: stable;
   scroll-padding-block: 1.25rem;
-  background: transparent;
+  background: color-mix(
+    in oklab,
+    var(--background) var(--skin-card-opacity),
+    transparent
+  );
 }
 .app-surface {
   background-color: var(--surface-card);

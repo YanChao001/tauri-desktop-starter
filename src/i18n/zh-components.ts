@@ -1,6 +1,6 @@
 export const zhComponents = {
   "playground.eyebrow": "可交互的设计实验",
-  "playground.title": "交互组件",
+  "playground.title": "交互体验",
   "playground.description":
     "动手调一调。让控件一起工作，把一个想法变成可感知的界面。",
   "playground.stages": "交互舞台",
@@ -46,8 +46,7 @@ export const zhComponents = {
   "playground.memberCount": "{count} 位协作者",
   "playground.addCollaborator": "添加协作者",
   "playground.inviteTitle": "把一个人加入创意",
-  "playground.inviteDescription":
-    "填写邮箱和角色，体验表单校验与对话框确认。数据只保留在本页。",
+  "playground.inviteDescription": "模拟邀请仅保留在本页，不会发送邮件。",
   "playground.email": "电子邮箱",
   "playground.emailPlaceholder": "name@example.com",
   "playground.role": "协作角色",

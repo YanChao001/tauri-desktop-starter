@@ -393,7 +393,7 @@ try {
       const { backgroundColor } = await measure(page.locator("#host-card"), [
         "backgroundColor",
       ]);
-      assert.equal(backgroundColor[3], Math.round(255 * (1 - exposure ** 4)));
+      assert.equal(backgroundColor[3], Math.round(255 * (1 - exposure)));
       assert.equal(
         (await measure(page.locator("#host-input"), ["backgroundColor"]))
           .backgroundColor[3],

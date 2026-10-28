@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Link } from "react-router-dom";
 import { APP_ROUTES } from "@/routes";
 import { JourneyLauncher } from "@/features/journeys/journey-launcher";
@@ -69,11 +68,6 @@ export default function Catalog() {
           <h3 id="capability-list-heading" className="text-base font-medium">
             {t("catalog.modules")}
           </h3>
-          <HelpTooltip
-            label={t("common.helpFor", { name: t("catalog.modules") })}
-          >
-            {t("catalog.statusHint")}
-          </HelpTooltip>
           <Input
             type="search"
             aria-label={t("catalog.search")}
@@ -177,6 +171,9 @@ export default function Catalog() {
               ))}
             </ul>
           </section>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/bridge">{t("nav.bridge")}</Link>
+          </Button>
           <section aria-labelledby="catalog-tutorial" className="space-y-4">
             <div className="space-y-1">
               <h3 id="catalog-tutorial" className="text-sm font-medium">

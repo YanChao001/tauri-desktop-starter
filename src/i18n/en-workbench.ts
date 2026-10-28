@@ -4,41 +4,40 @@ export const enWorkbench = {
   "nav.tasks": "Background tasks",
   "workbench.title": "File workbench",
   "workbench.description":
-    "Open local text, JSON, Markdown or images, preview and save safely. Files stay on your device.",
+    "Open, edit and preview local files, including text, JSON, Markdown and images.",
   "workbench.open": "Open files",
   "workbench.new": "New text file",
   "workbench.sample": "Open JSON sample",
-  "workbench.sampleTitle": "Desktop file workflow example",
+  "workbench.sampleTitle": "Sample file",
   "workbench.untitled": "Untitled.txt",
   "workbench.save": "Save file",
   "workbench.saveAs": "Save a copy",
   "workbench.saved": "File saved",
   "workbench.importNote": "Import a note copy",
   "workbench.imported":
-    "Saved the current content as a local note. The original file and unsaved edits are preserved.",
+    "Saved a note copy. The original file and current edits are preserved.",
   "workbench.openNotes": "Open notes",
   "workbench.noteLimit":
     "Note content is limited to 64 KiB. Reduce the content or save it as a file.",
-  "workbench.saveCancelled":
-    "Saving was cancelled. Unsaved edits are still preserved.",
+  "workbench.saveCancelled": "Saving cancelled. Your edits are preserved.",
   "workbench.busy": "A file operation is still running. Wait and try again.",
   "workbench.reveal": "Show in file manager",
   "workbench.reload": "Inspect disk version",
   "workbench.close": "Close file",
   "workbench.clearOpenErrors": "Clear file errors",
   "workbench.drop":
-    "Drop text, JSON, Markdown or PNG / JPEG / GIF / WebP images into the window, or use the open button.",
+    "Drop text, JSON, Markdown or images here, or choose Open files.",
   "workbench.limits":
-    "Text limit: 2MiB; image limit: 8MiB; up to 20 files per selection. Images are read-only. Embedded Markdown HTML is never executed.",
+    "Up to 2 MiB per text file, 8 MiB per image and 20 files per selection. Images are preview only.",
   "workbench.empty":
     "No files are open. Choose a file or create a new text document.",
   "workbench.documents": "Open files",
   "workbench.recent": "Recent files",
-  "workbench.noRecent": "Open or drop files to add recent entries.",
+  "workbench.noRecent": "No recently opened files.",
   "workbench.editor": "Text editor",
   "workbench.preview": "Content preview",
   "workbench.dirty": "Unsaved changes",
-  "workbench.image": "Read-only image attachment",
+  "workbench.image": "Image preview",
   "workbench.invalidJson":
     "JSON is incomplete. Fix it before saving; the original file has not changed.",
   "workbench.conflict":
@@ -52,12 +51,12 @@ export const enWorkbench = {
     "These edits exist only in this window. Save the file or a copy before closing to keep them.",
   "workbench.discard": "Discard and close",
   "workbench.localDraft": "New unsaved file",
-  "tasks.title": "Background task center",
+  "tasks.title": "Background tasks",
   "tasks.description":
-    "List files in a folder or calculate file checksums. Tasks continue when you navigate away or hide the window.",
-  "tasks.pickDirectory": "Choose directory",
-  "tasks.directory": "Task directory",
-  "tasks.noDirectory": "Choose a local directory first",
+    "Scan folders or calculate file checksums. Tasks continue when you leave this page.",
+  "tasks.pickDirectory": "Choose folder",
+  "tasks.directory": "Task folder",
+  "tasks.noDirectory": "Choose a local folder first",
   "tasks.kind": "Task type",
   "tasks.scan": "Scan file inventory",
   "tasks.sha256": "Calculate file checksums (SHA-256)",
@@ -72,19 +71,19 @@ export const enWorkbench = {
   "tasks.queued": "Queued {count} / 10",
   "tasks.waiting": "Waiting for earlier tasks to finish",
   "tasks.capacity":
-    "Two tasks run at once; up to ten more wait in submission order. Waiting tasks can be cancelled.",
+    "Run up to 2 tasks at once, with 10 more waiting in the queue.",
   "tasks.empty":
-    "No tasks yet. Choose a folder, then list its files or calculate checksums.",
+    "No tasks yet. Choose a folder and start a scan or checksum task.",
   "tasks.loading": "Loading tasks…",
   "tasks.countUnavailable": "Task counts are unavailable",
   "tasks.interruptedHint":
-    "The app stopped before this task finished. Running it again creates a new task.",
+    "The task was interrupted when the app closed. You can run it again.",
   "tasks.unreadableEntries":
-    "{count} entries could not be read. View the results or export the complete report.",
+    "{count} entries could not be read. View the results for details.",
   "tasks.reportUnavailable":
-    "The complete report could not be saved. Export the full results held in memory before closing the app.",
+    "The report could not be saved. Export the complete results before closing the app.",
   "tasks.legacyNotice":
-    "This saved task includes additional diagnostics. Expand the results to read the original record.",
+    "This task has a detailed record. Expand the results to view it.",
   "tasks.entryLimit":
     "This file or path exceeds the task limits and was skipped.",
   "tasks.entryFailed":
@@ -94,7 +93,7 @@ export const enWorkbench = {
   "tasks.discovering": "Discovering files…",
   "tasks.history": "Recent tasks",
   "tasks.historyHint":
-    "The latest 30 tasks are retained. Unfinished tasks become interrupted after restart and can be run again. Cancellation keeps completed results.",
+    "The latest 30 tasks are retained. Cancellation keeps completed results.",
   "tasks.limits":
     "Up to 5000 files and 32 folder levels per scan. Links to other locations are not followed. Checksums are calculated only for files up to 512MiB.",
   "tasks.path": "Relative path",
@@ -102,7 +101,7 @@ export const enWorkbench = {
   "tasks.hash": "File checksum / result",
   "tasks.noResults": "No completed file results.",
   "tasks.previewLimit":
-    "The page previews up to 200 entries. Export includes all files processed by this task.",
+    "Previewing up to 200 entries. Export to view the complete results.",
   "tasks.truncated":
     "The scan reached its file count or directory depth limit. This is not a complete inventory of the directory.",
   "tasks.retryOf": "Rerun of task: {id}",

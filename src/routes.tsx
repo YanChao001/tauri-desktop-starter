@@ -133,6 +133,7 @@ export const APP_ROUTES: AppRoute[] = [
     group: "experience",
     icon: BlocksIcon,
     ...lazyPage(() => import("@/pages/catalog")),
+    hidden: true,
   },
   {
     path: "/recovery",
@@ -217,6 +218,7 @@ export const APP_ROUTES: AppRoute[] = [
     icon: SparklesIcon,
     ...lazyPage(() => import("@/pages/motion")),
     demoOnly: true,
+    hidden: true,
   },
   {
     path: "/desktop",
@@ -240,6 +242,7 @@ export const APP_ROUTES: AppRoute[] = [
     icon: TerminalIcon,
     ...lazyPage(() => import("@/pages/bridge")),
     demoOnly: true,
+    hidden: true,
   },
   {
     path: "/diagnostics",

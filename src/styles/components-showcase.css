@@ -859,7 +859,7 @@
 }
 @container (min-width: 850px) {
   .playground-stage-list {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
   .studio-controls {
     padding: 1.5rem;

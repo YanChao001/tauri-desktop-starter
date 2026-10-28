@@ -196,7 +196,7 @@ describe("设置页", () => {
     render(<SettingsView initial="/settings?section=desktop" />);
     expect(screen.getByRole("region", { name: "窗口与运行" })).toHaveFocus();
     expect(
-      screen.getByText(/登录启动、后台运行和多窗口需要桌面应用/),
+      screen.getByText(/窗口大小和系统集成功能需要桌面应用/),
     ).toBeVisible();
     expect(screen.getByRole("switch", { name: "登录时启动" })).toBeDisabled();
     expect(
@@ -275,11 +275,11 @@ describe("设置页", () => {
   it("皮肤与强度即时生效、持久化，并在纯色皮肤下禁用强度", () => {
     const view = () => <SettingsView />;
     const { unmount } = render(view());
-    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveAttribute(
       "data-disabled",
     );
     fireEvent.click(screen.getByRole("radio", { name: "云朵晴空" }));
-    const slider = screen.getByRole("slider", { name: "皮肤强度" });
+    const slider = screen.getByRole("slider", { name: "背景透明度" });
     expect(slider).toHaveAttribute("aria-valuenow", "50");
     fireEvent.keyDown(slider, { key: "ArrowRight" });
     expect(slider).toHaveAttribute("aria-valuenow", "60");
@@ -295,19 +295,19 @@ describe("设置页", () => {
     unmount();
     render(view());
     expect(screen.getByRole("radio", { name: "云朵晴空" })).toBeChecked();
-    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveAttribute(
       "aria-valuenow",
       "0",
     );
-    fireEvent.keyDown(screen.getByRole("slider", { name: "皮肤强度" }), {
+    fireEvent.keyDown(screen.getByRole("slider", { name: "背景透明度" }), {
       key: "End",
     });
-    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveAttribute(
       "aria-valuenow",
       "100",
     );
     fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
-    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+    expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveAttribute(
       "data-disabled",
     );
     expect(document.documentElement).toHaveAttribute(
@@ -352,7 +352,7 @@ describe("设置页", () => {
     ).toBeEnabled();
   });
 
-  it("浏览器预览禁用原生尺寸预设，环境说明按需展示且允许保存启动位置偏好", async () => {
+  it("浏览器预览禁用原生尺寸预设，显示环境限制且允许保存启动位置偏好", async () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     expect(
@@ -376,10 +376,14 @@ describe("设置页", () => {
     expect(
       screen.queryByText("窗口大小由桌面应用管理，浏览器预览中不可修改。"),
     ).not.toBeInTheDocument();
-    fireEvent.focus(screen.getByRole("button", { name: "了解窗口大小" }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "窗口大小由桌面应用管理，浏览器预览中不可修改。",
-    );
+    expect(
+      screen.getByText(
+        "窗口大小和系统集成功能需要桌面应用，浏览器中无法更改。",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "了解窗口大小" }),
+    ).not.toBeInTheDocument();
     expect(desktop.getWindowGeometry).not.toHaveBeenCalled();
     expect(screen.getByRole("radio", { name: "记住上次位置" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "居中" }));

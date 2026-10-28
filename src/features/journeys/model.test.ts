@@ -19,5 +19,15 @@ describe("体验流程 URL", () => {
       currentJourney("/components", "?journey=interface&step=0", true),
     ).toBeNull();
     expect(journeyLink(JOURNEYS[1], 1)).toBe("/workbench?journey=files&step=1");
+    const motionLink = journeyLink(JOURNEYS[0], 3);
+    expect(motionLink).toBe(
+      "/components?journey=interface&step=3&stage=motion",
+    );
+    expect(
+      currentJourney("/components", motionLink.split("?")[1]!)?.step.title,
+    ).toBe("experience.interface.4");
+    expect(
+      currentJourney("/components", "?journey=interface&step=3"),
+    ).toBeNull();
   });
 });

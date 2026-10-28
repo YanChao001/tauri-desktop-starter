@@ -1,5 +1,4 @@
 import { useId, useRef, useState, type PointerEvent } from "react";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Link } from "react-router-dom";
 import { motion, useMotionValue, useSpring } from "motion/react";
 import {
@@ -272,8 +271,8 @@ export default function Overview() {
               </Link>
             </Button>
             <Button asChild variant="ghost">
-              <Link to="/motion">
-                {t("nav.motion")}
+              <Link to="/catalog">
+                {t("nav.catalog")}
                 <ArrowDownRightIcon />
               </Link>
             </Button>
@@ -372,13 +371,6 @@ export default function Overview() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 id="showroom-vibes-heading">{t("showroom.chooseVibe")}</h3>
-                <HelpTooltip
-                  label={t("common.helpFor", {
-                    name: t("showroom.chooseVibe"),
-                  })}
-                >
-                  {t("showroom.vibeHint")}
-                </HelpTooltip>
               </div>
             </div>
             <fieldset className="showroom-vibe-options">

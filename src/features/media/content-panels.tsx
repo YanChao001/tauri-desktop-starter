@@ -1,11 +1,16 @@
 import { SafeMarkdown } from "@/components/safe-markdown";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
@@ -19,11 +24,6 @@ export function MarkdownPanel() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.markdown")}
-          <HelpTooltip
-            label={`${t("labs.media.markdown")} · ${t("title.help")}`}
-          >
-            {t("labs.media.markdownHint")}
-          </HelpTooltip>
         </CardTitle>
       </CardHeader>
       <CardContent className="grid items-start gap-4 @min-[46rem]/markdown:grid-cols-2">
@@ -85,11 +85,8 @@ export function MediaPreview({ active = true }: { active?: boolean }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.file")}
-          <HelpTooltip label={`${t("labs.media.file")} · ${t("title.help")}`}>
-            <p>{t("labs.media.fileHint")}</p>
-            <p>{t("experience.media.connectionHint")}</p>
-          </HelpTooltip>
         </CardTitle>
+        <CardDescription>{t("labs.media.fileHint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Label htmlFor="media-file">{t("labs.media.choose")}</Label>

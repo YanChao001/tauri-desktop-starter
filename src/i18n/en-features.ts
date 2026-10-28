@@ -67,7 +67,7 @@ export const enFeatures = {
   "desktop.title": "Desktop integration",
   "desktop.settingsTitle": "Windows & startup",
   "desktop.browserOnly":
-    "Launch at login, background operation and multiple windows require the desktop app. These options cannot be changed in the browser.",
+    "Window sizes and system integration require the desktop app and cannot be changed in the browser.",
   "desktop.description":
     "Manage startup, background behavior and windows using real device status.",
   "desktop.autostart": "Launch at login",

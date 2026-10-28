@@ -41,15 +41,15 @@ describe("同源浏览器演示入口", () => {
     renderBar();
     const navigation = screen.getByRole("combobox", { name: "切换演示页面" });
     fireEvent.keyDown(navigation, { key: "Enter" });
-    fireEvent.click(screen.getByRole("option", { name: "动效实验室" }));
-    expect(screen.getByLabelText("当前路由")).toHaveTextContent("/motion");
-    expect(navigation).toHaveTextContent("动效实验室");
+    fireEvent.click(screen.getByRole("option", { name: "交互体验" }));
+    expect(screen.getByLabelText("当前路由")).toHaveTextContent("/components");
+    expect(navigation).toHaveTextContent("交互体验");
   });
   it("精简模式保持相同导航可见性，直接访问隐藏路由仍能切换离开", () => {
     state.appMode = "minimal";
     renderBar("/components");
     const navigation = screen.getByRole("combobox", { name: "切换演示页面" });
-    expect(navigation).toHaveTextContent("交互场景");
+    expect(navigation).toHaveTextContent("交互体验");
     fireEvent.keyDown(navigation, { key: "Enter" });
     expect(
       screen.queryByRole("option", { name: "动效实验室" }),

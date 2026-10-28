@@ -65,9 +65,9 @@ describe("interactive showroom", () => {
   });
   it("offers working destinations and a real command-palette entry", () => {
     view();
-    expect(screen.getByRole("link", { name: "动效实验室" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "功能导览" })).toHaveAttribute(
       "href",
-      "/motion",
+      "/catalog",
     );
     expect(screen.getByRole("link", { name: /开始体验/ })).toHaveAttribute(
       "href",

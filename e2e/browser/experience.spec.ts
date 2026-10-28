@@ -58,6 +58,15 @@ test("guided routes follow real pages, keep same-page state and can be dismissed
   await expect(
     page.getByRole("tab", { name: "Content & attachments" }),
   ).toHaveAttribute("aria-selected", "true");
+  await guide.getByRole("link", { name: "Next step" }).click();
+  await expect(page).toHaveURL(
+    /#\/components\?journey=interface&step=3&stage=motion$/,
+  );
+  await expect(page.getByRole("tab", { name: /Motion lab/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(guide).toContainText("4/4");
   await guide.getByRole("link", { name: "Close guide" }).click();
   await expect(guide).toHaveCount(0);
   await page.goto("./#/workbench?journey=files&step=0&keep=1");
@@ -69,8 +78,12 @@ test("guided routes follow real pages, keep same-page state and can be dismissed
     .getByRole("link", { name: "Next step" })
     .click();
   await expect(page).toHaveURL(/workbench\?journey=files&step=1$/);
+  await expect(guide).toContainText("2/4");
   await expect(
-    page.getByText("This is a walkthrough of this page.", { exact: false }),
+    page.getByRole("heading", {
+      name: "Try it in the desktop app",
+      exact: true,
+    }),
   ).toBeVisible();
   await page.goto("./#/tasks?journey=tasks&step=0&keep=1");
   await page.getByRole("link", { name: "Close guide" }).click();
@@ -193,19 +206,6 @@ test("media sections load charts on demand and keep the local Markdown edit", as
   await page.goto("./#/media");
   const source = page.locator("#markdown-source");
   await source.fill("# Keep this local edit");
-  const mediaHelp = page.getByRole("button", {
-    name: "Local media preview · Help",
-    exact: true,
-  });
-  await mediaHelp.scrollIntoViewIfNeeded();
-  // 先交付滚动帧，避免晚到的祖先滚动事件关闭刚被聚焦打开的提示。
-  await frames(page, 2);
-  await mediaHelp.focus();
-  await expect(mediaHelp).toBeFocused();
-  await expect(page.getByRole("tooltip")).toContainText(
-    "Tabs keep this page’s state.",
-  );
-  await page.keyboard.press("Escape");
   await page
     .getByRole("tab", { name: "Data visualization", exact: true })
     .click();

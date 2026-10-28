@@ -29,7 +29,7 @@ export const en = {
   ...enRecovery,
   ...enExperience,
   "nav.overview": "Showroom",
-  "nav.components": "Playground",
+  "nav.components": "Interaction",
   "nav.motion": "Motion lab",
   "nav.bridge": "App communication",
   "nav.settings": "Settings",
@@ -214,9 +214,9 @@ export const en = {
   "settings.bgCloudscape": "Paper flights",
   "settings.bgCloudscapeDescription":
     "Paper planes, envelopes and dotted flight paths",
-  "settings.backgroundIntensity": "Skin intensity",
+  "settings.backgroundIntensity": "Background transparency",
   "settings.backgroundIntensityDescription":
-    "Adjust background visibility and interface transparency in 11 stops of 10%.",
+    "Higher values reveal more of your wallpaper.",
   "settings.intensityCovered": "Opaque",
   "settings.intensityTransparent": "Transparent",
   "settings.intensityValue": "{value}% · Stop {level} of 11",

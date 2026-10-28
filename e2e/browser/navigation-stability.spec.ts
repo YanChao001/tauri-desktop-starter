@@ -26,7 +26,7 @@ test("repeated sidebar navigation preserves the current page controls and draft"
   const original = await title.evaluateHandle((element) => element);
   const sidebar = page.locator("#app-sidebar-navigation");
   const current = sidebar.getByRole("link", {
-    name: "Playground",
+    name: "Interaction",
     exact: true,
   });
 

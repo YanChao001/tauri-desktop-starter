@@ -409,11 +409,6 @@ export function RecordsTable() {
           <span className="min-w-0 truncate tabular-nums">
             {t("labs.data.selected", { count: selected.length })}
           </span>
-          <HelpTooltip
-            label={`${t("labs.data.records")} · ${t("labs.data.virtual")}`}
-          >
-            {t("labs.data.virtualHint")}
-          </HelpTooltip>
         </div>
         <Dialog
           open={replacement !== null}

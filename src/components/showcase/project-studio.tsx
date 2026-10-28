@@ -37,7 +37,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { CodeBlock } from "@/components/code-block";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
@@ -206,9 +205,6 @@ export function ProjectStudio({ active }: { active: boolean }) {
         <div className="studio-switch-row">
           <div className="flex items-center gap-1">
             <Label htmlFor="studio-glow">{t("playground.glow")}</Label>
-            <HelpTooltip label={t("playground.glowDescription")}>
-              {t("playground.glowDescription")}
-            </HelpTooltip>
           </div>
           <Switch
             id="studio-glow"
