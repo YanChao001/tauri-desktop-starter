@@ -74,7 +74,7 @@ describe("unsaved work lifecycle", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     const [message, options] = vi.mocked(toast.error).mock.calls[0]!;
-    expect(message).toBe("Error: Cannot listen");
+    expect(message).toBe("Operation failed: Cannot listen");
     expect(options).toMatchObject({
       duration: Infinity,
       action: { label: "Retry" },
@@ -118,6 +118,58 @@ describe("unsaved work lifecycle", () => {
       expect(native.respondLifecycle).toHaveBeenCalledTimes(2),
     );
     expect(native.respondLifecycle).toHaveBeenLastCalledWith(1, true);
+  });
+  it("translates structured native failures while retaining unsaved work", async () => {
+    render(
+      <UnsavedWorkProvider>
+        <Work
+          work={{
+            id: "notes",
+            label: "Notes",
+            dirty: true,
+            save: vi.fn().mockRejectedValue({
+              code: "STORAGE_IO",
+              message: "Raw native diagnostics",
+              retryable: true,
+            }),
+            discard: vi.fn(),
+          }}
+        />
+      </UnsavedWorkProvider>,
+    );
+    act(() => request?.({ id: 1, action: "quit", windows: ["main"] }));
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not read or write application data",
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent("Notes");
+    expect(native.respondLifecycle).not.toHaveBeenCalled();
+  });
+  it("ignores a failed state report after a newer report has succeeded", async () => {
+    const previous = deferred();
+    vi.mocked(native.setWindowWorkState).mockReturnValueOnce(previous.promise);
+    const view = render(<UnsavedWorkProvider>{null}</UnsavedWorkProvider>);
+    await waitFor(() =>
+      expect(native.setWindowWorkState).toHaveBeenCalledWith([]),
+    );
+    view.rerender(
+      <UnsavedWorkProvider>
+        <Work
+          work={{
+            id: "notes",
+            label: "Notes",
+            dirty: true,
+            save: vi.fn(),
+            discard: vi.fn(),
+          }}
+        />
+      </UnsavedWorkProvider>,
+    );
+    await waitFor(() =>
+      expect(native.setWindowWorkState).toHaveBeenLastCalledWith(["Notes"]),
+    );
+    await act(async () => previous.reject(new Error("Obsolete report failed")));
+    expect(toast.error).not.toHaveBeenCalled();
   });
   it("closes on a native cancellation broadcast and ignores a delayed copy of the finished request", async () => {
     render(

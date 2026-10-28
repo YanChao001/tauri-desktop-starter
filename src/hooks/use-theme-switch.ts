@@ -151,15 +151,15 @@ export function useSynchronizedTheme() {
   const pending = useRef<(() => void) | undefined>(undefined);
   const pendingTheme = useRef<AppTheme | undefined>(undefined);
   useEffect(() => {
-    if (!native) return;
-    // next-themes 的跨文档缓存监听会早于原生 revision 快照改色。
-    // 原生偏好由 SettingsSync 校验合并，主题缓存只用于下次窗口首屏。
+    // 主题缓存只用于首屏；运行时始终由当前设置模型提交。
+    // 否则浏览器标签页会按各自偏好纠正远端缓存，形成反复改色与回写。
+    // 原生窗口同样等待 SettingsSync 接受 revision 后再同步主题。
     const onStorage = (event: StorageEvent) => {
       if (event.key === THEME_STORAGE_KEY) event.stopImmediatePropagation();
     };
     window.addEventListener("storage", onStorage, true);
     return () => window.removeEventListener("storage", onStorage, true);
-  }, [native]);
+  }, []);
   useEffect(() => {
     const ready = !native || persistence !== "loading";
     if (pendingTheme.current && pendingTheme.current !== settings.theme) {

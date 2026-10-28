@@ -5,6 +5,7 @@ import { HelpTooltip } from "@/components/help-tooltip";
 import { saveTextExport } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { SAMPLE_CSV } from "@/features/data-studio/csv";
 
 const ORIGINAL =
@@ -14,6 +15,7 @@ const CHANGED =
 
 export function JourneySamples({ path }: { path: string }) {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const [pending, setPending] = useState(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -29,7 +31,7 @@ export function JourneySamples({ path }: { path: string }) {
     try {
       await saveTextExport(name, text);
     } catch (reason) {
-      if (mounted.current) toast.error(nativeErrorText(reason, t));
+      if (mounted.current) toast.error(nativeErrorText(reason, latest));
     } finally {
       if (mounted.current) setPending(false);
     }

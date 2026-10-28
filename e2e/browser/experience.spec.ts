@@ -198,7 +198,10 @@ test("media sections load charts on demand and keep the local Markdown edit", as
     exact: true,
   });
   await mediaHelp.scrollIntoViewIfNeeded();
+  // 先交付滚动帧，避免晚到的祖先滚动事件关闭刚被聚焦打开的提示。
+  await frames(page, 2);
   await mediaHelp.focus();
+  await expect(mediaHelp).toBeFocused();
   await expect(page.getByRole("tooltip")).toContainText(
     "Tabs keep this page’s state.",
   );

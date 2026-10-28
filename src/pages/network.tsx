@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { isTauri, nativeHttpRequest } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import {
@@ -45,6 +46,7 @@ import {
 
 function NetworkLab() {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const client = useQueryClient();
   const [mode, setMode] = useState<NetworkMode>("fixture");
   const [fault, setFault] = useState<FixtureFault>("none");
@@ -119,8 +121,8 @@ function NetworkLab() {
   }, [offline, client]);
   function errorText(reason: unknown) {
     return reason instanceof NetworkLabError
-      ? t(`labs.network.error.${reason.code}`)
-      : nativeErrorText(reason, t);
+      ? latest(`labs.network.error.${reason.code}`)
+      : nativeErrorText(reason, latest);
   }
   function reportError(reason: unknown) {
     if (
@@ -178,7 +180,7 @@ function NetworkLab() {
       });
       if (mounted.current)
         toast.info(
-          t(fresh ? "labs.network.cacheHit" : "labs.network.cacheMiss"),
+          latest(fresh ? "labs.network.cacheHit" : "labs.network.cacheMiss"),
         );
     } catch (reason) {
       reportError(reason);

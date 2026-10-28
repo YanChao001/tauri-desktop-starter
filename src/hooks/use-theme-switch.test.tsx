@@ -265,47 +265,36 @@ describe("useThemeSwitch", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("reserves the native theme cache for first paint while leaving all other storage events untouched", () => {
-    motion.native = true;
-    const { unmount } = renderHook(useSynchronizedTheme);
-    const cacheListener = vi.fn();
-    window.addEventListener("storage", cacheListener);
-    try {
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: THEME_STORAGE_KEY,
-          newValue: "dark",
-        }),
-      );
-      expect(cacheListener).not.toHaveBeenCalled();
-      window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }));
-      expect(cacheListener).toHaveBeenCalledOnce();
-      unmount();
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: THEME_STORAGE_KEY,
-          newValue: "dark",
-        }),
-      );
-      expect(cacheListener).toHaveBeenCalledTimes(2);
-    } finally {
-      window.removeEventListener("storage", cacheListener);
-    }
-  });
-
-  it("preserves browser theme storage events", () => {
-    renderHook(useSynchronizedTheme);
-    const listener = vi.fn();
-    window.addEventListener("storage", listener);
-    try {
-      window.dispatchEvent(
-        new StorageEvent("storage", { key: THEME_STORAGE_KEY }),
-      );
-      expect(listener).toHaveBeenCalledOnce();
-    } finally {
-      window.removeEventListener("storage", listener);
-    }
-  });
+  it.each([true, false])(
+    "reserves the theme cache for first paint while leaving other storage events untouched (native=%s)",
+    (native) => {
+      motion.native = native;
+      const { unmount } = renderHook(useSynchronizedTheme);
+      const cacheListener = vi.fn();
+      window.addEventListener("storage", cacheListener);
+      try {
+        window.dispatchEvent(
+          new StorageEvent("storage", {
+            key: THEME_STORAGE_KEY,
+            newValue: "dark",
+          }),
+        );
+        expect(cacheListener).not.toHaveBeenCalled();
+        window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }));
+        expect(cacheListener).toHaveBeenCalledOnce();
+        unmount();
+        window.dispatchEvent(
+          new StorageEvent("storage", {
+            key: THEME_STORAGE_KEY,
+            newValue: "dark",
+          }),
+        );
+        expect(cacheListener).toHaveBeenCalledTimes(2);
+      } finally {
+        window.removeEventListener("storage", cacheListener);
+      }
+    },
+  );
 
   it("cancels a pending synchronized reveal on unmount", async () => {
     motion.native = true;
