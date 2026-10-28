@@ -22,6 +22,7 @@ import {
 import { isTauri, runDemoSidecar, websocketConnect } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n, type DictKey } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { validWorkerInput, workerTextResult } from "./model";
 
 type SocketState = "disconnected" | "connecting" | "connected";
@@ -35,6 +36,7 @@ const socketErrorKeys: Record<string, DictKey> = {
 
 export function WebSocketPanel() {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const [mode, setMode] = useState<"fixture" | "wss">("fixture");
   const [state, setState] = useState<SocketState>("disconnected");
   const [message, setMessage] = useState("Hello echo");
@@ -51,7 +53,7 @@ export function WebSocketPanel() {
       reason && typeof reason === "object" && "code" in reason
         ? reason.code
         : undefined;
-    return t(
+    return latest(
       typeof code === "string" ? (socketErrorKeys[code] ?? fallback) : fallback,
     );
   }
@@ -238,6 +240,7 @@ export function WebSocketPanel() {
 
 export function SidecarPanel() {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const native = isTauri();
   const [input, setInput] = useState("Hello from the desktop lab");
   const [pending, setPending] = useState(false);
@@ -261,7 +264,7 @@ export function SidecarPanel() {
       const result = await runDemoSidecar(input);
       if (mounted.current) setOutput(result);
     } catch (reason) {
-      if (mounted.current) toast.error(nativeErrorText(reason, t));
+      if (mounted.current) toast.error(nativeErrorText(reason, latest));
     } finally {
       busy.current = false;
       if (mounted.current) setPending(false);

@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import {
   deleteDemoCredential,
   getDemoCredential,
@@ -160,6 +161,7 @@ export function SessionPanel() {
 
 export function CredentialPanel() {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const native = isTauri();
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
@@ -190,10 +192,10 @@ export function CredentialPanel() {
       if (mounted.current) {
         setValue("");
         if (action === "delete") setConfirmingDelete(false);
-        toast.success(t(`labs.credential.${result}`));
+        toast.success(latest(`labs.credential.${result}`));
       }
     } catch (reason) {
-      if (mounted.current) toast.error(nativeErrorText(reason, t));
+      if (mounted.current) toast.error(nativeErrorText(reason, latest));
     } finally {
       busy.current = false;
       if (mounted.current) setPending(false);

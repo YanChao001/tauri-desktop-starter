@@ -22,6 +22,7 @@ import {
 import { saveTextExport } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import type { DemoRecord } from "./model";
 import {
   CsvError,
@@ -44,6 +45,7 @@ export function CsvImport({
   disabled?: boolean;
 }) {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const [source, setSource] = useState("");
   const [table, setTable] = useState<CsvTable | null>(null);
   const [mapping, setMapping] = useState<FieldMapping>({
@@ -116,7 +118,8 @@ export function CsvImport({
     try {
       await saveTextExport(name, text);
     } catch (reason) {
-      if (token === generation.current) toast.error(nativeErrorText(reason, t));
+      if (token === generation.current)
+        toast.error(nativeErrorText(reason, latest));
     } finally {
       if (token === generation.current) setPending(false);
     }

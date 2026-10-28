@@ -51,6 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import {
   archiveDemoRecords,
   createDemoRecords,
@@ -85,6 +86,7 @@ const INITIAL_WIDTHS: Record<string, number> = {
 
 export function RecordsTable() {
   const { t, language } = useI18n();
+  const latest = useLatestTranslator();
   const [records, setRecords] = useState(createDemoRecords);
   const [dirty, setDirty] = useState(false);
   const [imported, setImported] = useState(false);
@@ -249,7 +251,7 @@ export function RecordsTable() {
           retryable: false,
         });
       if (!filtered) setDirty(false);
-      toast.success(t("csv.saved"));
+      toast.success(latest("csv.saved"));
     } finally {
       exportLock.current = false;
       setExporting(false);
@@ -313,7 +315,7 @@ export function RecordsTable() {
             disabled={exporting}
             onClick={() =>
               void exportRecords("csv").catch((error: unknown) =>
-                toast.error(nativeErrorText(error, t)),
+                toast.error(nativeErrorText(error, latest)),
               )
             }
           >
@@ -324,7 +326,7 @@ export function RecordsTable() {
             disabled={exporting}
             onClick={() =>
               void exportRecords("json").catch((error: unknown) =>
-                toast.error(nativeErrorText(error, t)),
+                toast.error(nativeErrorText(error, latest)),
               )
             }
           >
@@ -335,7 +337,7 @@ export function RecordsTable() {
             disabled={exporting}
             onClick={() =>
               void exportRecords("csv", true).catch((error: unknown) =>
-                toast.error(nativeErrorText(error, t)),
+                toast.error(nativeErrorText(error, latest)),
               )
             }
           >
