@@ -55,7 +55,7 @@ export function ExtensionOutput({
   }
   return (
     <pre
-      className="h-80 overflow-auto rounded-md border bg-muted/30 p-3 text-sm whitespace-pre-wrap break-all"
+      className="h-80 overflow-auto rounded-md border bg-muted p-3 text-sm whitespace-pre-wrap break-all"
       aria-live="polite"
     >
       {content}

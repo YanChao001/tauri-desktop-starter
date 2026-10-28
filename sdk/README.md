@@ -84,7 +84,9 @@ root.append(button);
 disposeStyles();
 ```
 
-一致性范围是语义 token 和基础控件状态，不是把宿主 React / Radix 组件复制进插件。多选列表、日期和文件选择等平台子控件仍有 WebView 差异；第三方组件库自己的 CSS、Canvas / SVG 绘图需主动消费主题 token。皮肤壁纸属于宿主窗口底层，插件正文默认使用不透明背景，不自动继承宿主卡片透明度。
+一致性范围是语义 token 和基础控件状态，不是把宿主 React / Radix 组件复制进插件。多选列表、日期和文件选择等平台子控件仍有 WebView 差异；第三方组件库自己的 CSS、Canvas / SVG 绘图需主动消费主题 token。皮肤壁纸属于宿主窗口底层，扩展外壳、内容框和插件文档默认透明，让页面留白透出同一窗口皮肤。普通卡片 / 面板使用 `background: var(--surface-card, var(--card))`，次级面板使用 `var(--surface-card-muted, var(--muted))`，即可与宿主共用皮肤强度曲线和高对比度降级；`--background`、`--card`、`--muted` 等基础色保持实体颜色，供输入、弹层、阅读区和绘图内容使用。需要独立视觉风格的插件通过作者 CSS 为 `html`、`body` 或自己的容器设置背景，继续保留原有背景设计。
+
+默认文本输入、多行编辑和单选触发器使用实体底色；禁用底色消费 `--control-disabled-background` 并保留禁用淡化，下拉悬停消费 `--control-select-hover-background`。这些规则与宿主基础组件一致，作者 CSS 仍可覆盖；不要将面板透明 token 套到菜单、弹窗或关键错误上。
 
 内容框占满侧栏右侧或独立窗口标题栏下的可用空间，宿主不叠加阅读宽度和外层 padding。以文档承担整页滚动，普通区块自然排版；需要居中时在内部容器设置 `max-width`、自动外边距和 padding，避免固定高度、嵌套滚动或视口最小高度叠加 padding 撑出第二条滚动条。
 

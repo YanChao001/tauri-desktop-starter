@@ -143,7 +143,7 @@ export default function Catalog() {
           </p>
         ) : null}
       </section>
-      <details className="rounded-xl border bg-card">
+      <details className="rounded-xl border app-surface">
         <summary className="cursor-pointer rounded-xl p-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("catalog.developerResources")}
         </summary>

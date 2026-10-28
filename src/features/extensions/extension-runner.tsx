@@ -405,7 +405,7 @@ export function ExtensionRunner({
     : "";
   return (
     <section
-      className="space-y-4 rounded-xl border bg-card p-5"
+      className="space-y-4 rounded-xl border app-surface p-5"
       aria-label={t("ext.runner")}
     >
       <div className="flex items-center gap-2">

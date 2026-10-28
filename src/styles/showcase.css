@@ -3,7 +3,7 @@
   --studio-violet: #7760dd;
   --studio-cyan: #219caf;
   --studio-rose: #ce658f;
-  --studio-surface: color-mix(in oklch, var(--card) 92%, transparent);
+  --studio-surface: var(--surface-card);
   --studio-edge: color-mix(in oklch, var(--border) 78%, transparent);
 }
 .dark {

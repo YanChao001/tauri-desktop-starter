@@ -65,7 +65,7 @@
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--card) 91%, transparent);
+  background: var(--surface-card);
 }
 .playground-section-heading {
   margin-bottom: 1rem;
@@ -576,7 +576,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--card) 94%, transparent);
+  background: var(--surface-card);
   transition:
     transform 250ms ease,
     box-shadow 250ms ease,

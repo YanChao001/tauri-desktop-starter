@@ -58,7 +58,7 @@ export default function Media() {
               fallback={
                 <div
                   role="status"
-                  className="min-h-96 rounded-xl bg-card p-4 text-sm text-muted-foreground"
+                  className="min-h-96 rounded-xl app-surface p-4 text-sm text-muted-foreground"
                 >
                   {t("labs.loading")}
                 </div>

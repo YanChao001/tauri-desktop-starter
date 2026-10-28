@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Loader2Icon, TerminalIcon } from "lucide-react";
+import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/code-block";
 import { HelpTooltip } from "@/components/help-tooltip";
@@ -100,10 +100,7 @@ export default function Bridge() {
   return (
     <div className="studio-page">
       <div className="studio-intro">
-        <div className="flex items-center gap-2">
-          <TerminalIcon className="size-4 text-muted-foreground" />
-          <h2>{t("bridge.title")}</h2>
-        </div>
+        <h2>{t("bridge.title")}</h2>
         <p>{t("bridge.subtitle")}</p>
       </div>
 
@@ -153,7 +150,7 @@ export default function Bridge() {
           </form>
 
           <div
-            className="flex min-w-0 items-start gap-3 rounded-md border bg-muted/40 px-3 py-2.5"
+            className="flex min-w-0 items-start gap-3 rounded-md border bg-muted px-3 py-2.5"
             role="status"
             aria-live="polite"
           >
@@ -172,7 +169,7 @@ export default function Bridge() {
         </CardContent>
       </Card>
 
-      <details className="rounded-xl border bg-card">
+      <details className="rounded-xl border app-surface">
         <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("bridge.developerDetails")}
         </summary>

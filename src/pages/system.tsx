@@ -103,7 +103,7 @@ export default function System() {
   return (
     <NativePage title={t("system.title")} description={t("system.description")}>
       <div className="space-y-4">
-        <section className="divide-y rounded-xl border bg-card px-4">
+        <section className="divide-y rounded-xl border app-surface px-4">
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
             <h2 className="flex items-center gap-2 font-semibold">
               {t("system.notification")}
@@ -232,7 +232,7 @@ export default function System() {
             </div>
           </div>
         </section>
-        <section className="space-y-3 rounded-xl border bg-card p-4">
+        <section className="space-y-3 rounded-xl border app-surface p-4">
           <h2 className="flex items-center gap-2 font-semibold">
             {t("system.deepLink")}
             <HelpTooltip label={`${t("system.deepLink")} · ${t("title.help")}`}>

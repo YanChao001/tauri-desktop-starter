@@ -137,11 +137,13 @@ pnpm test:extensions:ui
 
 内置工作台源码变化后先执行 `pnpm extension:demos:build`；完整重建比对用 `pnpm extension:demos:check --rebuild`。市场 `check` 编译收录模块并运行真实 Wasm fixture，不签发生产目录。已有与本轮源码匹配的产物时，可直接运行界面检查；`STARTER_EXTENSION_TOOL` 可指定 CLI 绝对路径。构建规则见 [内置应用资源](./extensions.md#内置应用资源) 和 [市场开发指南](../marketplace/docs/development.md)。
 
-[runner](../e2e/extension-ui.mjs) 使用生产 React 外壳、包内 HTML / SDK 和真实离线 Wasm；服务 fixture 替换原生传输、窗口、桌面服务及系统对话框，不访问用户数据、真实 LAN 或图库。默认覆盖内置工作台、计算器、贪吃蛇、LAN 聊天及壁纸库；中英、明暗、窄屏大字号独立窗口和大屏嵌入的精确 profile 由 runner 维护。可定向执行，例如：
+[runner](../e2e/extension-ui.mjs) 使用生产 React 外壳、包内 HTML / SDK 和真实离线 Wasm；服务 fixture 替换原生传输、窗口、桌面服务及系统对话框，不访问用户数据、真实 LAN 或图库。默认透明文档的 axe 对比度扫描会临时补入宿主纯色底，以弥补工具无法跨隔离源解析底层画布的限制，扫描后恢复；真实透明合成与作者背景覆盖另由样式像素检查验证。默认覆盖内置工作台、计算器、贪吃蛇、LAN 聊天及壁纸库；中英、明暗、窄屏大字号独立窗口和大屏嵌入的精确 profile 由 runner 维护。可定向执行，例如：
 
 ```bash
 pnpm test:extensions:ui scientific-calculator --profiles=1,2
 ```
+
+透明度回归按用途检查：浏览器路由矩阵验证普通 `Card`、手写面板及其页脚在 0 / 50 / 100 档共用透明度曲线，正常字段维持实体底色；样式一致性检查验证页面与 Portal 中的字段、SDK 普通 / 禁用 / 只读 / 悬停状态，以及高对比度切换后 token 同步。扩展 runner 检查本地工作台与壁纸库的普通面板端点，同时保留其他插件的作者背景。绘图对象、状态色和半透明按钮不按普通面板断言。
 
 单独选择 `wallpaper-browser` 时只准备壁纸包，正常业务、授权确认和安全检查也限定于壁纸；例如 `node e2e/extension-ui.mjs wallpaper-browser --profiles=0,1,2` 会运行这三个界面 profile，并保留动效、可选权限与 iframe 隔离检查。
 

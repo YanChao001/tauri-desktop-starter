@@ -58,6 +58,7 @@ import {
 } from "./extensions/calculator-review.mjs";
 import {
   checkChrome,
+  checkWindowSkin,
   checkNormalControls,
   checkSelectPopup,
   checkToolsHelp,
@@ -490,6 +491,38 @@ async function cleanupFixture() {
     throw Error("Unexpected UI fixture directory");
   await rm(temporary, { recursive: true });
 }
+async function checkAccessibility(page) {
+  const root = page.frameLocator("iframe").locator("html");
+  const background = await page
+    .locator(".window-background")
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
+  // axe 无法跨不透明源解析透明文档背后的宿主画布；仅扫描期间补入同一纯色底，之后恢复透明合成。
+  const previous = await root.evaluate((node, color) => {
+    if (getComputedStyle(node).backgroundColor !== "rgba(0, 0, 0, 0)")
+      return null;
+    const value = node.style.getPropertyValue("background-color");
+    const priority = node.style.getPropertyPriority("background-color");
+    node.style.setProperty("background-color", color);
+    return { value, priority };
+  }, background);
+  try {
+    return await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+  } finally {
+    if (previous !== null)
+      await root.evaluate((node, previous) => {
+        if (previous.value)
+          node.style.setProperty(
+            "background-color",
+            previous.value,
+            previous.priority,
+          );
+        else node.style.removeProperty("background-color");
+      }, previous);
+  }
+}
+
 async function observeSdk(frame) {
   await frame.locator("html").evaluate(async () => {
     window.__sdkSnapshot = await starter.ready;
@@ -1062,6 +1095,12 @@ try {
         profile,
         plugins.find((plugin) => plugin.name === name).manifest,
       );
+      const skin = await checkWindowSkin(
+        page,
+        frame,
+        name === "lab" || name === "wallpaper-browser",
+        join(output, `${name}-${profile.language}-${profile.width}-skin.png`),
+      );
       if (process.argv.includes("--chrome-only")) {
         expect(errors).toEqual([]);
         expect(warnings).toEqual([]);
@@ -1071,6 +1110,7 @@ try {
             .inputHashes,
           profile,
           chrome,
+          skin,
           initialPaint: {
             visibleFrames: initialPaint.visible.length,
             skeletonObserved: initialPaint.skeletonObserved,
@@ -1078,9 +1118,12 @@ try {
           errors,
           warnings,
           nativeIpc: false,
-          scope: "Navigation placement and first paint only; no business flow",
+          scope:
+            "Navigation placement, first paint and window skin; no business flow",
         });
-        console.log(`PASS ${name} ${profile.width}px navigation placement`);
+        console.log(
+          `PASS ${name} ${profile.width}px navigation placement and window skin`,
+        );
         await page.close();
         continue;
       }
@@ -1178,11 +1221,7 @@ try {
               JSON.stringify(geometry, null, 2),
             );
           }
-          const violations = (
-            await new AxeBuilder({ page })
-              .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-              .analyze()
-          ).violations;
+          const violations = (await checkAccessibility(page)).violations;
           if (violations.length)
             await writeFile(
               join(
@@ -2296,11 +2335,7 @@ try {
         const scenes = [];
         const inspectStudioScene = async (scene) => {
           await expect(frame.locator(`#scene-${scene}`)).toBeVisible();
-          const violations = (
-            await new AxeBuilder({ page })
-              .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-              .analyze()
-          ).violations;
+          const violations = (await checkAccessibility(page)).violations;
           await writeFile(
             join(
               output,
@@ -2884,11 +2919,7 @@ try {
         ).toBeVisible();
       }
       const hostScroll = await checkHostScroll(page, profile);
-      const violations = (
-        await new AxeBuilder({ page })
-          .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-          .analyze()
-      ).violations;
+      const violations = (await checkAccessibility(page)).violations;
       expect(
         violations.map((value) => ({
           id: value.id,
@@ -2915,6 +2946,7 @@ try {
         defaults,
         shortCheckpointStable: true,
         chrome,
+        skin,
         toolsHelp,
         hostScroll,
         startupDiagnostics: await startupDiagnostics(page),
@@ -2972,11 +3004,7 @@ try {
       currencyCalls: () => currencyHttpCalls,
       snapshot: async (name) => {
         await settled(frame);
-        const violations = (
-          await new AxeBuilder({ page })
-            .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-            .analyze()
-        ).violations;
+        const violations = (await checkAccessibility(page)).violations;
         expect(violations).toEqual([]);
         await page.screenshot({
           path: join(output, `calculator-${name}-light-420.png`),

@@ -76,6 +76,59 @@ async function seed(page: Page, settings: Record<string, unknown> = {}) {
 }
 
 for (const theme of ["light", "dark"]) {
+  test(`page panels share skin opacity and fields stay solid on every route: ${theme}`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await seed(page, { theme, background: "aurora" });
+    for (const route of routes) {
+      await page.goto("./#" + route);
+      await expect(page.locator("main h2").first()).toBeVisible();
+      for (const exposure of [0, 0.5, 1]) {
+        const failures = () =>
+          page.evaluate((value) => {
+            document.documentElement.style.setProperty(
+              "--skin-exposure",
+              String(value),
+            );
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext("2d")!;
+            const alpha = (node: Element) => {
+              context.clearRect(0, 0, 1, 1);
+              context.fillStyle = getComputedStyle(node).backgroundColor;
+              context.fillRect(0, 0, 1, 1);
+              return context.getImageData(0, 0, 1, 1).data[3]!;
+            };
+            const panels = document.querySelectorAll(
+              'main :is([data-slot="card"], [data-slot="card-footer"], .app-surface, .studio-panel, .experience-route, .journey-guide, .native-flow li, .workspace-demo, .workspace-tree-panel, .lab-console, .lab-control-panel, .playground-surface, .resource-card, .wallpaper-library, .wallpaper-card)',
+            );
+            const failures: string[] = [];
+            for (const panel of panels) {
+              // About has one outer surface; its nested cards deliberately share it.
+              const expected = panel.closest(".settings-about-content")
+                ? 0
+                : Math.round(255 * (1 - value ** 4));
+              if (alpha(panel) !== expected)
+                failures.push(
+                  `${panel.tagName}.${panel.className}: ${alpha(panel)} != ${expected}`,
+                );
+            }
+            for (const field of document.querySelectorAll(
+              'main :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):not(:disabled)',
+            )) {
+              if (alpha(field) !== 255)
+                failures.push(`field ${field.id}: ${alpha(field)}`);
+            }
+            return failures;
+          }, exposure);
+        await expect
+          .poll(failures, { message: `${theme} ${route} exposure=${exposure}` })
+          .toEqual([]);
+      }
+    }
+  });
+
   test(
     "controls keep readable normal, hover and mixed states across accents: " +
       theme,

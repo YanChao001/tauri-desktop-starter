@@ -131,7 +131,7 @@ export function CsvImport({
       : nativeErrorText(error, t)
     : null;
   return (
-    <details className="rounded-lg border bg-muted/20 p-4">
+    <details className="app-surface rounded-lg border p-4">
       <summary className="cursor-pointer font-medium">{t("csv.title")}</summary>
       <div className="mt-4 space-y-4">
         <div className="flex flex-wrap gap-2">

@@ -411,7 +411,7 @@ export function SidecarPanel() {
                   </pre>
                 </div>
               ) : null}
-              <details className="rounded-md border bg-background/50 p-3">
+              <details className="rounded-md border bg-background p-3">
                 <summary className="cursor-pointer text-xs text-muted-foreground">
                   {t("labs.sidecar.details")}
                 </summary>

@@ -113,7 +113,7 @@ function ViewTable({
 function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "markdown")
     return (
-      <div className="min-w-0 rounded-xl border bg-card p-5">
+      <div className="min-w-0 rounded-xl border app-surface p-5">
         <Suspense fallback={<Skeleton className="h-24 w-full" />}>
           <SafeMarkdown content={block.text} />
         </Suspense>
@@ -123,7 +123,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
     return (
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {block.items.map((metric, i) => (
-          <div key={i} className="min-w-0 rounded-xl border bg-card p-4">
+          <div key={i} className="min-w-0 rounded-xl border app-surface p-4">
             <dt className="text-xs text-muted-foreground">{metric.label}</dt>
             <dd className="mt-2 break-words text-xl font-semibold tracking-tight">
               {metric.value}
@@ -135,7 +135,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "progress") {
     if (block.value === null || block.max === null) return null;
     return (
-      <div className="space-y-2 rounded-xl border bg-card p-4">
+      <div className="space-y-2 rounded-xl border app-surface p-4">
         <div className="flex items-center justify-between gap-3 text-sm">
           <span>{block.label}</span>
           <span className="text-muted-foreground">
@@ -153,7 +153,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   }
   if (block.kind === "image")
     return (
-      <figure className="overflow-hidden rounded-xl border bg-card p-3">
+      <figure className="overflow-hidden rounded-xl border app-surface p-3">
         <img
           src={block.src}
           alt={block.alt}
@@ -164,7 +164,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
     );
   if (block.kind === "chart")
     return (
-      <div className="min-w-0 space-y-3 rounded-xl border bg-card p-4">
+      <div className="min-w-0 space-y-3 rounded-xl border app-surface p-4">
         <Suspense
           fallback={
             <Skeleton
@@ -304,7 +304,7 @@ export function ExtensionView({
                           aria-invalid={invalid}
                           aria-describedby={invalid ? errorId : undefined}
                           data-operation-locked={blocked}
-                          className={cn("w-full", LOCKED_CONTROL_CLASS)}
+                          className={cn("w-full", LOCKED_INPUT_CLASS)}
                         >
                           <SelectValue />
                         </SelectTrigger>

@@ -149,7 +149,7 @@ export default function Tasks() {
   return (
     <NativePage title={t("tasks.title")} description={t("tasks.description")}>
       <section
-        className="@container space-y-3 rounded-xl border bg-card p-4"
+        className="@container space-y-3 rounded-xl border app-surface p-4"
         aria-busy={pending !== null || (!snapshot && !error)}
       >
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 @3xl:grid-cols-[minmax(0,1fr)_12rem_auto]">
@@ -288,13 +288,13 @@ export default function Tasks() {
         ) : (
           <p
             role="status"
-            className="rounded-xl border bg-card p-4 text-sm text-muted-foreground"
+            className="rounded-xl border app-surface p-4 text-sm text-muted-foreground"
           >
             {t("tasks.loading")}
           </p>
         )
       ) : !snapshot.tasks.length ? (
-        <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+        <p className="rounded-xl border app-surface p-4 text-sm text-muted-foreground">
           {t("tasks.empty")}
         </p>
       ) : (
@@ -310,7 +310,7 @@ export default function Tasks() {
             return (
               <li
                 key={task.id}
-                className="min-w-0 space-y-3 rounded-xl border bg-card p-4"
+                className="min-w-0 space-y-3 rounded-xl border app-surface p-4"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="min-w-0 flex-1 truncate text-sm font-medium">

@@ -328,6 +328,24 @@ html[data-font-size="lg"] {
     var(--muted) var(--skin-card-opacity),
     transparent
   );
+  --control-disabled-background: color-mix(
+    in oklab,
+    var(--input) 50%,
+    var(--background)
+  );
+  --control-select-hover-background: var(--muted);
+}
+.dark {
+  --control-disabled-background: color-mix(
+    in oklab,
+    var(--input) 80%,
+    var(--background)
+  );
+  --control-select-hover-background: color-mix(
+    in oklab,
+    var(--input) 50%,
+    var(--background)
+  );
 }
 html[data-background="plain"] {
   --skin-overlay-opacity: 100%;
@@ -407,31 +425,18 @@ html[data-background="plain"] {
   scroll-padding-block: 1.25rem;
   background: transparent;
 }
-.app-main [data-slot="card"] {
-  background-color: color-mix(
-    in oklab,
-    var(--card) var(--skin-card-opacity),
-    transparent
-  );
-}
-.app-main
-  :where(
-    [data-slot="input"],
-    [data-slot="textarea"],
-    [data-slot="select-trigger"]
-  ) {
-  background-color: var(--background);
+.app-surface {
+  background-color: var(--surface-card);
 }
 
 @media (prefers-contrast: more), (forced-colors: active) {
+  :root {
+    --skin-overlay-opacity: 100%;
+    --skin-card-opacity: 100%;
+  }
   .window-background,
   .pattern-artwork--preview {
     display: none;
-  }
-  .app-title-bar,
-  .app-sidebar,
-  .app-main [data-slot="card"] {
-    background-color: var(--background);
   }
 }
 

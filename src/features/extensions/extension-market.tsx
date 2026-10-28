@@ -112,7 +112,7 @@ export function ExtensionMarket({
       aria-busy={loading}
       className="@container/market space-y-4"
     >
-      <div className="space-y-3 rounded-xl border bg-card p-4">
+      <div className="space-y-3 rounded-xl border app-surface p-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <h3 className="flex items-center gap-2 font-semibold">
             <ShieldCheckIcon className="size-5 shrink-0 text-primary" />
@@ -274,7 +274,7 @@ export function ExtensionMarket({
           return (
             <article
               key={manifest.id}
-              className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border bg-card p-5"
+              className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border app-surface p-5"
             >
               <div className="flex items-start gap-3">
                 <span className="shrink-0 rounded-xl bg-primary/10 p-3 text-primary">
@@ -382,7 +382,7 @@ export function ExtensionMarket({
         {incompatibleEntries.map((entry) => (
           <article
             key={entry.id}
-            className="min-w-0 space-y-3 rounded-xl border bg-card p-5"
+            className="min-w-0 space-y-3 rounded-xl border app-surface p-5"
           >
             <h4 className="font-semibold wrap-anywhere">{entry.name}</h4>
             <p className="text-sm wrap-anywhere text-muted-foreground">

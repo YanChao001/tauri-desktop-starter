@@ -463,7 +463,7 @@ export default function Workbench() {
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(12rem,1fr)_minmax(0,4fr)]">
         <aside className="space-y-4">
           {state.entries.length ? (
-            <div className="rounded-lg border bg-card p-3">
+            <div className="rounded-lg border app-surface p-3">
               <h3 className="mb-2 text-sm font-medium">
                 {t("workbench.documents")}
               </h3>
@@ -505,7 +505,7 @@ export default function Workbench() {
               </ul>
             </div>
           ) : null}
-          <details className="rounded-lg border bg-card p-3" open>
+          <details className="rounded-lg border app-surface p-3" open>
             <summary className="cursor-pointer text-sm font-medium">
               {t("workbench.recent")}
             </summary>
@@ -539,7 +539,7 @@ export default function Workbench() {
         </aside>
         {selected ? (
           <section
-            className="min-w-0 space-y-4 rounded-xl border bg-card p-4"
+            className="min-w-0 space-y-4 rounded-xl border app-surface p-4"
             aria-busy={pending}
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -680,7 +680,7 @@ export default function Workbench() {
             </div>
           </section>
         ) : (
-          <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+          <p className="rounded-xl border app-surface p-4 text-sm text-muted-foreground">
             {t("workbench.empty")}
           </p>
         )}

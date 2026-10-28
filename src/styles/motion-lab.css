@@ -91,7 +91,7 @@
   border: 1px solid var(--lab-line);
   border-radius: var(--radius-xl);
   overflow: hidden;
-  background: var(--card);
+  background: var(--surface-card);
 }
 .lab-console-heading {
   display: flex;
@@ -309,7 +309,7 @@
   min-width: 0;
   padding: 1.5rem;
   border-top: 1px solid var(--lab-line);
-  background: var(--card);
+  background: var(--surface-card);
 }
 .lab-control-panel > h3 {
   margin-bottom: 1rem;

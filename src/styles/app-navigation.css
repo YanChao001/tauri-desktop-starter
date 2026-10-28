@@ -353,7 +353,7 @@
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
   padding: 1rem;
-  background: color-mix(in oklab, var(--background) 45%, transparent);
+  background: var(--surface-card-muted);
 }
 .wallpaper-grid {
   display: grid;
@@ -365,7 +365,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--background);
+  background: var(--surface-card);
 }
 .wallpaper-card[data-selected="true"] {
   border-color: var(--primary);

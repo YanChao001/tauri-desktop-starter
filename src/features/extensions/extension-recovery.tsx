@@ -177,7 +177,7 @@ export function ExtensionRecovery({
   return (
     <section
       aria-label={t("ext.recovery.title")}
-      className="space-y-3 rounded-xl border bg-card p-5"
+      className="space-y-3 rounded-xl border app-surface p-5"
     >
       <h3 className="flex items-center gap-2 font-semibold">
         {t("ext.recovery.title")}

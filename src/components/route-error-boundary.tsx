@@ -42,7 +42,7 @@ class PageBoundary extends Component<PageBoundaryProps, PageBoundaryState> {
     if (!this.state.error) return this.props.children;
     const { t, onBack, backLabel } = this.props;
     return (
-      <section role="alert" className="rounded-xl border bg-card p-6">
+      <section role="alert" className="rounded-xl border bg-background p-6">
         <h2 className="text-base font-medium">{t("common.renderError")}</h2>
         <p className="mt-2 break-words font-mono text-xs text-muted-foreground">
           {this.state.error.message}

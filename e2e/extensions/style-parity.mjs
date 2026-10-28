@@ -56,6 +56,12 @@ try {
       <input id="sdk-input" placeholder="Input"><input id="sdk-invalid" aria-invalid="true">
       <textarea id="sdk-textarea" placeholder="Textarea"></textarea>
       <select id="sdk-select"><option>Select</option></select>
+      <input id="sdk-input-disabled" disabled value="Disabled input">
+      <textarea id="sdk-textarea-disabled" disabled>Disabled textarea</textarea>
+      <select id="sdk-select-disabled" disabled><option>Disabled select</option></select>
+      <input id="sdk-readonly" readonly value="Read only">
+      <div id="sdk-card" style="background:var(--surface-card,var(--card))">Card</div>
+      <div id="sdk-muted-card" style="background:var(--surface-card-muted,var(--muted))">Muted card</div>
       <input id="sdk-checkbox" type="checkbox" checked><input id="sdk-unchecked" type="checkbox">
       <input id="sdk-indeterminate" type="checkbox"><input id="sdk-radio" type="radio" checked>
       <input id="sdk-range" type="range" min="0" max="100" value="30">
@@ -67,9 +73,12 @@ try {
     `
     import React from "react";
     import { createRoot } from "react-dom/client";
+    import { createPortal } from "react-dom";
+    import { Card } from ${sourcePath("src/components/ui/card.tsx")};
     import { Button } from ${sourcePath("src/components/ui/button.tsx")};
     import { Input } from ${sourcePath("src/components/ui/input.tsx")};
     import { Textarea } from ${sourcePath("src/components/ui/textarea.tsx")};
+    import { Select, SelectTrigger, SelectValue } from ${sourcePath("src/components/ui/select.tsx")};
     import { Checkbox } from ${sourcePath("src/components/ui/checkbox.tsx")};
     import { RadioGroup, RadioGroupItem } from ${sourcePath("src/components/ui/radio-group.tsx")};
     import { ExtensionCustomUi } from ${sourcePath("src/features/extensions/extension-custom-ui.tsx")};
@@ -90,7 +99,19 @@ try {
         <Checkbox id="host-unchecked" />
         <Checkbox id="host-indeterminate" checked="indeterminate" />
         <RadioGroup defaultValue="one"><RadioGroupItem id="host-radio" value="one" /></RadioGroup>
+        <Select defaultValue="one"><SelectTrigger id="host-select"><SelectValue>Select</SelectValue></SelectTrigger></Select>
+        <Input id="host-input-disabled" disabled value="Disabled input" />
+        <Textarea id="host-textarea-disabled" disabled value="Disabled textarea" />
+        <Select defaultValue="one" disabled><SelectTrigger id="host-select-disabled"><SelectValue>Disabled select</SelectValue></SelectTrigger></Select>
+        <Input id="host-readonly" readOnly value="Read only" />
       </main>
+      {createPortal(<aside style={{position:"fixed",left:1080,top:16,width:180}}>
+        <Input id="portal-input" placeholder="Portal input" />
+        <Textarea id="portal-textarea" placeholder="Portal textarea" />
+        <Card id="host-card">Card</Card>
+        <div id="host-panel" className="app-surface">Panel</div>
+        <div id="host-muted-card" style={{background:"var(--surface-card-muted)"}}>Muted card</div>
+      </aside>, document.body)}
       <main id="sdk-region" className="app-main" style={{inset:"16px auto auto 360px",width:700,height:740}}>
         <ExtensionCustomUi item={{package:{manifest:{id:"fixture.styles",name:"Style parity"},sha256:"fixture"},generation:1,grantedPermissions:[]}}
           commandId="open" view={{version:2,state:"{}",display:"Fixture",description:"",fields:[],groups:[]}}
@@ -237,6 +258,40 @@ try {
       )
       .toEqual(expected);
   };
+  const checkSurfaceBackground = async (transparent) => {
+    await page.locator("#sdk-region").evaluate((node) => {
+      node.style.backgroundImage =
+        "linear-gradient(90deg,#7c3aed 50%,#0891b2 50%)";
+    });
+    const bounds = await page.locator("iframe").boundingBox();
+    assert.ok(bounds);
+    const samples = [0.25, 0.75].map((fraction) => ({
+      x: Math.floor(bounds.x + bounds.width * fraction),
+      y: Math.floor(bounds.y + bounds.height - 20),
+      width: 1,
+      height: 1,
+    }));
+    const surface = page.locator("[data-extension-custom-ui]");
+    await surface.evaluate((node) => (node.style.visibility = "hidden"));
+    const expected = [];
+    try {
+      for (const clip of samples)
+        expected.push(await page.screenshot({ clip }));
+    } finally {
+      await surface.evaluate((node) => node.style.removeProperty("visibility"));
+    }
+    // 比较实际合成像素，覆盖外壳、iframe 和文档画布，避免透明 CSS 仍被某层底色遮住。
+    for (const [index, clip] of samples.entries()) {
+      const actual = await page.screenshot({ clip });
+      assert.equal(
+        actual.equals(expected[index]),
+        transparent,
+        transparent
+          ? "页面留白应透出宿主背景"
+          : "作者设置的背景应继续覆盖宿主背景",
+      );
+    }
+  };
   const buttonProperties = [
     "height",
     "borderRadius",
@@ -269,6 +324,7 @@ try {
   for (const dark of [false, true]) {
     await page.mouse.click(1200, 780);
     await sendTheme(dark, dark);
+    await checkSurfaceBackground(true);
     for (const child of ["button", "input-button", "submit", "reset"])
       await compare("button", child, buttonProperties);
     for (const variant of [
@@ -297,6 +353,53 @@ try {
     await page.mouse.move(1200, 780);
     await compare("input", "input", fieldProperties);
     await compare("textarea", "textarea", fieldProperties);
+    for (const field of ["input", "textarea", "select"])
+      await compare(`${field}-disabled`, `${field}-disabled`, [
+        "backgroundColor",
+        "opacity",
+      ]);
+    await compare("readonly", "readonly", fieldProperties);
+    for (const field of ["input", "textarea"])
+      assert.deepEqual(
+        await measure(page.locator(`#portal-${field}`), fieldProperties),
+        await measure(page.locator(`#host-${field}`), fieldProperties),
+        `${field} must keep its background outside app-main`,
+      );
+    await compare("select", "select", ["backgroundColor"]);
+    await page.locator("#host-select").hover();
+    const selectHover = await measure(page.locator("#host-select"), [
+      "backgroundColor",
+    ]);
+    await frame.locator("#sdk-select").hover();
+    await expect
+      .poll(() => measure(frame.locator("#sdk-select"), ["backgroundColor"]))
+      .toEqual(selectHover);
+    await page.mouse.move(1200, 780);
+    for (const exposure of [0, 0.5, 1]) {
+      await page.evaluate((value) => {
+        document.documentElement.dataset.background = "aurora";
+        document.documentElement.style.setProperty(
+          "--skin-exposure",
+          String(value),
+        );
+      }, exposure);
+      for (const surface of ["card", "muted-card"])
+        await compare(surface, surface, ["backgroundColor"]);
+      assert.deepEqual(
+        await measure(page.locator("#host-panel"), ["backgroundColor"]),
+        await measure(page.locator("#host-card"), ["backgroundColor"]),
+        "handwritten panels and Card must use the same surface",
+      );
+      const { backgroundColor } = await measure(page.locator("#host-card"), [
+        "backgroundColor",
+      ]);
+      assert.equal(backgroundColor[3], Math.round(255 * (1 - exposure ** 4)));
+      assert.equal(
+        (await measure(page.locator("#host-input"), ["backgroundColor"]))
+          .backgroundColor[3],
+        255,
+      );
+    }
     for (const check of ["checkbox", "unchecked", "indeterminate", "radio"])
       await compare(check, check, checkProperties);
     await compare("disabled", "disabled", [
@@ -425,7 +528,27 @@ try {
   await frame.locator("#sdk-range").focus();
   await frame.locator("#sdk-range").press("ArrowRight");
   await expect(frame.locator("#sdk-range")).toHaveValue("31");
+  await page.emulateMedia({ contrast: "more" });
+  await compare("card", "card", ["backgroundColor"]);
+  assert.equal(
+    (await measure(frame.locator("#sdk-card"), ["backgroundColor"]))
+      .backgroundColor[3],
+    255,
+  );
+  await page.emulateMedia({ contrast: "no-preference" });
+  await compare("card", "card", ["backgroundColor"]);
+  assert.equal(
+    (await measure(frame.locator("#sdk-card"), ["backgroundColor"]))
+      .backgroundColor[3],
+    0,
+  );
   await page.emulateMedia({ forcedColors: "active" });
+  await compare("card", "card", ["backgroundColor"]);
+  assert.equal(
+    (await measure(frame.locator("#sdk-card"), ["backgroundColor"]))
+      .backgroundColor[3],
+    255,
+  );
   for (const id of ["checkbox", "radio", "range"])
     await expect(frame.locator(`#sdk-${id}`)).toHaveCSS("appearance", "auto");
   console.log(
@@ -441,6 +564,7 @@ try {
     document.body.replaceChildren(probe);
   });
   await expect(frame.locator("body")).toHaveCSS("padding", "0px");
+  await checkSurfaceBackground(false);
   const documentLayout = () =>
     frame.evaluate(() => {
       const root = document.scrollingElement;

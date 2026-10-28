@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -92,11 +93,10 @@ export function MediaPreview({ active = true }: { active?: boolean }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <Label htmlFor="media-file">{t("labs.media.choose")}</Label>
-        <input
+        <Input
           id="media-file"
           type="file"
           accept="image/*,audio/*,video/*"
-          className="block w-full rounded-md border p-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-foreground"
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
@@ -114,7 +114,7 @@ export function MediaPreview({ active = true }: { active?: boolean }) {
           }}
         />
         {preview ? (
-          <div className="space-y-3 rounded-md bg-muted/40 p-3">
+          <div className="space-y-3 rounded-md bg-muted p-3">
             <p className="break-all text-xs text-muted-foreground">
               {preview.name}
             </p>

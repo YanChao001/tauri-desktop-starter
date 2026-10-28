@@ -119,7 +119,7 @@ export function CodeBlock({
       {...props}
       tabIndex={tabIndex}
       className={cn(
-        "code-block overflow-auto rounded-lg bg-muted/50 p-4 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "code-block overflow-auto rounded-lg bg-muted p-4 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
     >

@@ -850,7 +850,7 @@ export default function Settings() {
         </div>
       </details>
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed px-4 py-3">
+      <Card className="flex-row items-center justify-between gap-4 px-4 py-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <p className="text-sm">{t("common.reset")}</p>
           <HelpTooltip label={t("common.helpFor", { name: t("common.reset") })}>
@@ -868,7 +868,7 @@ export default function Settings() {
           <RotateCcwIcon />
           {t("common.reset")}
         </Button>
-      </div>
+      </Card>
       <Dialog
         open={confirmReset}
         onOpenChange={(open) => {

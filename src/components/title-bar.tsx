@@ -126,7 +126,7 @@ export function TitleBar({
     <div
       data-tauri-drag-region
       data-standalone={standalone}
-      className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b bg-background/80 backdrop-blur"
+      className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b"
     >
       <div
         data-extension-window-identity={standalone ? "" : undefined}

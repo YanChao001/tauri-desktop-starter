@@ -25,6 +25,10 @@ const TOKENS = [
   "--foreground",
   "--card",
   "--card-foreground",
+  "--surface-card",
+  "--surface-card-muted",
+  "--control-disabled-background",
+  "--control-select-hover-background",
   "--popover",
   "--popover-foreground",
   "--primary",
@@ -115,9 +119,13 @@ export function ExtensionCustomUi({
       scheduled = requestAnimationFrame(() => setPalette((value) => value + 1));
     };
     const observer = new MutationObserver(schedule);
-    // Match the host CSS breakpoint; resizing within a range does not resend the font payload.
-    const inputBreakpoint = window.matchMedia("(min-width: 48rem)");
-    inputBreakpoint.addEventListener("change", schedule);
+    // 只在字号断点或高对比度策略变化时重读，不为同一档内的 resize 重发字体。
+    const media = [
+      "(min-width: 48rem)",
+      "(prefers-contrast: more)",
+      "(forced-colors: active)",
+    ].map((query) => window.matchMedia(query));
+    media.forEach((query) => query.addEventListener("change", schedule));
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: [
@@ -132,7 +140,7 @@ export function ExtensionCustomUi({
     });
     return () => {
       observer.disconnect();
-      inputBreakpoint.removeEventListener("change", schedule);
+      media.forEach((query) => query.removeEventListener("change", schedule));
       cancelAnimationFrame(scheduled);
     };
   }, [active]);
@@ -407,10 +415,13 @@ export function ExtensionCustomUi({
     <div
       data-extension-custom-ui
       data-extension-active={active}
-      className="relative min-w-0 bg-background"
+      className="relative min-w-0"
     >
       {error ? (
-        <div role="alert" className="space-y-3 rounded-lg border p-4">
+        <div
+          role="alert"
+          className="space-y-3 rounded-lg border bg-background p-4"
+        >
           <p>{t("ext.uiUnavailable")}</p>
           <p className="text-sm text-muted-foreground">
             {nativeErrorText(error, t)}
@@ -428,9 +439,7 @@ export function ExtensionCustomUi({
         <div
           data-extension-loading-layout
           className={
-            lease
-              ? "pointer-events-none absolute inset-0 z-10 bg-background"
-              : "bg-background"
+            lease ? "pointer-events-none absolute inset-0 z-10" : undefined
           }
         >
           <div className="app-page-content">
@@ -447,13 +456,12 @@ export function ExtensionCustomUi({
           sandbox="allow-scripts"
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
           referrerPolicy="no-referrer"
-          className="block w-full border-0 bg-background"
+          className="block w-full border-0 bg-transparent"
           aria-hidden={!connected}
           tabIndex={connected ? undefined : -1}
           style={{
             opacity: connected ? 1 : 0,
             pointerEvents: connected ? undefined : "none",
-            backgroundColor: theme.tokens["--background"],
           }}
         />
       ) : null}

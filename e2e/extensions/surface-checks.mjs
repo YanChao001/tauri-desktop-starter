@@ -1,5 +1,112 @@
 import { expect } from "@playwright/test";
 
+export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
+  const previous = await page.evaluate(() => {
+    const { background, backgroundIntensity } =
+      window.__extensionSettingsTest.read();
+    return { background, backgroundIntensity };
+  });
+  const backgrounds = () =>
+    frame.locator("html").evaluate((root) =>
+      [root, root.ownerDocument.body].map((node) => {
+        const style = getComputedStyle(node);
+        return [style.backgroundColor, style.backgroundImage];
+      }),
+    );
+  const before = await backgrounds();
+  try {
+    await page.evaluate(() =>
+      window.__extensionSettingsTest.update({
+        background: "aurora",
+        backgroundIntensity: 50,
+      }),
+    );
+    await expect(
+      page.locator(
+        '[data-window-background] [data-pattern="aurora"] .skin-scene',
+      ),
+    ).toBeVisible();
+    const muted = await page
+      .locator("html")
+      .evaluate((node) =>
+        getComputedStyle(node).getPropertyValue("--muted-foreground").trim(),
+      );
+    await expect
+      .poll(() =>
+        frame
+          .locator("html")
+          .evaluate((node) =>
+            getComputedStyle(node)
+              .getPropertyValue("--muted-foreground")
+              .trim(),
+          ),
+      )
+      .toBe(muted);
+    expect(await backgrounds()).toEqual(before);
+    if (inheritsSkin)
+      for (const selector of ["html", "body"])
+        await expect(frame.locator(selector)).toHaveCSS(
+          "background-color",
+          "rgba(0, 0, 0, 0)",
+        );
+    const surfaceSelector =
+      ".studio-console,.inspector,.side-panel,.scene-footer,.flow-results,button.result,.card";
+    const surfaceAlpha = () =>
+      frame.locator(surfaceSelector).evaluateAll((nodes) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        return nodes.map((node) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = getComputedStyle(node).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3];
+        });
+      });
+    if (inheritsSkin) {
+      expect(await frame.locator(surfaceSelector).count()).toBeGreaterThan(0);
+      for (const intensity of [0, 50, 100]) {
+        await page.evaluate(
+          (backgroundIntensity) =>
+            window.__extensionSettingsTest.update({ backgroundIntensity }),
+          intensity,
+        );
+        const alpha = Math.round(255 * (1 - (intensity / 100) ** 4));
+        await expect
+          .poll(async () =>
+            (await surfaceAlpha()).every((value) => value === alpha),
+          )
+          .toBe(true);
+        expect(await backgrounds()).toEqual(before);
+      }
+      await page.evaluate(() =>
+        window.__extensionSettingsTest.update({ backgroundIntensity: 50 }),
+      );
+      await expect
+        .poll(async () =>
+          (await surfaceAlpha()).every((value) => value === 239),
+        )
+        .toBe(true);
+    }
+    await page.screenshot({ path: screenshot });
+    return {
+      background: "aurora",
+      inheritsSkin,
+      authorBackgroundPreserved: true,
+      sharedSurfaceEndpoints: inheritsSkin,
+    };
+  } finally {
+    await page.evaluate(
+      (settings) => window.__extensionSettingsTest.update(settings),
+      previous,
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-background",
+      previous.background,
+    );
+  }
+}
+
 export async function checkChrome(page, profile, manifest) {
   const tools = page.getByRole("button", {
     name: profile.language === "zh" ? "扩展工具" : "Extension tools",
@@ -138,7 +245,7 @@ export async function checkNormalControls(frame, name, fontSize) {
     "lan-chat":
       "#settings-toggle,#refresh,#emoji-toggle,#send-image,#send-file,#send",
     "wallpaper-browser": "#refresh,#import,#settings",
-    lab: '[data-action="todo-add"]',
+    lab: "#canvas-add",
   };
   const controls = [];
   for (const selector of selectors[name].split(",")) {

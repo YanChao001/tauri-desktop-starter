@@ -61,16 +61,18 @@
 
 ## 颜色：只用语义 token
 
-| Token                                    | 用在哪                               |
-| ---------------------------------------- | ------------------------------------ |
-| `bg-background` / `text-foreground`      | 页面底色与主文字                     |
-| `bg-card` / `text-card-foreground`       | 卡片                                 |
-| `bg-muted` / `text-muted-foreground`     | 次级区块（代码块、只读区）、次要文字 |
-| `bg-primary` / `text-primary-foreground` | 主按钮、强调元素                     |
-| `bg-destructive`                         | 删除、不可逆操作                     |
-| `text-destructive-foreground`            | 实心警示背景上的文字或图标           |
-| `border` / `border-sidebar-border`       | 分隔线                               |
-| `bg-sidebar` / `text-sidebar-foreground` | 侧边栏                               |
+| Token                                            | 用在哪                                 |
+| ------------------------------------------------ | -------------------------------------- |
+| `bg-background` / `text-foreground`              | 页面底色与主文字                       |
+| `Card` / `.app-surface` / `text-card-foreground` | 随皮肤强度变化的普通卡片与手写面板     |
+| `--surface-card-muted`                           | 随皮肤强度变化的次级面板与卡片页脚     |
+| `bg-card`                                        | 需要实体底色的表头、绘图内容等局部表面 |
+| `bg-muted` / `text-muted-foreground`             | 次级区块（代码块、只读区）、次要文字   |
+| `bg-primary` / `text-primary-foreground`         | 主按钮、强调元素                       |
+| `bg-destructive`                                 | 删除、不可逆操作                       |
+| `text-destructive-foreground`                    | 实心警示背景上的文字或图标             |
+| `border` / `border-sidebar-border`               | 分隔线                                 |
+| `bg-sidebar` / `text-sidebar-foreground`         | 侧边栏                                 |
 
 **禁止**：
 
@@ -80,8 +82,12 @@
 <div className="text-[#333]" />
 
 // 对：语义 token
-<div className="bg-card text-muted-foreground border" />
+<div className="app-surface text-muted-foreground border" />
 ```
+
+普通内容容器统一消费 `--surface-card`（`Card` 默认样式或 `.app-surface`）；次级容器使用 `--surface-card-muted`，两者共用皮肤强度曲线。不要在页面里另写固定透明比例，也不要用后代选择器覆盖所有 `bg-card`，以免透明的吸顶表头露出滚动正文。同一外层面板内的分组可保持无底色，避免重复叠层。
+
+输入框、多行编辑和下拉触发器默认使用实体 `--background`，不依赖它们位于页面还是 Portal 弹层；禁用底色共用 `--control-disabled-background`，同时保留禁用淡化。运行中暂时锁定的扩展字段保留原底色与文字强度，避免内容闪变。下拉悬停使用实体 `--control-select-hover-background`。菜单、弹窗、Tooltip、toast、代码 / 日志阅读区、关键错误和吸顶表头保留实体底色；次要按钮、标签、开关、复选框及选中 / 悬停色继续按各自状态绘制。图片、图表、画布对象和独立设计的插件背景不强制套用容器透明度。扩展接入规则见 [SDK 主题与样式](../../sdk/README.md#默认外观与动效)。
 
 图表、主题插画的调色板和无法覆盖的第三方组件可以有专用颜色；将它们集中在对应 token 或绘制规则中，并在 PR 说明。主题插画需同时检查明暗主题与强调色，业务页面继续使用语义 token。
 
