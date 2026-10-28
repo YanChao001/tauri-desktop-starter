@@ -216,10 +216,10 @@ export const en = {
     "Paper planes, envelopes and dotted flight paths",
   "settings.backgroundIntensity": "Skin intensity",
   "settings.backgroundIntensityDescription":
-    "Adjust how prominent the decorations look while keeping text clear",
-  "settings.intensitySubtle": "Subtle",
-  "settings.intensityBalanced": "Balanced",
-  "settings.intensityStrong": "Strong",
+    "Adjust background visibility and interface transparency in 11 stops of 10%.",
+  "settings.intensityCovered": "Opaque",
+  "settings.intensityTransparent": "Transparent",
+  "settings.intensityValue": "{value}% · Stop {level} of 11",
   "settings.skinGallery": "Window skins",
   "settings.skinGalleryDescription":
     "Eight airy line drawings that follow your theme and accent color",

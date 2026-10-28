@@ -30,8 +30,27 @@ export const BACKGROUND_STYLES = {
   cloudscape: "paper-linework",
 } as const satisfies Record<BuiltinBackground, string>;
 
-export const BACKGROUND_INTENSITIES = ["subtle", "balanced", "strong"] as const;
+export const BACKGROUND_INTENSITIES = [
+  0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+] as const;
 export type BackgroundIntensity = (typeof BACKGROUND_INTENSITIES)[number];
+export const DEFAULT_BACKGROUND_INTENSITY: BackgroundIntensity = 50;
+
+export function normalizeBackgroundIntensity(
+  value: unknown,
+): BackgroundIntensity {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const index = Math.max(
+      0,
+      Math.min(BACKGROUND_INTENSITIES.length - 1, Math.round(value / 10)),
+    );
+    return BACKGROUND_INTENSITIES[index]!;
+  }
+  if (value === "subtle") return 30;
+  if (value === "balanced") return 50;
+  if (value === "strong") return 70;
+  return DEFAULT_BACKGROUND_INTENSITY;
+}
 
 export const BACKGROUND_METADATA = {
   plain: {
@@ -78,9 +97,3 @@ export const BACKGROUND_METADATA = {
   Background,
   { labelKey: string; descriptionKey: string }
 >;
-
-export const BACKGROUND_INTENSITY_METADATA = {
-  subtle: { labelKey: "settings.intensitySubtle" },
-  balanced: { labelKey: "settings.intensityBalanced" },
-  strong: { labelKey: "settings.intensityStrong" },
-} as const satisfies Record<BackgroundIntensity, { labelKey: string }>;

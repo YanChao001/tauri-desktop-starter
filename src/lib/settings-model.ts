@@ -12,7 +12,8 @@ import {
 } from "@/i18n/registry";
 import {
   BACKGROUNDS,
-  BACKGROUND_INTENSITIES,
+  DEFAULT_BACKGROUND_INTENSITY,
+  normalizeBackgroundIntensity,
   type Background,
   type BackgroundIntensity,
 } from "@/lib/backgrounds";
@@ -43,7 +44,7 @@ export const NETWORK_MODES = ["system", "direct"] as const;
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 360;
 export const SIDEBAR_DEFAULT_WIDTH = 224;
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 4;
 export const STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:settings`;
 export const THEME_STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:theme`;
 export type Accent = (typeof ACCENTS)[number];
@@ -81,7 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   font: "geist",
   fontSize: "md",
   background: "plain",
-  backgroundIntensity: "balanced",
+  backgroundIntensity: DEFAULT_BACKGROUND_INTENSITY,
   customBackground: null,
   motion: "full",
   menuBar: true,
@@ -125,7 +126,7 @@ function settingsSource(document: Record<string, unknown>) {
     ? document.settings
     : document;
 }
-/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机背景图片。 */
+/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机背景图片；v4 将强度改为百分比档位。 */
 export function migrateSettings(raw: unknown): AppSettings {
   const document = isRecord(raw) ? raw : {};
   if (
@@ -160,10 +161,8 @@ export function migrateSettings(raw: unknown): AppSettings {
     background:
       background === "custom" && !customBackground ? "plain" : background,
     customBackground,
-    backgroundIntensity: pick(
-      BACKGROUND_INTENSITIES,
+    backgroundIntensity: normalizeBackgroundIntensity(
       source.backgroundIntensity,
-      DEFAULT_SETTINGS.backgroundIntensity,
     ),
     motion: pick(MOTIONS, source.motion, DEFAULT_SETTINGS.motion),
     menuBar: flag("menuBar"),
@@ -272,6 +271,10 @@ export function applySettings(
     motion: settings.motion,
     language: settings.language,
   }))
-    root.dataset[name] = value;
+    root.dataset[name] = String(value);
+  root.style.setProperty(
+    "--skin-exposure",
+    String(settings.backgroundIntensity / 100),
+  );
   root.lang = getLocale(settings.language).documentLang;
 }

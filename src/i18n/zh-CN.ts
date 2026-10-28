@@ -201,10 +201,11 @@ export const zhCN = {
   "settings.bgCloudscape": "纸上飞行",
   "settings.bgCloudscapeDescription": "纸飞机与信封，用虚线记下飞行轨迹",
   "settings.backgroundIntensity": "皮肤强度",
-  "settings.backgroundIntensityDescription": "调整装饰的醒目程度，文字始终清晰",
-  "settings.intensitySubtle": "轻盈",
-  "settings.intensityBalanced": "适中",
-  "settings.intensityStrong": "鲜明",
+  "settings.backgroundIntensityDescription":
+    "调节背景显现程度和界面透明度，共 11 档，每档 10%。",
+  "settings.intensityCovered": "不透明",
+  "settings.intensityTransparent": "透明",
+  "settings.intensityValue": "{value}% · 第 {level} 档，共 11 档",
   "settings.skinGallery": "外观皮肤",
   "settings.skinGalleryDescription":
     "八款轻盈的手绘线条，颜色随明暗主题与主题色变化",

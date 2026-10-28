@@ -1166,6 +1166,152 @@ test("a local background imports, survives reload, keeps the last good image on 
 });
 
 for (const theme of ["light", "dark"]) {
+  test(`skin intensity has eleven stops, opaque and transparent endpoints, and persists: ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({
+      width: theme === "light" ? 880 : 1280,
+      height: 900,
+    });
+    await seed(page, {
+      theme,
+      background: "aurora",
+      sidebarWidth: theme === "light" ? 360 : 224,
+    });
+    await page.goto("./#/settings");
+    const slider = page.getByRole("slider", {
+      name: "Skin intensity",
+      exact: true,
+    });
+    await expect(slider).toHaveAttribute("aria-valuenow", "50");
+    const source = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 800;
+      canvas.height = 500;
+      const context = canvas.getContext("2d")!;
+      const gradient = context.createLinearGradient(0, 0, 800, 500);
+      gradient.addColorStop(0, "#205b86");
+      gradient.addColorStop(0.5, "#a55476");
+      gradient.addColorStop(1, "#ecb65c");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 800, 500);
+      return canvas.toDataURL("image/png").split(",")[1]!;
+    });
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "intensity.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(source, "base64"),
+    });
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-background",
+      "custom",
+    );
+    const layers = () =>
+      page.evaluate(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        const nodes = [
+          document.querySelector(".app-title-bar")!,
+          document.querySelector(".app-sidebar")!,
+          document.querySelector(".app-main")!,
+          document
+            .querySelector("#settings-backgroundIntensity")!
+            .closest('[data-slot="card"]')!,
+        ];
+        const surfaces = nodes.map((node) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = getComputedStyle(node).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3]! / 255;
+        });
+        return {
+          image: Number(
+            getComputedStyle(
+              document.querySelector("[data-custom-background]")!,
+            ).opacity,
+          ),
+          surfaces,
+        };
+      });
+    await slider.press("Home");
+    await expect.poll(layers).toEqual({ image: 0, surfaces: [1, 1, 1, 1] });
+    let previous = await layers();
+    expect(previous).toEqual({ image: 0, surfaces: [1, 1, 1, 1] });
+    await page.screenshot({
+      path: testInfo.outputPath(`intensity-${theme}-0.png`),
+    });
+    for (let value = 10; value <= 100; value += 10) {
+      await slider.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuenow", String(value));
+      await expect(slider).toHaveAttribute(
+        "aria-valuetext",
+        `${value}% · Stop ${value / 10 + 1} of 11`,
+      );
+      await expect
+        .poll(async () => {
+          const sample = await layers();
+          return [
+            sample.image,
+            ...sample.surfaces
+              .slice(0, 3)
+              .map((alpha) => Math.round(alpha * 100)),
+          ];
+        })
+        .toEqual([value / 100, 100 - value, 100 - value, 100 - value]);
+      const actual = await layers();
+      expect(actual.image).toBeGreaterThan(previous.image);
+      actual.surfaces.forEach((alpha, index) =>
+        expect(alpha).toBeLessThanOrEqual(previous.surfaces[index]!),
+      );
+      if (value === 50) {
+        expect(actual.surfaces[3]).toBeGreaterThan(0.9);
+        await page.screenshot({
+          path: testInfo.outputPath(`intensity-${theme}-50.png`),
+        });
+      }
+      previous = actual;
+    }
+    await expect.poll(layers).toEqual({ image: 1, surfaces: [0, 0, 0, 0] });
+    await page.screenshot({
+      path: testInfo.outputPath(`intensity-${theme}-100.png`),
+    });
+    const track = await page
+      .locator('#settings-backgroundIntensity [data-slot="slider"]')
+      .boundingBox();
+    expect(track).not.toBeNull();
+    await page.mouse.move(
+      track!.x + track!.width / 2,
+      track!.y + track!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      track!.x + track!.width * 0.8,
+      track!.y + track!.height / 2,
+    );
+    await page.mouse.up();
+    await expect(slider).toHaveAttribute("aria-valuenow", "80");
+    const dimensions = await page.locator("main").evaluate((node) => ({
+      width: node.clientWidth,
+      content: node.scrollWidth,
+    }));
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.width + 1);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (key) => JSON.parse(localStorage.getItem(key)!).backgroundIntensity,
+          KEY,
+        ),
+      )
+      .toBe(80);
+    await page.reload();
+    await expect(slider).toHaveAttribute("aria-valuenow", "80");
+    await page
+      .locator('label:has(input[name="background-skin"][value="plain"])')
+      .click();
+    await expect(slider).toHaveAttribute("data-disabled");
+  });
+
   test(
     "eight linework skins share their previews and follow the theme: " + theme,
     async ({ page }, testInfo) => {
@@ -1173,7 +1319,7 @@ for (const theme of ["light", "dark"]) {
       await page.emulateMedia({
         colorScheme: theme === "dark" ? "light" : "dark",
       });
-      await seed(page, { theme, backgroundIntensity: "strong" });
+      await seed(page, { theme, backgroundIntensity: 50 });
       await page.goto("./#/settings");
       const sources: string[] = [];
       for (const kind of [
@@ -1287,14 +1433,20 @@ for (const theme of ["light", "dark"]) {
         "backdrop-filter",
         "none",
       );
-      const transparency = await page.locator("html").evaluate((element) => {
-        const style = getComputedStyle(element);
-        return [
-          style.getPropertyValue("--skin-chrome-opacity"),
-          style.getPropertyValue("--skin-sidebar-opacity"),
-        ].map(parseFloat);
+      const transparency = await page.locator("html").evaluate(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        return [".app-title-bar", ".app-sidebar"].map((selector) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = getComputedStyle(
+            document.querySelector(selector)!,
+          ).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3]! / 255;
+        });
       });
-      expect(transparency.every((opacity) => opacity <= 30)).toBe(true);
+      for (const opacity of transparency) expect(opacity).toBeCloseTo(0.5, 2);
       await page
         .locator(".skin-gallery")
         .screenshot({ path: testInfo.outputPath("skins-" + theme + ".png") });
@@ -1310,7 +1462,7 @@ for (const theme of ["light", "dark"]) {
   test(
     "secondary copy stays readable over an extreme custom background: " + theme,
     async ({ page }) => {
-      await seed(page, { theme, backgroundIntensity: "strong" });
+      await seed(page, { theme, backgroundIntensity: 50 });
       await page.goto("./#/settings");
       const source = await page.evaluate((value) => {
         const canvas = document.createElement("canvas");

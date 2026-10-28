@@ -19,19 +19,19 @@ describe("App process restart", () => {
       return (
         state.language === "en" &&
         state.background === "sakura" &&
-        state.intensity === "strong"
+        state.intensity === "70"
       );
     });
     assert.deepEqual(await appearance(), {
       language: "en",
       background: "sakura",
-      intensity: "strong",
+      intensity: "70",
     });
     const settings = await invoke("load_settings_snapshot");
     assert.equal(settings.ok, true);
     assert.equal(settings.value.settings.language, "en");
     assert.equal(settings.value.settings.background, "sakura");
-    assert.equal(settings.value.settings.backgroundIntensity, "strong");
+    assert.equal(settings.value.settings.backgroundIntensity, 70);
     assert.equal(settings.value.settings.windowPosition, "remember");
     const backgroundFixture = JSON.parse(
       readFileSync(
@@ -42,7 +42,7 @@ describe("App process restart", () => {
         "utf8",
       ),
     );
-    assert.equal(settings.value.settings.schemaVersion, 3);
+    assert.equal(settings.value.settings.schemaVersion, 4);
     assert.deepEqual(
       settings.value.settings.customBackground,
       backgroundFixture,

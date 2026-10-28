@@ -28,6 +28,7 @@ import { useSettings } from "@/providers/settings";
 import { isTauri } from "@/lib/tauri";
 import type { AppSettings } from "@/lib/settings-model";
 import { APP_CONFIG } from "@/config/app";
+import { DEFAULT_BACKGROUND_INTENSITY } from "@/lib/backgrounds";
 import "@/styles/showroom.css";
 
 const VIBES = [
@@ -174,7 +175,7 @@ export default function Overview() {
     settings.accent === vibe.accent &&
     settings.theme === vibe.theme &&
     settings.radius === vibe.radius &&
-    settings.backgroundIntensity === "balanced";
+    settings.backgroundIntensity === DEFAULT_BACKGROUND_INTENSITY;
   function move(event: PointerEvent<HTMLDivElement>) {
     if (!active || event.pointerType === "touch") return;
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -197,7 +198,7 @@ export default function Overview() {
     update({
       accent: vibe.accent,
       background: vibe.background,
-      backgroundIntensity: "balanced",
+      backgroundIntensity: DEFAULT_BACKGROUND_INTENSITY,
       radius: vibe.radius,
     });
     setTheme(vibe.theme);

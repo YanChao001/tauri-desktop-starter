@@ -1005,7 +1005,7 @@ mod tests {
     fn next_settings_schema_is_rejected_in_originals_and_staged_candidates() {
         let (_root, paths) = fixture();
         let initialized = recovered(&paths);
-        let future = serde_json::json!({"revision": 1, "settings": {"schemaVersion": 4}});
+        let future = serde_json::json!({"revision": 1, "settings": {"schemaVersion": 5}});
         write_json(&paths.config.join("settings.json"), &future).unwrap();
         assert!(protect_future(&paths, true).is_err());
         assert!(!paths.data.join(PENDING).exists());

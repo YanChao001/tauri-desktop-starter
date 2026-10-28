@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
-const SETTINGS_SCHEMA_VERSION: u32 = 3;
+pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 4;
 const MAX_SETTINGS_SIZE: usize = 128 * 1024;
 pub(crate) const MAX_SETTINGS_FILE_SIZE: usize = MAX_SETTINGS_SIZE + 1024;
 const MAX_BACKGROUND_DATA_LENGTH: usize = 96 * 1024;
@@ -509,8 +509,9 @@ mod tests {
     #[test]
     fn fractional_future_schema_versions_keep_the_future_version_guard() {
         assert!(!future_settings_schema(&json!({"schemaVersion": 3})));
-        assert!(future_settings_schema(&json!({"schemaVersion": 3.5})));
-        assert!(future_settings_schema(&json!({"schemaVersion": 4})));
+        assert!(!future_settings_schema(&json!({"schemaVersion": 4})));
+        assert!(future_settings_schema(&json!({"schemaVersion": 4.5})));
+        assert!(future_settings_schema(&json!({"schemaVersion": 5})));
     }
 
     #[test]
@@ -666,7 +667,7 @@ mod tests {
     #[test]
     fn future_image_formats_remain_intact_for_frontend_future_version_protection() {
         let settings =
-            json!({"schemaVersion": 4, "customBackground": {"futureImage": "new-format"}});
+            json!({"schemaVersion": 5, "customBackground": {"futureImage": "new-format"}});
         assert!(validate_settings(&settings).is_ok());
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("settings.json");

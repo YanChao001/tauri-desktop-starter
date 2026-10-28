@@ -275,23 +275,41 @@ describe("设置页", () => {
   it("皮肤与强度即时生效、持久化，并在纯色皮肤下禁用强度", () => {
     const view = () => <SettingsView />;
     const { unmount } = render(view());
-    expect(screen.getByRole("radio", { name: "轻盈" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+      "data-disabled",
+    );
     fireEvent.click(screen.getByRole("radio", { name: "云朵晴空" }));
-    fireEvent.click(screen.getByRole("radio", { name: "鲜明" }));
+    const slider = screen.getByRole("slider", { name: "皮肤强度" });
+    expect(slider).toHaveAttribute("aria-valuenow", "50");
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(slider).toHaveAttribute("aria-valuenow", "60");
+    fireEvent.keyDown(slider, { key: "Home" });
     expect(document.documentElement).toHaveAttribute(
       "data-background",
       "sakura",
     );
     expect(document.documentElement).toHaveAttribute(
       "data-background-intensity",
-      "strong",
+      "0",
     );
     unmount();
     render(view());
     expect(screen.getByRole("radio", { name: "云朵晴空" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "鲜明" })).toBeChecked();
+    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+    fireEvent.keyDown(screen.getByRole("slider", { name: "皮肤强度" }), {
+      key: "End",
+    });
+    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+      "aria-valuenow",
+      "100",
+    );
     fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
-    expect(screen.getByRole("radio", { name: "鲜明" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "皮肤强度" })).toHaveAttribute(
+      "data-disabled",
+    );
     expect(document.documentElement).toHaveAttribute(
       "data-background",
       "plain",

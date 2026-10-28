@@ -4,7 +4,7 @@ use crate::{
     error::{ErrorCode, NativeError, NativeResult},
     extension_resources::{IMAGE_LIMIT, ResourceIdentity, bounded_render_image, gallery_image},
     extension_services::ServicePermit,
-    storage::{SETTINGS_EVENT, SettingsStore, future_settings_schema},
+    storage::{SETTINGS_EVENT, SETTINGS_SCHEMA_VERSION, SettingsStore, future_settings_schema},
     wallpaper_commands::WALLPAPERS_EVENT,
     wallpapers::{Wallpaper, WallpaperInput, WallpaperStore},
 };
@@ -220,7 +220,7 @@ fn next_settings(settings: &Value, image: Option<&Wallpaper>, fit: &str) -> Nati
     let object = value
         .as_object_mut()
         .ok_or_else(|| invalid("Invalid settings snapshot"))?;
-    object.insert("schemaVersion".into(), json!(3));
+    object.insert("schemaVersion".into(), json!(SETTINGS_SCHEMA_VERSION));
     object.insert(
         "background".into(),
         json!(if image.is_some() { "custom" } else { "plain" }),
@@ -575,12 +575,14 @@ mod tests {
             })
             .unwrap();
         let settings = next_settings(
-            &json!({"schemaVersion":3,"accent":"rose"}),
+            &json!({"schemaVersion":4,"accent":"rose","backgroundIntensity":80}),
             Some(&entry),
             "contain",
         )
         .unwrap();
         assert_eq!(settings["accent"], "rose");
+        assert_eq!(settings["schemaVersion"], SETTINGS_SCHEMA_VERSION);
+        assert_eq!(settings["backgroundIntensity"], 80);
         assert_eq!(settings["customBackground"]["fit"], "contain");
         assert_eq!(library.list(None).unwrap()[0].id, entry.id);
         assert!(next_settings(&json!({"schemaVersion":99}), Some(&entry), "cover").is_err());

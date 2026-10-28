@@ -4,6 +4,7 @@ import { CustomBackgroundPicker } from "@/components/custom-background-picker";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import {
   Tooltip,
   TooltipContent,
@@ -14,7 +15,8 @@ import {
   BUILTIN_BACKGROUNDS,
   BACKGROUND_METADATA,
   BACKGROUND_INTENSITIES,
-  BACKGROUND_INTENSITY_METADATA,
+  DEFAULT_BACKGROUND_INTENSITY,
+  normalizeBackgroundIntensity,
 } from "@/lib/backgrounds";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/providers/i18n";
@@ -129,30 +131,48 @@ export function SkinPicker() {
               {t("settings.backgroundIntensityDescription")}
             </HelpTooltip>
           </div>
-          <div
-            className="flex gap-1 rounded-lg bg-muted/55 p-1"
-            role="radiogroup"
-            aria-labelledby="skin-intensity-heading"
-          >
-            {BACKGROUND_INTENSITIES.map((intensity) => (
-              <label
-                key={intensity}
-                className="cursor-pointer has-disabled:cursor-default"
-              >
-                <input
-                  type="radio"
-                  name="background-intensity"
-                  className="peer sr-only"
-                  disabled={settings.background === "plain"}
-                  checked={settings.backgroundIntensity === intensity}
-                  value={intensity}
-                  onChange={() => update({ backgroundIntensity: intensity })}
+          <div className="ml-auto w-full max-w-80 space-y-1">
+            <div
+              className="flex items-center justify-between gap-2 text-xs text-muted-foreground"
+              aria-hidden="true"
+            >
+              <span>{t("settings.intensityCovered")}</span>
+              <output className="text-foreground tabular-nums">
+                {settings.backgroundIntensity}%
+              </output>
+              <span>{t("settings.intensityTransparent")}</span>
+            </div>
+            <Slider
+              min={0}
+              max={100}
+              step={10}
+              value={[settings.backgroundIntensity]}
+              disabled={settings.background === "plain"}
+              aria-labelledby="skin-intensity-heading"
+              aria-valuetext={t("settings.intensityValue", {
+                value: settings.backgroundIntensity,
+                level: settings.backgroundIntensity / 10 + 1,
+              })}
+              onValueChange={([value]) => {
+                if (value !== undefined)
+                  update({
+                    backgroundIntensity: normalizeBackgroundIntensity(value),
+                  });
+              }}
+              className="min-h-5"
+            />
+            <div className="flex justify-between px-1.5" aria-hidden="true">
+              {BACKGROUND_INTENSITIES.map((intensity) => (
+                <span
+                  key={intensity}
+                  className={cn(
+                    "h-1 w-px bg-muted-foreground/40",
+                    intensity === DEFAULT_BACKGROUND_INTENSITY &&
+                      "h-2 bg-primary",
+                  )}
                 />
-                <span className="block rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors peer-checked:bg-background peer-checked:text-foreground peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-40">
-                  {t(BACKGROUND_INTENSITY_METADATA[intensity].labelKey)}
-                </span>
-              </label>
-            ))}
+              ))}
+            </div>
           </div>
         </fieldset>
       </CardContent>

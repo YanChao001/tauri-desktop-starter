@@ -997,14 +997,16 @@ describe("Real Tauri desktop", () => {
     await navigate("/settings");
     await $("label:has(input[name='background-skin'][value='sakura'])").click();
     await $(
-      "label:has(input[name='background-intensity'][value='strong'])",
+      '[role="slider"][aria-labelledby="skin-intensity-heading"]',
     ).click();
+    await browser.keys("Home");
+    for (let step = 0; step < 7; step++) await browser.keys("ArrowRight");
     await browser.waitUntil(async () => {
       const actual = await appearance();
       return (
         actual.language === "en" &&
         actual.background === "sakura" &&
-        actual.intensity === "strong"
+        actual.intensity === "70"
       );
     });
     // 等待异步原生偏好快照落盘，后续进程从同一隔离目录读取。
@@ -1014,7 +1016,7 @@ describe("Real Tauri desktop", () => {
         result.ok &&
         result.value.settings?.language === "en" &&
         result.value.settings?.background === "sakura" &&
-        result.value.settings?.backgroundIntensity === "strong"
+        result.value.settings?.backgroundIntensity === 70
       );
     });
     const snapshot = (await invoke("load_settings_snapshot")).value;

@@ -94,7 +94,7 @@ describe("versioned settings model", () => {
     );
   });
 
-  it("schema 2 升级保留偏好，导入图片随 schema 3 存档并可移除", () => {
+  it("schema 2 升级保留偏好，导入图片随当前 schema 存档并可移除", () => {
     const old = migrateSettings({
       schemaVersion: 2,
       language: "en",
@@ -120,7 +120,7 @@ describe("versioned settings model", () => {
       customBackground,
     });
     expect(migrateSettings(settingsDocument(custom))).toEqual(custom);
-    expect(settingsDocument(custom).schemaVersion).toBe(3);
+    expect(settingsDocument(custom).schemaVersion).toBe(SETTINGS_VERSION);
     expect(normalizeSettingsPatch(custom, { customBackground: null })).toEqual({
       customBackground: null,
       background: "plain",
@@ -311,14 +311,39 @@ describe("loadSettings", () => {
     );
     expect(loadSettings()).toMatchObject({
       background: "moonlit",
-      backgroundIntensity: "strong",
+      backgroundIntensity: 70,
     });
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ backgroundIntensity: "invalid" }),
     );
-    expect(loadSettings().backgroundIntensity).toBe("balanced");
+    expect(loadSettings().backgroundIntensity).toBe(50);
   });
+  it.each([
+    ["subtle", 30],
+    ["balanced", 50],
+    ["strong", 70],
+    [0, 0],
+    [100, 100],
+    [34, 30],
+    [36, 40],
+    [-10, 0],
+    [110, 100],
+    [NaN, 50],
+    [Infinity, 50],
+    ["90", 50],
+  ] as const)(
+    "强度 %s 迁移或规范化为 %s，保留其他偏好",
+    (backgroundIntensity, expected) => {
+      expect(
+        migrateSettings({
+          schemaVersion: 3,
+          backgroundIntensity,
+          accent: "rose",
+        }),
+      ).toMatchObject({ backgroundIntensity: expected, accent: "rose" });
+    },
+  );
 });
 
 describe("applySettings", () => {
@@ -361,14 +386,15 @@ describe("applySettings", () => {
       font: "mono",
       language: "en",
       motion: "reduced",
-      backgroundIntensity: "subtle",
+      backgroundIntensity: 30,
     });
 
     const root = document.documentElement;
     expect(root.dataset.accent).toBe("rose");
     expect(root.dataset.font).toBe("mono");
     expect(root.dataset.motion).toBe("reduced");
-    expect(root.dataset.backgroundIntensity).toBe("subtle");
+    expect(root.dataset.backgroundIntensity).toBe("30");
+    expect(root.style.getPropertyValue("--skin-exposure")).toBe("0.3");
     expect(root.lang).toBe("en");
   });
 });

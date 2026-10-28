@@ -1,10 +1,6 @@
 import type { Translate } from "@/i18n/translate";
 import type { MessageKey as DictKey } from "@/i18n/zh-CN";
-import {
-  BACKGROUND_METADATA,
-  BACKGROUND_INTENSITY_METADATA,
-  BACKGROUND_STYLES,
-} from "@/lib/backgrounds";
+import { BACKGROUND_METADATA, BACKGROUND_STYLES } from "@/lib/backgrounds";
 
 export type SettingsSearchEntry = {
   id: string;
@@ -98,10 +94,16 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     anchor: "settings-backgroundIntensity",
     labelKey: "settings.backgroundIntensity",
     descriptionKey: "settings.backgroundIntensityDescription",
-    searchKeys: Object.values(BACKGROUND_INTENSITY_METADATA).map(
-      (item) => item.labelKey,
-    ),
-    keywords: ["intensity", "opacity", "强度", "透明"],
+    searchKeys: ["settings.intensityCovered", "settings.intensityTransparent"],
+    keywords: [
+      "intensity",
+      "opacity",
+      "slider",
+      "强度",
+      "透明",
+      "滑条",
+      "档位",
+    ],
   },
   {
     id: "motion",
