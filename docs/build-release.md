@@ -103,7 +103,7 @@ pnpm branding:check
 定制时保留以下约束：
 
 - 安装文字使用原生控件，不写入图片。WiX 会叠加标题和正文；横幅图形留右侧，欢迎页视觉留左侧，IU 不是 Win32 对话框单位。以实际中英文 / 高 DPI 安装界面核对留白和比例。
-- [NSIS 模板](../src-tauri/installer/installer.nsi) 的“品牌定制”段维护文案、字体、页脚、等比页眉和铺满侧栏。保留 24 位缩放目标、绘制失败回退和图片所有权；布局脚本会静默检查，但不能代替实际安装验收。
+- [NSIS 模板](../src-tauri/installer/installer.nsi) 的“品牌定制”段维护文案、字体、页脚、等比页眉和铺满侧栏。对话框使用标准安装器字体度量，欢迎 / 完成页标题独立设置现代字体，避免字体行高拉高整个窗口；侧栏按最终控件尺寸等比铺满、居中裁切装饰边缘，不留白或拉伸主体。保留 24 位缩放目标、绘制失败回退和图片所有权；布局脚本会静默检查，但不能代替实际安装验收。
 - 自定义文案使用独立 `LangString`；增加语言时补齐并编译检查。NSIS 语言由 `nsis.languages`、MSI 由 `wix.language` 控制；`bundle.copyright` 为空会使 NSIS 回退上游页脚。
 - [WiX 片段](../src-tauri/installer/wix-ui.wxs) 跳过可见 `PrepareDlg`，后台准备与提权仍保留；`fragmentPaths` 与 `componentGroupRefs` 必须同时配置。
 - 重新构建才更新安装包。Rust 构建监听 `icons/`，NSIS 快捷方式使用已安装 exe 的图标索引 0 并刷新缓存；验收同时检查安装器、已安装 exe 和快捷方式，旧缓存见 [排障](./troubleshooting.md#安装后仍显示旧图标)。
