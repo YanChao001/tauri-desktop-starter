@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $ } from "@wdio/globals";
 import {
@@ -1018,14 +1018,16 @@ describe("Real Tauri desktop", () => {
       );
     });
     const snapshot = (await invoke("load_settings_snapshot")).value;
+    const backgroundFixturePath = join(
+      process.env.STARTER_E2E_DATA_ROOT,
+      "background-image-fixture.json",
+    );
+    assert.ok(
+      existsSync(backgroundFixturePath),
+      "The earlier native raster-import prerequisite did not produce the background fixture; check that test's failure first",
+    );
     const customBackground = JSON.parse(
-      readFileSync(
-        join(
-          process.env.STARTER_E2E_DATA_ROOT,
-          "background-image-fixture.json",
-        ),
-        "utf8",
-      ),
+      readFileSync(backgroundFixturePath, "utf8"),
     );
     assert.equal(
       (
