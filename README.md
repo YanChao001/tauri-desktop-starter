@@ -2,7 +2,7 @@
 
 [在线演示](https://yanchao001.github.io/tauri-desktop-starter/) · [English](./README.en.md) · [文档索引](./docs/README.md) · [发行记录](https://github.com/YanChao001/tauri-desktop-starter/releases)
 
-Tauri 2 + React 19 + TypeScript 桌面应用基座。默认保留完整、可操作的 demo，体验后按产品需要裁剪；`minimal` 仅隐藏演示入口，不删除源码、依赖或权限。
+Tauri 2 + React 19 + TypeScript 桌面应用基座，随附含 Wasm 扩展宿主与市场的完整示例应用。默认保留全部可操作 demo；`minimal` 仅隐藏演示入口，不删除源码、依赖或权限。派生项目需按产品范围手动移除模块，步骤见 [裁剪指南](./docs/demo-modules.md#实际裁剪模块)。
 
 桌面与浏览器共用 `src/`。浏览器可体验交互、动效、CSV 数据工作流、网络 fixture、媒体和外观；原生文件、数据库、系统集成、可安装扩展和更新安装需要桌面环境。
 

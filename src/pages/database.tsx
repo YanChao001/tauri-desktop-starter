@@ -721,11 +721,11 @@ export default function Database() {
             role={searchTooLong ? "alert" : undefined}
             className="min-w-0 flex-1 truncate text-xs text-destructive"
           >
-            {searchTooLong ? t("errors.INPUT_TOO_LONG") : null}
+            {searchTooLong ? t("search.limit") : null}
           </p>
           {searchTooLong ? (
             <HelpTooltip label={`${t("database.search")} · ${t("title.help")}`}>
-              {t("errors.INPUT_TOO_LONG")}
+              {t("search.limit")}
             </HelpTooltip>
           ) : null}
           <div className="ml-auto flex items-center gap-2 text-sm">
@@ -917,13 +917,13 @@ export default function Database() {
                         role={bodyTooLong ? "alert" : undefined}
                         className="min-w-0 truncate text-xs text-destructive"
                       >
-                        {bodyTooLong ? t("errors.INPUT_TOO_LONG") : null}
+                        {bodyTooLong ? t("data.bodyLimit") : null}
                       </p>
                       {bodyTooLong ? (
                         <HelpTooltip
                           label={`${t("database.bodyLabel")} · ${t("title.help")}`}
                         >
-                          {t("errors.INPUT_TOO_LONG")}
+                          {t("data.bodyLimit")}
                         </HelpTooltip>
                       ) : null}
                     </div>

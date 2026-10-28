@@ -2,6 +2,8 @@ import type { DataMessages } from "./zh-data";
 
 export const enData: DataMessages = {
   "data.active": "All notes",
+  "data.bodyLimit":
+    "Note content is limited to 64 KiB (65536 UTF-8 bytes). Shorten it before saving.",
   "data.trash": "Recycle bin",
   "data.sort": "Sort",
   "data.newest": "Recently updated",

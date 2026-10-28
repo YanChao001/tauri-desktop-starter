@@ -221,11 +221,21 @@ describe("native note editor", () => {
   });
 
   it.each([
-    { label: "Search notes", value: "界".repeat(100) },
-    { label: "Content", value: "界".repeat(22000) },
+    {
+      label: "Search notes",
+      value: "界".repeat(100),
+      message:
+        "Content search allows up to 200 UTF-8 bytes. Shorten the query.",
+    },
+    {
+      label: "Content",
+      value: "界".repeat(22000),
+      message:
+        "Note content is limited to 64 KiB (65536 UTF-8 bytes). Shorten it before saving.",
+    },
   ])(
     "keeps the full $label length error associated with its field and available through keyboard focus",
-    async ({ label, value }) => {
+    async ({ label, value, message }) => {
       await open();
       await waitFor(() => expect(body()).toBeEnabled());
       const field = screen.getByRole(
@@ -233,7 +243,6 @@ describe("native note editor", () => {
         { name: label },
       );
       fireEvent.change(field, { target: { value } });
-      const message = "The input is too long. Shorten it and try again.";
       expect(field).toHaveAttribute("aria-invalid", "true");
       expect(field).toHaveAccessibleDescription(message);
       const descriptionId = field.getAttribute("aria-describedby")!;

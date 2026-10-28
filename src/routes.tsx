@@ -59,8 +59,8 @@ export type AppNavigationItem = Pick<
   "path" | "labelKey" | "group" | "icon" | "exact" | "preload"
 > & { label?: string };
 
-export function extensionPath(id: string, command: string, window = false) {
-  return `${window ? "/extension-window" : "/extensions/app"}/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
+export function extensionPath(id: string, command: string) {
+  return `/extensions/app/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
 }
 function loadExtensionPage() {
   return import("@/pages/extension-app");

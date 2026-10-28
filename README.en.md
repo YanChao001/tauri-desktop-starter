@@ -2,7 +2,7 @@
 
 [中文](./README.md) · [Live demo](https://yanchao001.github.io/tauri-desktop-starter/) · [Documentation](./docs/README.md) · [Releases](https://github.com/YanChao001/tauri-desktop-starter/releases) · [Code signing policy](./docs/code-signing-policy.md)
 
-An open source Tauri 2, React 19 and TypeScript desktop starter with a complete, interactive demo. Keep the examples while exploring, then remove modules your product does not need. **Minimal mode changes visibility; it does not remove code, dependencies or permissions.**
+An open source Tauri 2, React 19 and TypeScript desktop starter with a complete example application, including a Wasm extension host and marketplace. **Minimal mode changes visibility; it does not remove code, dependencies or permissions.** Derived projects must manually remove modules outside their product scope; see the [module removal guide](./docs/demo-modules.md#实际裁剪模块).
 
 Explore SQLite, drafts and recovery; file editing and Rust scan / SHA-256 jobs; desktop integration; Wasm extensions; and data, form and media labs. Browser previews share the React source; native storage and system features require the desktop app.
 

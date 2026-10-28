@@ -1953,7 +1953,6 @@ impl ExtensionStore {
             .find(|item| item.package.manifest.id == id)
             .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Extension not found"))?;
         if enabled {
-            item.package.manifest.validate()?;
             ExtensionConsent {
                 trusted,
                 granted_permissions: grants.clone(),
@@ -2240,7 +2239,6 @@ impl ExtensionStore {
                         "Enable the installed extension before running it",
                     )
                 })?;
-            item.package.manifest.validate()?;
             if item.package.sha256 != expected_hash || item.generation != expected_generation {
                 return Err(conflict());
             }

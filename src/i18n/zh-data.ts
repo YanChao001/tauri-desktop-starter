@@ -1,5 +1,7 @@
 export const zhData = {
   "data.active": "全部笔记",
+  "data.bodyLimit":
+    "笔记正文最多 64 KiB（65536 个 UTF-8 字节），请缩短内容后再保存。",
   "data.trash": "回收站",
   "data.sort": "排序",
   "data.newest": "最近修改优先",
