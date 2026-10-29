@@ -2956,9 +2956,18 @@ mod tests {
         )
         .unwrap();
         node.send(&peer_id, "正常发送").unwrap();
+        // 非阻塞接收允许短暂空闲；发送完成不代表对端已经收到 TCP 帧。
+        let receiving = AtomicBool::new(false);
+        let deadline = Instant::now() + FRAME_TIMEOUT;
+        let received = loop {
+            if let Some(frame) = read_frame(&mut remote, &receiving).unwrap() {
+                break frame;
+            }
+            assert!(Instant::now() < deadline, "The message did not arrive");
+        };
         assert!(matches!(
-            read_frame(&mut remote, &AtomicBool::new(false)).unwrap(),
-            Some(Frame::Message { text, .. }) if text == "正常发送",
+            received,
+            Frame::Message { text, .. } if text == "正常发送",
         ));
         let reopened = Node::open(root.path(), ID).unwrap();
         assert_eq!(reopened.data.lock().unwrap().messages.len(), 1);

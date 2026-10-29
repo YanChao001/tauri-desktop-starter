@@ -10,6 +10,7 @@ import {
   language,
   lifecycleEvents,
   navigate,
+  openDeepLink,
   observeLifecycle,
   ready,
   placeNearWorkAreaCorner,
@@ -63,7 +64,7 @@ describe("Real Tauri desktop", () => {
     await navigate("/settings");
     // 初始化为 minimal 的项目也可在隔离测试偏好中开启演示页面。
     await $("#settings-appMode button").click();
-    await navigate("/bridge");
+    await openDeepLink("/bridge");
     await browser.waitUntil(
       async () => (await $("main h2").getText()) === "应用通信",
     );
@@ -162,7 +163,13 @@ describe("Real Tauri desktop", () => {
     );
     await $("//button[@role='tab'][contains(., 'Creative studio')]").click();
     assert.equal(await $("#studio-name").getValue(), "Native creative space");
-    await navigate("/motion");
+    const motionTab = await $(
+      "//button[@role='tab'][contains(., 'Motion lab')]",
+    );
+    await motionTab.click();
+    await browser.waitUntil(
+      async () => (await motionTab.getAttribute("aria-selected")) === "true",
+    );
     await $("[data-testid=spring-stage]").waitForDisplayed();
     await $("[data-testid=spring-stage]").scrollIntoView({
       block: "center",
@@ -337,7 +344,6 @@ describe("Real Tauri desktop", () => {
     const original = await browser.execute(async () => {
       const win = window.__TAURI__.window.getCurrentWindow();
       const maximized = await win.isMaximized();
-      if (maximized) await win.toggleMaximize();
       return {
         size: await win.innerSize(),
         position: await win.outerPosition(),
@@ -348,6 +354,7 @@ describe("Real Tauri desktop", () => {
       await browser.execute(async () => {
         const win = window.__TAURI__.window.getCurrentWindow();
         const { PhysicalSize, PhysicalPosition } = window.__TAURI__.dpi;
+        if (await win.isMaximized()) await win.toggleMaximize();
         await win.setSize(new PhysicalSize(5000, 3500));
         await win.setPosition(new PhysicalPosition(50000, 50000));
       });
@@ -392,6 +399,17 @@ describe("Real Tauri desktop", () => {
         if (saved.maximized && !(await win.isMaximized()))
           await win.toggleMaximize();
       }, original);
+      await browser.waitUntil(() =>
+        browser.execute(async (saved) => {
+          const win = window.__TAURI__.window.getCurrentWindow();
+          const size = await win.innerSize();
+          return (
+            size.width === saved.size.width &&
+            size.height === saved.size.height &&
+            (await win.isMaximized()) === saved.maximized
+          );
+        }, original),
+      );
     }
   });
 
@@ -812,75 +830,86 @@ describe("Real Tauri desktop", () => {
   it("reuses the secondary native window and synchronizes settings events both ways", async () => {
     const main = await browser.getWindowHandle();
     assert.equal((await browser.getWindowHandles()).length, 1);
-    assert.equal((await invoke("open_secondary_window")).ok, true);
-    await browser.waitUntil(
-      async () => (await browser.getWindowHandles()).length === 2,
-    );
-    const handles = await browser.getWindowHandles();
-    const secondary = handles.find((handle) => handle !== main);
-    assert.ok(secondary);
-    assert.equal((await invoke("open_secondary_window")).ok, true);
-    assert.deepEqual(
-      (await browser.getWindowHandles()).sort(),
-      [...handles].sort(),
-    );
-    await browser.switchToWindow(secondary);
-    await ready("secondary");
-    await language("zh");
-    await browser.switchToWindow(main);
-    await browser.waitUntil(
-      async () => (await appearance()).language === "zh-CN",
-    );
-    await language("en");
-    await browser.switchToWindow(secondary);
-    await browser.waitUntil(async () => (await appearance()).language === "en");
-    const secondaryBounds = (await invoke("get_window_geometry")).value;
-    assert.equal(
-      (
-        await invoke("set_window_size", {
-          width: Math.min(
-            secondaryBounds.maxWidth,
-            Math.max(secondaryBounds.minWidth, 980),
-          ),
-          height: Math.min(
-            secondaryBounds.maxHeight,
-            Math.max(secondaryBounds.minHeight, 650),
-          ),
-        })
-      ).ok,
-      true,
-    );
-    const secondaryPosition = await browser.execute(async () =>
-      window.__TAURI__.window.getCurrentWindow().outerPosition(),
-    );
-    await browser.switchToWindow(main);
-    assert.equal(
-      (await invoke("reset_window_geometry", { center: false })).ok,
-      true,
-    );
-    await browser.switchToWindow(secondary);
-    await browser.waitUntil(async () => {
-      const geometry = (await invoke("get_window_geometry")).value;
-      return (
-        geometry.width === Math.min(geometry.maxWidth, geometry.defaultWidth) &&
-        geometry.height === Math.min(geometry.maxHeight, geometry.defaultHeight)
+    let secondary;
+    try {
+      assert.equal((await invoke("open_secondary_window")).ok, true);
+      await browser.waitUntil(
+        async () => (await browser.getWindowHandles()).length === 2,
       );
-    });
-    const restoredPosition = await browser.execute(async () =>
-      window.__TAURI__.window.getCurrentWindow().outerPosition(),
-    );
-    assert.ok(
-      Math.abs(secondaryPosition.x - restoredPosition.x) <= 2 &&
-        Math.abs(secondaryPosition.y - restoredPosition.y) <= 2,
-    );
-    await browser.switchToWindow(main);
-    assert.equal(
-      (await invoke("plugin:window|close", { label: "secondary" })).ok,
-      true,
-    );
-    await browser.waitUntil(
-      async () => (await browser.getWindowHandles()).length === 1,
-    );
+      const handles = await browser.getWindowHandles();
+      secondary = handles.find((handle) => handle !== main);
+      assert.ok(secondary);
+      assert.equal((await invoke("open_secondary_window")).ok, true);
+      assert.deepEqual(
+        (await browser.getWindowHandles()).sort(),
+        [...handles].sort(),
+      );
+      await browser.switchToWindow(secondary);
+      await ready("secondary");
+      await language("zh");
+      await browser.switchToWindow(main);
+      await browser.waitUntil(
+        async () => (await appearance()).language === "zh-CN",
+      );
+      await language("en");
+      await browser.switchToWindow(secondary);
+      await browser.waitUntil(
+        async () => (await appearance()).language === "en",
+      );
+      const secondaryBounds = (await invoke("get_window_geometry")).value;
+      assert.equal(
+        (
+          await invoke("set_window_size", {
+            width: Math.min(
+              secondaryBounds.maxWidth,
+              Math.max(secondaryBounds.minWidth, 980),
+            ),
+            height: Math.min(
+              secondaryBounds.maxHeight,
+              Math.max(secondaryBounds.minHeight, 650),
+            ),
+          })
+        ).ok,
+        true,
+      );
+      const secondaryPosition = await browser.execute(async () =>
+        window.__TAURI__.window.getCurrentWindow().outerPosition(),
+      );
+      await browser.switchToWindow(main);
+      assert.equal(
+        (await invoke("reset_window_geometry", { center: false })).ok,
+        true,
+      );
+      await browser.switchToWindow(secondary);
+      await browser.waitUntil(async () => {
+        const geometry = (await invoke("get_window_geometry")).value;
+        return (
+          geometry.width ===
+            Math.min(geometry.maxWidth, geometry.defaultWidth) &&
+          geometry.height ===
+            Math.min(geometry.maxHeight, geometry.defaultHeight)
+        );
+      });
+      const restoredPosition = await browser.execute(async () =>
+        window.__TAURI__.window.getCurrentWindow().outerPosition(),
+      );
+      assert.ok(
+        Math.abs(secondaryPosition.x - restoredPosition.x) <= 2 &&
+          Math.abs(secondaryPosition.y - restoredPosition.y) <= 2,
+      );
+    } finally {
+      // 从主窗口关闭本轮次窗口，避免失败后把后续用例的窗口身份颠倒。
+      await browser.switchToWindow(main);
+      if (secondary && (await browser.getWindowHandles()).includes(secondary)) {
+        assert.equal(
+          (await invoke("plugin:window|close", { label: "secondary" })).ok,
+          true,
+        );
+        await browser.waitUntil(
+          async () => (await browser.getWindowHandles()).length === 1,
+        );
+      }
+    }
   });
 
   it("cancels a real two-window quit request without losing either persisted draft", async () => {

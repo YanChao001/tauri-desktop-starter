@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $, $$ } from "@wdio/globals";
-import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
+import {
+  appearance,
+  invoke,
+  language,
+  navigate,
+  openDeepLink,
+  ready,
+} from "../helpers.mjs";
 import {
   patchSettings,
   screenshot,
@@ -183,7 +190,7 @@ export function desktopUiChecks() {
       await settledAppearance({ language: "zh", fontSize: "md" });
       await $("#settings-desktop").scrollIntoView();
       await screenshot("desktop-controls.png");
-      await navigate("/bridge");
+      await openDeepLink("/bridge");
       await browser.waitUntil(async () =>
         /^(应用通信|App communication)$/.test(await $("main h2").getText()),
       );
