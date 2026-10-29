@@ -413,8 +413,9 @@ export function SidecarPanel() {
                 </div>
               ) : null}
               <details
+                data-disclosure-radius="md"
                 data-surface="transparent"
-                className="rounded-md border p-3"
+                className="border p-3"
               >
                 <summary className="cursor-pointer text-xs text-muted-foreground">
                   {t("labs.sidecar.details")}

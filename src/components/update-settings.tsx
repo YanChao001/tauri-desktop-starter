@@ -274,7 +274,7 @@ export function UpdateSettings() {
           </div>
           <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-3">
             <details className="min-w-0 flex-1 basis-44 text-xs text-muted-foreground">
-              <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {t("updates.endpoint")}
               </summary>
               <div className="mt-3 space-y-2">

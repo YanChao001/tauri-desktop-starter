@@ -233,7 +233,7 @@ export function ExtensionCard({
       </div>
       <div className="space-y-3">
         <details className="text-sm">
-          <summary className="cursor-pointer rounded-sm text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
+          <summary className="cursor-pointer text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
             {t("ext.details")}
           </summary>
           <div className="space-y-4 pt-3">

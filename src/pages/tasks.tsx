@@ -423,7 +423,10 @@ export default function Tasks() {
                 {expanded === task.id ? (
                   <div className="min-w-0 space-y-2 border-t pt-3">
                     {task.message || task.failure?.message ? (
-                      <details className="rounded-md border p-2 text-xs">
+                      <details
+                        data-disclosure-radius="md"
+                        className="border p-2 text-xs"
+                      >
                         <summary className="cursor-pointer font-medium">
                           {t("tasks.diagnostics")}
                         </summary>

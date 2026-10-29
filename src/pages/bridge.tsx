@@ -166,8 +166,8 @@ export default function Bridge() {
         </CardContent>
       </Card>
 
-      <details className="rounded-xl border app-surface">
-        <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <details data-disclosure-radius="xl" className="border app-surface">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("bridge.developerDetails")}
         </summary>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-3 p-4 pt-0">

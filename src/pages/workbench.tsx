@@ -505,7 +505,7 @@ export default function Workbench() {
               </ul>
             </div>
           ) : null}
-          <details className="rounded-lg border app-surface p-3" open>
+          <details className="border app-surface p-3" open>
             <summary className="cursor-pointer text-sm font-medium">
               {t("workbench.recent")}
             </summary>

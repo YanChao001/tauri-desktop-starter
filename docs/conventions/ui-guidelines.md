@@ -101,7 +101,13 @@
 | `solid`        | 关键错误、恢复失败、平台原生选项              | 稳定实体底色，使用配对的前景色                        |
 | `artwork`      | 图片、视频、Canvas / SVG 内容、作品或品牌场景 | 内容专用配色；外部工具栏和说明仍消费上述材质          |
 
-共享 `Card` 与 `.app-surface` 对应 panel，`.app-control-surface`、`.app-overlay-surface`、`.app-reading-surface` 分别对应 control、popover、reading。手写容器优先声明用途，不另写固定透明比例，不使用后代选择器把所有 `bg-card` 改透明。已处于 reading 的嵌套 `CodeBlock` 可显式 `data-surface="transparent"`，避免重复叠层。主按钮、危险按钮、checked 标记、开关 / 进度轨道与 slider thumb 保留可辨识的实体语义状态，不为小图元逐一增加模糊。
+共享 `Card` 与 `.app-surface` 对应 panel，`.app-control-surface`、`.app-overlay-surface`、`.app-reading-surface` 分别对应 control、popover、reading。手写容器优先声明用途，不另写固定透明比例，不使用后代选择器把所有 `bg-card` 改透明。已处于 reading 的嵌套 `CodeBlock` 可显式 `data-surface="transparent"`，避免重复叠层。主按钮、checked 标记、开关 / 进度轨道与 slider thumb 保留可辨识的实体语义状态，不为小图元逐一增加模糊。
+
+模态弹窗的面板和遮罩共同参与透色，二者的参数同样集中在材质配置中；遮罩只轻微弱化背景，主要磨砂由内容面板承担。弹窗页脚、命令面板内部列表共享外层材质，不再重复盖色或模糊。原生 `dialog::backdrop` 与宿主弹窗遮罩共用规则；ARIA dialog 的通用回退不覆盖已有 `data-slot` 的浮层分类，例如使用 dialog 语义的 Popover 仍采用 popover 材质。
+
+共享材质不额外增强常态边框：输入与普通操作控件沿用 `--input`，普通容器边框和分隔线沿用 `--border`，卡片与浮层保留原有的轻描边。浮层只绘制一层边框，不叠加外扩描边；开关与进度轨道不额外加框。强边界留给焦点、错误及明确选中状态，不把前景色混入所有边框。折叠区外框与标题共用 `--disclosure-radius`，展开时仅保留顶部圆角，不以裁切容器隐藏绘制问题。
+
+危险操作按钮和徽标使用轻染底色与受保护的危险文字色，悬停、键盘聚焦时加强淡红反馈；参数仍由共享材质配置维护。关键错误与状态图形按各自语义绘制，避免把列表中反复出现的删除入口都变成实心强调块。
 
 placeholder 与弱说明消费 `--glass-muted-foreground`，链接消费可读前景色；hover / selected 复用共享状态规则。选中态同时使用边框、勾选或其他结构标记，不能仅依赖透明比例差。短暂锁定的扩展字段保留原底色和文字强度，避免内容闪变。增加控件或 slot 时须接入共同规则，或明确标注继承 / 内容专用角色；[样式门禁](../../scripts/ui-style-policy.test.mjs) 由 `pnpm test:scripts` 收集，防止新增控件只改宿主。
 

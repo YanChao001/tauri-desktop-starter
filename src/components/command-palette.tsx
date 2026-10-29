@@ -92,7 +92,10 @@ export function CommandPalette() {
                 ? t("search.loading")
                 : ""}
           </p>
-          <Command.List className="h-[min(60vh,24rem)] overflow-y-auto p-2">
+          <Command.List
+            data-surface="transparent"
+            className="h-[min(60vh,24rem)] overflow-y-auto p-2"
+          >
             <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
               {t("commands.empty")}
             </Command.Empty>
@@ -120,7 +123,7 @@ export function CommandPalette() {
                         ...(command.keywords ?? []),
                         ...(command.keywordKeys?.map((key) => t(key)) ?? []),
                       ]}
-                      className="flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
+                      className="flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-[selected=true]:bg-(--surface-state-selected) data-[selected=true]:text-(--surface-selected-foreground)"
                       onSelect={() => {
                         setPaletteOpen(false);
                         setQuery("");

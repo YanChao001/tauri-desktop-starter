@@ -203,7 +203,7 @@ export function ExtensionDetails({
         </fieldset>
       ) : null}
       <details className="border-t pt-3">
-        <summary className="cursor-pointer rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("ext.technicalInfo")}
         </summary>
         <div className="space-y-4 pt-3">

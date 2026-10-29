@@ -6,10 +6,15 @@
   --ui-ghost-hover: var(--surface-state-hover);
   --ui-destructive-background: color-mix(
     in oklab,
-    var(--destructive) 8%,
-    var(--control-background)
+    var(--destructive) var(--ui-destructive-opacity),
+    transparent
   );
   --ui-destructive-hover: color-mix(
+    in oklab,
+    var(--destructive) var(--ui-destructive-hover-opacity),
+    transparent
+  );
+  --ui-destructive-menu-hover: color-mix(
     in oklab,
     var(--destructive) 14%,
     var(--surface-state-hover)
@@ -242,8 +247,8 @@
   input[type="submit"],
   input[type="reset"]
 ):where(:is([data-variant="destructive"], .ui-button-destructive)) {
-  background: var(--destructive, Mark);
-  color: var(--destructive-foreground, MarkText);
+  background: var(--ui-destructive-background);
+  color: var(--surface-destructive-foreground, var(--destructive, Mark));
 }
 :where(
     button:not([data-slot]):not([role]):not([data-surface]),
@@ -252,8 +257,11 @@
     input[type="button"],
     input[type="submit"],
     input[type="reset"]
-  ):where(:is([data-variant="destructive"], .ui-button-destructive)):hover {
-  background: color-mix(in oklab, var(--destructive) 95%, var(--foreground));
+  ):where(:is([data-variant="destructive"], .ui-button-destructive)):is(
+    :hover,
+    :focus-visible
+  ) {
+  background: var(--ui-destructive-hover);
 }
 :where(
   button:not([data-slot]):not([role]):not([data-surface]),
@@ -960,23 +968,22 @@
   --muted-foreground: var(--glass-muted-foreground);
   background: var(--surface-popover);
   color: var(--popover-foreground, var(--foreground));
+  border: 1px solid var(--surface-frame-border);
   border-radius: var(--radius, 0.625rem);
-  box-shadow:
-    0 0 0 1px var(--surface-border, var(--border)),
-    0 4px 12px #0002;
+  box-shadow: 0 4px 12px #0002;
   -webkit-backdrop-filter: blur(var(--surface-popup-blur));
   backdrop-filter: blur(var(--surface-popup-blur));
 }
 :where(
   dialog:not([data-surface]),
-  [role="dialog"]:not([data-surface]),
-  [role="alertdialog"]:not([data-surface]),
+  [role="dialog"]:not([data-surface]):not([data-slot]),
+  [role="alertdialog"]:not([data-surface]):not([data-slot]),
   [data-slot="dialog-content"]:not([data-surface])
 ) {
   --muted-foreground: var(--glass-muted-foreground);
   background: var(--surface-dialog);
   color: var(--popover-foreground, var(--foreground));
-  border: 1px solid var(--border);
+  border: 1px solid var(--surface-frame-border);
   border-radius: var(--radius-xl, 0.75rem);
   -webkit-backdrop-filter: blur(var(--surface-popup-blur));
   backdrop-filter: blur(var(--surface-popup-blur));
@@ -1043,14 +1050,27 @@
   white-space: nowrap;
 }
 :where(details) {
+  --disclosure-radius: var(--radius, 0.625rem);
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius, 0.625rem);
+  border-radius: var(--disclosure-radius);
+}
+:where(details[data-disclosure-radius="md"]) {
+  --disclosure-radius: calc(var(--radius, 0.625rem) * 0.8);
+}
+:where(details[data-disclosure-radius="xl"]) {
+  --disclosure-radius: calc(var(--radius, 0.625rem) * 1.4);
 }
 :where(summary) {
   cursor: pointer;
-  border-radius: inherit;
+  /* 原生 details 的匿名插槽可能令 inherit 取到 0，父子显式使用同一令牌。 */
+  border-radius: var(--disclosure-radius, var(--radius, 0.625rem));
   padding: 0.75rem 1rem;
+}
+/* 只按父容器圆角绘制；展开后下角连接正文，不裁切内容或焦点环。 */
+:where(details[open] > summary) {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
 :where(summary:not([data-surface])) {
   background: var(--control-background);
@@ -1113,13 +1133,18 @@
   height: 2.25rem;
   padding: 0;
 }
-:where([data-slot="button"], .ui-button):where(
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(
   [data-variant="outline"],
   [data-variant="secondary"],
-  [data-variant="destructive"],
   .ui-button-outline,
-  .ui-button-secondary,
-  .ui-button-destructive
+  .ui-button-secondary
 ) {
   -webkit-backdrop-filter: blur(var(--surface-control-blur));
   backdrop-filter: blur(var(--surface-control-blur));
@@ -1243,7 +1268,7 @@
   :focus,
   [data-highlighted]
 ) {
-  background: var(--ui-destructive-hover);
+  background: var(--ui-destructive-menu-hover);
 }
 :where(tbody tr):where(
   :hover,
@@ -1281,7 +1306,7 @@
   width: 2rem;
   height: 1.15rem;
   padding: 0;
-  border: 1px solid var(--surface-control-border, var(--input));
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--surface-reading);
 }
@@ -1331,7 +1356,7 @@
   appearance: none;
   width: 100%;
   height: 0.5rem;
-  border: 1px solid var(--surface-control-border, var(--input));
+  border: 0;
   color: var(--primary);
 }
 :where(progress)::-webkit-progress-bar {
@@ -1403,8 +1428,8 @@
   backdrop-filter: blur(var(--surface-control-blur));
 }
 :where([data-slot="badge"][data-variant="destructive"], .ui-badge-destructive) {
-  background: var(--destructive);
-  color: var(--destructive-foreground);
+  background: var(--ui-destructive-background);
+  color: var(--surface-destructive-foreground, var(--destructive));
 }
 :where([data-slot="badge"][data-variant="ghost"], .ui-badge-ghost) {
   background: transparent;
@@ -1427,9 +1452,9 @@
 :where(
   a[data-slot="badge"][data-variant="destructive"],
   a.ui-badge-destructive
-):hover {
-  background: color-mix(in oklab, var(--destructive) 95%, var(--foreground));
-  color: var(--destructive-foreground);
+):is(:hover, :focus-visible) {
+  background: var(--ui-destructive-hover);
+  color: var(--surface-destructive-foreground, var(--destructive));
 }
 :where([data-slot="tooltip-content"], [role="tooltip"]) {
   --muted-foreground: var(--glass-muted-foreground);
@@ -1442,13 +1467,14 @@
   background: var(--surface-reading);
   fill: var(--surface-reading);
 }
-:where([data-slot="dialog-overlay"]) {
-  background: color-mix(in oklab, var(--background) 20%, transparent);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
+:where([data-slot="dialog-overlay"]),
+:where(dialog)::backdrop {
+  background: var(--surface-dialog-overlay);
+  -webkit-backdrop-filter: blur(var(--surface-dialog-overlay-blur));
+  backdrop-filter: blur(var(--surface-dialog-overlay-blur));
 }
-:where([data-slot="dialog-footer"]) {
-  background: var(--surface-card-muted);
+:where([data-slot="dialog-footer"]:not([data-surface])) {
+  background: transparent;
 }
 :where([data-slot="avatar-fallback"], [data-slot="avatar-group-count"]) {
   background: var(--control-background);
@@ -1483,7 +1509,7 @@
   background: transparent;
 }
 :where([data-slot="card"]) {
-  box-shadow: 0 0 0 1px var(--border);
+  box-shadow: 0 0 0 1px var(--surface-frame-border);
 }
 :where([data-slot="avatar-badge"]) {
   background: var(--primary);
@@ -1538,7 +1564,7 @@
 :where([data-slot="progress"], progress, meter) {
   width: 100%;
   height: 0.375rem;
-  border: 1px solid var(--surface-control-border, var(--input));
+  border: 0;
 }
 :where([data-slot="checkbox"], .ui-checkbox) {
   width: 1rem;

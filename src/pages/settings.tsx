@@ -779,7 +779,11 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <details className="studio-panel settings-about" id="settings-about">
+      <details
+        data-disclosure-radius="xl"
+        className="studio-panel settings-about"
+        id="settings-about"
+      >
         <summary>
           {t("studio.settingsAbout")}
           <ChevronDownIcon size={16} />

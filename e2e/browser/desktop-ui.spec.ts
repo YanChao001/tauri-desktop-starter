@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { Buffer } from "node:buffer";
+import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import appConfig from "../../app.config.json" with { type: "json" };
@@ -385,6 +386,483 @@ async function measureFrostedText(locator: Locator, placeholder = false) {
 }
 
 for (const theme of ["light", "dark"]) {
+  test(`modal dialog panels transmit wallpaper independently of their overlay: ${theme}`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(180_000);
+    await seed(page, { theme, backgroundIntensity: 50 });
+    const samples = new Map<
+      string,
+      { visible: number[][]; backdrop: number[][] }[]
+    >();
+    const diagnostics: unknown[] = [];
+    const states: {
+      intensity: number;
+      label: string;
+      alpha: number;
+      blur: number;
+      innerAlpha: number;
+      innerBlur: number;
+    }[] = [];
+    const styleOf = (target: Locator) =>
+      target.evaluate((node) => {
+        const style = getComputedStyle(node);
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = style.backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return {
+          alpha: context.getImageData(0, 0, 1, 1).data[3]! / 255,
+          blur: Number(style.backdropFilter.match(/[\d.]+/)?.[0] ?? 0),
+        };
+      });
+    const capture = async (
+      dialog: Locator,
+      intensity: number,
+      kind: "reset" | "command",
+      wallpaper: string,
+    ) => {
+      await expect(dialog).toHaveCSS("opacity", "1");
+      await dialog.evaluate(async (node) => {
+        await Promise.all(
+          node
+            .getAnimations({ subtree: true })
+            .filter(
+              (animation) =>
+                animation.effect?.getComputedTiming().iterations !== Infinity,
+            )
+            .map((animation) => animation.finished.catch(() => undefined)),
+        );
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+      const panel = (await dialog.boundingBox())!;
+      const inner =
+        kind === "reset"
+          ? dialog.locator('[data-slot="dialog-footer"]')
+          : dialog.locator("[cmdk-list]");
+      const inset = (await inner.boundingBox())!;
+      const bodyBottom = kind === "reset" ? inset.y : panel.y + 46;
+      const areas = [
+        {
+          label: "body",
+          x: panel.x + 6,
+          top: panel.y + 12,
+          height: bodyBottom - panel.y - 24,
+        },
+        {
+          label: kind === "reset" ? "footer" : "list",
+          x: inset.x + 6,
+          top: inset.y + 8,
+          height: inset.height - 16,
+        },
+      ];
+      const points = areas.flatMap((area) =>
+        [0.2, 0.4, 0.6, 0.8].map((fraction) => ({
+          x: area.x,
+          y: area.top + area.height * fraction,
+        })),
+      );
+      const pixels = async () => {
+        const encoded = (await page.screenshot()).toString("base64");
+        return page.evaluate(
+          async ({ encoded, points }) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${encoded}`;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 5;
+            const context = canvas.getContext("2d")!;
+            return points.map(({ x, y }) => {
+              context.clearRect(0, 0, 5, 5);
+              context.drawImage(image, x - 2, y - 2, 5, 5, 0, 0, 5, 5);
+              const data = context.getImageData(0, 0, 5, 5).data;
+              return [0, 1, 2].map((channel) => {
+                let sum = 0;
+                for (let index = channel; index < data.length; index += 4)
+                  sum += data[index]!;
+                return sum / 25;
+              });
+            });
+          },
+          { encoded, points },
+        );
+      };
+      const visible = await pixels();
+      const content = (await dialog.elementHandle())!;
+      const reference = await content.evaluateHandle((node) => {
+        const element = node as HTMLElement;
+        const children = Array.from(element.children) as HTMLElement[];
+        const previous = [element, ...children].map((target) => ({
+          target,
+          style: target.getAttribute("style"),
+        }));
+        // 参考保留同一背景模糊，仅移除面板漆面和内层；后景文字的模糊不计入不透明度。
+        for (const { target } of previous)
+          target.style.setProperty("transition", "none", "important");
+        element.style.setProperty("background", "transparent", "important");
+        for (const child of children)
+          child.style.setProperty("visibility", "hidden", "important");
+        return previous;
+      });
+      let backdrop: number[][];
+      try {
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        backdrop = await pixels();
+      } finally {
+        await reference.evaluate((previous) => {
+          // 先在 transition 关闭时提交还原后的漆面，避免 duration utility 启动反向淡入。
+          for (const { target, style } of previous) {
+            if (style === null) target.removeAttribute("style");
+            else target.setAttribute("style", style);
+            target.style.setProperty("transition", "none", "important");
+          }
+          for (const { target } of previous)
+            getComputedStyle(target).getPropertyValue("background-color");
+          for (const { target, style } of previous) {
+            if (style === null) target.removeAttribute("style");
+            else target.setAttribute("style", style);
+          }
+        });
+        await reference.dispose();
+        await content.dispose();
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+      }
+      for (const [index, area] of areas.entries()) {
+        const key = `${intensity}% ${kind} ${area.label}`;
+        samples.set(key, [
+          ...(samples.get(key) ?? []),
+          {
+            visible: visible.slice(index * 4, index * 4 + 4),
+            backdrop: backdrop.slice(index * 4, index * 4 + 4),
+          },
+        ]);
+      }
+      const material = await styleOf(dialog);
+      const innerMaterial = await styleOf(inner);
+      states.push({
+        intensity,
+        label: `${kind} ${wallpaper}`,
+        ...material,
+        innerAlpha: innerMaterial.alpha,
+        innerBlur: innerMaterial.blur,
+      });
+      diagnostics.push({
+        wallpaper,
+        intensity,
+        kind,
+        panel: material,
+        inner: innerMaterial,
+        visible,
+        backdrop,
+      });
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `${kind}-${theme}-${wallpaper}-${intensity}.png`,
+        ),
+      });
+      const title =
+        kind === "reset"
+          ? dialog.getByRole("heading", {
+              name: "Restore default preferences?",
+              exact: true,
+            })
+          : dialog.getByRole("combobox", {
+              name: "Quick actions",
+              exact: true,
+            });
+      const contrast = await renderedTextContrast(
+        page,
+        title,
+        kind === "command",
+      );
+      expect(
+        contrast.contrast,
+        `${kind} ${theme} ${wallpaper} ${intensity}% heading/input ${JSON.stringify(contrast)}`,
+      ).toBeGreaterThanOrEqual(4.5);
+      if (kind === "reset") {
+        const description = await renderedTextContrast(
+          page,
+          dialog.locator('[data-slot="dialog-description"]'),
+        );
+        expect(
+          description.contrast,
+          `reset description ${theme} ${wallpaper} ${intensity}% ${JSON.stringify(description)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        const cancel = await renderedTextContrast(
+          page,
+          dialog.getByRole("button", { name: "Cancel", exact: true }),
+        );
+        expect(
+          cancel.contrast,
+          `reset footer ${theme} ${wallpaper} ${intensity}% ${JSON.stringify(cancel)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        const action = dialog.getByRole("button", {
+          name: "Reset preferences",
+          exact: true,
+        });
+        try {
+          await page.mouse.move(0, 0);
+          const normal = await renderedTextContrast(page, action);
+          diagnostics.push({
+            wallpaper,
+            intensity,
+            kind: "reset-action",
+            state: "normal",
+            ...normal,
+          });
+          expect(
+            normal.contrast,
+            `reset action normal ${theme} ${wallpaper} ${intensity}% ${JSON.stringify(normal)}`,
+          ).toBeGreaterThanOrEqual(4.5);
+          await action.hover();
+          const hovered = await renderedTextContrast(page, action);
+          diagnostics.push({
+            wallpaper,
+            intensity,
+            kind: "reset-action",
+            state: "hover",
+            ...hovered,
+          });
+          expect(
+            hovered.contrast,
+            `reset action hover ${theme} ${wallpaper} ${intensity}% ${JSON.stringify(hovered)}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        } finally {
+          await page.mouse.move(0, 0);
+        }
+      } else {
+        const selected = dialog
+          .locator('[cmdk-item][data-selected="true"]')
+          .first();
+        await expect(selected).toBeVisible();
+        const item = await renderedTextContrast(page, selected);
+        expect(
+          item.contrast,
+          `command selected item ${theme} ${wallpaper} ${intensity}% ${JSON.stringify(item)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    };
+    for (const wallpaper of ["black", "white"]) {
+      await page.goto("./#/settings");
+      const image = await page.evaluate((color) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 16;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = color;
+        context.fillRect(0, 0, 16, 16);
+        return canvas.toDataURL("image/png").split(",")[1]!;
+      }, wallpaper);
+      await page.locator('input[type="file"]').setInputFiles({
+        name: `dialog-${wallpaper}.png`,
+        mimeType: "image/png",
+        buffer: Buffer.from(image, "base64"),
+      });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-background",
+        "custom",
+      );
+      await expect
+        .poll(() =>
+          page.locator("[data-custom-background]").evaluate(async (node) => {
+            const image = node as HTMLImageElement;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0, 1, 1);
+            return context.getImageData(0, 0, 1, 1).data[0];
+          }),
+        )
+        .toBe(wallpaper === "black" ? 0 : 255);
+      for (const intensity of [0, 50, 100]) {
+        const slider = page.getByRole("slider", {
+          name: "Background transparency",
+          exact: true,
+        });
+        await slider.press("Home");
+        for (let step = 0; step < intensity / 10; step++)
+          await slider.press("ArrowRight");
+        await expect(slider).toHaveAttribute(
+          "aria-valuenow",
+          String(intensity),
+        );
+        await page
+          .getByRole("button", { name: "Reset preferences", exact: true })
+          .click();
+        const reset = page.getByRole("dialog", {
+          name: "Restore default preferences?",
+          exact: true,
+        });
+        await capture(reset, intensity, "reset", wallpaper);
+        await reset
+          .getByRole("button", { name: "Cancel", exact: true })
+          .click();
+        await expect(reset).toHaveCount(0);
+        await page.keyboard.press("Control+k");
+        const command = page.getByRole("dialog", {
+          name: "Quick actions",
+          exact: true,
+        });
+        await capture(command, intensity, "command", wallpaper);
+        await page.keyboard.press("Escape");
+        await expect(command).toHaveCount(0);
+      }
+    }
+    const transmissions = [...samples].map(([label, [black, white]]) => {
+      const differences = black!.visible.map((pixel, index) => {
+        const visible =
+          pixel.reduce(
+            (total, value, channel) =>
+              total + Math.abs(value - white!.visible[index]![channel]!),
+            0,
+          ) / 3;
+        const backdrop =
+          black!.backdrop[index]!.reduce(
+            (total, value, channel) =>
+              total + Math.abs(value - white!.backdrop[index]![channel]!),
+            0,
+          ) / 3;
+        return { visible, backdrop };
+      });
+      const valid = differences.filter((sample) => sample.backdrop > 8);
+      const visible =
+        valid.reduce((total, sample) => total + sample.visible, 0) /
+        valid.length;
+      const backdrop =
+        valid.reduce((total, sample) => total + sample.backdrop, 0) /
+        valid.length;
+      return {
+        label,
+        intensity: Number(label.split("%")[0]),
+        differences,
+        valid: valid.length,
+        visible,
+        backdrop,
+        ratio: valid.length ? visible / backdrop : null,
+      };
+    });
+    const reportPath = testInfo.outputPath("dialog-material-pixels.json");
+    await writeFile(
+      reportPath,
+      JSON.stringify({ diagnostics, transmissions, states }, null, 2),
+    );
+    await testInfo.attach("dialog-material-pixels", {
+      path: reportPath,
+      contentType: "application/json",
+    });
+    for (const sample of transmissions) {
+      if (sample.intensity === 0) {
+        for (const point of sample.differences)
+          expect(
+            point.visible,
+            `${sample.label} remains solid`,
+          ).toBeLessThanOrEqual(1);
+        continue;
+      }
+      expect(
+        sample.valid,
+        `valid wallpaper variation: ${JSON.stringify(sample)}`,
+      ).toBeGreaterThan(0);
+      expect(
+        sample.ratio,
+        `dialog transmits actual backdrop: ${JSON.stringify(sample)}`,
+      ).toBeGreaterThan(sample.intensity === 50 ? 0.6 : 0.25);
+    }
+    for (const state of states) {
+      if (state.intensity === 0) {
+        expect(state.alpha, `${state.label} opaque fallback`).toBe(1);
+        expect(state.blur, `${state.label} unblurred fallback`).toBe(0);
+      } else {
+        expect(state.alpha, `${state.label} reading mask`).toBeGreaterThan(0);
+        expect(state.alpha, `${state.label} translucent face`).toBeLessThan(1);
+        expect(state.blur, `${state.label} local frost`).toBeGreaterThan(0);
+      }
+      // Footer 和列表共享弹窗自身材质，不能再次盖上独立底色与模糊层。
+      expect(state.innerAlpha, `${state.label} inner layer`).toBe(0);
+      expect(state.innerBlur, `${state.label} inner filter`).toBe(0);
+    }
+
+    const slider = page.getByRole("slider", {
+      name: "Background transparency",
+      exact: true,
+    });
+    await slider.press("Home");
+    for (let step = 0; step < 5; step++) await slider.press("ArrowRight");
+    const search = page.getByRole("searchbox", {
+      name: "Search settings",
+      exact: true,
+    });
+    await search.fill("font");
+    const popover = page.getByRole("dialog", {
+      name: "Search settings",
+      exact: true,
+    });
+    await expect(popover).toHaveCSS("opacity", "1");
+    const popupBefore = await styleOf(popover);
+    await search.press("Escape");
+    await expect(popover).toHaveCount(0);
+    const previousDialog = await page.evaluate(() => {
+      const root = document.documentElement;
+      const previous = {
+        value: root.style.getPropertyValue("--ui-dialog-opacity-at-half"),
+        priority: root.style.getPropertyPriority("--ui-dialog-opacity-at-half"),
+      };
+      root.style.setProperty("--ui-dialog-opacity-at-half", "80%");
+      return previous;
+    });
+    try {
+      await search.fill("font");
+      await expect(popover).toHaveCSS("opacity", "1");
+      await expect
+        .poll(async () => (await styleOf(popover)).alpha)
+        .toBeCloseTo(popupBefore.alpha, 2);
+      await search.press("Escape");
+      await expect(popover).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "Reset preferences", exact: true })
+        .click();
+      const reset = page.getByRole("dialog", {
+        name: "Restore default preferences?",
+        exact: true,
+      });
+      await expect(reset).toHaveCSS("opacity", "1");
+      expect(
+        (await styleOf(reset)).alpha,
+        "dialog policy changes without overriding the popover slot",
+      ).toBeGreaterThan(popupBefore.alpha + 0.3);
+      await reset.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(reset).toHaveCount(0);
+    } finally {
+      await page.evaluate((previous) => {
+        const root = document.documentElement;
+        if (previous.value)
+          root.style.setProperty(
+            "--ui-dialog-opacity-at-half",
+            previous.value,
+            previous.priority,
+          );
+        else root.style.removeProperty("--ui-dialog-opacity-at-half");
+      }, previousDialog);
+    }
+  });
+
   test(`page panels and fields share their skin transparency on every route: ${theme}`, async ({
     page,
   }) => {

@@ -35,7 +35,6 @@
   font-size: 0.875rem;
   font-weight: 500;
   list-style: none;
-  border-radius: inherit;
 }
 .settings-about > summary::-webkit-details-marker {
   display: none;

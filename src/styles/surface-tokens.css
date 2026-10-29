@@ -9,13 +9,17 @@
   --ui-control-opacity-at-full: 35%;
   --ui-popup-opacity-at-half: 30%;
   --ui-popup-opacity-at-full: 70%;
-  --ui-dialog-opacity-at-half: 50%;
-  --ui-dialog-opacity-at-full: 78%;
+  --ui-dialog-opacity-at-half: 30%;
+  --ui-dialog-opacity-at-full: 70%;
+  --ui-dialog-overlay-opacity: 10%;
+  --ui-dialog-overlay-blur: 2px;
   --ui-reading-opacity-at-half: 55%;
   --ui-reading-opacity-at-full: 85%;
   --ui-control-blur: 18px;
   --ui-popup-blur: 28px;
   --ui-reading-blur: 20px;
+  --ui-destructive-opacity: 5%;
+  --ui-destructive-hover-opacity: 10%;
 
   /* 高档继续增加实际透色，同时为裸正文和导航保留阅读保护。 */
   --ui-page-reveal-slope: calc(
@@ -65,12 +69,14 @@
   --surface-reading-blur: 0px;
   --glass-muted-foreground: var(--muted-foreground);
   --surface-link-foreground: var(--primary);
-  --surface-control-border: color-mix(
+  /* 共享材质沿用主题原有细边框，增强仅用于焦点、错误和明确选中状态。 */
+  --surface-control-border: var(--input);
+  --surface-border: var(--border);
+  --surface-frame-border: color-mix(
     in oklab,
-    var(--foreground) 65%,
-    var(--input)
+    var(--foreground) 10%,
+    transparent
   );
-  --surface-border: color-mix(in oklab, var(--foreground) 30%, var(--border));
   --control-background: color-mix(
     in oklab,
     var(--popover) var(--surface-control-opacity),
@@ -85,6 +91,16 @@
     in oklab,
     var(--popover) var(--surface-dialog-opacity),
     transparent
+  );
+  /* 模态遮罩与内容面板会合成；遮罩只弱化背景，避免再次盖浓阅读底色。 */
+  --surface-dialog-overlay: color-mix(
+    in oklab,
+    var(--background) var(--ui-dialog-overlay-opacity),
+    transparent
+  );
+  --surface-dialog-overlay-blur: min(
+    var(--ui-dialog-overlay-blur),
+    var(--surface-popup-blur)
   );
   --surface-reading: color-mix(
     in oklab,
@@ -102,6 +118,11 @@
     var(--control-background)
   );
   --surface-selected-foreground: var(--foreground);
+  --surface-destructive-foreground: color-mix(
+    in oklab,
+    var(--foreground) 75%,
+    var(--destructive)
+  );
   --control-disabled-color: color-mix(
     in oklab,
     var(--input) 50%,
@@ -130,6 +151,8 @@
   --code-operator: var(--code-null);
 }
 .dark {
+  --ui-destructive-opacity: 10%;
+  --ui-destructive-hover-opacity: 20%;
   --control-disabled-color: color-mix(
     in oklab,
     var(--input) 80%,

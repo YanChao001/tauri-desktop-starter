@@ -51,6 +51,8 @@ try {
       <button id="sdk-outline" type="button" data-variant="outline">Outline</button>
       <button id="sdk-ghost" type="button" data-variant="ghost">Ghost</button>
       <button id="sdk-destructive" type="button" data-variant="destructive">Destructive</button>
+      <span id="sdk-badge-destructive" class="ui-badge ui-badge-destructive">Destructive badge</span>
+      <a id="sdk-badge-link-destructive" href="#badge" class="ui-badge ui-badge-destructive">Destructive badge link</a>
       <button id="sdk-link" type="button" data-variant="link">Link</button>
       <button id="sdk-disabled" disabled>Disabled</button>
       <input id="sdk-input" placeholder="Input"><input id="sdk-invalid" aria-invalid="true">
@@ -63,6 +65,7 @@ try {
       <div id="sdk-card" style="background:var(--surface-card,var(--card))">Card</div>
       <div id="sdk-muted-card" style="background:var(--surface-card-muted,var(--muted))">Muted card</div>
       <input id="sdk-checkbox" type="checkbox" checked><input id="sdk-unchecked" type="checkbox">
+      <input id="sdk-switch" type="checkbox" role="switch">
       <input id="sdk-indeterminate" type="checkbox"><input id="sdk-radio" type="radio" checked>
       <input id="sdk-range" type="range" min="0" max="100" value="30">
       <input id="sdk-authored" type="button" value="Author"><section id="shadow-host"></section>
@@ -76,14 +79,25 @@ try {
     import { createPortal } from "react-dom";
     import { Card } from ${sourcePath("src/components/ui/card.tsx")};
     import { Button } from ${sourcePath("src/components/ui/button.tsx")};
+    import { Badge } from ${sourcePath("src/components/ui/badge.tsx")};
     import { Input } from ${sourcePath("src/components/ui/input.tsx")};
     import { Textarea } from ${sourcePath("src/components/ui/textarea.tsx")};
     import { Select, SelectTrigger, SelectValue } from ${sourcePath("src/components/ui/select.tsx")};
     import { Checkbox } from ${sourcePath("src/components/ui/checkbox.tsx")};
+    import { Switch } from ${sourcePath("src/components/ui/switch.tsx")};
     import { RadioGroup, RadioGroupItem } from ${sourcePath("src/components/ui/radio-group.tsx")};
     import { Tabs, TabsList, TabsTrigger } from ${sourcePath("src/components/ui/tabs.tsx")};
+    import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from ${sourcePath("src/components/ui/dialog.tsx")};
     import { ExtensionCustomUi } from ${sourcePath("src/features/extensions/extension-custom-ui.tsx")};
     import "./fixture.css";
+    function HostDialogProbe() {
+      return <Dialog>
+        <DialogTrigger asChild><Button id="host-dialog-open">Open dialog</Button></DialogTrigger>
+        <DialogContent id="host-dialog" closeLabel="Close">
+          <DialogHeader><DialogTitle>Dialog material</DialogTitle><DialogDescription>Shared modal reading surface</DialogDescription></DialogHeader>
+        </DialogContent>
+      </Dialog>;
+    }
     createRoot(document.getElementById("root")!).render(
       <><main className="app-main" style={{inset:"16px auto auto 16px",width:320,display:"grid",gap:12}}>
         <Button id="host-button">Button</Button>
@@ -91,6 +105,8 @@ try {
         <Button id="host-outline" variant="outline">Outline</Button>
         <Button id="host-ghost" variant="ghost">Ghost</Button>
         <Button id="host-destructive" variant="destructive">Destructive</Button>
+        <Badge id="host-badge-destructive" variant="destructive">Destructive badge</Badge>
+        <Badge id="host-badge-link-destructive" variant="destructive" asChild><a href="#badge">Destructive badge link</a></Badge>
         <Button id="host-link" variant="link">Link</Button>
         <Button id="host-disabled" disabled>Disabled</Button>
         <Input id="host-input" placeholder="Input" />
@@ -98,6 +114,7 @@ try {
         <Textarea id="host-textarea" placeholder="Textarea" />
         <Checkbox id="host-checkbox" defaultChecked />
         <Checkbox id="host-unchecked" />
+        <Switch id="host-switch" />
         <Checkbox id="host-indeterminate" checked="indeterminate" />
         <RadioGroup defaultValue="one"><RadioGroupItem id="host-radio" value="one" /></RadioGroup>
         <Select defaultValue="one"><SelectTrigger id="host-select"><SelectValue>Select</SelectValue></SelectTrigger></Select>
@@ -108,9 +125,11 @@ try {
         <Tabs defaultValue="one"><TabsList variant="line"><TabsTrigger id="host-line-one" value="one">Line one</TabsTrigger><TabsTrigger value="two">Line two</TabsTrigger></TabsList></Tabs>
       </main>
       {createPortal(<aside style={{position:"fixed",left:1080,top:16,width:180}}>
+        <HostDialogProbe />
         <Input id="portal-input" placeholder="Portal input" />
         <Textarea id="portal-textarea" placeholder="Portal textarea" />
         <Card id="host-card">Card</Card>
+        <div id="host-border-reference" className="border" style={{boxShadow:"0 0 0 1px var(--surface-frame-border)"}}>Border reference</div>
         <div id="host-panel" className="app-surface">Panel</div>
         <div id="host-muted-card" style={{background:"var(--surface-card-muted)"}}>Muted card</div>
       </aside>, document.body)}
@@ -201,66 +220,73 @@ try {
     await expect(frame.locator("html")).toHaveClass(dark ? "dark" : "light");
     await expect(frame.locator("[data-starter-initial-paint]")).toHaveCount(0);
   };
-  const measure = (locator, properties) =>
-    locator.evaluate(async (node, properties) => {
-      const style = getComputedStyle(node);
-      // Read final colors, rather than a one-millisecond reduced-motion interpolation.
-      void style.borderColor;
-      await Promise.all(
-        node
-          .getAnimations()
-          .filter((animation) => animation instanceof CSSTransition)
-          .map((animation) => animation.finished.catch(() => {})),
-      );
-      return Object.fromEntries(
-        properties.map((name) => {
-          if (
-            [
-              "backgroundColor",
-              "borderColor",
-              "color",
-              "placeholderColor",
-            ].includes(name)
-          ) {
-            // Equivalent computed colors can serialize as oklab or oklch after a transition.
-            const canvas = document.createElement("canvas");
-            canvas.width = canvas.height = 1;
-            const context = canvas.getContext("2d");
-            context.fillStyle =
-              name === "placeholderColor"
-                ? getComputedStyle(node, "::placeholder").color
-                : style[name];
-            context.fillRect(0, 0, 1, 1);
-            return [name, Array.from(context.getImageData(0, 0, 1, 1).data)];
-          }
-          // CSS uses either 50% or a very large radius for the same circular shape.
-          if (name === "borderRadius") {
-            const bounds = node.getBoundingClientRect();
-            return [
-              name,
-              style[name] === "50%"
-                ? Math.min(bounds.width, bounds.height) / 2
-                : Math.min(
-                    parseFloat(style[name]),
-                    bounds.width / 2,
-                    bounds.height / 2,
-                  ),
-            ];
-          }
-          if (name === "boxShadow") {
-            // Tailwind composes invisible placeholder shadows around the visible ring.
-            const visible = style[name]
-              .split(/,(?![^()]*\))/)
-              .map((shadow) => shadow.trim())
-              .filter(
-                (shadow) => shadow !== "rgba(0, 0, 0, 0) 0px 0px 0px 0px",
-              );
-            return [name, visible.join(", ") || "none"];
-          }
-          return [name, style[name]];
-        }),
-      );
-    }, properties);
+  const measure = (locator, properties, pseudo = null) =>
+    locator.evaluate(
+      async (node, { properties, pseudo }) => {
+        const style = getComputedStyle(node, pseudo);
+        // Read final colors, rather than a one-millisecond reduced-motion interpolation.
+        void style.borderColor;
+        await Promise.all(
+          node
+            .getAnimations()
+            .filter((animation) => animation instanceof CSSTransition)
+            .map((animation) => animation.finished.catch(() => {})),
+        );
+        return Object.fromEntries(
+          properties.map((name) => {
+            if (
+              [
+                "backgroundColor",
+                "borderColor",
+                "color",
+                "placeholderColor",
+                "--input",
+                "--border",
+              ].includes(name)
+            ) {
+              // Equivalent computed colors can serialize as oklab or oklch after a transition.
+              const canvas = document.createElement("canvas");
+              canvas.width = canvas.height = 1;
+              const context = canvas.getContext("2d");
+              context.fillStyle =
+                name === "placeholderColor"
+                  ? getComputedStyle(node, "::placeholder").color
+                  : name.startsWith("--")
+                    ? style.getPropertyValue(name)
+                    : style[name];
+              context.fillRect(0, 0, 1, 1);
+              return [name, Array.from(context.getImageData(0, 0, 1, 1).data)];
+            }
+            // CSS uses either 50% or a very large radius for the same circular shape.
+            if (name === "borderRadius") {
+              const bounds = node.getBoundingClientRect();
+              return [
+                name,
+                style[name] === "50%"
+                  ? Math.min(bounds.width, bounds.height) / 2
+                  : Math.min(
+                      parseFloat(style[name]),
+                      bounds.width / 2,
+                      bounds.height / 2,
+                    ),
+              ];
+            }
+            if (name === "boxShadow") {
+              // Tailwind composes invisible placeholder shadows around the visible ring.
+              const visible = style[name]
+                .split(/,(?![^()]*\))/)
+                .map((shadow) => shadow.trim())
+                .filter(
+                  (shadow) => shadow !== "rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+                );
+              return [name, visible.join(", ") || "none"];
+            }
+            return [name, style[name]];
+          }),
+        );
+      },
+      { properties, pseudo },
+    );
   const compare = async (host, child, properties) => {
     const expected = await measure(page.locator(`#host-${host}`), properties);
     await expect
@@ -342,6 +368,7 @@ try {
     "borderRadius",
     "borderWidth",
     "backgroundColor",
+    "backdropFilter",
     "color",
     "fontSize",
     "fontFamily",
@@ -379,12 +406,13 @@ try {
       </fieldset>
       <output id="${prefix}-rare-output">Result</output>
       <pre id="${prefix}-rare-pre"><code><span class="code-token--property">name</span></code></pre>
-      <details open><summary id="${prefix}-rare-summary">Details</summary>Details content</details>
+      <details id="${prefix}-rare-details" open style="--disclosure-radius:calc(var(--radius) * 1.4)"><summary id="${prefix}-rare-summary">Details</summary>Details content</details>
       <kbd id="${prefix}-rare-kbd">Ctrl K</kbd>
       <kbd id="${prefix}-rare-kbd-control" data-surface="control">Ctrl K</kbd>
       <table><thead id="${prefix}-rare-header"><tr><th>Column</th></tr></thead><tbody><tr><td>Cell</td></tr></tbody></table>
       <progress id="${prefix}-rare-progress" value="60" max="100"></progress>
-      <meter id="${prefix}-rare-meter" value="0.6"></meter>`;
+      <meter id="${prefix}-rare-meter" value="0.6"></meter>
+      <dialog id="${prefix}-rare-dialog"><form method="dialog"><p>Native dialog</p><button>Close native dialog</button></form></dialog>`;
     (document.querySelector("main") || document.body).append(section);
   };
   await page.evaluate(addRareControls, "host");
@@ -430,10 +458,173 @@ try {
       },
       { kind, exposure },
     );
+  const dialogProperties = ["backgroundColor", "color", "backdropFilter"];
+  const backdropProperties = ["backgroundColor", "backdropFilter"];
+  const dialogRecipe = async () => {
+    await page.locator("#host-dialog-open").click();
+    const panel = page.locator("#host-dialog");
+    await expect(panel).toHaveCSS("opacity", "1");
+    const recipe = {
+      panel: await measure(panel, dialogProperties),
+      backdrop: await measure(
+        page.locator('[data-slot="dialog-overlay"]'),
+        backdropProperties,
+      ),
+    };
+    for (const surface of [recipe.panel, recipe.backdrop]) {
+      assert.ok(
+        surface.backgroundColor[3] > 0 && surface.backgroundColor[3] < 255,
+        "modal panel and scrim retain translucent reading masks",
+      );
+      assert.ok(
+        parseFloat(surface.backdropFilter.match(/[\d.]+/)?.[0] ?? "0") > 0,
+        "modal panel and scrim retain local backdrop blur",
+      );
+    }
+    await panel.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(page.locator("#host-dialog-open")).toBeFocused();
+    return recipe;
+  };
+  const checkNativeDialog = async (dialog, recipe, label) => {
+    await dialog.evaluate((node) => node.showModal());
+    await expect(dialog).toBeVisible();
+    await expect
+      .poll(() => measure(dialog, dialogProperties), `${label} panel`)
+      .toEqual(recipe.panel);
+    await expect
+      .poll(
+        () => measure(dialog, backdropProperties, "::backdrop"),
+        `${label} native backdrop`,
+      )
+      .toEqual(recipe.backdrop);
+    await dialog.locator("button").press("Escape");
+    await expect(dialog).toBeHidden();
+    assert.equal(
+      await dialog.evaluate((node) => node.open),
+      false,
+      "Escape closes native dialogs without replacing browser keyboard semantics",
+    );
+  };
+  const checkDisclosure = async (scope, prefix) => {
+    const details = scope.locator(`#${prefix}-rare-details`);
+    const summary = scope.locator(`#${prefix}-rare-summary`);
+    assert.equal(await details.evaluate((node) => node.open), true);
+    await summary.focus();
+    for (const open of [false, true]) {
+      await summary.press("Enter");
+      await expect.poll(() => details.evaluate((node) => node.open)).toBe(open);
+      await expect(summary).toBeFocused();
+      const radii = await summary.evaluate((node) => {
+        const corners = [
+          "borderTopLeftRadius",
+          "borderTopRightRadius",
+          "borderBottomRightRadius",
+          "borderBottomLeftRadius",
+        ];
+        const read = (element) =>
+          corners.map((corner) =>
+            parseFloat(getComputedStyle(element)[corner]),
+          );
+        return { parent: read(node.closest("details")), summary: read(node) };
+      });
+      assert.ok(
+        radii.parent.every((radius) => radius > 0),
+        "disclosure container retains its configured rounded corners",
+      );
+      await expect
+        .poll(
+          () =>
+            summary.evaluate((node) => {
+              const style = getComputedStyle(node);
+              return [
+                style.borderTopLeftRadius,
+                style.borderTopRightRadius,
+                style.borderBottomRightRadius,
+                style.borderBottomLeftRadius,
+              ].map(parseFloat);
+            }),
+          `${prefix} summary uses the parent's explicit disclosure radius in ${open ? "open" : "closed"} state`,
+        )
+        .toEqual(
+          open ? [radii.parent[0], radii.parent[1], 0, 0] : radii.parent,
+        );
+    }
+  };
+  const checkSoftDanger = async (locator, opacity) => {
+    const paint = await measure(locator, [
+      "backgroundColor",
+      "color",
+      "backdropFilter",
+    ]);
+    assert.ok(
+      Math.abs(paint.backgroundColor[3] - 255 * opacity) <= 1,
+      "destructive controls retain their original low-alpha tint",
+    );
+    assert.equal(
+      paint.backdropFilter,
+      "none",
+      "soft semantic danger tints do not add another glass layer",
+    );
+    return paint;
+  };
   for (const dark of [false, true]) {
     await page.mouse.click(1200, 780);
     await sendTheme(dark, dark);
     await checkSurfaceBackground(true);
+    const dangerOpacity = dark ? 0.1 : 0.05;
+    const dangerHoverOpacity = dark ? 0.2 : 0.1;
+    const semanticBorders = await measure(page.locator("html"), [
+      "--input",
+      "--border",
+    ]);
+    for (const kind of ["input", "outline", "textarea", "select"]) {
+      assert.deepEqual(
+        await measure(page.locator(`#host-${kind}`), [
+          "borderWidth",
+          "borderColor",
+        ]),
+        {
+          borderWidth: "1px",
+          borderColor: semanticBorders["--input"],
+        },
+        `${kind} retains its original thin input border`,
+      );
+    }
+    assert.deepEqual(
+      await measure(page.locator("#host-border-reference"), [
+        "borderWidth",
+        "borderColor",
+      ]),
+      {
+        borderWidth: "1px",
+        borderColor: semanticBorders["--border"],
+      },
+      "ordinary borders retain the theme border color instead of a foreground-strengthened outline",
+    );
+    const cardFrame = await measure(page.locator("#host-card"), ["boxShadow"]);
+    assert.match(cardFrame.boxShadow, / 0px 0px 0px 1px$/);
+    assert.deepEqual(
+      cardFrame,
+      await measure(page.locator("#host-border-reference"), ["boxShadow"]),
+      "Card retains a single one-pixel outer frame",
+    );
+    const switchBorder = await measure(page.locator("#host-switch"), [
+      "borderWidth",
+      "borderColor",
+    ]);
+    assert.equal(switchBorder.borderWidth, "1px");
+    assert.equal(
+      switchBorder.borderColor[3],
+      0,
+      "unselected switches retain a transparent layout border",
+    );
+    await compare("switch", "switch", ["borderWidth", "borderColor"]);
+    for (const kind of ["progress", "meter"])
+      await expect(page.locator(`#host-rare-${kind}`)).toHaveCSS(
+        "border-width",
+        "0px",
+      );
     for (const child of ["button", "input-button", "submit", "reset"])
       await compare("button", child, buttonProperties);
     for (const variant of [
@@ -444,11 +635,20 @@ try {
       "link",
     ]) {
       await compare(variant, variant, buttonProperties);
+      if (variant === "destructive") {
+        await checkSoftDanger(page.locator("#host-destructive"), dangerOpacity);
+        await checkSoftDanger(frame.locator("#sdk-destructive"), dangerOpacity);
+      }
       await page.locator(`#host-${variant}`).hover();
       const hovered = await measure(page.locator(`#host-${variant}`), [
         "backgroundColor",
         "color",
       ]);
+      if (variant === "destructive")
+        await checkSoftDanger(
+          page.locator("#host-destructive"),
+          dangerHoverOpacity,
+        );
       await frame.locator(`#sdk-${variant}`).hover();
       await expect
         .poll(() =>
@@ -458,6 +658,36 @@ try {
           ]),
         )
         .toEqual(hovered);
+      if (variant === "destructive") {
+        await checkSoftDanger(
+          frame.locator("#sdk-destructive"),
+          dangerHoverOpacity,
+        );
+      }
+    }
+    for (const kind of ["badge-destructive", "badge-link-destructive"]) {
+      await page.mouse.move(1200, 780);
+      await compare(kind, kind, ["backgroundColor", "color", "backdropFilter"]);
+      await checkSoftDanger(page.locator(`#host-${kind}`), dangerOpacity);
+      await checkSoftDanger(frame.locator(`#sdk-${kind}`), dangerOpacity);
+      const hoveredOpacity =
+        kind === "badge-link-destructive" ? dangerHoverOpacity : dangerOpacity;
+      await page.locator(`#host-${kind}`).hover();
+      const expected = await checkSoftDanger(
+        page.locator(`#host-${kind}`),
+        hoveredOpacity,
+      );
+      await frame.locator(`#sdk-${kind}`).hover();
+      await expect
+        .poll(() =>
+          measure(frame.locator(`#sdk-${kind}`), [
+            "backgroundColor",
+            "color",
+            "backdropFilter",
+          ]),
+        )
+        .toEqual(expected);
+      await checkSoftDanger(frame.locator(`#sdk-${kind}`), hoveredOpacity);
     }
     await page.mouse.move(1200, 780);
     await compare("input", "input", fieldProperties);
@@ -558,8 +788,21 @@ try {
             ),
           "multi-select retains multiple rows at the host font size",
         );
+        const recipe = await dialogRecipe();
+        await checkNativeDialog(
+          page.locator("#host-rare-dialog"),
+          recipe,
+          `host ${dark ? "dark" : "light"} ${exposure}`,
+        );
+        await checkNativeDialog(
+          frame.locator("#sdk-rare-dialog"),
+          recipe,
+          `SDK ${dark ? "dark" : "light"} ${exposure}`,
+        );
       }
     }
+    await checkDisclosure(page, "host");
+    await checkDisclosure(frame, "sdk");
     for (const check of ["checkbox", "unchecked", "indeterminate", "radio"])
       await compare(check, check, checkProperties);
     await compare("disabled", "disabled", [
@@ -680,7 +923,7 @@ try {
       .querySelector("#shadow-host")
       .attachShadow({ mode: "open" });
     root.innerHTML =
-      '<button id="shadow-button">Shadow</button><select aria-label="Choice"><option>One</option><option>Two</option></select>';
+      '<button id="shadow-button">Shadow</button><select aria-label="Choice"><option>One</option><option>Two</option></select><dialog id="shadow-dialog"><form method="dialog"><p>Shadow dialog</p><button>Close shadow dialog</button></form></dialog>';
     window.shadowCleanup = starter.applyStyles(root);
     // 接入样式后才插入未曾使用的标准控件，无需第二次 applyStyles。
     const later = document.createElement("div");
@@ -705,6 +948,11 @@ try {
         .toEqual(
           await measure(page.locator(`#host-rare-${kind}`), rareProperties),
         );
+    await checkNativeDialog(
+      frame.locator("#shadow-host #shadow-dialog"),
+      await dialogRecipe(),
+      `ShadowRoot ${dark ? "dark" : "light"}`,
+    );
   }
   await sendTheme(false);
   const shadowSelect = frame.locator("#shadow-host select");
