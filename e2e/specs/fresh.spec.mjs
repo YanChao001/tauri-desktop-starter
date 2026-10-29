@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $ } from "@wdio/globals";
+import { Key } from "webdriverio";
 import {
   appearance,
   invoke,
@@ -1025,11 +1026,41 @@ describe("Real Tauri desktop", () => {
   it("persists language and illustration settings for a separate app process", async () => {
     await navigate("/settings");
     await $("label:has(input[name='background-skin'][value='sakura'])").click();
-    await $(
+    const intensity = await $(
       '[role="slider"][aria-labelledby="skin-intensity-heading"]',
-    ).click();
-    await browser.keys("Home");
-    for (let step = 0; step < 7; step++) await browser.keys("ArrowRight");
+    );
+    await intensity.click();
+    // 原生驱动的指针点击不保证 Thumb 保持焦点；只聚焦真实控件，数值仍由键盘改变。
+    await browser.execute(
+      (thumb) => thumb.focus({ preventScroll: true }),
+      intensity,
+    );
+    const moveIntensity = async (key, expected) => {
+      assert.equal(
+        await intensity.isFocused(),
+        true,
+        "The slider thumb lost focus",
+      );
+      await browser.keys(key);
+      await browser.waitUntil(
+        async () =>
+          Number(await intensity.getAttribute("aria-valuenow")) === expected,
+        { timeoutMsg: `The focused slider did not reach ${expected}%` },
+      );
+    };
+    const initialIntensity = Number(
+      await intensity.getAttribute("aria-valuenow"),
+    );
+    assert.ok(
+      initialIntensity >= 0 &&
+        initialIntensity <= 100 &&
+        initialIntensity % 10 === 0,
+    );
+    // 十一档滑条最多十次左移到零，再逐档右移；每一步都验证真实控件值。
+    for (let value = initialIntensity; value > 0; value -= 10)
+      await moveIntensity(Key.ArrowLeft, value - 10);
+    for (let value = 10; value <= 70; value += 10)
+      await moveIntensity(Key.ArrowRight, value);
     await browser.waitUntil(async () => {
       const actual = await appearance();
       return (

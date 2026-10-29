@@ -42,7 +42,7 @@ describe("App process restart", () => {
         "utf8",
       ),
     );
-    assert.equal(settings.value.settings.schemaVersion, 4);
+    assert.equal(settings.value.settings.schemaVersion, 6);
     assert.deepEqual(
       settings.value.settings.customBackground,
       backgroundFixture,
