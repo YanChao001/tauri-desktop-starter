@@ -67,19 +67,20 @@ export function CommandPalette() {
           <DialogDescription>{t("commands.description")}</DialogDescription>
         </DialogHeader>
         <Command loop label={t("commands.title")} className="flex flex-col">
-          <div className="flex items-center gap-2 border-b px-4 py-1.5 pr-12">
-            <SearchIcon
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Command.Input
-              value={query}
-              onValueChange={setQuery}
-              data-surface="transparent"
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-(--glass-muted-foreground)"
-              placeholder={t("commands.placeholder")}
-              aria-label={t("commands.title")}
-            />
+          <div className="flex items-center border-b px-4 py-1.5 pr-12">
+            <div className="relative flex min-w-0 flex-1">
+              <SearchIcon
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Command.Input
+                value={query}
+                onValueChange={setQuery}
+                data-surface="transparent"
+                className="w-full min-w-0 bg-transparent pl-9 outline-none"
+                aria-label={t("commands.title")}
+              />
+            </div>
           </div>
           <p
             className="mx-4 h-5 overflow-auto text-xs text-muted-foreground"

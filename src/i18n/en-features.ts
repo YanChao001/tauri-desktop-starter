@@ -14,7 +14,6 @@ export const enFeatures = {
   "commands.title": "Quick actions",
   "commands.description":
     "Search pages and actions. Use arrow keys to select and Enter to run.",
-  "commands.placeholder": "Search actions…",
   "commands.empty": "No matching actions",
   "commands.open": "Open quick actions",
   "commands.groupNavigation": "Pages",
