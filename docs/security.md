@@ -87,20 +87,23 @@ dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 
 - 本机私钥和口令副本存仓库外并限制读取。Windows DPAPI 副本绑定账户与机器，不能代替离线备份；迁移 / 重装前通过可信密码管理器或离线介质备份，明文不得进入日志、Git 或聊天。
 - 日志不得包含令牌、完整请求体或路径中的用户名。stderr 和轮换文件目标在输出前统一执行基础脱敏，诊断导出继续复核；新增敏感字段仍需审查，不能依赖正则覆盖任意正文中的秘密。
 
-发布工作流的 Action 固定到上游提交 SHA，由 Dependabot 通过 PR 维护。更新私钥只注入发布配置校验与 Tauri 构建步骤，不写入后续步骤共享的环境；Apple 证书临近构建注入并在结束后清空。各 job 明确声明权限；当前构建 job 同时上传草稿 Release 资产，因此仍需要 `contents: write`，不能仅改成只读而保留上传行为。
+发布工作流的 Action 固定到上游提交 SHA，由 Dependabot 通过 PR 维护。更新私钥只注入发布配置校验与 Tauri 构建步骤，不写入后续步骤共享的环境；Apple 证书只在 macOS job 临近构建时注入，并在结束后清空。各 job 明确声明权限；当前构建 job 同时上传草稿 Release 资产，因此仍需要 `contents: write`，不能仅改成只读而保留上传行为。
 
 ## 依赖审计
 
 ```sh
 pnpm audit
+pnpm --dir examples/extensions audit
 pnpm outdated
 cargo audit --file src-tauri/Cargo.lock # 先 cargo install cargo-audit --locked
+cargo audit --file examples/extensions/apps/Cargo.lock
+cargo audit --file examples/extensions/rust/Cargo.lock
 cargo tree --manifest-path src-tauri/Cargo.toml -d
 ```
 
 镜像无 audit 端点时可用 `pnpm audit --registry https://registry.npmjs.org`。请求失败表示未完成审计；`cargo audit` 信息告警可能不影响退出码，须同时看输出与 advisory。
 
-提交 `pnpm-lock.yaml` 与 `Cargo.lock`；系统工具链和外部构建工具另行控制。[审计 CI](../.github/workflows/audit.yml) 每周一和手动触发，本地命令用于复查与修复验证。新增依赖按 [评审标准](./development.md#新增依赖的评审标准)；高危优先升级，暂不能升级时记录原因与缓解措施。
+提交 `pnpm-lock.yaml` 与 `Cargo.lock`；系统工具链和外部构建工具另行控制。[审计 CI](../.github/workflows/audit.yml) 每周一和手动触发，覆盖宿主与本仓库扩展示例的独立 npm / Rust 锁文件；单项失败仍检查其余锁文件，最后汇总失败状态。该工作流不包含市场子模块，其依赖需在独立仓库另行审计。本地命令用于复查与修复验证。新增依赖按 [评审标准](./development.md#新增依赖的评审标准)；高危优先升级，暂不能升级时记录原因与缓解措施。
 
 [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) 为 WDIO 传递依赖设置 scoped overrides；调整时核对上游范围、审计并运行真实 E2E，安装与类型检查不能证明运行兼容。
 
@@ -108,12 +111,18 @@ cargo tree --manifest-path src-tauri/Cargo.toml -d
 
 以下是锁文件内需跟踪的已记录链路，不代表最新联网审计。修复后更新条目，不保留过期的“零漏洞”结论，也不用忽略列表掩盖告警。
 
-| 依赖                                                            | 已记录告警                                                                                                                                                                                                             | 处理约束                                                                            |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `glib 0.18`                                                     | [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)，`VariantStrIter` 内存安全                                                                                                                  | Linux Tauri / GTK 链路；业务未直接调用不能证明上游安全，发布前复核并跟踪兼容升级    |
-| `proc-macro-error 1.0.4`                                        | [RUSTSEC-2024-0370](https://rustsec.org/advisories/RUSTSEC-2024-0370.html)，停止维护                                                                                                                                   | GTK 宏的构建期依赖，随上游迁移                                                      |
-| `zvariant 5.15.1`、`zvariant_derive 5.15.1`、`zbus_names 4.3.5` | [RUSTSEC-2026-0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)、[0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html)、[0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html)，停止独立维护 | opener / single-instance → zbus 5；跟踪插件迁移，不强行跨主版本替换 GUI / DBus 依赖 |
-| `paste 1.0.15`                                                  | [RUSTSEC-2024-0436](https://rustsec.org/advisories/RUSTSEC-2024-0436.html)，停止维护                                                                                                                                   | Specta 间接依赖，跟踪兼容迁移，不强制替换宏 crate                                   |
+| 依赖                                                            | 已记录告警                                                                                                                                                                                                             | 处理约束                                                                                                           |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `glib 0.18`                                                     | [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)，`VariantStrIter` 内存安全                                                                                                                  | Linux Tauri / GTK 链路；业务未直接调用不能证明上游安全，发布前复核并跟踪兼容升级                                   |
+| `proc-macro-error 1.0.4`                                        | [RUSTSEC-2024-0370](https://rustsec.org/advisories/RUSTSEC-2024-0370.html)，停止维护                                                                                                                                   | GTK 宏的构建期依赖，随上游迁移                                                                                     |
+| `zvariant 5.15.1`、`zvariant_derive 5.15.1`、`zbus_names 4.3.5` | [RUSTSEC-2026-0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)、[0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html)、[0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html)，停止独立维护 | opener / single-instance → zbus 5；跟踪插件迁移，不强行跨主版本替换 GUI / DBus 依赖                                |
+| `paste 1.0.15`                                                  | [RUSTSEC-2024-0436](https://rustsec.org/advisories/RUSTSEC-2024-0436.html)，停止维护                                                                                                                                   | Specta 间接依赖，跟踪兼容迁移，不强制替换宏 crate                                                                  |
+| `zstd 0.13.3`                                                   | [RUSTSEC-2026-0391](https://rustsec.org/advisories/RUSTSEC-2026-0391.html)，复用上下文时前一流数据泄露                                                                                                                 | 修复版本为 `>=0.14.3`；当前 Wasmtime 缓存只调用每次新建上下文的 `encode_all` / `decode_all`，不复用 `with_context` |
+| `zstd-safe 7.3.0`                                               | [RUSTSEC-2026-0398](https://rustsec.org/advisories/RUSTSEC-2026-0398.html)，seekable 越界；[0403](https://rustsec.org/advisories/RUSTSEC-2026-0403.html)，legacy 流解码泄露未初始化内存                                | 修复版本为 `>=8.2.0`；当前仅启用 `std`，未启用 `seekable` / `legacy`，所用 `decode_all` 也不受 0403 影响           |
+
+`zstd-safe` 另有 [RustSec 列出的 `unsound` 告警](https://rustsec.org/packages/zstd-safe.html)：RUSTSEC-2026-0395、0396、0397、0399、0400、0401、0402、0404、0405、0406，涉及缓冲区、字典、seekable 和多线程上下文等内存安全问题，修复版本同为 `>=8.2.0`。这些条目继续逐项跟踪，不能因上表三项漏洞当前不满足触发条件就视为全部解决。
+
+当前链路是 Extism → Wasmtime → `wasmtime-internal-cache` → `zstd` → `zstd-safe`；缓存依赖仍限定 `zstd 0.13`，其下游限定 `zstd-safe 7`，无法只更新兼容补丁版本消除上述命中。当前调用方式与特性检查是适用范围分析，不能替代依赖修复；`cargo audit` 仍因这三项漏洞失败，不加入忽略列表，也不将测试通过写成安全结论。跟踪 Wasmtime / Extism 的兼容升级，不强制跨版本替换压缩依赖；变更其特性、缓存调用或上下文复用时重新评估。
 
 ## 更新通道
 
@@ -121,7 +130,7 @@ cargo tree --manifest-path src-tauri/Cargo.toml -d
 
 - 默认策略编译自 `app.config.json`，前端不能传任意更新 URL。端点须 HTTPS、无凭据 / fragment，原生客户端拒绝 HTTP 降级；CSP 不限制 Rust 请求。
 - 端点或公钥任一为空时禁用且不联网；启用后强制校验包签名及被签版本，不跳过验签或接受版本漂移。只接受 Tauri v2 原生更新格式，关闭旧 ZIP 兼容路径；最终字节签名后不得再改。
-- `appConfigDir/deployment.json` 的 `updates.endpoint` 可覆盖镜像地址，空端点禁用更新；过大、不可读或无效时报错。安装前重读策略，发生变化须重新检查。
+- `appConfigDir/deployment.json` 的 `updates.endpoint` 可覆盖镜像地址，空端点禁用更新；过大、不可读或无效时报错。退出协商及扩展停止等待结束后、实际安装前再次重读策略，发生变化须重新检查，不能沿用等待前的校验结果。
 - 验签公钥固定在编译期品牌配置中。部署文件可省略 `publicKey`；若提供，必须与内置值完全相同，否则拒绝检查和安装。它不能为未内置公钥的客户端启用更新，也不能用来换钥；换钥须发布可信过渡版本或手动安装，取舍见 [ADR 0020](./adr/0020-pin-updater-trust-root.md)。此约束避免普通配置回写改变信任根，不提供同账户恶意进程或被替换应用二进制的系统级防护。
 - 公钥可提交，私钥仅用于构建 / CI，不进入品牌配置、部署文件或诊断。派生初始化会清理不再适用的模板信任，规则见 [初始化流程](./development.md#项目初始化)。
 

@@ -290,7 +290,7 @@ try {
 
 **原因**：签名校验失败，或 `latest.json` 里的平台标识与实际不符。
 
-- 确认构建时设置了 `TAURI_SIGNING_PRIVATE_KEY`，且与 `app.config.json` 或部署覆盖 `deployment.json` 中的 `updates.publicKey` 配对。
+- 确认构建时设置了 `TAURI_SIGNING_PRIVATE_KEY`，且与客户端安装包从 `app.config.json` 编译内置的 `updates.publicKey` 配对。`deployment.json` 只能覆盖更新端点；若保留 `publicKey` 字段，其值必须与内置公钥完全相同，不能通过修改部署文件换钥。换钥与禁用规则见 [更新通道](./security.md#更新通道)。
 - 检查 `platforms` 的 key 是否为 `windows-x86_64` 这类准确标识。
 - 不支持旧版兼容 ZIP 更新；发布流程使用 v2 原生包，签名后不得再修改安装包。元数据版本必须与签名覆盖的版本一致。
 - 默认更新器只接受更高版本，Windows 安装器还有独立的降级限制；回滚策略见 [构建与发布](./build-release.md#回滚)。
