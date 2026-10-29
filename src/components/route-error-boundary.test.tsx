@@ -163,16 +163,14 @@ describe("route error boundary", () => {
     expect(
       screen.getByRole("navigation", { name: "Preserved navigation" }),
     ).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent("界面出错了");
+    expect(screen.getByRole("alert")).toHaveTextContent("界面异常");
     expect(reportClientError).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Page failure" }),
       expect.any(String),
     );
     fireEvent.click(screen.getByText("English"));
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "The interface encountered an error",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Interface error");
+    fireEvent.click(screen.getByRole("button", { name: "Back home" }));
     expect(screen.getByText("Working home")).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

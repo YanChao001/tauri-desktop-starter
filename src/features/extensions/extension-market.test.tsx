@@ -403,9 +403,10 @@ it("disables known future downloads and excludes them from installed update acti
     />,
   );
   const button = screen.getByRole("button", {
-    name: "Requires app 0.2.0 or newer",
+    name: en["ext.market.download"],
   });
   expect(button).toBeDisabled();
+  expect(screen.getAllByText("Requires app 0.2.0 or newer")).toHaveLength(1);
   fireEvent.click(button);
   expect(download).not.toHaveBeenCalled();
   const installed: native.ExtensionInfo = {
@@ -481,7 +482,7 @@ it("keeps the last verified catalog after refresh fails and identifies it until 
     .mockResolvedValueOnce(emptySnapshot);
   render(<LiveMarket />);
   await screen.findByRole("heading", { name: "Word Lab" });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh market" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(
       en["ext.market.incompatible"],
@@ -499,7 +500,7 @@ it("keeps the last verified catalog after refresh fails and identifies it until 
   });
   expect(screen.getByText(en["ext.market.noMatches"])).toBeVisible();
   expect(screen.getByText(en["ext.market.stale"])).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh market" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   expect(await screen.findByText(en["ext.market.empty"])).toBeVisible();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText(en["ext.market.stale"])).not.toBeInTheDocument();

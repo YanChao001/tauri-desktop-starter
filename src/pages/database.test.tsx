@@ -131,18 +131,12 @@ describe("native note editor", () => {
   it("shows a full-width empty state until a note is explicitly created and returns after discarding", async () => {
     notes = [];
     await open();
-    expect(
-      await screen.findByText("No notes yet. Create your first note."),
-    ).toBeVisible();
+    expect(await screen.findByText("No notes yet")).toBeVisible();
     expect(screen.queryByTestId("notes-list")).not.toBeInTheDocument();
     expect(screen.queryByTestId("note-editor")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Create full backup$/ }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: /Import backup from file$/ }),
-    ).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Create a note" }));
+    expect(screen.getByRole("button", { name: "Back up" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Import backup" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Create note" }));
     expect(title()).toBeEnabled();
     fireEvent.change(title(), { target: { value: "Unsaved first note" } });
     expect(lifecycle.current?.dirty).toBe(true);
@@ -185,17 +179,17 @@ describe("native note editor", () => {
     const write = deferred<void>();
     vi.mocked(native.saveNoteDraft).mockReturnValueOnce(write.promise);
     await open();
-    const create = screen.getByRole("button", { name: /Create full backup$/ });
+    const create = screen.getByRole("button", { name: "Back up" });
     await waitFor(() => expect(create).toBeEnabled());
     expect(create).toHaveTextContent(/^Back up$/);
     expect(
-      screen.getByRole("button", { name: /Import backup from file$/ }),
+      screen.getByRole("button", { name: "Import backup" }),
     ).toHaveTextContent(/^Import backup$/);
     expect(
-      screen.getByRole("button", { name: /Backup and restore$/ }),
+      screen.getByRole("button", { name: "Backup history" }),
     ).toHaveTextContent(/^Backup history$/);
     const backupActions = screen.getByRole("group", {
-      name: /Backup and restore$/,
+      name: "Backup and restore",
     });
     expect(within(backupActions).getAllByRole("button")).toHaveLength(3);
     const searchActions = screen.getByRole("group", { name: "Search notes" });
@@ -208,7 +202,7 @@ describe("native note editor", () => {
     ).toBeVisible();
     await act(async () => create.focus());
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "External imports are limited to 16 MiB",
+      "File imports allow up to 16 MiB",
     );
     fireEvent.click(create);
     await waitFor(() =>
@@ -224,14 +218,13 @@ describe("native note editor", () => {
     {
       label: "Search notes",
       value: "界".repeat(100),
-      message:
-        "Content search allows up to 200 UTF-8 bytes. Shorten the query.",
+      message: "Content query limit: 200 UTF-8 bytes. Shorten the query.",
     },
     {
       label: "Content",
       value: "界".repeat(22000),
       message:
-        "Note content is limited to 64 KiB (65536 UTF-8 bytes). Shorten it before saving.",
+        "Note content limit: 64 KiB (65536 UTF-8 bytes). Shorten it before saving.",
     },
   ])(
     "keeps the full $label length error associated with its field and available through keyboard focus",
@@ -635,9 +628,7 @@ describe("native note editor", () => {
         expect.objectContaining({ offset: 0 }),
       ),
     );
-    expect(
-      await screen.findByText("No notes yet. Create your first note."),
-    ).toBeVisible();
+    expect(await screen.findByText("No notes yet")).toBeVisible();
   });
 
   it("shows remote content after conflict and keeps local text with the reviewed remote version", async () => {
@@ -725,7 +716,7 @@ describe("native note editor", () => {
     );
     fireEvent.click(
       within(conflict).getByRole("button", {
-        name: "Apply merged result to editor",
+        name: "Apply merge to editor",
       }),
     );
     expect(native.updateNote).toHaveBeenCalledOnce();
@@ -896,9 +887,7 @@ describe("native note editor", () => {
       safetyBackup: { ...info, id: "notes-backup-safety.json" },
     });
     await open();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Backup and restore$/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Backup history" }));
     const preview = await screen.findByRole("button", {
       name: "Preview backup",
     });
@@ -907,7 +896,7 @@ describe("native note editor", () => {
     expect(native.restoreDataBackup).not.toHaveBeenCalled();
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Restore this backup",
+        name: "Restore backup",
       }),
     );
     await waitFor(() =>
@@ -928,7 +917,7 @@ describe("native note editor", () => {
     vi.mocked(native.pickDataBackup).mockResolvedValueOnce(null);
     await open();
     const picker = await screen.findByRole("button", {
-      name: /Import backup from file$/,
+      name: "Import backup",
     });
     await waitFor(() => expect(picker).toBeEnabled());
     fireEvent.click(picker);
@@ -963,18 +952,14 @@ describe("native note editor", () => {
       deferred<Awaited<ReturnType<typeof native.loadNoteDraft>>>();
     vi.mocked(native.loadNoteDraft).mockReturnValueOnce(initialDraft.promise);
     await open();
-    expect(
-      screen.getByRole("button", { name: /Create full backup$/ }),
-    ).toBeDisabled();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Backup and restore$/ }),
-    );
+    expect(screen.getByRole("button", { name: "Back up" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Backup history" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Preview backup" }),
     );
     const restore = within(await screen.findByRole("dialog")).getByRole(
       "button",
-      { name: "Restore this backup" },
+      { name: "Restore backup" },
     );
     expect(restore).toBeDisabled();
     expect(native.saveNoteDraft).not.toHaveBeenCalled();
@@ -1003,9 +988,7 @@ describe("native note editor", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(body()).toHaveValue("");
     expect(body()).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /Create full backup$/ }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back up" })).toBeDisabled();
     expect(native.saveNoteDraft).not.toHaveBeenCalled();
     vi.mocked(native.loadNoteDraft).mockResolvedValueOnce({
       noteId: 1,

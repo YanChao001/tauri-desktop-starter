@@ -99,7 +99,7 @@ describe("diagnostics actions", () => {
     const copy = screen.getByRole("button", { name: "Copy diagnostics" });
     await waitFor(() => expect(copy).toBeEnabled());
     const healthy = await screen.findByText("Storage is healthy");
-    const summary = screen.getByText("View detailed report and logs");
+    const summary = screen.getByText("Report and logs");
     fireEvent.click(summary);
     const details = summary.closest("details");
     expect(details).toHaveAttribute("open");
@@ -145,7 +145,7 @@ describe("diagnostics actions", () => {
     expect(toast.success).not.toHaveBeenCalled();
     vi.mocked(copyText).mockResolvedValueOnce();
     await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: "复制诊断信息" })),
+      fireEvent.click(screen.getByRole("button", { name: "复制诊断" })),
     );
     expect(toast.success).toHaveBeenCalledWith("诊断信息已复制");
   });
@@ -214,7 +214,7 @@ describe("diagnostics actions", () => {
       screen.getByRole("region", { name: "Startup recovery" }),
     ).toHaveFocus();
     expect(
-      screen.getByText("View detailed report and logs").closest("details"),
+      screen.getByText("Report and logs").closest("details"),
     ).not.toHaveAttribute("open");
   });
 });

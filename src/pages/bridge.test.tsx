@@ -10,9 +10,12 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { invokeGreet, isTauri } from "@/lib/tauri";
+import { LOCALES } from "@/i18n/registry";
+import { createTranslator } from "@/i18n/translate";
 import Bridge from "./bridge";
 
 const locale = vi.hoisted(() => ({ current: "en" as "en" | "zh" }));
+const messages = () => LOCALES[locale.current].messages;
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
@@ -22,7 +25,10 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/providers/i18n", () => ({
-  useI18n: () => ({ language: locale.current, t: (key: string) => key }),
+  useI18n: () => ({
+    language: locale.current,
+    t: createTranslator(messages()),
+  }),
 }));
 
 describe("Bridge 命令调用", () => {
@@ -57,10 +63,12 @@ describe("Bridge 命令调用", () => {
         <Bridge />
       </StrictMode>,
     );
-    const input = screen.getByLabelText("bridge.name");
+    const input = screen.getByLabelText(messages()["bridge.name"]);
     const form = input.closest("form")!;
     fireEvent.change(input, { target: { value: "Ada" } });
-    fireEvent.click(screen.getByRole("button", { name: "bridge.call" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: messages()["bridge.call"] }),
+    );
     fireEvent.submit(form);
     expect(invokeGreet).toHaveBeenCalledExactlyOnceWith("Ada", "en");
     expect(form).toHaveAttribute("aria-busy", "true");
@@ -86,17 +94,23 @@ describe("Bridge 命令调用", () => {
           }),
       );
       const { rerender } = render(<Bridge />);
-      fireEvent.click(screen.getByRole("button", { name: "bridge.call" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: messages()["bridge.call"] }),
+      );
       locale.current = "zh";
       rerender(<Bridge />);
       await act(async () => {
         if (outcome === "resolve") resolve("Old English result");
         else reject(new Error("Old English error"));
       });
-      expect(screen.getByRole("status")).toHaveTextContent("bridge.notCalled");
+      expect(screen.getByRole("status")).toHaveTextContent(
+        messages()["bridge.notCalled"],
+      );
       expect(toast.success).not.toHaveBeenCalled();
       expect(toast.error).not.toHaveBeenCalled();
-      expect(screen.getByRole("button", { name: "bridge.call" })).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: messages()["bridge.call"] }),
+      ).toBeEnabled();
     },
   );
 
@@ -105,12 +119,16 @@ describe("Bridge 命令调用", () => {
     vi.mocked(invokeGreet).mockResolvedValue("English greeting");
     const { rerender } = render(<Bridge />);
     await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: "bridge.call" })),
+      fireEvent.click(
+        screen.getByRole("button", { name: messages()["bridge.call"] }),
+      ),
     );
     expect(screen.getByRole("status")).toHaveTextContent("English greeting");
     locale.current = "zh";
     rerender(<Bridge />);
-    expect(screen.getByRole("status")).toHaveTextContent("bridge.notCalled");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      messages()["bridge.notCalled"],
+    );
   });
 
   it.each(["resolve", "reject"] as const)(
@@ -127,7 +145,9 @@ describe("Bridge 命令调用", () => {
           }),
       );
       const { unmount } = render(<Bridge />);
-      fireEvent.click(screen.getByRole("button", { name: "bridge.call" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: messages()["bridge.call"] }),
+      );
       unmount();
       await act(async () => {
         if (outcome === "resolve") resolve("late result");
@@ -141,7 +161,9 @@ describe("Bridge 命令调用", () => {
   it("浏览器预览给出提示并允许重试", () => {
     vi.mocked(isTauri).mockReturnValue(false);
     render(<Bridge />);
-    const button = screen.getByRole("button", { name: "bridge.call" });
+    const button = screen.getByRole("button", {
+      name: messages()["bridge.call"],
+    });
     fireEvent.click(button);
     fireEvent.click(button);
     expect(toast.error).toHaveBeenCalledTimes(2);
@@ -149,22 +171,44 @@ describe("Bridge 命令调用", () => {
     expect(button).toBeEnabled();
   });
 
-  it("调用失败只显示通知、保留上次结果并允许重试", async () => {
-    vi.mocked(isTauri).mockReturnValue(true);
-    vi.mocked(invokeGreet)
-      .mockResolvedValueOnce("Hello, Ada")
-      .mockRejectedValue(new Error("invalid name"));
-    render(<Bridge />);
-    const button = screen.getByRole("button", { name: "bridge.call" });
-    await act(async () => fireEvent.click(button));
-    await act(async () => fireEvent.click(button));
-    expect(screen.getByRole("status")).toHaveTextContent("Hello, Ada");
-    expect(screen.queryByText("bridge.failed")).not.toBeInTheDocument();
-    expect(toast.error).toHaveBeenCalledWith("bridge.failed");
-    expect(button).toBeEnabled();
-    await act(async () => fireEvent.click(button));
-    expect(invokeGreet).toHaveBeenCalledTimes(3);
-  });
+  it.each([
+    ["en", new Error("invalid name"), "Operation failed: invalid name"],
+    ["zh", new Error("invalid name"), "操作失败：invalid name"],
+    [
+      "en",
+      { code: "NAME_REQUIRED", message: "internal detail" },
+      LOCALES.en.messages["errors.VALIDATION"],
+    ],
+    [
+      "zh",
+      { code: "NAME_REQUIRED", message: "internal detail" },
+      LOCALES.zh.messages["errors.VALIDATION"],
+    ],
+  ] as const)(
+    "%s 调用失败使用通用错误提示、保留输入和上次结果并允许重试",
+    async (language, error, expected) => {
+      locale.current = language;
+      vi.mocked(isTauri).mockReturnValue(true);
+      vi.mocked(invokeGreet)
+        .mockResolvedValueOnce("Hello, Ada")
+        .mockRejectedValue(error);
+      render(<Bridge />);
+      const input = screen.getByLabelText(messages()["bridge.name"]);
+      fireEvent.change(input, { target: { value: "Ada" } });
+      const button = screen.getByRole("button", {
+        name: messages()["bridge.call"],
+      });
+      await act(async () => fireEvent.click(button));
+      await act(async () => fireEvent.click(button));
+      expect(screen.getByRole("status")).toHaveTextContent("Hello, Ada");
+      expect(input).toHaveValue("Ada");
+      expect(screen.queryByText(expected)).not.toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledExactlyOnceWith(expected);
+      expect(button).toBeEnabled();
+      await act(async () => fireEvent.click(button));
+      expect(invokeGreet).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it("输入法确认候选词的回车不会触发表单提交", () => {
     render(<Bridge />);
@@ -174,7 +218,7 @@ describe("Bridge 命令调用", () => {
       bubbles: true,
       cancelable: true,
     });
-    fireEvent(screen.getByLabelText("bridge.name"), event);
+    fireEvent(screen.getByLabelText(messages()["bridge.name"]), event);
     expect(event.defaultPrevented).toBe(true);
     expect(invokeGreet).not.toHaveBeenCalled();
   });

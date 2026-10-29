@@ -56,14 +56,12 @@ it("associates the visible UTF-8 limit error with host data and preserves the in
   expect(error).toBeVisible();
   expect(input).toHaveAttribute("aria-describedby", error.id);
   expect(input).toHaveValue(oversized);
-  expect(
-    screen.getByRole("button", { name: "Send selected data" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Send data" })).toBeDisabled();
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.change(input, { target: { value: "Corrected input" } });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(input).not.toHaveAttribute("aria-describedby");
-  fireEvent.click(screen.getByRole("button", { name: "Send selected data" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send data" }));
   expect(onSend).toHaveBeenCalledWith({
     inputText: "Corrected input",
     fileIds: [],

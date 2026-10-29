@@ -44,7 +44,7 @@ test("production assets and HashRouter pages work below a project subpath", asyn
   await expect(page).toHaveURL(/\/desktop-demo\/#\/components$/);
   await expect(page.locator("main h2").first()).toBeVisible();
   await page.goto("./#/database");
-  await expect(page.locator("main")).toContainText("desktop");
+  await expect(page.locator("main")).toContainText("Desktop app required");
   await expect(page.locator("html")).not.toHaveAttribute(
     "data-runtime",
     "tauri",
@@ -101,13 +101,11 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await expect(
     json.locator('[data-token="string"]').filter({ hasText: /^"fixture"$/ }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "View or refresh result", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Load result", exact: true }).click();
   await expect(
     page
       .locator("[data-sonner-toast]")
-      .filter({ hasText: "Showing the recent result without a new request." }),
+      .filter({ hasText: "Showing the cached result; no new request." }),
   ).toBeVisible();
   const message = page.getByRole("textbox", { name: "Content to send" });
   await message.fill("Keyboard fixture request");
@@ -117,9 +115,7 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await expect(
     page.getByRole("button", { name: "Get content", exact: true }),
   ).toBeDisabled();
-  await page
-    .getByRole("button", { name: "View or refresh result", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Load result", exact: true }).click();
   await expect(result).toContainText('"method": "GET"');
   await expect(
     page.locator("[data-sonner-toast]").filter({

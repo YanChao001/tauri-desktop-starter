@@ -1493,12 +1493,19 @@ for (const theme of ["light", "dark"]) {
       await page.goto("./#/components");
       await expect(page.locator("html")).toHaveCSS("color-scheme", theme);
       const primary = page.getByRole("button", {
-        name: "Remix the idea",
+        name: "Remix",
         exact: true,
       });
-      const all = page.getByRole("checkbox", {
-        name: "Select all sample items",
+      const reference = page.getByRole("region", {
+        name: "Control reference",
+        exact: true,
       });
+      const all = reference
+        .getByRole("group", {
+          name: "Partial selection & select all",
+          exact: true,
+        })
+        .getByRole("checkbox", { name: "Select all", exact: true });
       await expect(all).toHaveAttribute("aria-checked", "mixed");
       await expect(all.locator(".lucide-minus")).toBeVisible();
       await expect(all.locator(".lucide-check")).toBeHidden();
@@ -1553,24 +1560,27 @@ for (const theme of ["light", "dark"]) {
         }));
         expect(colors.mixed).toBe(colors.checked);
       }
-      const title = page.getByRole("textbox", {
-        name: "Sample title (required)",
+      const title = reference.getByRole("textbox", {
+        name: "Title (required)",
+        exact: true,
       });
-      await page
-        .getByRole("button", { name: "Check input", exact: true })
+      await reference
+        .getByRole("button", { name: "Validate", exact: true })
         .click();
       await expect(title).toHaveAttribute("aria-invalid", "true");
       await title.fill("A local draft");
-      await page
-        .getByRole("button", { name: "Check input", exact: true })
+      await reference
+        .getByRole("button", { name: "Validate", exact: true })
         .click();
       await expect(
-        page.locator("[data-sonner-toast]").filter({ hasText: "Check passed" }),
+        page.locator("[data-sonner-toast]").filter({
+          hasText: "Valid input; content stays on this page.",
+        }),
       ).toBeVisible();
-      await page
+      await reference
         .getByRole("button", { name: "Buttons & badges", exact: true })
         .click();
-      const warning = page.getByRole("button", {
+      const warning = reference.getByRole("button", {
         name: "Warning",
         exact: true,
       });
@@ -1694,8 +1704,10 @@ for (const language of ["en", "zh"] as const) {
       await expect(filter).toBeFocused();
 
       const bar = page.locator(".app-title-bar");
+      const searchName = chinese ? "快速操作" : "Quick actions";
       const search = bar.getByRole("button", {
-        name: chinese ? "打开快速操作" : "Open quick actions",
+        name: searchName,
+        exact: true,
       });
       const languageSwitch = bar.getByRole("combobox", {
         name: chinese ? "语言" : "Language",
@@ -1716,9 +1728,7 @@ for (const language of ["en", "zh"] as const) {
           ];
         });
       await search.hover();
-      await expect(tooltip).toContainText(
-        chinese ? "打开快速操作" : "Open quick actions",
-      );
+      await expect(tooltip).toContainText(searchName);
       await expect(tooltip).toHaveAttribute("data-side", "bottom");
       const searchStyle = await appearance();
       await page.mouse.move(700, 140);
@@ -2386,7 +2396,7 @@ test("wallpaper library supports multi-import, rename, deletion and shared brows
     .locator(".wallpaper-library")
     .screenshot({ path: testInfo.outputPath("wallpaper-library.png") });
   await page
-    .getByRole("button", { name: "Clear image background", exact: true })
+    .getByRole("button", { name: "Clear background", exact: true })
     .click();
   await expect(page.locator("html")).toHaveAttribute(
     "data-background",
@@ -2845,7 +2855,7 @@ test("a local background imports, survives reload, keeps the last good image on 
   const importDetails = page.getByRole("dialog", {
     name: "Images not imported",
   });
-  await expect(importDetails).toContainText("could not be read");
+  await expect(importDetails).toContainText("Cannot read the image");
   await importDetails
     .getByRole("button", { name: "Close", exact: true })
     .click();

@@ -46,7 +46,7 @@ it("requires explicit partial import consent and invalidates a preview when the 
   expect(imported).not.toHaveBeenCalled();
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: "Import valid rows only and retain invalid rows in the report",
+      name: "Import valid rows only; keep invalid rows in the report",
     }),
   );
   fireEvent.click(apply);
@@ -56,7 +56,7 @@ it("requires explicit partial import consent and invalidates a preview when the 
     ]),
   );
   expect(imported.mock.calls[0]?.[0]).toHaveLength(2);
-  fireEvent.change(screen.getByLabelText("CSV source (edit and check again)"), {
+  fireEvent.change(screen.getByLabelText("CSV source"), {
     target: { value: "name,email\nNew,new@example.com" },
   });
   expect(
@@ -69,7 +69,7 @@ it("invalidates the previous import preview when another file cannot be read", a
   const imported = vi.fn();
   render(<CsvImport onImport={imported} />);
   fireEvent.click(screen.getByText("Import, validate and export"));
-  fireEvent.change(screen.getByLabelText("CSV source (edit and check again)"), {
+  fireEvent.change(screen.getByLabelText("CSV source"), {
     target: { value: "name,email\nNew,new@example.com" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Check and preview" }));
@@ -94,7 +94,7 @@ it("rejects an oversized pasted source without silently truncating complete reco
   const imported = vi.fn();
   render(<CsvImport onImport={imported} />);
   fireEvent.click(screen.getByText("Import, validate and export"));
-  const source = screen.getByLabelText("CSV source (edit and check again)");
+  const source = screen.getByLabelText("CSV source");
   expect(source).not.toHaveAttribute("maxlength");
   const oversized =
     "name,email\n" + "A,a@example.test\n".repeat(MAX_CSV_BYTES / 16);

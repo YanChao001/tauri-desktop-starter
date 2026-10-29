@@ -48,12 +48,12 @@ function deferred<T>() {
 async function confirmArchive() {
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Archive old extensions and rebuild",
+      name: "Archive and rebuild",
     }),
   );
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: "Confirm archive and rebuild",
+      name: "Archive and rebuild",
     }),
   );
 }
@@ -83,10 +83,10 @@ it("does not inspect or mutate archives for unrelated errors", () => {
 });
 
 it.each([
-  ["current", "The archive already uses a supported version."],
-  ["future", "This archive was created by a newer version."],
-  ["invalid", "This archive could not be recognized safely."],
-  ["unavailable", "Extension archives cannot be changed during startup"],
+  ["current", "Registry version supported; no archiving needed."],
+  ["future", "Registry from a newer version."],
+  ["invalid", "Registry unrecognized; automatic archiving is unavailable."],
+  ["unavailable", "Registry changes are unavailable during startup"],
 ] as const)(
   "explains %s archives without offering a mutation",
   async (status, text) => {
@@ -106,7 +106,7 @@ it.each([
     ).toBeVisible();
     expect(
       screen.queryByRole("button", {
-        name: "Archive old extensions and rebuild",
+        name: "Archive and rebuild",
       }),
     ).not.toBeInTheDocument();
     expect(native.archiveLegacyExtensions).not.toHaveBeenCalled();
@@ -120,7 +120,7 @@ it("requires explicit confirmation, restores cancellation focus, and retains the
     <ExtensionRecovery error={incompatible} reload={reload} />,
   );
   const trigger = await screen.findByRole("button", {
-    name: "Archive old extensions and rebuild",
+    name: "Archive and rebuild",
   });
   expect(native.archiveLegacyExtensions).not.toHaveBeenCalled();
   fireEvent.click(trigger);
@@ -203,10 +203,10 @@ it("invalidates a rejected fingerprint and requires another inspection before re
   expect(native.archiveLegacyExtensions).toHaveBeenCalledOnce();
   expect(
     screen.queryByRole("button", {
-      name: "Archive old extensions and rebuild",
+      name: "Archive and rebuild",
     }),
   ).not.toBeInTheDocument();
-  const check = screen.getByRole("button", { name: "Check archive again" });
+  const check = screen.getByRole("button", { name: "Check again" });
   await waitFor(() => expect(check).toHaveFocus());
   fireEvent.click(check);
   await confirmArchive();
@@ -238,7 +238,7 @@ it("ignores a late preview from the StrictMode cleanup lifetime", async () => {
   await act(async () => old.resolve(legacy));
   expect(
     screen.queryByRole("button", {
-      name: "Archive old extensions and rebuild",
+      name: "Archive and rebuild",
     }),
   ).not.toBeInTheDocument();
   await act(async () =>
@@ -246,7 +246,7 @@ it("ignores a late preview from the StrictMode cleanup lifetime", async () => {
   );
   expect(
     screen.getByText((content) =>
-      content.startsWith("This archive was created by a newer version."),
+      content.startsWith("Registry from a newer version."),
     ),
   ).toBeVisible();
   expect(native.archiveLegacyExtensions).not.toHaveBeenCalled();
@@ -279,7 +279,7 @@ it("settles a failed inspection and lets the user inspect again while announcing
     "Archive preview cannot read the preserved directory.",
   );
   expect(failure.closest('[tabindex="0"]')).not.toBeNull();
-  const inspect = screen.getByRole("button", { name: "Check archive again" });
+  const inspect = screen.getByRole("button", { name: "Check again" });
   expect(inspect).toBeEnabled();
   expect(
     screen.queryByText("Checking the extension archive…"),
@@ -287,7 +287,7 @@ it("settles a failed inspection and lets the user inspect again while announcing
   fireEvent.click(inspect);
   expect(
     await screen.findByRole("button", {
-      name: "Archive old extensions and rebuild",
+      name: "Archive and rebuild",
     }),
   ).toBeEnabled();
 });

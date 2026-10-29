@@ -59,7 +59,7 @@ it("展示普通输出并将原始记录默认折叠，保留文本转义与JSON
     screen.getByText("<script>hello</script>", { exact: true }),
   ).toBeVisible();
   expect(code).not.toBeVisible();
-  fireEvent.click(screen.getByText("Detailed record", { exact: true }));
+  fireEvent.click(screen.getByText("Execution details", { exact: true }));
   expect(code).toBeVisible();
   expect(code?.textContent).toBe(JSON.stringify(result, null, 2));
   expect(code?.querySelector('[data-token="property"]')).toHaveTextContent(
@@ -99,12 +99,12 @@ it("把文字转换结果显示为易读字段，失败状态与错误不藏进�
   expect(screen.getByRole("status")).toHaveTextContent("Completed");
   fireEvent.click(run);
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Did not complete (exit status: 2)",
+    "Failed (exit status: 2)",
   );
   expect(screen.getByText("Could not finish", { exact: true })).toBeVisible();
   expect(screen.getByText("partial output", { exact: true })).toBeVisible();
   expect(
-    screen.getByText("Detailed record", { exact: true }).closest("details"),
+    screen.getByText("Execution details", { exact: true }).closest("details"),
   ).not.toHaveAttribute("open");
 });
 
@@ -116,11 +116,9 @@ it("worker 输入无效时保留字段错误关联并阻止运行", () => {
   fireEvent.change(input, { target: { value: " " } });
   expect(input).toHaveAttribute("aria-invalid", "true");
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Enter text no larger than 1000 bytes.",
+    "Enter text up to 1000 bytes.",
   );
-  expect(input).toHaveAccessibleDescription(
-    "Enter text no larger than 1000 bytes.",
-  );
+  expect(input).toHaveAccessibleDescription("Enter text up to 1000 bytes.");
   expect(run).toBeDisabled();
   fireEvent.click(run);
   expect(native.runDemoSidecar).not.toHaveBeenCalled();
@@ -184,7 +182,7 @@ it("reports an external connection failure and allows another attempt", async ()
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(
-      "Cannot connect to the message test service. Retry or use the local test.",
+      "Service connection failed. Retry or test locally.",
     ),
   );
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -193,9 +191,9 @@ it("reports an external connection failure and allows another attempt", async ()
 });
 
 it.each([
-  ["WEBSOCKET_TIMEOUT", "连接超时，请重试或使用本地测试。"],
-  ["WEBSOCKET_CONNECTION", "无法连接消息测试服务，请重试或使用本地测试。"],
-  ["WEBSOCKET_ENDPOINT", "请选择允许的消息测试服务。"],
+  ["WEBSOCKET_TIMEOUT", "连接超时，请重试或改用本地测试。"],
+  ["WEBSOCKET_CONNECTION", "连接测试服务失败，请重试或改用本地测试。"],
+  ["WEBSOCKET_ENDPOINT", "请选择允许的测试服务。"],
 ])("translates %s into a Chinese connection error", async (code, message) => {
   locale.language = "zh";
   native.websocketConnect.mockRejectedValueOnce({
@@ -227,7 +225,7 @@ it("translates a send failure and retains the unsent message", async () => {
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(
-      "消息未发送，请检查连接后重试。每条消息不能超过 1000 字。",
+      "消息未发送，请检查连接后重试；每条最多 1000 字。",
     ),
   );
   expect(input).toHaveValue("保留待重试内容");
@@ -275,7 +273,7 @@ it("WebSocket 等待连接期间切换语言后用当前语言报告错误", asy
   locale.language = "zh";
   view.rerender(<WebSocketPanel />);
   await act(async () => fail({ code: "WEBSOCKET_TIMEOUT" }));
-  expect(toast.error).toHaveBeenCalledWith("连接超时，请重试或使用本地测试。");
+  expect(toast.error).toHaveBeenCalledWith("连接超时，请重试或改用本地测试。");
 });
 
 it("worker 等待期间切换语言后用当前语言报告失败", async () => {

@@ -45,7 +45,7 @@ function customTrigger(page: Page) {
 async function openCustom(page: Page) {
   await customTrigger(page).click();
   const picker = page.getByRole("dialog", {
-    name: "Custom accent color",
+    name: "Custom accent",
     exact: true,
   });
   await expect(picker).toBeVisible();
@@ -382,7 +382,7 @@ for (const theme of ["light", "dark"] as const) {
       await expectNoPageOverflow(page);
       await page.goto("./#/components");
       const primary = page.getByRole("button", {
-        name: "Remix the idea",
+        name: "Remix",
         exact: true,
       });
       await expect(primary).toBeVisible();

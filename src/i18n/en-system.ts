@@ -1,51 +1,49 @@
 import type { zhSystem } from "./zh-system";
 export const enSystem: Record<keyof typeof zhSystem, string> = {
-  "nativeError.busy":
-    "Too many native operations are running. Please try again shortly.",
+  "nativeError.clipboardWriteFailed": "Could not copy. Try again.",
+  "nativeError.busy": "Too many operations are running. Try again shortly.",
   "lifecycle.title": "Save unfinished work",
   "lifecycle.description":
-    "This action needs every window to be ready ({count} total). Save or finish your work first.",
+    "Save or finish your work first. All {count} windows must be ready to continue.",
   "lifecycle.save": "Save and continue",
   "lifecycle.discard": "Discard and continue",
   "lifecycle.saving": "Saving…",
-  "lifecycle.executing":
-    "All windows are ready. The operation is running and will continue automatically when finished.",
+  "lifecycle.executing": "All windows are ready. Running the action…",
   "lifecycle.waiting":
-    "This window is ready. Waiting for the other windows; you can still cancel the entire action.",
+    "This window is ready. Waiting for the others; you can still cancel the action.",
   "lifecycle.tasks":
     "Background tasks: save waits for completion; discard cancels tasks",
   "system.title": "System integration",
   "system.description":
-    "Send notifications, set shortcuts, copy text, or work across multiple windows.",
-  "system.notification": "Send system notification",
-  "system.notificationBody":
-    "This is a sample notification from the desktop app.",
+    "Use notifications, shortcuts, the clipboard and multiple windows.",
+  "system.notificationLabel": "System notification",
+  "system.notification": "Send notification",
+  "system.notificationBody": "A sample notification from the desktop app.",
   "system.shortcut": "Global shortcut",
   "system.register": "Enable shortcut",
   "system.unregister": "Disable shortcut",
   "system.shortcutHelp":
-    "Once enabled, this shortcut opens the main window even while you use another app. You will be told if another application already uses it.",
+    "Once enabled, this shortcut opens the main window from any app. Conflicts are reported.",
   "system.clipboard": "System clipboard",
   "system.writeClipboard": "Copy text",
   "system.readClipboard": "Read text",
   "system.deepLink": "Open through links or files",
   "system.deepLinkHelp":
-    "The installed app can open through {deepLink} links or .{extension} files. Received links and files appear below. The file workbench checks file contents.",
-  "system.events": "Launch and activation history",
-  "system.empty": "No new opening activity has been received yet.",
+    "The installed app opens {deepLink} links and .{extension} files.",
+  "system.events": "Open history",
+  "system.empty": "No opening activity yet.",
   "system.workspace": "Multi-window workspace",
-  "system.window": "Open independent notes window",
-  "system.restore": "Restore last workspace",
+  "system.window": "Open notes window",
+  "system.restore": "Reopen last workspace",
   "system.success": "Operation completed",
   "system.denied":
-    "Notification permission was not granted. Check your system notification settings.",
+    "Notification permission not granted. Check your system notification settings.",
   "system.permission":
-    "Try system notifications and opening through files after installing the app. Behavior depends on your operating system.",
+    "Notification behavior varies by operating system. Check it after installation.",
   "nav.system": "System integration",
-  "nativeError.userCancelled":
-    "Operation cancelled. Your unsaved work is preserved.",
+  "nativeError.userCancelled": "Cancelled. Your unsaved work is preserved.",
   "nativeError.httpTimeout":
-    "The network request timed out. Check your connection or proxy settings and retry.",
+    "Request timed out. Check your connection or proxy and retry.",
   "nativeError.credentialError":
-    "Cannot access the system credential store. Unlock the keychain or check the credential service and retry.",
+    "Cannot access system credentials. Unlock the keychain or check the credential service, then retry.",
 };

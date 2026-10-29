@@ -92,7 +92,5 @@ it("uses one live status slot for loading and query limits", () => {
   state.tooLong = true;
   mounted.rerender(<CommandPalette />);
   expect(screen.getByRole("status")).toBe(status);
-  expect(status).toHaveTextContent(
-    "Content search allows up to 200 UTF-8 bytes",
-  );
+  expect(status).toHaveTextContent("Content query limit: 200 UTF-8 bytes");
 });

@@ -319,13 +319,13 @@ describe("isolated startup recovery", () => {
     );
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
-        "Diagnostics copied. Check for sensitive information before sharing.",
+        "Report copied. Check for sensitive information before sharing.",
       ),
     );
     expect(copyText).toHaveBeenCalledWith(JSON.stringify(report, null, 2));
     expect(
       screen.queryByText(
-        "Diagnostics copied. Check for sensitive information before sharing.",
+        "Report copied. Check for sensitive information before sharing.",
       ),
     ).not.toBeInTheDocument();
   });

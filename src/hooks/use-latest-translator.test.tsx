@@ -39,11 +39,11 @@ describe("useLatestTranslator", () => {
     act(() => original.update({ language: "en" }));
 
     expect(result.current.t).not.toBe(original.t);
-    expect(original.t("common.copied")).toBe("已复制到剪贴板");
+    expect(original.t("common.copied")).toBe("已复制");
     expect(result.current.latest).toBe(original.latest);
-    expect(original.latest("common.copied")).toBe("Copied to clipboard");
+    expect(original.latest("common.copied")).toBe("Copied");
     expect(original.latest("settings.searchResults", { count: 2 })).toBe(
-      "Found 2 settings",
+      "2 settings",
     );
   });
 });

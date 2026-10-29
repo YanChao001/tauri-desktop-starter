@@ -135,16 +135,12 @@ it("waits for the export before ending and ignores repeated requests while savin
   );
   const { handle, onClose, tools } = renderClose({ dirty: true, onSave });
   fireEvent.click(tools);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Export session and end" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Export and end" }));
 
   act(() => handle.current?.requestClose());
   expect(onSave).toHaveBeenCalledOnce();
   expect(onClose).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("button", { name: "Export session and end" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Export and end" })).toBeDisabled();
   expect(
     screen.getByRole("button", { name: "Discard and end" }),
   ).toBeDisabled();
@@ -169,9 +165,7 @@ it("aborts a cancelled export and never ends the session when that export comple
   );
   const { handle, onClose, tools } = renderClose({ dirty: true, onSave });
   fireEvent.click(tools);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Export session and end" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Export and end" }));
   const signal = onSave.mock.calls[0]?.[0];
 
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -199,9 +193,7 @@ it("retains the confirmation after a failed export and permits discarding instea
   const onSave = vi.fn().mockRejectedValue(new Error("Export unavailable"));
   const { onClose, tools } = renderClose({ dirty: true, onSave });
   fireEvent.click(tools);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Export session and end" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Export and end" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Export unavailable",

@@ -1369,9 +1369,7 @@ try {
               await page
                 .getByRole("menuitem", {
                   name:
-                    profile.language === "zh"
-                      ? "重新加载界面"
-                      : "Reload interface",
+                    profile.language === "zh" ? "重载界面" : "Reload interface",
                   exact: true,
                 })
                 .click();
@@ -1678,8 +1676,7 @@ try {
                   .click();
                 await page
                   .getByRole("menuitem", {
-                    name:
-                      language === "zh" ? "重新加载界面" : "Reload interface",
+                    name: language === "zh" ? "重载界面" : "Reload interface",
                     exact: true,
                   })
                   .click();
@@ -1744,8 +1741,7 @@ try {
                   .click();
                 await page
                   .getByRole("menuitem", {
-                    name:
-                      language === "zh" ? "重新加载界面" : "Reload interface",
+                    name: language === "zh" ? "重载界面" : "Reload interface",
                     exact: true,
                   })
                   .click();
@@ -2727,7 +2723,7 @@ try {
         );
       });
       const importLabel =
-        profile.language === "zh" ? "导入会话 JSON" : "Import session JSON";
+        profile.language === "zh" ? "导入会话" : "Import session";
       const importInput = await page
         .getByLabel(importLabel, { exact: true })
         .elementHandle();
@@ -2767,10 +2763,7 @@ try {
       await page
         .getByRole("dialog")
         .getByRole("button", {
-          name:
-            profile.language === "zh"
-              ? "替换当前会话"
-              : "Replace current session",
+          name: profile.language === "zh" ? "替换会话" : "Replace session",
           exact: true,
         })
         .click();
@@ -2799,7 +2792,7 @@ try {
         .click();
       await page
         .getByRole("menuitem", {
-          name: profile.language === "zh" ? "重新加载界面" : "Reload interface",
+          name: profile.language === "zh" ? "重载界面" : "Reload interface",
           exact: true,
         })
         .click();

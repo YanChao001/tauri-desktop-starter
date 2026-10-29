@@ -48,7 +48,7 @@ it("preserves native window controls after a view failure and offers close and r
   expect(titleBar).toHaveTextContent("Window controls");
   expect(screen.getByRole("alert")).toHaveTextContent("Broken extension view");
   expect(
-    screen.queryByRole("button", { name: "Back to home" }),
+    screen.queryByRole("button", { name: "Back home" }),
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(state.execute).toHaveBeenCalledWith("close-window");

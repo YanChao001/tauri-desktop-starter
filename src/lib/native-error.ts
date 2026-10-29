@@ -2,6 +2,7 @@ import type { Translate } from "@/i18n/translate";
 import type { MessageKey } from "@/i18n/zh-CN";
 import { isRecord } from "./settings-model";
 const ERROR_KEYS: Record<string, MessageKey> = {
+  CLIPBOARD_WRITE_FAILED: "nativeError.clipboardWriteFailed",
   MARKET_NOT_CONFIGURED: "ext.market.notConfigured",
   MARKET_UNAVAILABLE: "ext.market.unavailable",
   MARKET_INCOMPATIBLE: "ext.market.incompatible",

@@ -39,7 +39,7 @@ describe("同源浏览器演示入口", () => {
   });
   it("页面选择复用真实路由，不创建模拟场景", () => {
     renderBar();
-    const navigation = screen.getByRole("combobox", { name: "切换演示页面" });
+    const navigation = screen.getByRole("combobox", { name: "切换页面" });
     fireEvent.keyDown(navigation, { key: "Enter" });
     fireEvent.click(screen.getByRole("option", { name: "交互体验" }));
     expect(screen.getByLabelText("当前路由")).toHaveTextContent("/components");
@@ -48,7 +48,7 @@ describe("同源浏览器演示入口", () => {
   it("精简模式保持相同导航可见性，直接访问隐藏路由仍能切换离开", () => {
     state.appMode = "minimal";
     renderBar("/components");
-    const navigation = screen.getByRole("combobox", { name: "切换演示页面" });
+    const navigation = screen.getByRole("combobox", { name: "切换页面" });
     expect(navigation).toHaveTextContent("交互体验");
     fireEvent.keyDown(navigation, { key: "Enter" });
     expect(

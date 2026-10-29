@@ -236,17 +236,15 @@ export function ExtensionMarket({
                 current.package.manifest.version,
               )
             : 1;
-          const downloadLabel = !compatible
-            ? t("ext.market.hostRequired", { version: manifest.minHostVersion })
-            : t(
-                !current
-                  ? "ext.market.download"
-                  : difference > 0
-                    ? "ext.market.update"
-                    : difference < 0
-                      ? "ext.market.newerInstalled"
-                      : "ext.market.installed",
-              );
+          const downloadLabel = t(
+            !current
+              ? "ext.market.download"
+              : difference > 0
+                ? "ext.market.update"
+                : difference < 0
+                  ? "ext.market.newerInstalled"
+                  : "ext.market.installed",
+          );
           const downloading = downloadingId === manifest.id;
           const installing = installingId === manifest.id;
           const active = downloading || installing;
@@ -299,22 +297,24 @@ export function ExtensionMarket({
                 <span>· {t(`ext.market.category.${entry.category}`)}</span>
               </div>
               <div className="flex min-w-0 flex-wrap items-end justify-between gap-3 self-end">
-                <p className="text-xs wrap-anywhere text-muted-foreground">
-                  {!compatible
-                    ? t("ext.market.hostRequired", {
-                        version: manifest.minHostVersion,
-                      })
-                    : current
-                      ? t("ext.market.currentVersion", {
-                          version: current.package.manifest.version,
+                {!compatible || current ? (
+                  <p className="text-xs wrap-anywhere text-muted-foreground">
+                    {!compatible
+                      ? t("ext.market.hostRequired", {
+                          version: manifest.minHostVersion,
                         })
-                      : t("ext.market.installHint")}
-                </p>
+                      : current
+                        ? t("ext.market.currentVersion", {
+                            version: current.package.manifest.version,
+                          })
+                        : null}
+                  </p>
+                ) : null}
                 <Button
                   disabled={busy || active || difference <= 0 || !compatible}
                   aria-busy={active}
                   className={cn(
-                    "relative overflow-hidden",
+                    "relative ml-auto overflow-hidden",
                     active &&
                       "bg-primary/10 text-foreground disabled:opacity-100",
                   )}

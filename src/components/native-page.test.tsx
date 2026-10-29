@@ -38,7 +38,7 @@ describe("browser capability preview", () => {
         screen.getAllByRole("link").map((link) => link.getAttribute("href")),
       ).toEqual(links);
       expect(
-        screen.getByText(/This feature requires the desktop app/),
+        screen.getByText(/Desktop app required; the steps below are a preview/),
       ).toBeVisible();
     },
   );

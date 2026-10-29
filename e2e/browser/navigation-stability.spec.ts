@@ -18,7 +18,7 @@ test("repeated sidebar navigation preserves the current page controls and draft"
   await page.goto("./#/components");
 
   const title = page.getByRole("textbox", {
-    name: "Sample title (required)",
+    name: "Title (required)",
     exact: true,
   });
   const draft = "Keep this draft while selecting the current page";

@@ -79,7 +79,7 @@ describe("settings search", () => {
     const popup = screen.getByRole("dialog", { name: "搜索设置" });
     expect(container).not.toContainElement(popup);
     expect(input).toHaveFocus();
-    expect(input).toHaveAccessibleDescription(/找到 \d+ 项设置/);
+    expect(input).toHaveAccessibleDescription(/\d+ 项设置/);
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(screen.getByRole("button", { name: /主题/ })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: /主题/ }));
