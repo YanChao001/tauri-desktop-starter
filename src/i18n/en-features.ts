@@ -143,8 +143,6 @@ export const enFeatures = {
   "updates.notConfigured":
     "In-app updates are unavailable. View version history for new versions.",
   "updates.configuration": "Update preferences",
-  "updates.configurationDescription":
-    "Get stable releases and verify the update package's origin and integrity before installation.",
   "updates.autoCheck": "Check for updates on startup",
   "updates.autoCheckHint":
     "Check in the background after startup and notify you of new versions. You choose when to download and install.",
@@ -161,7 +159,6 @@ export const enFeatures = {
   "updates.endpoint": "Update source",
   "updates.endpointDisabled":
     "Automatic updates have not been enabled for this app",
-  "updates.keyConfigured": "Update verification configured",
   "updates.keyMissing": "Update verification not configured",
   "errors.VALIDATION": "Please check the input and try again",
   "errors.CONFLICT":

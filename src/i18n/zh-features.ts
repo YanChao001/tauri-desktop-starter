@@ -133,8 +133,6 @@ export const zhFeatures = {
   "updates.noReleaseNotes": "此版本未提供更新说明。",
   "updates.notConfigured": "暂时无法在应用内更新，请前往版本记录查看新版本。",
   "updates.configuration": "更新偏好",
-  "updates.configurationDescription":
-    "获取稳定版更新，安装前验证更新包的来源与完整性。",
   "updates.autoCheck": "启动时检查更新",
   "updates.autoCheckHint":
     "应用就绪后在后台检查，发现新版本时提醒；下载和安装由你确认。",
@@ -150,7 +148,6 @@ export const zhFeatures = {
     "暂时没有适合当前系统和安装方式的更新包，请从版本记录查看。",
   "updates.endpoint": "更新来源",
   "updates.endpointDisabled": "此应用尚未启用自动更新",
-  "updates.keyConfigured": "更新验证已配置",
   "updates.keyMissing": "更新验证尚未配置",
   "errors.VALIDATION": "输入内容无效，请检查后重试",
   "errors.CONFLICT": "数据已被其他窗口修改，请刷新后合并",

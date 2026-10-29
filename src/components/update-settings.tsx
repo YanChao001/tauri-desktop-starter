@@ -269,35 +269,34 @@ export function UpdateSettings() {
               />
             </SettingRow>
           </div>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-2">
-            <details className="min-w-0 flex-1 basis-44 text-xs text-muted-foreground">
+          <div className="border-t pt-2">
+            <details className="min-w-0 text-xs text-muted-foreground">
               <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {t("updates.endpoint")}
               </summary>
-              <div className="mt-3 space-y-2">
-                <p>{t("updates.configurationDescription")}</p>
-                <p>
-                  {t(
-                    configured ? "updates.keyConfigured" : "updates.keyMissing",
-                  )}
-                </p>
+              <div className="space-y-2 px-3 py-2">
+                {!configured ? <p>{t("updates.keyMissing")}</p> : null}
                 <p className="break-all font-mono">
                   {status
                     ? (status.endpoint ?? t("updates.endpointDisabled"))
                     : APP_CONFIG.updates.endpoint}
                 </p>
-                {checkedAt ? (
-                  <p>{t("updates.lastChecked", { time: checkedAt })}</p>
-                ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  {checkedAt ? (
+                    <p className="min-w-0 break-words">
+                      {t("updates.lastChecked", { time: checkedAt })}
+                    </p>
+                  ) : null}
+                  <ExternalLink
+                    href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
+                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {t("updates.releases")}
+                    <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
+                  </ExternalLink>
+                </div>
               </div>
             </details>
-            <ExternalLink
-              href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
-              className="inline-flex shrink-0 items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {t("updates.releases")}
-              <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
-            </ExternalLink>
           </div>
         </div>
       </fieldset>

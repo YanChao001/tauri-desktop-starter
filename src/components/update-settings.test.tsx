@@ -219,8 +219,13 @@ describe("updater controls", () => {
       autoCheckUpdates: false,
     });
     expect(
-      screen.getByText("Update verification configured"),
-    ).not.toBeVisible();
+      screen.queryByText("Update verification configured"),
+    ).not.toBeInTheDocument();
+    const history = screen.getByText("View version history");
+    expect(history).not.toBeVisible();
+    expect(
+      screen.getByText("Update source").closest("details"),
+    ).toContainElement(history);
     expect(
       screen.getByText("https://updates.example.com/latest.json"),
     ).not.toBeVisible();
@@ -378,6 +383,15 @@ describe("updater controls", () => {
     ).toBeVisible();
     expect(checkUpdates).not.toHaveBeenCalled();
     expect(installUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText("View version history")).not.toBeVisible();
+    fireEvent.click(screen.getByText("Update source"));
+    expect(
+      screen.getByRole("link", { name: "View version history" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Last successful check:/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Update source"));
     ui.phase = "ready";
     ui.status = { ...available, available: false, version: null, body: null };
     view.rerender(<UpdateSettings />);
@@ -389,6 +403,7 @@ describe("updater controls", () => {
       screen.queryByRole("button", { name: "Download and install" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Release notes")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Update source"));
     expect(
       screen.getByRole("link", { name: "View version history" }),
     ).toBeVisible();
@@ -455,6 +470,7 @@ describe("updater controls", () => {
     expect(
       screen.queryByRole("button", { name: "Download and install" }),
     ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Update source"));
     expect(
       screen.getByRole("link", { name: "View version history" }),
     ).toBeVisible();
