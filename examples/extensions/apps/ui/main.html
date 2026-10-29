@@ -1223,8 +1223,8 @@
                 data-en="One node. A world of possibilities."
               ></h2>
               <p
-                data-zh="拖动、连接、编辑，把零散灵感组织成一张可导出的关系图。"
-                data-en="Drag, connect and edit your ideas into a map you can export."
+                data-zh="拖动、连接和编辑节点，导出关系图。"
+                data-en="Drag, connect and edit nodes, then export your map."
               ></p>
             </div>
             <div class="scene-actions">
@@ -1295,7 +1295,7 @@
                 type="button"
                 id="canvas-remove"
                 data-variant="ghost"
-                data-zh="移除当前节点"
+                data-zh="移除节点"
                 data-en="Remove node"
               ></button>
               <div class="inspector-summary">
@@ -1359,8 +1359,8 @@
                 data-en="A fresh perspective on your data"
               ></h2>
               <p
-                data-zh="筛选、切换图形或编辑数据，图表和统计即时联动。初始内容为内置示例。"
-                data-en="Filter, switch charts or edit rows. Charts and statistics update together. Starts with a built-in sample."
+                data-zh="筛选或编辑数据，实时查看图表与统计。初始数据为内置示例。"
+                data-en="Filter or edit rows to update charts and statistics. Starts with sample data."
               ></p>
             </div>
             <div class="scene-actions">
@@ -1428,8 +1428,8 @@
               <p
                 id="lens-empty"
                 hidden
-                data-zh="当前筛选没有记录，请调整分类或最低值。"
-                data-en="No rows match. Try another category or a lower minimum."
+                data-zh="无匹配记录，请调整分类或最低值。"
+                data-en="No matches. Adjust the category or minimum."
               ></p>
             </div>
             <aside class="side-panel">
@@ -1466,8 +1466,8 @@
                 type="button"
                 id="lens-sample"
                 data-variant="ghost"
-                data-zh="恢复内置示例"
-                data-en="Use built-in sample"
+                data-zh="使用示例"
+                data-en="Use sample"
               ></button>
               <p
                 class="panel-note"
@@ -1514,8 +1514,8 @@
           <div class="scene-footer">
             <span
               class="status-label"
-              data-zh="所有图表均来自当前数据"
-              data-en="Every chart is calculated from the current rows"
+              data-zh="图表基于当前数据"
+              data-en="Charts use the current rows"
             ></span
             ><span id="lens-source-label" class="muted"></span>
           </div>
@@ -1541,8 +1541,8 @@
                 data-en="A pipeline with a useful destination"
               ></h2>
               <p
-                data-zh="为当前数据配置过滤、分组与排序；运行后查看每一步的真实输入输出。"
-                data-en="Filter, group and sort your rows. Run to inspect the actual input and output of every step."
+                data-zh="过滤、分组和排序数据，查看各步输入与输出。"
+                data-en="Filter, group and sort rows. Inspect each step’s input and output."
               ></p>
             </div>
             <div class="scene-actions">
@@ -1604,13 +1604,10 @@
               <div class="pipeline-node" data-surface="control" data-step="3">
                 <span class="step-number">04</span>
                 <div class="step-copy">
-                  <strong
-                    data-zh="排序并生成结果"
-                    data-en="Sort & produce output"
-                  ></strong>
+                  <strong data-zh="排序输出" data-en="Sort output"></strong>
                   <p
-                    data-zh="按数值从高到低排列"
-                    data-en="Order by value, highest first"
+                    data-zh="按数值降序"
+                    data-en="Values in descending order"
                   ></p>
                 </div>
                 <span class="step-state"></span>
@@ -1623,10 +1620,7 @@
                 data-en="Pipeline settings"
               ></span
               ><label class="control-field"
-                ><span
-                  data-zh="保留最低数值"
-                  data-en="Keep values at least"
-                ></span
+                ><span data-zh="最低值" data-en="Minimum value"></span
                 ><input
                   id="flow-min"
                   type="number"
@@ -1658,8 +1652,8 @@
               </div>
               <p
                 class="panel-note"
-                data-zh="流程在当前界面处理数据。切换页面或修改参数会停止预览，导出仅使用已完成的结果。"
-                data-en="This pipeline processes data in this page. Switching scenes or changing settings stops the preview. Only completed results can be exported."
+                data-zh="流程仅在本页运行。切换场景或修改参数会停止预览，仅可导出已完成的结果。"
+                data-en="Runs on this page. Switching scenes or settings stops the preview; only completed results can be exported."
               ></p>
             </aside>
           </div>
@@ -1669,8 +1663,8 @@
               ><span
                 id="flow-status"
                 role="status"
-                data-zh="配置参数，运行第一条流程。"
-                data-en="Set your parameters and run your first pipeline."
+                data-zh="设置参数后运行流程。"
+                data-en="Set parameters, then run the pipeline."
               ></span>
             </div>
             <div
@@ -2021,8 +2015,8 @@
           void retain(studioDirty || current?.dirty).catch(() =>
             studioError(
               tr(
-                "草稿登记失败，请重试；当前内容仍在界面中。",
-                "Could not retain the draft. Your work is still on this page.",
+                "草稿保存失败，内容仍在本页，请重试。",
+                "Draft save failed. Your work remains on this page; retry.",
               ),
             ),
           );
@@ -2087,8 +2081,8 @@
           if (clearResult) flowResult = null;
           if (wasRunning || clearResult) {
             $("flow-status").textContent = tr(
-              "参数或来源已更新，请重新运行。",
-              "Source or settings changed. Run the pipeline again.",
+              "数据或参数已更改，请重新运行。",
+              "Source or settings changed. Run again.",
             );
             document.querySelectorAll("[data-step]").forEach((node) => {
               delete node.dataset.state;
@@ -2429,12 +2423,7 @@
         }
         $("canvas-add").onclick = () => {
           if (studio.nodes.length >= 24) {
-            notifyStudio(
-              tr(
-                "画布最多容纳 24 个节点。",
-                "A canvas can hold up to 24 nodes.",
-              ),
-            );
+            notifyStudio(tr("最多 24 个节点。", "Up to 24 nodes per canvas."));
             return;
           }
           canvasUndoPoint();
@@ -2477,7 +2466,7 @@
           );
           if (index < 0 && studio.edges.length >= 64) {
             notifyStudio(
-              tr("最多保留 64 条连接。", "A canvas can hold up to 64 links."),
+              tr("最多保留 64 条连接。", "Up to 64 links per canvas."),
             );
             return;
           }
@@ -2596,10 +2585,7 @@
           $("lens-empty").hidden = rows.length > 0;
           $("lens-source-label").textContent =
             studio.source === "sample"
-              ? tr(
-                  "内置示例 · 可替换",
-                  "Built-in sample · Replace with your own",
-                )
+              ? tr("内置示例", "Built-in sample")
               : tr("自定义数据", "Custom data");
           const max = Math.max(1, ...rows.map((row) => Math.abs(row.value))),
             preview = rows.slice(0, 24);
@@ -2800,8 +2786,8 @@
         undoData.id = "lens-undo";
         undoData.type = "button";
         undoData.dataset.variant = "ghost";
-        undoData.dataset.zh = "撤销数据替换";
-        undoData.dataset.en = "Undo data replacement";
+        undoData.dataset.zh = "撤销替换";
+        undoData.dataset.en = "Undo replacement";
         undoData.disabled = true;
         $("lens-sample").after(undoData);
         undoData.onclick = () => {
@@ -2833,12 +2819,7 @@
           studio.flowLensMinimum = studio.minimum;
           flowSettings();
           setScene("flow");
-          announce(
-            tr(
-              "当前数据已接入流程。",
-              "The current dataset is connected to the pipeline.",
-            ),
-          );
+          announce(tr("数据已接入流程。", "Data connected to the pipeline."));
         };
         function flowSettings() {
           document.querySelector("[data-step='0'] .step-copy p").textContent =
@@ -2935,8 +2916,8 @@
             $("flow-count").textContent =
               `${flowInput().length} / ${flowResult.length}`;
             $("flow-status").textContent = tr(
-              "处理完成，结果可以导出。",
-              "Complete. Your result is ready to export.",
+              "已完成，可导出结果。",
+              "Complete. Ready to export.",
             );
             $("flow-run").disabled = false;
             $("flow-export").disabled = flowResult.length === 0;
@@ -2956,10 +2937,7 @@
           flowStep = 0;
           const generation = flowGeneration;
           $("flow-run").disabled = true;
-          $("flow-status").textContent = tr(
-            "正在处理当前数据…",
-            "Processing the current dataset…",
-          );
+          $("flow-status").textContent = tr("正在处理…", "Processing…");
           document.querySelector("[data-step='0']").dataset.state = "running";
           if (!motionAllowed() || studio.paused) advanceFlow(generation);
           else flowTimer = setTimeout(() => advanceFlow(generation), 180);
@@ -2991,8 +2969,8 @@
           if (new TextEncoder().encode(payload).length > 64000) {
             studioError(
               tr(
-                "导出内容过大，请减少记录后重试。",
-                "The export is too large. Reduce the number of rows and try again.",
+                "导出过大，请减少记录。",
+                "Export too large. Reduce the number of rows.",
               ),
             );
             return;
@@ -3021,8 +2999,8 @@
           } catch {
             studioError(
               tr(
-                "导出未完成，当前内容已保留，可重试。",
-                "The export did not finish. Your work is retained; try again.",
+                "导出失败，内容已保留，请重试。",
+                "Export failed. Your work is retained; retry.",
               ),
             );
           } finally {

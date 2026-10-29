@@ -1,16 +1,16 @@
 {
   "referenceHost": "x86_64-pc-windows-msvc",
   "sources": {
-    "Cargo.lock": "d045982cfe41db7a6ad304502ac03cb5ff863284864563821183d8147d82a59b",
-    "Cargo.toml": "4bb7555f9b17f892a7823f35272fa941243925870b2098a3bacf7b86faae34b3",
+    "Cargo.lock": "5841a26c1234fb9923ad55a529ccd3861692fc99d89ecb4a1e75673cbbd54797",
+    "Cargo.toml": "358cf8edd1a61304cd7b9870a38e22a33bfcffd54b07c28f9f67bbef544072fb",
     "extension-apps-recipe.mjs": "dbffa848b3d3a1b136f2680f7b20e206728f4bb03c5512481878a0d9ab6dd436",
-    "extension.json": "129f4c5560e8e3a1e58164aea873a7a976ee3074481c738c1b5a00f6f27de578",
+    "extension.json": "d853db9b7ba4a8a600f80ac08bb79cbf5172f4a94ef03cbd4ba28b5798bb33c2",
     "rust-toolchain.toml": "9db2eec5f7af9912a40a4d86b4b19edfa4d26f844fb4e4122df174b4018e4ebe",
     "src/app.rs": "90cc1eb9ad3246fbe8955e732c6e482eb465697f9e4671bc3924b606c46e7161",
     "src/lib.rs": "f970c8f48a86acd8781a96b33522ce4528a36dbcf15ca57cb90adf7970ad61c1",
-    "src/studio.rs": "9abfbf4fa889a6e6883c4ec0d4c23a5126d9ee630eb6293c20846c6674cc5e91",
+    "src/studio.rs": "1c9a434ae8e689f237b631d10392f31acaaa07549514767c9fad1ec84cfb8d61",
     "src/view.rs": "1c9bea5b47011f5d085b57a473c9296638e4b758e8281cd9942f10710cc25f81",
-    "ui/main.html": "ef730bf62406a0da73c3240775219144daab98fc58d5a6ef20f0c86e114e8858"
+    "ui/main.html": "de05c1426c3242408ffc9049cc913f45baea9640a767a02d31365e182dfc7cb1"
   },
-  "sha256": "3a467f9ec4f42ef496dcd72a4cf2685fdd97418f4390d1b7e36e0449469c80be"
+  "sha256": "b6084fd4f2f6080fb71b5667d21c891a1368724762b2c13025aeb94963a4da95"
 }
