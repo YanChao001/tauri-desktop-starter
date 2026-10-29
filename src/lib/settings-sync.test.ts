@@ -70,6 +70,32 @@ function setup(initial = DEFAULT_SETTINGS, remote = snapshot(1)) {
 }
 
 describe("settings synchronization", () => {
+  it("自定义主题色在版本冲突中成对保留，并接收其他窗口的新配色", async () => {
+    const env = setup();
+    await env.sync.start();
+    env.backend.save.mockImplementationOnce(async () => {
+      env.send(snapshot(2, { accent: "cyan", font: "mono" }));
+      throw { code: "SETTINGS_CONFLICT" };
+    });
+    env.sync.update({ accent: "custom", customAccent: " #abc " });
+    await vi.waitFor(() => expect(env.latest().status).toBe("saved"));
+    expect(env.backend.save).toHaveBeenLastCalledWith(
+      settingsDocument({
+        ...DEFAULT_SETTINGS,
+        accent: "custom",
+        customAccent: "#AABBCC",
+        font: "mono",
+      }),
+      2,
+    );
+    env.send(snapshot(4, { accent: "custom", customAccent: "#102030" }));
+    env.send(snapshot(3, { accent: "pink", customAccent: "#FFFFFF" }));
+    expect(env.latest().settings).toMatchObject({
+      accent: "custom",
+      customAccent: "#102030",
+    });
+    env.sync.stop();
+  });
   it("将启动位置偏好持久化，并接收其他窗口的偏好变化", async () => {
     const env = setup();
     await env.sync.start();

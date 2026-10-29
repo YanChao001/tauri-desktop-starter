@@ -89,7 +89,10 @@ try {
     import { Tabs, TabsList, TabsTrigger } from ${sourcePath("src/components/ui/tabs.tsx")};
     import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from ${sourcePath("src/components/ui/dialog.tsx")};
     import { ExtensionCustomUi } from ${sourcePath("src/features/extensions/extension-custom-ui.tsx")};
+    import { applySettings, DEFAULT_SETTINGS, type Accent } from ${sourcePath("src/lib/settings-model.ts")};
     import "./fixture.css";
+    window.parityApplyAccent = (accent: Accent, customAccent: string, theme: "light" | "dark") =>
+      applySettings({ ...DEFAULT_SETTINGS, accent, customAccent, theme, motion: "reduced" });
     function HostDialogProbe() {
       return <Dialog>
         <DialogTrigger asChild><Button id="host-dialog-open">Open dialog</Button></DialogTrigger>
@@ -918,6 +921,57 @@ try {
   console.log(
     "PASS production theme bridge: host 900px / narrow iframe, host 360px, bidirectional breakpoint resize and no theme resend within a breakpoint",
   );
+  const retainedFrame = await page.locator("iframe").elementHandle();
+  const priorAccentAttributes = await page
+    .locator("html")
+    .evaluate((node) =>
+      Object.fromEntries(
+        node.getAttributeNames().map((name) => [name, node.getAttribute(name)]),
+      ),
+    );
+  for (const [accent, customAccent, theme] of [
+    ["custom", "#FFFFFF", "light"],
+    ["custom", "#000000", "dark"],
+    ["custom", "#00FFAA", "light"],
+    ["custom", "#00FFAA", "dark"],
+    ["blue", "#00FFAA", "light"],
+  ]) {
+    await page.evaluate(
+      ({ accent, customAccent, theme }) =>
+        window.parityApplyAccent(accent, customAccent, theme),
+      { accent, customAccent, theme },
+    );
+    await expect(frame.locator("html")).toHaveClass(theme);
+    await expect
+      .poll(() => measure(frame.locator("#sdk-button"), buttonProperties))
+      .toEqual(await measure(page.locator("#host-button"), buttonProperties));
+    const customTokens = await page.locator("html").evaluate((node) => {
+      const styles = getComputedStyle(node);
+      return ["--custom-accent-light", "--custom-accent-dark"].map((name) =>
+        styles.getPropertyValue(name).trim(),
+      );
+    });
+    await expect
+      .poll(() =>
+        frame.locator("html").evaluate((node) => {
+          const styles = getComputedStyle(node);
+          return ["--custom-accent-light", "--custom-accent-dark"].map((name) =>
+            styles.getPropertyValue(name).trim(),
+          );
+        }),
+      )
+      .toEqual(customTokens);
+    assert.ok(await retainedFrame.evaluate((node) => node.isConnected));
+  }
+  console.log(
+    "PASS custom accent colors and light/dark variants reach the existing SDK frame and restore presets",
+  );
+  await page.locator("html").evaluate((node, attributes) => {
+    for (const name of node.getAttributeNames())
+      if (!Object.hasOwn(attributes, name)) node.removeAttribute(name);
+    for (const [name, value] of Object.entries(attributes))
+      node.setAttribute(name, value);
+  }, priorAccentAttributes);
   await frame.evaluate(() => {
     const root = document
       .querySelector("#shadow-host")

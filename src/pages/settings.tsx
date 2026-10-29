@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CheckIcon,
   ExternalLinkIcon,
   MonitorIcon,
   MoonIcon,
@@ -9,7 +8,6 @@ import {
   ChevronDownIcon,
   LanguagesIcon,
   SunMoonIcon,
-  PaletteIcon,
   SquareIcon,
   TypeIcon,
   ALargeSmallIcon,
@@ -24,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { LanguageSwitch } from "@/components/language-switch";
 import { SkinPicker } from "@/components/skin-picker";
+import { AccentPicker } from "@/components/accent-picker";
 import { SettingsSearch } from "@/components/settings-search";
 import { SettingsPersistence } from "@/components/settings-persistence";
 import { DesktopSettings } from "@/components/desktop-settings";
@@ -62,9 +61,7 @@ import {
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import {
-  ACCENTS,
   useSettings,
-  type Accent,
   type Font,
   type FontSize,
   type Radius,
@@ -87,16 +84,6 @@ const THEMES = [
   { value: "dark", labelKey: "title.dark", icon: MoonIcon },
   { value: "system", labelKey: "title.system", icon: MonitorIcon },
 ] as const;
-
-const ACCENT_COLORS: Record<Accent, string> = {
-  neutral: "oklch(0.205 0 0)",
-  indigo: "oklch(0.51 0.23 277)",
-  blue: "oklch(0.55 0.19 250)",
-  emerald: "oklch(0.51 0.12 164)",
-  amber: "oklch(0.76 0.16 80)",
-  rose: "oklch(0.56 0.22 12)",
-  violet: "oklch(0.53 0.24 300)",
-};
 
 const FONT_OPTIONS = [
   { value: "geist", labelKey: "settings.fontGeist" },
@@ -365,39 +352,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div
-            id="settings-accent"
-            tabIndex={-1}
-            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <SettingLabel icon={PaletteIcon} label={t("settings.accent")} />
-            <div className="flex flex-wrap gap-2">
-              {ACCENTS.map((accent) => {
-                const active = settings.accent === accent;
-                return (
-                  <button
-                    data-surface="artwork"
-                    key={accent}
-                    type="button"
-                    aria-label={t(`settings.color.${accent}`)}
-                    title={t(`settings.color.${accent}`)}
-                    aria-pressed={active}
-                    onClick={() => update({ accent })}
-                    className={cn(
-                      "flex size-7 items-center justify-center rounded-full border transition-transform hover:scale-110",
-                      active &&
-                        "ring-2 ring-ring ring-offset-2 ring-offset-background",
-                    )}
-                    style={{ backgroundColor: ACCENT_COLORS[accent] }}
-                  >
-                    {active ? (
-                      <CheckIcon className="size-3.5 text-white mix-blend-difference" />
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <AccentPicker />
 
           <Separator />
 

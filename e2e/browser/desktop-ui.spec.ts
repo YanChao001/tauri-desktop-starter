@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import appConfig from "../../app.config.json" with { type: "json" };
+import { PRESET_ACCENTS } from "../../src/lib/accent-colors";
 
 const KEY = `${appConfig.browserStorageNamespace}:settings`;
 
@@ -1484,15 +1485,7 @@ for (const theme of ["light", "dark"]) {
       await expect(all).toHaveAttribute("aria-checked", "mixed");
       await expect(all.locator(".lucide-minus")).toBeVisible();
       await expect(all.locator(".lucide-check")).toBeHidden();
-      for (const accent of [
-        "neutral",
-        "indigo",
-        "blue",
-        "emerald",
-        "amber",
-        "rose",
-        "violet",
-      ]) {
+      for (const accent of PRESET_ACCENTS) {
         await page.evaluate((value) => {
           document.documentElement.dataset.accent = value;
         }, accent);

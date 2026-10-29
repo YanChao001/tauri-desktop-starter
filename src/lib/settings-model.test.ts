@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ACCENTS,
   applySettings,
   DEFAULT_SETTINGS,
   loadSettings,
@@ -30,6 +31,51 @@ describe("versioned settings model", () => {
     vi.spyOn(navigator, "languages", "get").mockReturnValue(["zh-CN"]);
   });
   afterEach(() => vi.restoreAllMocks());
+  it("扩展主题色可往返保存，旧偏好补齐自定义颜色而不改原预设", () => {
+    for (const accent of ACCENTS) {
+      const settings = { ...DEFAULT_SETTINGS, accent, customAccent: "#123ABC" };
+      expect(migrateSettings(settingsDocument(settings))).toEqual(settings);
+    }
+    for (const document of [
+      { accent: "blue" },
+      { schemaVersion: 1, settings: { accent: "blue" } },
+      { schemaVersion: 5, accent: "blue" },
+    ])
+      expect(migrateSettings(document)).toMatchObject({
+        accent: "blue",
+        customAccent: DEFAULT_SETTINGS.customAccent,
+      });
+    expect(settingsDocument(DEFAULT_SETTINGS).schemaVersion).toBe(6);
+  });
+
+  it("自定义颜色在存档与补丁边界规范化，切换预设保留已选颜色", () => {
+    const custom = migrateSettings({
+      accent: "custom",
+      customAccent: " #aBc ",
+    });
+    expect(custom).toMatchObject({ accent: "custom", customAccent: "#AABBCC" });
+    expect(
+      normalizeSettingsPatch(DEFAULT_SETTINGS, {
+        accent: "custom",
+        customAccent: " #12abEF ",
+      }),
+    ).toEqual({ accent: "custom", customAccent: "#12ABEF" });
+    expect(normalizeSettingsPatch(custom, { accent: "teal" })).toEqual({
+      accent: "teal",
+    });
+    expect(migrateSettings({ ...custom, accent: "teal" }).customAccent).toBe(
+      "#AABBCC",
+    );
+    expect(
+      migrateSettings({
+        accent: "custom",
+        customAccent: "url(https://example.com)",
+      }),
+    ).toMatchObject({
+      accent: "custom",
+      customAccent: DEFAULT_SETTINGS.customAccent,
+    });
+  });
   it("defaults legacy startup update checks on and preserves an explicit opt-out", () => {
     expect(
       migrateSettings({ schemaVersion: 3, language: "en" }).autoCheckUpdates,
@@ -231,7 +277,7 @@ describe("versioned settings model", () => {
       schemaVersion: 999,
       sidebarWidth: 999,
       language: "bad",
-      accent: "pink",
+      accent: "invalid-accent",
       unexpected: true,
     } as unknown as Partial<AppSettings>;
     const patch = normalizeSettingsPatch(current, unsafe);
@@ -269,7 +315,11 @@ describe("loadSettings", () => {
   it("非法枚举值回落到默认值，合法值保留", () => {
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ accent: "pink", language: "fr", menuBar: false }),
+      JSON.stringify({
+        accent: "invalid-accent",
+        language: "fr",
+        menuBar: false,
+      }),
     );
     const settings = loadSettings();
     expect(settings.accent).toBe("neutral");
@@ -348,6 +398,42 @@ describe("loadSettings", () => {
 
 describe("applySettings", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("自定义主题色只写专属变量，预设切换保留变量键且重置恢复默认配色", () => {
+    const root = document.documentElement;
+    root.classList.add("dark");
+    root.style.removeProperty("--primary");
+    applySettings(
+      { ...DEFAULT_SETTINGS, accent: "custom", customAccent: "#000000" },
+      { includeTheme: false },
+    );
+    expect(root.dataset.accent).toBe("custom");
+    expect(root.style.getPropertyValue("--custom-accent-light")).toBe(
+      "#000000",
+    );
+    const dark = root.style.getPropertyValue("--custom-accent-dark");
+    expect(dark).toMatch(/^#[0-9A-F]{6}$/);
+    expect(dark).not.toBe("#000000");
+    expect(root.style.getPropertyValue("--primary")).toBe("");
+    expect(root).toHaveClass("dark");
+    applySettings(
+      { ...DEFAULT_SETTINGS, accent: "cyan", customAccent: "#000000" },
+      { includeTheme: false },
+    );
+    expect(root.dataset.accent).toBe("cyan");
+    expect(root.style.getPropertyValue("--custom-accent-light")).toBe(
+      "#000000",
+    );
+    expect(root.style.getPropertyValue("--custom-accent-dark")).toBe(dark);
+    applySettings(DEFAULT_SETTINGS, { includeTheme: false });
+    expect(root.dataset.accent).toBe("neutral");
+    expect(root.style.getPropertyValue("--custom-accent-light")).not.toBe(
+      "#000000",
+    );
+    expect(root.style.getPropertyValue("--custom-accent-dark")).toMatch(
+      /^#[0-9A-F]{6}$/,
+    );
+    expect(root.style.getPropertyValue("--primary")).toBe("");
+  });
   it("运行时应用其余偏好时保留主题旧帧，由主题同步统一提交", () => {
     const root = document.documentElement;
     root.classList.remove("light");

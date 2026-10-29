@@ -70,6 +70,45 @@ describe("settings search metadata", () => {
     ])
       expect(searchSettings(query, createTranslator(en))[0]?.id).toBe("skin");
   });
+  it("按新预设名称、HEX和自定义颜色入口定位主题色", () => {
+    for (const [dictionary, queries] of [
+      [
+        zhCN,
+        [
+          "青蓝",
+          "松石",
+          "青柠",
+          "日落橙",
+          "樱粉",
+          "雾灰",
+          "自定义主题色",
+          "十六进制",
+          "取色",
+        ],
+      ],
+      [
+        en,
+        [
+          "Cyan",
+          "Teal",
+          "Lime",
+          "Orange",
+          "Pink",
+          "Slate",
+          "Custom accent color",
+          "HEX",
+          "Pick a color",
+        ],
+      ],
+    ] as const) {
+      for (const query of queries)
+        expect(
+          searchSettings(query, createTranslator(dictionary)),
+        ).toContainEqual(
+          expect.objectContaining({ id: "accent", anchor: "settings-accent" }),
+        );
+    }
+  });
   it("finds startup, background operation and multiple windows in shared settings", () => {
     for (const [query, id] of [
       ["登录", "autostart"],

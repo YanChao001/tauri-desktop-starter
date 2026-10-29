@@ -44,6 +44,33 @@ describe("settings provider persistence", () => {
     vi.restoreAllMocks();
   });
 
+  it("浏览器保存规范化自定义主题色，切换预设后仍可恢复并显式重置", async () => {
+    const first = renderHook(useSettings, { wrapper });
+    act(() =>
+      first.result.current.update({ accent: "custom", customAccent: " #a3c " }),
+    );
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      schemaVersion: 6,
+      accent: "custom",
+      customAccent: "#AA33CC",
+    });
+    expect(document.documentElement.dataset.accent).toBe("custom");
+    act(() => first.result.current.update({ accent: "slate" }));
+    first.unmount();
+    const next = renderHook(useSettings, { wrapper });
+    expect(next.result.current.settings).toMatchObject({
+      accent: "slate",
+      customAccent: "#AA33CC",
+    });
+    await act(async () => next.result.current.reset());
+    expect(next.result.current.settings).toEqual(DEFAULT_SETTINGS);
+    expect(document.documentElement.dataset.accent).toBe("neutral");
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      accent: "neutral",
+      customAccent: DEFAULT_SETTINGS.customAccent,
+    });
+  });
+
   it("保存启动位置偏好，重新挂载时恢复，重置时回到记住上次位置", async () => {
     const first = renderHook(useSettings, { wrapper });
     act(() => first.result.current.update({ windowPosition: "center" }));
@@ -188,7 +215,7 @@ describe("settings provider persistence", () => {
       result.current.update({
         schemaVersion: 99,
         sidebarWidth: 999,
-        accent: "pink",
+        accent: "invalid-accent",
       } as unknown as Partial<AppSettings>),
     );
     expect(result.current.settings).toMatchObject({

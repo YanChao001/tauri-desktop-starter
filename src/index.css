@@ -185,95 +185,92 @@ html[data-accent]:not([data-accent="neutral"]) {
  * 全部由 <html> 上的 data-* 驱动，组件不需要知道当前设置。
  * ========================================================== */
 
-/* 主题色：neutral 用基础变量，其余覆盖 primary / ring / sidebar / chart */
+/* 预设的色块与主题共用取色；neutral 继续使用基础变量。 */
+:root {
+  --accent-swatch-neutral: oklch(0.205 0 0);
+  --accent-swatch-indigo: oklch(0.51 0.23 277);
+  --accent-swatch-blue: oklch(0.55 0.19 250);
+  --accent-swatch-cyan: oklch(0.52 0.11 220);
+  --accent-swatch-teal: oklch(0.51 0.1 185);
+  --accent-swatch-emerald: oklch(0.51 0.12 164);
+  --accent-swatch-lime: oklch(0.51 0.13 130);
+  --accent-swatch-amber: oklch(0.76 0.16 80);
+  --accent-swatch-orange: oklch(0.55 0.17 45);
+  --accent-swatch-rose: oklch(0.56 0.22 12);
+  --accent-swatch-pink: oklch(0.56 0.2 350);
+  --accent-swatch-violet: oklch(0.53 0.24 300);
+  --accent-swatch-slate: oklch(0.48 0.035 255);
+}
+html.dark {
+  --accent-swatch-neutral: oklch(0.922 0 0);
+}
+html[data-accent]:not([data-accent="neutral"]) {
+  --primary: var(--accent-light);
+  --primary-foreground: var(--accent-label-light, oklch(0.985 0 0));
+  --ring: color-mix(in oklab, var(--primary) 60%, transparent);
+  --sidebar-primary: var(--primary);
+  --chart-1: var(--primary);
+}
+html.dark[data-accent]:not([data-accent="neutral"]) {
+  --primary: var(--accent-dark);
+  --primary-foreground: var(--accent-label-dark, oklch(0.145 0 0));
+}
 html[data-accent="indigo"] {
-  --primary: oklch(0.51 0.23 277);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.51 0.23 277 / 60%);
-  --sidebar-primary: oklch(0.51 0.23 277);
-  --chart-1: oklch(0.51 0.23 277);
+  --accent-light: var(--accent-swatch-indigo);
+  --accent-dark: oklch(0.64 0.2 277);
 }
-html.dark[data-accent="indigo"] {
-  --primary: oklch(0.64 0.2 277);
-  --primary-foreground: oklch(0.145 0 0);
-  --ring: oklch(0.64 0.2 277 / 60%);
-  --sidebar-primary: oklch(0.64 0.2 277);
-  --chart-1: oklch(0.64 0.2 277);
-}
-
 html[data-accent="blue"] {
-  --primary: oklch(0.55 0.19 250);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.55 0.19 250 / 60%);
-  --sidebar-primary: oklch(0.55 0.19 250);
-  --chart-1: oklch(0.55 0.19 250);
+  --accent-light: var(--accent-swatch-blue);
+  --accent-dark: oklch(0.67 0.16 250);
 }
-html.dark[data-accent="blue"] {
-  --primary: oklch(0.67 0.16 250);
-  --primary-foreground: oklch(0.145 0 0);
-  --ring: oklch(0.67 0.16 250 / 60%);
-  --sidebar-primary: oklch(0.67 0.16 250);
-  --chart-1: oklch(0.67 0.16 250);
+html[data-accent="cyan"] {
+  --accent-light: var(--accent-swatch-cyan);
+  --accent-dark: oklch(0.75 0.12 215);
 }
-
+html[data-accent="teal"] {
+  --accent-light: var(--accent-swatch-teal);
+  --accent-dark: oklch(0.72 0.12 185);
+}
 html[data-accent="emerald"] {
-  --primary: oklch(0.51 0.12 164);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.51 0.12 164 / 60%);
-  --sidebar-primary: oklch(0.51 0.12 164);
-  --chart-1: oklch(0.51 0.12 164);
+  --accent-light: var(--accent-swatch-emerald);
+  --accent-dark: oklch(0.69 0.13 160);
+  --accent-label-dark: oklch(0.205 0 0);
 }
-html.dark[data-accent="emerald"] {
-  --primary: oklch(0.69 0.13 160);
-  --primary-foreground: oklch(0.205 0 0);
-  --ring: oklch(0.69 0.13 160 / 60%);
-  --sidebar-primary: oklch(0.69 0.13 160);
-  --chart-1: oklch(0.69 0.13 160);
+html[data-accent="lime"] {
+  --accent-light: var(--accent-swatch-lime);
+  --accent-dark: oklch(0.78 0.17 130);
 }
-
 html[data-accent="amber"] {
-  --primary: oklch(0.76 0.16 80);
-  --primary-foreground: oklch(0.205 0 0);
-  --ring: oklch(0.76 0.16 80 / 60%);
-  --sidebar-primary: oklch(0.76 0.16 80);
-  --chart-1: oklch(0.76 0.16 80);
+  --accent-light: var(--accent-swatch-amber);
+  --accent-dark: oklch(0.8 0.15 80);
+  --accent-label-light: oklch(0.205 0 0);
+  --accent-label-dark: oklch(0.205 0 0);
 }
-html.dark[data-accent="amber"] {
-  --primary: oklch(0.8 0.15 80);
-  --primary-foreground: oklch(0.205 0 0);
-  --ring: oklch(0.8 0.15 80 / 60%);
-  --sidebar-primary: oklch(0.8 0.15 80);
-  --chart-1: oklch(0.8 0.15 80);
+html[data-accent="orange"] {
+  --accent-light: var(--accent-swatch-orange);
+  --accent-dark: oklch(0.75 0.16 50);
 }
-
 html[data-accent="rose"] {
-  --primary: oklch(0.56 0.22 12);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.56 0.22 12 / 60%);
-  --sidebar-primary: oklch(0.56 0.22 12);
-  --chart-1: oklch(0.56 0.22 12);
+  --accent-light: var(--accent-swatch-rose);
+  --accent-dark: oklch(0.67 0.19 12);
 }
-html.dark[data-accent="rose"] {
-  --primary: oklch(0.67 0.19 12);
-  --primary-foreground: oklch(0.145 0 0);
-  --ring: oklch(0.67 0.19 12 / 60%);
-  --sidebar-primary: oklch(0.67 0.19 12);
-  --chart-1: oklch(0.67 0.19 12);
+html[data-accent="pink"] {
+  --accent-light: var(--accent-swatch-pink);
+  --accent-dark: oklch(0.72 0.17 350);
 }
-
 html[data-accent="violet"] {
-  --primary: oklch(0.53 0.24 300);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.53 0.24 300 / 60%);
-  --sidebar-primary: oklch(0.53 0.24 300);
-  --chart-1: oklch(0.53 0.24 300);
+  --accent-light: var(--accent-swatch-violet);
+  --accent-dark: oklch(0.66 0.21 300);
 }
-html.dark[data-accent="violet"] {
-  --primary: oklch(0.66 0.21 300);
-  --primary-foreground: oklch(0.145 0 0);
-  --ring: oklch(0.66 0.21 300 / 60%);
-  --sidebar-primary: oklch(0.66 0.21 300);
-  --chart-1: oklch(0.66 0.21 300);
+html[data-accent="slate"] {
+  --accent-light: var(--accent-swatch-slate);
+  --accent-dark: oklch(0.72 0.04 255);
+}
+html[data-accent="custom"] {
+  --accent-light: var(--custom-accent-light);
+  --accent-dark: var(--custom-accent-dark);
+  --accent-label-light: #fff;
+  --accent-label-dark: #171717;
 }
 
 /* 圆角 */

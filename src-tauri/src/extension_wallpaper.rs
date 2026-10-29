@@ -606,6 +606,18 @@ mod tests {
         assert_eq!(settings["schemaVersion"], SETTINGS_SCHEMA_VERSION);
         assert_eq!(settings["backgroundIntensity"], 80);
         assert_eq!(settings["customBackground"]["fit"], "contain");
+        let custom_settings = next_settings(
+            &json!({
+                "schemaVersion": SETTINGS_SCHEMA_VERSION,
+                "accent": "custom",
+                "customAccent": "#12ABEF",
+            }),
+            Some(&entry),
+            "cover",
+        )
+        .unwrap();
+        assert_eq!(custom_settings["accent"], "custom");
+        assert_eq!(custom_settings["customAccent"], "#12ABEF");
         assert_eq!(library.list(None).unwrap()[0].id, entry.id);
         assert!(next_settings(&json!({"schemaVersion":99}), Some(&entry), "cover").is_err());
     }

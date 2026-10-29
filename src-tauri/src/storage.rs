@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
-pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 5;
+pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 6;
 const MAX_SETTINGS_SIZE: usize = 128 * 1024;
 pub(crate) const MAX_SETTINGS_FILE_SIZE: usize = MAX_SETTINGS_SIZE + 1024;
 const MAX_BACKGROUND_DATA_LENGTH: usize = 96 * 1024;
@@ -646,6 +646,29 @@ mod tests {
             ErrorCode::SettingsConflict
         );
         assert_eq!(store.snapshot().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn custom_accent_schema_is_preserved_through_save_and_reload() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let store = SettingsStore::open(path.clone()).unwrap();
+        store
+            .save(json!({"schemaVersion": 5, "accent": "blue"}), 0)
+            .unwrap();
+        let settings = json!({
+            "schemaVersion": SETTINGS_SCHEMA_VERSION,
+            "accent": "custom",
+            "customAccent": "#7C3AED",
+            "runInBackground": true,
+        });
+        assert!(!future_settings_schema(&settings));
+        let saved = store.save(settings.clone(), 1).unwrap();
+        assert_eq!(saved.revision, 2);
+        assert_eq!(saved.settings, settings);
+        let reopened = SettingsStore::open(path).unwrap();
+        assert_eq!(reopened.snapshot().unwrap(), saved);
+        assert!(reopened.run_in_background());
     }
 
     #[test]

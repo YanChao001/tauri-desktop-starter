@@ -1,6 +1,7 @@
 import type { Translate } from "@/i18n/translate";
 import type { MessageKey as DictKey } from "@/i18n/zh-CN";
 import { BACKGROUND_METADATA, BACKGROUND_STYLES } from "@/lib/backgrounds";
+import { ACCENTS } from "@/lib/accent-colors";
 
 export type SettingsSearchEntry = {
   id: string;
@@ -31,7 +32,24 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     anchor: "settings-accent",
     labelKey: "settings.accent",
     descriptionKey: "settings.accentHint",
-    keywords: ["accent", "color", "颜色", "主题色"],
+    searchKeys: [
+      ...ACCENTS.map((accent) => `settings.color.${accent}` as const),
+      "settings.customAccent",
+      "settings.customAccentHex",
+      "settings.customAccentPicker",
+    ],
+    keywords: [
+      "accent",
+      "color",
+      "palette",
+      "hex",
+      "custom color",
+      "颜色",
+      "主题色",
+      "色板",
+      "取色",
+      "自定义颜色",
+    ],
   },
   {
     id: "radius",
