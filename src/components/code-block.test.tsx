@@ -63,6 +63,15 @@ describe("safe JSON code display", () => {
     expect(container.querySelector("span, div div")).toBeNull();
   });
 
+  it("大 JSON 限制着色节点数量并保留完整尾部文本", () => {
+    const code = `[${"0,".repeat(500_000)}"末尾🐈"]`;
+    const tokens = tokenizeJson(code);
+    expect(tokens.map((token) => token.text).join("")).toBe(code);
+    expect(tokens.at(-1)?.kind).toBe("plain");
+    expect(tokens.at(-1)?.text).toContain("末尾🐈");
+    expect(tokens.length).toBeLessThan(110_000);
+  });
+
   it("Rust 高亮始终以 React 文本渲染，不将源码中的 HTML 转成元素", () => {
     const code = 'pub fn main() { println!(r#"<img src=x onerror=run()>"#); }';
     const { container } = render(<CodeBlock code={code} language="rust" />);

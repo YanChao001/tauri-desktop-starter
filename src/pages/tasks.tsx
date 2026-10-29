@@ -102,11 +102,16 @@ export default function Tasks() {
       void recentWorkbenchFiles()
         .then((entries) => {
           if (!disposed)
-            setDirectories(
-              entries
-                .filter((entry) => entry.directory)
+            setDirectories((current) => [
+              ...current,
+              ...entries
+                .filter(
+                  (entry) =>
+                    entry.directory &&
+                    !current.some((directory) => directory.id === entry.id),
+                )
                 .map(({ id, name, path }) => ({ id, name, path })),
-            );
+            ]);
         })
         .catch((reason) => {
           if (!disposed) toast.error(nativeErrorText(reason, latest));

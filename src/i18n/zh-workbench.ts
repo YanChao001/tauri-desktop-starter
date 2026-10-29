@@ -32,6 +32,8 @@ export const zhWorkbench = {
   "workbench.noRecent": "暂无最近打开的文件。",
   "workbench.editor": "文本编辑器",
   "workbench.preview": "内容预览",
+  "workbench.markdownPlainPreview":
+    "文档行数较多，预览使用完整纯文本。编辑与保存不受影响。",
   "workbench.dirty": "有未保存修改",
   "workbench.image": "图片预览",
   "workbench.invalidJson": "JSON 格式不完整，请修正后保存。原文件尚未修改。",

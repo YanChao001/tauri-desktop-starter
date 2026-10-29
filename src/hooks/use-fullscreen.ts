@@ -24,6 +24,7 @@ export function useFullscreen() {
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
     const refresh = () => {
+      if (cancelled) return;
       void sync().catch((error: unknown) =>
         console.warn("读取全屏状态失败", error),
       );

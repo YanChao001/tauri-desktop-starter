@@ -339,6 +339,20 @@ describe("useThemeSwitch", () => {
     expect(setTheme).toHaveBeenCalledExactlyOnceWith("light");
   });
 
+  it("keeps an explicit theme choice when an earlier toggle has not committed yet", async () => {
+    const { skip, animate } = deferredTransition();
+    const { result } = renderHook(useThemeSwitch);
+    act(() => {
+      result.current.toggle({ clientX: 10, clientY: 20 });
+      result.current.setTheme("system");
+    });
+    await act(async () => {});
+    expect(skip).toHaveBeenCalledOnce();
+    expect(animate).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledExactlyOnceWith({ theme: "system" });
+    expect(setTheme).toHaveBeenCalledExactlyOnceWith("system");
+  });
+
   it("commits a selected theme and releases the reveal when the document becomes hidden", async () => {
     const { animate, skip } = deferredTransition();
     const { result } = renderHook(useThemeSwitch);

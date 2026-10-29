@@ -191,6 +191,7 @@ describe("交互组件舞台", () => {
     const name = screen.getByRole("textbox", { name: "playground.name" });
     await user.type(name, "Keep this project");
     await user.click(screen.getByRole("tab", { name: /nav.motion/ }));
+    await act(async () => vi.dynamicImportSettled());
     await screen.findByRole("tab", { name: "lab.layout" });
     await user.click(screen.getByRole("tab", { name: "lab.layout" }));
     await user.click(screen.getByRole("tab", { name: /playground.inputs/ }));

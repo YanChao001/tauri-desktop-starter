@@ -139,7 +139,7 @@ export function WebSocketPanel() {
           ? [{ direction: "received" as const, text }]
           : []),
       ]);
-      setMessage("");
+      setMessage((draft) => (draft === text ? "" : draft));
     } catch (reason) {
       if (mounted.current && current === generation.current)
         toast.error(socketErrorText(reason, "labs.socket.error.send"));

@@ -39,13 +39,15 @@ const LITERAL = /^(true|false|null)\b/;
 /** 仅对文本进行词法分析，不解析或插入诊断内容中的标记 */
 export function tokenizeJson(code: string): Token[] {
   const tokens: Token[] = [];
+  // 与其他语言保持相同的着色预算，尾部仍以可选中的原文呈现。
+  const limit = Math.min(code.length, 100_000);
   const add = (kind: TokenKind, text: string) => {
     const previous = tokens.at(-1);
     if (kind === "plain" && previous?.kind === "plain") previous.text += text;
     else tokens.push({ kind, text });
   };
   let index = 0;
-  while (index < code.length) {
+  while (index < limit) {
     const character = code[index]!;
     if (character === '"') {
       const start = index++;
@@ -86,6 +88,7 @@ export function tokenizeJson(code: string): Token[] {
       }
     }
   }
+  if (index < code.length) add("plain", code.slice(index));
   return tokens;
 }
 

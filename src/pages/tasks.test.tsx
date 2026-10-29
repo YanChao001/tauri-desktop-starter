@@ -234,6 +234,35 @@ describe("background task center", () => {
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+  it("晚到的历史目录不会覆盖用户刚选择的目录", async () => {
+    let resolveRecent!: (
+      value: Awaited<ReturnType<typeof native.recentWorkbenchFiles>>,
+    ) => void;
+    vi.mocked(native.recentWorkbenchFiles).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRecent = resolve;
+      }),
+    );
+    render(<Tasks />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "tasks.pickDirectory" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("tasks.directory")).toHaveTextContent(
+        "Chosen",
+      ),
+    );
+    await act(async () => resolveRecent([]));
+    expect(screen.getByLabelText("tasks.directory")).toHaveTextContent(
+      "Chosen",
+    );
+    expect(screen.getByText("C:/chosen", { exact: true })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "tasks.start" }));
+    await waitFor(() =>
+      expect(native.startWorkbenchTask).toHaveBeenCalledWith("scan", "dir-1"),
+    );
+  });
+
   it("starts a real directory task, requests cancellation and does not cancel on page unmount", async () => {
     const view = render(<Tasks />);
     fireEvent.click(

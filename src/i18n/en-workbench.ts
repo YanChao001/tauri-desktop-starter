@@ -36,6 +36,8 @@ export const enWorkbench = {
   "workbench.noRecent": "No recently opened files.",
   "workbench.editor": "Text editor",
   "workbench.preview": "Content preview",
+  "workbench.markdownPlainPreview":
+    "This document has many lines, so the preview shows its full plain text. Editing and saving are unaffected.",
   "workbench.dirty": "Unsaved changes",
   "workbench.image": "Image preview",
   "workbench.invalidJson":

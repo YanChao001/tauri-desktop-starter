@@ -77,7 +77,7 @@ function switchThemeWithReveal(
     easing: "ease-in-out",
     startedAt: performance.timeOrigin + performance.now(),
   };
-  // Opaque frames capture their own old document before the host changes its palette.
+  // 不透明子框架先捕获自己的旧文档，再由宿主改变主题。
   window.dispatchEvent(new CustomEvent(THEME_REVEAL_EVENT, { detail: reveal }));
 
   let cancelled = false;
@@ -211,13 +211,21 @@ export function useThemeSwitch() {
   const pending = useRef<(() => void) | undefined>(undefined);
   const pendingTheme = useRef<"light" | "dark" | undefined>(undefined);
   useEffect(() => () => pending.current?.(), []);
-  const setTheme = useCallback(
-    (value: string) => {
-      if (!THEMES.includes(value as AppTheme)) return;
-      update({ theme: value as AppTheme });
+  const commitTheme = useCallback(
+    (value: AppTheme) => {
+      update({ theme: value });
       applyTheme(value);
     },
     [update, applyTheme],
+  );
+  const setTheme = useCallback(
+    (value: string) => {
+      if (!THEMES.includes(value as AppTheme)) return;
+      // 明确选择优先于尚未提交的动画，避免旧切换稍后覆盖新值。
+      cancelActiveReveal?.();
+      commitTheme(value as AppTheme);
+    },
+    [commitTheme],
   );
 
   function toggle(event: { clientX: number; clientY: number }) {
@@ -227,7 +235,7 @@ export function useThemeSwitch() {
     pending.current = switchThemeWithReveal(
       event,
       () => {
-        setTheme(next);
+        commitTheme(next);
         if (pendingTheme.current === next) pendingTheme.current = undefined;
       },
       settings.motion === "full",
