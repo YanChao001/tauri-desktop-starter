@@ -430,14 +430,14 @@ export default function Tasks() {
                     {task.message || task.failure?.message ? (
                       <details
                         data-disclosure-radius="md"
-                        className="border p-2 text-xs"
+                        className="border text-xs"
                       >
-                        <summary className="cursor-pointer font-medium">
+                        <summary className="cursor-pointer px-3 py-2 font-medium">
                           {t("tasks.diagnostics")}
                         </summary>
                         <p
                           tabIndex={0}
-                          className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="mx-3 my-2 max-h-32 overflow-auto whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           {task.message ?? task.failure?.message}
                         </p>

@@ -1,11 +1,12 @@
 import { SafeMarkdown } from "@/components/safe-markdown";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -19,40 +20,47 @@ import { markdownExample, mediaKind } from "./model";
 export function MarkdownPanel() {
   const { t, language } = useI18n();
   const [content, setContent] = useState(() => markdownExample(language));
+  const previewLabel = useId();
   return (
     <Card className="@container/markdown">
-      <CardHeader>
+      <CardHeader className="items-center">
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.markdown")}
         </CardTitle>
-      </CardHeader>
-      <CardContent className="grid items-start gap-4 @min-[46rem]/markdown:grid-cols-2">
-        <div className="min-w-0 space-y-2">
-          <Label htmlFor="markdown-source">{t("labs.media.source")}</Label>
-          <Textarea
-            id="markdown-source"
-            rows={16}
-            maxLength={20000}
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            className="font-mono text-xs leading-relaxed md:text-xs"
-          />
+        <CardAction>
           <Button
             variant="outline"
             onClick={() => setContent(markdownExample(language))}
           >
             {t("labs.reset")}
           </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4 @min-[46rem]/markdown:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-2">
+          <Label htmlFor="markdown-source" className="leading-5">
+            {t("labs.media.source")}
+          </Label>
+          <Textarea
+            id="markdown-source"
+            rows={16}
+            maxLength={20000}
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            className="grow font-mono text-xs leading-relaxed md:text-xs"
+          />
         </div>
-        <section
-          aria-label={t("labs.media.preview")}
-          className="min-w-0 rounded-md border p-4"
-        >
-          <h3 className="mb-3 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-col gap-2">
+          <h3 id={previewLabel} className="text-sm leading-5 font-medium">
             {t("labs.media.preview")}
           </h3>
-          <SafeMarkdown content={content} />
-        </section>
+          <section
+            aria-labelledby={previewLabel}
+            className="min-w-0 flex-1 rounded-md border p-4"
+          >
+            <SafeMarkdown content={content} />
+          </section>
+        </div>
       </CardContent>
     </Card>
   );

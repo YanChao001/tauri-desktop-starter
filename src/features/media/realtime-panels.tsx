@@ -415,9 +415,9 @@ export function SidecarPanel() {
               <details
                 data-disclosure-radius="md"
                 data-surface="transparent"
-                className="border p-3"
+                className="border"
               >
-                <summary className="cursor-pointer text-xs text-muted-foreground">
+                <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
                   {t("labs.sidecar.details")}
                 </summary>
                 <CodeBlock
@@ -425,7 +425,7 @@ export function SidecarPanel() {
                   aria-label={t("labs.sidecar.details")}
                   code={JSON.stringify(output, null, 2)}
                   language="json"
-                  className="mt-3 max-h-56 p-0"
+                  className="m-3 max-h-56 p-0"
                 />
               </details>
             </>

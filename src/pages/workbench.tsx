@@ -505,12 +505,12 @@ export default function Workbench() {
               </ul>
             </div>
           ) : null}
-          <details className="border app-surface p-3" open>
-            <summary className="cursor-pointer text-sm font-medium">
+          <details className="border app-surface" open>
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
               {t("workbench.recent")}
             </summary>
             {recent.length ? (
-              <ul className="mt-2 space-y-1">
+              <ul className="space-y-1 px-3 pt-2 pb-3">
                 {recent.map((entry) => (
                   <li key={entry.id}>
                     <button
@@ -533,7 +533,7 @@ export default function Workbench() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="px-3 pt-2 pb-3 text-xs text-muted-foreground">
                 {t("workbench.noRecent")}
               </p>
             )}
