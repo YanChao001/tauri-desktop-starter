@@ -171,6 +171,7 @@
         transform: translateY(-2px);
       }
       .studio-nav > button[aria-selected="true"] {
+        --muted-foreground: var(--surface-selected-foreground);
         background: var(--surface-state-selected);
         border-color: color-mix(in oklab, var(--nav-tone) 60%, var(--border));
         box-shadow: inset 0 -2px 0
@@ -491,6 +492,7 @@
       }
       .canvas-node[aria-pressed="true"],
       .canvas-node[data-selected="true"] {
+        --muted-foreground: var(--surface-selected-foreground);
         border-color: var(--node-tone);
         box-shadow:
           0 0 0 3px color-mix(in oklab, var(--node-tone) 11%, transparent),
@@ -851,6 +853,7 @@
         border-color: color-mix(in oklab, var(--art-cyan) 35%, var(--border));
       }
       .pipeline-node[data-state="running"] {
+        --muted-foreground: var(--surface-selected-foreground);
         border-color: var(--art-violet);
         background: var(--surface-state-selected);
         box-shadow: 0 0 0 3px

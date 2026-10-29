@@ -591,6 +591,11 @@ export async function checkCalculatorConverters({
       ).toBeAttached({ timeout: 60000 });
       await frame.locator("#converter-" + side).selectOption(value);
     }
+    // 单位选择会触发异步换算；合成粘贴不会自动等待控件恢复可交互。
+    await expect(frame.locator("#converterInput")).toHaveAttribute(
+      "data-locked",
+      "false",
+    );
     await pasteCalculatorValue(frame, input, "converterInput");
     await converted(category, from, to, input, expected);
     await snapshot("converter-" + category);
