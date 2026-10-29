@@ -147,8 +147,10 @@ export function ProjectStudio({ active }: { active: boolean }) {
             </SelectContent>
           </Select>
         </div>
-        <fieldset className="studio-field">
-          <legend>{t("playground.color")}</legend>
+        <fieldset className="mb-3 space-y-2 p-3">
+          <legend className="text-sm font-medium">
+            {t("playground.color")}
+          </legend>
           <RadioGroup
             value={project.palette}
             onValueChange={(palette) => update({ palette })}
@@ -173,8 +175,10 @@ export function ProjectStudio({ active }: { active: boolean }) {
             ))}
           </RadioGroup>
         </fieldset>
-        <fieldset className="studio-field">
-          <legend>{t("playground.composition")}</legend>
+        <fieldset className="mb-3 space-y-2 p-3">
+          <legend className="text-sm font-medium">
+            {t("playground.composition")}
+          </legend>
           <RadioGroup
             value={project.composition}
             onValueChange={(composition) => update({ composition })}
@@ -193,7 +197,8 @@ export function ProjectStudio({ active }: { active: boolean }) {
           <div className="flex items-center justify-between gap-3">
             <Label id="studio-energy">{t("playground.energy")}</Label>
             <output
-              className="playground-number"
+              data-surface="transparent"
+              className="playground-number inline overflow-visible p-0"
               aria-labelledby="studio-energy"
             >
               {project.energy}

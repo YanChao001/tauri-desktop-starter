@@ -422,180 +422,183 @@ export function ExtensionRunner({
       )
     : "";
   return (
-    <section
-      className="space-y-4 rounded-xl border app-surface p-5"
-      aria-label={t("ext.runner")}
-    >
-      <div className="flex items-center gap-2">
-        <h3 className="font-semibold">{t("ext.runner")}</h3>
-        <ExtensionHelp label={t("ext.runner")}>
-          {t("ext.sessionHint")}
-        </ExtensionHelp>
-      </div>
-      {choices.length ? (
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-extension`}>{t("ext.choose")}</Label>
-          <Select
-            value={choice?.key ?? ""}
-            disabled={locked}
-            onValueChange={(key) => {
-              if (key === choice?.key) return;
-              if (dirty) setNextSelected(key);
-              else selectCommand(key);
-            }}
-          >
-            <SelectTrigger
-              data-operation-locked={locked}
-              ref={selector}
-              id={`${id}-extension`}
-              className={`w-full ${LOCKED_CONTROL_CLASS}`}
+    <section className="min-w-0 space-y-3" aria-label={t("ext.runner")}>
+      <fieldset
+        data-surface="panel"
+        className="min-w-0 space-y-3"
+        aria-label={t("ext.runner")}
+      >
+        <legend className="inline-flex max-w-full items-center gap-2 text-sm font-medium">
+          <h3 className="text-sm font-medium">{t("ext.runner")}</h3>
+          <ExtensionHelp label={t("ext.runner")}>
+            {t("ext.sessionHint")}
+          </ExtensionHelp>
+        </legend>
+        {choices.length ? (
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-extension`}>{t("ext.choose")}</Label>
+            <Select
+              value={choice?.key ?? ""}
+              disabled={locked}
+              onValueChange={(key) => {
+                if (key === choice?.key) return;
+                if (dirty) setNextSelected(key);
+                else selectCommand(key);
+              }}
             >
-              <SelectValue placeholder={t("ext.choose")} />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              {choices.map((value) => (
-                <SelectItem key={value.key} value={value.key}>
-                  {value.item.package.manifest.name} · {value.command.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t("ext.noEnabled")}</p>
-      )}
-      {hasText ? (
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-input`}>{t("ext.input")}</Label>
-          <Textarea
-            id={`${id}-input`}
-            rows={5}
+              <SelectTrigger
+                data-operation-locked={locked}
+                ref={selector}
+                id={`${id}-extension`}
+                className={`w-full ${LOCKED_CONTROL_CLASS}`}
+              >
+                <SelectValue placeholder={t("ext.choose")} />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {choices.map((value) => (
+                  <SelectItem key={value.key} value={value.key}>
+                    {value.item.package.manifest.name} · {value.command.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("ext.noEnabled")}</p>
+        )}
+        {hasText ? (
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-input`}>{t("ext.input")}</Label>
+            <Textarea
+              id={`${id}-input`}
+              rows={5}
 
-            disabled={locked}
-            data-operation-locked={locked}
-            className={LOCKED_INPUT_CLASS}
-            value={input}
-            aria-invalid={tooLong}
-            aria-describedby={tooLong ? `${id}-input-error` : undefined}
-            aria-description={t("ext.inputHint")}
-            placeholder={t("ext.inputHint")}
-            onChange={(event) => {
-              setInput(event.target.value);
-              setDirty(true);
-            }}
-          />
-          {tooLong ? (
-            <p
-              id={`${id}-input-error`}
-              role="alert"
-              className="text-xs text-destructive"
+              disabled={locked}
+              data-operation-locked={locked}
+              className={LOCKED_INPUT_CLASS}
+              value={input}
+              aria-invalid={tooLong}
+              aria-describedby={tooLong ? `${id}-input-error` : undefined}
+              aria-description={t("ext.inputHint")}
+              placeholder={t("ext.inputHint")}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setDirty(true);
+              }}
+            />
+            {tooLong ? (
+              <p
+                id={`${id}-input-error`}
+                role="alert"
+                className="text-xs text-destructive"
+              >
+                {t("ext.inputTooLong")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {hasFiles ? (
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              disabled={locked}
+              data-operation-locked={locked}
+              className={LOCKED_CONTROL_CLASS}
+              onClick={() => void chooseFiles()}
             >
-              {t("ext.inputTooLong")}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-      {hasFiles ? (
-        <div className="space-y-2">
+              {t("ext.files")}
+            </Button>
+            <ExtensionHelp label={t("ext.files")}>
+              {t("ext.filesHint")}
+            </ExtensionHelp>
+            {files.length ? (
+              <>
+                <ul className="list-inside list-disc text-sm">
+                  {files.map((file) => (
+                    <li key={file.id} className="break-all">
+                      {file.name}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={locked}
+                  data-operation-locked={locked}
+                  className={LOCKED_CONTROL_CLASS}
+                  onClick={() => {
+                    latestFiles.current = [];
+                    setFiles([]);
+                    setDirty(true);
+                  }}
+                >
+                  {t("ext.clearFiles")}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {hasNetwork ? (
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
+            <Input
+              id={`${id}-url`}
+              type="url"
+              maxLength={4096}
+              value={url}
+              disabled={locked}
+              data-operation-locked={locked}
+              className={LOCKED_INPUT_CLASS}
+              onChange={(event) => {
+                setUrl(event.target.value);
+                setDirty(true);
+              }}
+              aria-description={t("ext.urlHint")}
+              placeholder={t("ext.urlHint")}
+            />
+            <ExtensionHelp label={t("ext.allowedHosts")}>
+              {item
+                ? extensionNetworkOrigins(item).join(", ")
+                : t("ext.noEnabled")}
+            </ExtensionHelp>
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={!item || locked || (hasText && tooLong)}
+            data-operation-locked={
+              locked && Boolean(item) && !(hasText && tooLong)
+            }
+            className={LOCKED_CONTROL_CLASS}
+            onClick={run}
+          >
+            {t("ext.run")}
+          </Button>
           <Button
             variant="outline"
-            disabled={locked}
-            data-operation-locked={locked}
+            disabled={locked || !dirty}
+            data-operation-locked={locked && dirty}
             className={LOCKED_CONTROL_CLASS}
-            onClick={() => void chooseFiles()}
+            onClick={() =>
+              void save().catch((reason: unknown) => {
+                if (alive.current) setError(reason);
+              })
+            }
           >
-            {t("ext.files")}
+            {t("ext.export")}
           </Button>
-          <ExtensionHelp label={t("ext.files")}>
-            {t("ext.filesHint")}
-          </ExtensionHelp>
-          {files.length ? (
-            <>
-              <ul className="list-inside list-disc text-sm">
-                {files.map((file) => (
-                  <li key={file.id} className="break-all">
-                    {file.name}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={locked}
-                data-operation-locked={locked}
-                className={LOCKED_CONTROL_CLASS}
-                onClick={() => {
-                  latestFiles.current = [];
-                  setFiles([]);
-                  setDirty(true);
-                }}
-              >
-                {t("ext.clearFiles")}
-              </Button>
-            </>
-          ) : null}
+          <Button
+            variant="outline"
+            disabled={!showProgress || !busy || stopping}
+            aria-hidden={!showProgress}
+            tabIndex={showProgress ? 0 : -1}
+            style={{ visibility: showProgress ? undefined : "hidden" }}
+            onClick={() => void stop()}
+          >
+            {t("ext.stop")}
+          </Button>
         </div>
-      ) : null}
-      {hasNetwork ? (
-        <div className="space-y-2">
-          <Label htmlFor={`${id}-url`}>{t("ext.url")}</Label>
-          <Input
-            id={`${id}-url`}
-            type="url"
-            maxLength={4096}
-            value={url}
-            disabled={locked}
-            data-operation-locked={locked}
-            className={LOCKED_INPUT_CLASS}
-            onChange={(event) => {
-              setUrl(event.target.value);
-              setDirty(true);
-            }}
-            aria-description={t("ext.urlHint")}
-            placeholder={t("ext.urlHint")}
-          />
-          <ExtensionHelp label={t("ext.allowedHosts")}>
-            {item
-              ? extensionNetworkOrigins(item).join(", ")
-              : t("ext.noEnabled")}
-          </ExtensionHelp>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={!item || locked || (hasText && tooLong)}
-          data-operation-locked={
-            locked && Boolean(item) && !(hasText && tooLong)
-          }
-          className={LOCKED_CONTROL_CLASS}
-          onClick={run}
-        >
-          {t("ext.run")}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={locked || !dirty}
-          data-operation-locked={locked && dirty}
-          className={LOCKED_CONTROL_CLASS}
-          onClick={() =>
-            void save().catch((reason: unknown) => {
-              if (alive.current) setError(reason);
-            })
-          }
-        >
-          {t("ext.export")}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!showProgress || !busy || stopping}
-          aria-hidden={!showProgress}
-          tabIndex={showProgress ? 0 : -1}
-          style={{ visibility: showProgress ? undefined : "hidden" }}
-          onClick={() => void stop()}
-        >
-          {t("ext.stop")}
-        </Button>
-      </div>
+      </fieldset>
       <div className="space-y-2">
         <div className="flex h-5 min-w-0 items-center justify-between gap-3">
           <h4 className="min-w-0 flex-1 truncate text-sm font-medium">

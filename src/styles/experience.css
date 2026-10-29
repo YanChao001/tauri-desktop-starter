@@ -173,7 +173,7 @@
 .demo-page-tabs {
   width: 100%;
   min-width: 0;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 .demo-page-tabs [data-slot="tabs-list"] {
   max-width: 100%;

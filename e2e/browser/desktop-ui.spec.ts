@@ -357,6 +357,14 @@ async function measureFrostedText(locator: Locator, placeholder = false) {
       context.fillRect(0, 0, 1, 1);
       wallpaperExposure *= 1 - alpha(color);
     }
+    // 弹层可能覆盖实体图片或皮肤缩略图；材质透色与整条壁纸路径分开测量。
+    const materialTransmission = popup
+      ? ancestors(node, popup).reduce(
+          (transmission, layer) =>
+            transmission * (1 - alpha(getComputedStyle(layer).backgroundColor)),
+          1,
+        )
+      : null;
     const background = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
     const text = getComputedStyle(
       node,
@@ -379,6 +387,7 @@ async function measureFrostedText(locator: Locator, placeholder = false) {
     return {
       contrast: (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05),
       wallpaperExposure,
+      materialTransmission,
       background,
       foreground,
     };
@@ -1173,9 +1182,10 @@ for (const theme of ["light", "dark"]) {
           `${background} ${label}`,
         ).toBeGreaterThanOrEqual(4.5);
         expect(
-          result.wallpaperExposure,
+          result.materialTransmission,
           `${background} ${label}`,
-        ).toBeGreaterThan(0.05);
+        ).toBeGreaterThan(0.5);
+        expect(result.materialTransmission).toBeLessThan(1);
       }
       await search.press("Escape");
     }
@@ -2909,7 +2919,7 @@ for (const theme of ["light", "dark"]) {
           document.querySelector(".app-main")!,
           document
             .querySelector("#settings-backgroundIntensity")!
-            .closest('[data-slot="card"]')!,
+            .closest('[data-surface="panel"]')!,
         ];
         const readingSurfaceColor = getComputedStyle(
           document.querySelector("[data-window-reading-surface]")!,
@@ -2973,9 +2983,21 @@ for (const theme of ["light", "dark"]) {
     await page.screenshot({
       path: testInfo.outputPath(`intensity-${theme}-100.png`),
     });
-    const track = await page
-      .locator('#settings-backgroundIntensity [data-slot="slider"]')
-      .boundingBox();
+    const range = page.locator(
+      '#settings-backgroundIntensity [data-slot="slider"]',
+    );
+    await range.evaluate(async (node) => {
+      // 原始指针拖动不做可操作性检查，先移到视口中部以避开右下角导入通知。
+      node.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "instant",
+      });
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
+    const track = await range.boundingBox();
     expect(track).not.toBeNull();
     await page.mouse.move(
       track!.x + track!.width / 2,

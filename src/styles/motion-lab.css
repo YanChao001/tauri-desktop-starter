@@ -9,7 +9,7 @@
 }
 .lab-heading {
   position: relative;
-  padding: 0 0 1.25rem;
+  padding: 0 0 1rem;
   padding-right: 6rem;
 }
 .lab-brand-mark {
@@ -306,12 +306,12 @@
 }
 .lab-control-panel {
   min-width: 0;
-  padding: 1.5rem;
+  padding: 1rem;
   border-top: 1px solid var(--lab-line);
   background: var(--surface-card);
 }
 .lab-control-panel > h3 {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -948,7 +948,7 @@
     right: -5rem;
   }
   .lab-control-panel {
-    padding: 1.2rem;
+    padding: 1rem;
   }
   .lab-console-heading {
     padding: 1.2rem;

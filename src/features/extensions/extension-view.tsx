@@ -113,7 +113,7 @@ function ViewTable({
 function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "markdown")
     return (
-      <div className="min-w-0 rounded-xl border app-surface p-5">
+      <div className="min-w-0 rounded-xl border app-surface p-4">
         <Suspense fallback={<Skeleton className="h-24 w-full" />}>
           <SafeMarkdown content={block.text} />
         </Suspense>
@@ -224,12 +224,12 @@ export function ExtensionView({
   const body = (
     <div
       className={cn(
-        "grid min-w-0 gap-6",
+        "grid min-w-0 gap-4",
         controls && (view.blocks?.length ?? 0) > 0 && "lg:grid-cols-2",
       )}
     >
       {controls ? (
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-3">
           {view.fields.map((field) => {
             const fieldId = `${id}-${field.id}`;
             const value = fields[field.id] ?? "";
@@ -423,7 +423,7 @@ export function ExtensionView({
         </div>
       ) : null}
       {(view.blocks?.length ?? 0) > 0 ? (
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-3">
           {view.blocks?.map((block, i) => (
             <ViewBlock key={i} block={block} />
           ))}

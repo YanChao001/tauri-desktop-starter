@@ -117,7 +117,12 @@ describe("多图壁纸图库", () => {
     render(<CustomBackgroundPicker />);
     await loaded();
     choose([file(), selected]);
-    await waitFor(() => expect(screen.getAllByRole("radio")).toHaveLength(2));
+    const wallpapers = within(
+      screen.getByRole("group", { name: "settings.bgCustom" }),
+    );
+    await waitFor(() =>
+      expect(wallpapers.getAllByRole("radio")).toHaveLength(2),
+    );
     expect(importBackgroundImage).toHaveBeenCalledOnce();
     expect(videoImport.importVideoWallpaper).toHaveBeenCalledWith(selected);
     expect(library.addLibraryWallpaper).toHaveBeenLastCalledWith(imported);

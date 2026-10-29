@@ -42,7 +42,7 @@ export default function Media() {
           value="content"
           forceMount
           hidden={view !== "content"}
-          className="demo-tab-panel space-y-5"
+          className="demo-tab-panel space-y-4"
         >
           <MarkdownPanel />
           <MediaPreview active={view === "content"} />
@@ -72,7 +72,7 @@ export default function Media() {
           value="connections"
           forceMount
           hidden={view !== "connections"}
-          className="demo-tab-panel space-y-5"
+          className="demo-tab-panel space-y-4"
         >
           {visited.has("connections") && (
             <>

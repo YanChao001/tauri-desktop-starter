@@ -184,7 +184,7 @@
   width: 100%;
   max-width: 1180px;
   margin-inline: auto;
-  padding: 1.25rem 1.75rem 2.5rem;
+  padding: 1rem 1.5rem 1.5rem;
 }
 
 /* 加载占位保留普通页面滚动槽；隔离文档就绪后使用完整内容区的滚动宽度。 */
@@ -205,7 +205,7 @@
 }
 
 .app-route-context {
-  margin-bottom: 1.15rem;
+  margin-bottom: 0.75rem;
   color: var(--muted-foreground);
   font-size: 0.75rem;
   line-height: 1.5;
@@ -341,23 +341,21 @@
 .skin-gallery {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
   gap: 0.75rem;
 }
 .skin-gallery-card {
   min-width: 0;
 }
 .wallpaper-library {
-  display: grid;
-  gap: 0.85rem;
+  min-width: 0;
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
-  padding: 1rem;
   background: var(--surface-card-muted);
 }
 .wallpaper-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
   gap: 0.75rem;
 }
 .wallpaper-card {
@@ -410,11 +408,6 @@
   border-radius: 50%;
   background: var(--primary);
   color: var(--primary-foreground);
-}
-@container settings (max-width: 620px) {
-  .skin-gallery {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .app-shell-immersive .app-route-context {
@@ -549,7 +542,7 @@ html[data-motion="reduced"]
 @media (max-width: 1050px) {
   .app-page-content,
   .app-extension-window-content:has([data-extension-loading]) {
-    padding: 1rem 1.25rem 2rem;
+    padding: 1rem 1.25rem 1.5rem;
   }
 }
 

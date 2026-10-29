@@ -221,8 +221,8 @@ export function CsvImport({
         </div>
         {table ? (
           <>
-            <fieldset className="space-y-3">
-              <legend className="flex items-center gap-2 font-medium">
+            <fieldset className="space-y-3 p-3">
+              <legend className="flex items-center gap-2 text-sm font-medium">
                 {t("csv.mapping")}
                 <HelpTooltip label={`${t("csv.mapping")} · ${t("title.help")}`}>
                   {t("csv.defaults")}

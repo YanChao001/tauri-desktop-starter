@@ -322,11 +322,11 @@ export default function Settings() {
         <SkinPicker />
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.appearance")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 [&>.settings-row]:py-0">
+      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+        <legend className="text-sm font-medium">
+          {t("settings.appearance")}
+        </legend>
+        <div className="space-y-3 [&>.settings-row]:py-0">
           <SettingRow
             id="settings-language"
             icon={LanguagesIcon}
@@ -351,7 +351,7 @@ export default function Settings() {
                     aria-pressed={active}
                     onClick={() => setTheme(item.value)}
                     className={cn(
-                      "flex flex-col items-center gap-2 rounded-lg border px-3 py-3 text-xs transition-colors",
+                      "flex flex-col items-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors",
                       active
                         ? "border-primary bg-(--surface-state-selected) font-medium"
                         : "text-muted-foreground hover:bg-(--surface-state-hover)",
@@ -501,16 +501,19 @@ export default function Settings() {
               </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
-      <Card id="settings-layout" tabIndex={-1}>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {t("studio.settingsWorkspace")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y">
+      <fieldset
+        data-surface="panel"
+        id="settings-layout"
+        tabIndex={-1}
+        className="min-w-0 space-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <legend className="text-sm font-medium">
+          {t("studio.settingsWorkspace")}
+        </legend>
+        <div className="divide-y [&>.settings-row]:py-2 [&>.settings-row:first-child]:pt-0 [&>.settings-row:last-child]:pb-0">
           <SettingRow
             id="settings-menuBar"
             icon={MenuIcon}
@@ -572,16 +575,19 @@ export default function Settings() {
               className="w-40 accent-primary"
             />
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
-      <Card id="settings-window" tabIndex={-1}>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {t("desktop.settingsTitle")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 [&>.settings-row]:py-0">
+      <fieldset
+        data-surface="panel"
+        id="settings-window"
+        tabIndex={-1}
+        className="min-w-0 space-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <legend className="text-sm font-medium">
+          {t("desktop.settingsTitle")}
+        </legend>
+        <div className="space-y-3 [&>.settings-row]:py-0">
           <DesktopSettings />
           <Separator />
           <div
@@ -619,7 +625,7 @@ export default function Settings() {
                       void applyWindowSize(preset.width, preset.height);
                   }}
                   className={cn(
-                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                     active
                       ? "border-primary bg-(--surface-state-selected)"
                       : "hover:bg-(--surface-state-hover)",
@@ -731,16 +737,14 @@ export default function Settings() {
               </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
       <UpdateSettings />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.network")}</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+        <legend className="text-sm font-medium">{t("settings.network")}</legend>
+        <div className="[&>.settings-row]:py-0">
           <SettingRow
             id="settings-networkMode"
             icon={GlobeIcon}
@@ -776,8 +780,8 @@ export default function Settings() {
               </SelectContent>
             </Select>
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
       <details
         data-disclosure-radius="xl"

@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { ExternalLink } from "@/components/external-link";
 import { SettingRow } from "@/components/setting-row";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -158,11 +157,9 @@ export function UpdateSettings() {
       onFocusCapture={() => setEngaged(true)}
       onPointerDownCapture={() => setEngaged(true)}
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("updates.title")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+        <legend className="text-sm font-medium">{t("updates.title")}</legend>
+        <div className="space-y-3">
           <div className="relative pb-1.5">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <div className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-3 gap-y-1">
@@ -250,7 +247,7 @@ export function UpdateSettings() {
               />
             ) : null}
           </div>
-          <div className="border-t [&>.settings-row]:py-3">
+          <div className="border-t pt-2 [&>.settings-row]:py-0">
             <SettingRow
               id="settings-updates-auto"
               icon={RefreshCwIcon}
@@ -272,7 +269,7 @@ export function UpdateSettings() {
               />
             </SettingRow>
           </div>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-3">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-2">
             <details className="min-w-0 flex-1 basis-44 text-xs text-muted-foreground">
               <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {t("updates.endpoint")}
@@ -302,8 +299,8 @@ export function UpdateSettings() {
               <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
             </ExternalLink>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
       <Dialog
         open={releaseNotes !== null}
         onOpenChange={(open) => {

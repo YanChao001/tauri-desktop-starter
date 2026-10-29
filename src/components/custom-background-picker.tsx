@@ -323,29 +323,29 @@ export function CustomBackgroundPicker() {
   }
 
   return (
-    <section
-      className="wallpaper-library"
+    <fieldset
+      className="wallpaper-library min-w-0 space-y-3"
       aria-labelledby={id + "-heading"}
       aria-busy={pending || loading}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <h3 id={id + "-heading"} className="text-sm font-medium">
-            {t("settings.bgCustom")}
-          </h3>
+      <legend className="text-sm font-medium">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span id={id + "-heading"}>{t("settings.bgCustom")}</span>
           <HelpTooltip
             label={t("common.helpFor", { name: t("settings.bgCustom") })}
           >
             {t("settings.customImageHint")} {t("settings.imageFormats")}
           </HelpTooltip>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="w-20 text-right text-xs tabular-nums text-muted-foreground">
-            {t("settings.libraryCount", {
-              count: images.length,
-              max: MAX_WALLPAPERS,
-            })}
-          </span>
+        </span>
+      </legend>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {t("settings.libraryCount", {
+            count: images.length,
+            max: MAX_WALLPAPERS,
+          })}
+        </span>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button
             ref={importButton}
             type="button"
@@ -696,6 +696,6 @@ export function CustomBackgroundPicker() {
           </form>
         </DialogContent>
       </Dialog>
-    </section>
+    </fieldset>
   );
 }

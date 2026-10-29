@@ -461,7 +461,7 @@ export default function Workbench() {
         </div>
       ) : null}
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(12rem,1fr)_minmax(0,4fr)]">
-        <aside className="space-y-4">
+        <aside className="space-y-3">
           {state.entries.length ? (
             <div className="rounded-lg border app-surface p-3">
               <h3 className="mb-2 text-sm font-medium">
@@ -541,7 +541,7 @@ export default function Workbench() {
         </aside>
         {selected ? (
           <section
-            className="min-w-0 space-y-4 rounded-xl border app-surface p-4"
+            className="min-w-0 space-y-3 rounded-xl border app-surface p-4"
             aria-busy={pending}
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -704,7 +704,7 @@ export default function Workbench() {
             </DialogDescription>
           </DialogHeader>
           {remote ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <Suspense fallback={previewLoading}>
                 <DocumentPreview
                   document={remote}

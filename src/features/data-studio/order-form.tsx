@@ -340,16 +340,17 @@ export function OrderForm() {
               />
             </div>
           ) : null}
-          <fieldset className="space-y-3">
-            <legend className="mb-2 text-sm font-medium">
-              {t("labs.form.lines")}
-            </legend>
+          <div
+            className="space-y-3"
+            role="group"
+            aria-label={t("labs.form.lines")}
+          >
             {fields.map((field, index) => (
               <fieldset
                 key={field.id}
                 className="@container/order-line min-w-0 rounded-md border p-3"
               >
-                <legend className="px-1 text-xs text-muted-foreground">
+                <legend className="text-sm font-medium">
                   {t("labs.form.line", { number: index + 1 })}
                 </legend>
                 <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3 @min-[34rem]/order-line:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
@@ -439,7 +440,7 @@ export function OrderForm() {
             >
               {t("labs.form.addLine")}
             </Button>
-          </fieldset>
+          </div>
           <div className="space-y-2">
             <div className="flex min-h-5 min-w-0 items-center gap-2">
               <label className="flex shrink-0 items-center gap-2 text-sm">

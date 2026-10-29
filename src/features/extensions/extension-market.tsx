@@ -274,7 +274,7 @@ export function ExtensionMarket({
           return (
             <article
               key={manifest.id}
-              className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border app-surface p-5"
+              className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border app-surface p-4"
             >
               <div className="flex items-start gap-3">
                 <span className="shrink-0 rounded-xl bg-primary/10 p-3 text-primary">
@@ -382,7 +382,7 @@ export function ExtensionMarket({
         {incompatibleEntries.map((entry) => (
           <article
             key={entry.id}
-            className="min-w-0 space-y-3 rounded-xl border app-surface p-5"
+            className="min-w-0 space-y-3 rounded-xl border app-surface p-4"
           >
             <h4 className="font-semibold wrap-anywhere">{entry.name}</h4>
             <p className="text-sm wrap-anywhere text-muted-foreground">

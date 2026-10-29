@@ -11,14 +11,14 @@
 }
 .playground {
   container-type: inline-size;
-  padding-block: 0.5rem 1.5rem;
+  padding-block-end: 0.5rem;
 }
 .playground-heading {
   max-width: 43rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
 }
 .playground-tabs {
-  gap: 1.25rem;
+  gap: 1rem;
 }
 .playground-stage-list {
   display: grid;
@@ -95,7 +95,7 @@
   overflow: hidden;
 }
 .studio-controls {
-  padding: 1.25rem;
+  padding: 1rem;
   min-width: 0;
 }
 .studio-field {
@@ -105,13 +105,9 @@
   margin-bottom: 0.875rem;
 }
 .studio-field > label,
-.studio-field legend,
 .studio-switch-row label {
   font-size: 0.75rem;
   font-weight: 500;
-}
-.studio-field legend {
-  margin-bottom: 0.6rem;
 }
 .studio-palettes {
   display: flex;

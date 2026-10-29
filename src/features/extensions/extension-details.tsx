@@ -51,7 +51,7 @@ export function ExtensionDetails({
       permission.startsWith("network:") || permission === "messaging:lan",
   );
   return (
-    <div className="space-y-4 text-sm">
+    <div className="min-w-0 space-y-3 text-sm">
       {showIdentity ? (
         <div>
           <h3 className="font-semibold break-words">{manifest.name}</h3>
@@ -206,7 +206,7 @@ export function ExtensionDetails({
         <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("ext.technicalInfo")}
         </summary>
-        <div className="space-y-4 pt-3">
+        <div className="space-y-3 pt-3">
           <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-[auto_1fr]">
             {[
               [t("ext.identifier"), manifest.id],

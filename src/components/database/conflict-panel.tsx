@@ -47,25 +47,32 @@ export function ConflictPanel({
       </div>
       {remote ? (
         <>
-          <RadioGroup
-            aria-label={t("diff.titleChoice")}
-            value={titleChoice}
-            onValueChange={(choice) => setTitleSelection({ revision, choice })}
-            disabled={pending}
-          >
-            <Label htmlFor={`${id}-local`} className="min-w-0">
-              <RadioGroupItem id={`${id}-local`} value="local" />
-              <span className="min-w-0 truncate" title={local.title}>
-                {t("diff.keepTitle")}: {local.title}
-              </span>
-            </Label>
-            <Label htmlFor={`${id}-remote`} className="min-w-0">
-              <RadioGroupItem id={`${id}-remote`} value="remote" />
-              <span className="min-w-0 truncate" title={remote.title}>
-                {t("diff.remoteTitle")}: {remote.title}
-              </span>
-            </Label>
-          </RadioGroup>
+          <fieldset className="min-w-0 space-y-3">
+            <legend id={`${id}-title-choice`} className="text-sm font-medium">
+              {t("diff.titleChoice")}
+            </legend>
+            <RadioGroup
+              aria-labelledby={`${id}-title-choice`}
+              value={titleChoice}
+              onValueChange={(choice) =>
+                setTitleSelection({ revision, choice })
+              }
+              disabled={pending}
+            >
+              <Label htmlFor={`${id}-local`} className="min-w-0">
+                <RadioGroupItem id={`${id}-local`} value="local" />
+                <span className="min-w-0 truncate" title={local.title}>
+                  {t("diff.keepTitle")}: {local.title}
+                </span>
+              </Label>
+              <Label htmlFor={`${id}-remote`} className="min-w-0">
+                <RadioGroupItem id={`${id}-remote`} value="remote" />
+                <span className="min-w-0 truncate" title={remote.title}>
+                  {t("diff.remoteTitle")}: {remote.title}
+                </span>
+              </Label>
+            </RadioGroup>
+          </fieldset>
           <TextDiff
             local={local.body}
             remote={remote.body}

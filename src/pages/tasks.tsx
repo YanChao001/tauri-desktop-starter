@@ -296,7 +296,7 @@ export default function Tasks() {
           {t("tasks.empty")}
         </p>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-3">
           {snapshot.tasks.map((task) => {
             const active =
               task.status === "queued" ||

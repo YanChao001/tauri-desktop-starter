@@ -1,7 +1,6 @@
 import { CheckIcon } from "lucide-react";
 import { PatternArtwork } from "@/components/window-background";
 import { CustomBackgroundPicker } from "@/components/custom-background-picker";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -27,18 +26,13 @@ export function SkinPicker() {
   const { settings, update } = useSettings();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle id="skin-gallery-heading" className="text-sm">
-          {t("settings.skinGallery")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
+    <fieldset data-surface="panel" className="min-w-0 space-y-3">
+      <legend id="skin-gallery-heading" className="text-sm font-medium">
+        {t("settings.skinGallery")}
+      </legend>
+      <div className="space-y-3">
         <TooltipProvider delayDuration={650} skipDelayDuration={0}>
-          <fieldset
-            className="skin-gallery"
-            aria-labelledby="skin-gallery-heading"
-          >
+          <div className="skin-gallery">
             {BUILTIN_BACKGROUNDS.map((kind) => {
               const metadata = BACKGROUND_METADATA[kind];
               const active = settings.background === kind;
@@ -106,15 +100,15 @@ export function SkinPicker() {
                 </Tooltip>
               );
             })}
-          </fieldset>
+          </div>
         </TooltipProvider>
 
         <CustomBackgroundPicker />
 
-        <fieldset
+        <div
           id="settings-backgroundIntensity"
           tabIndex={-1}
-          className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"
+          className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t pt-3"
         >
           <div className="flex min-w-0 items-center gap-1.5">
             <Label id="skin-intensity-heading" className="text-xs">
@@ -127,7 +121,10 @@ export function SkinPicker() {
               aria-hidden="true"
             >
               <span>{t("settings.intensityCovered")}</span>
-              <output className="text-foreground tabular-nums">
+              <output
+                data-surface="transparent"
+                className="inline overflow-visible p-0 text-foreground tabular-nums"
+              >
                 {settings.backgroundIntensity}%
               </output>
               <span>{t("settings.intensityTransparent")}</span>
@@ -164,8 +161,8 @@ export function SkinPicker() {
               ))}
             </div>
           </div>
-        </fieldset>
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </fieldset>
   );
 }

@@ -71,6 +71,8 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 
 标准单行按钮 / 输入使用同一尺寸规则，文档 padding 为 1rem，并提供基础表格 / 图片 / 文本样式和 8px 滚动条。`button` 与 `input[type="button"/"submit"/"reset"]` 使用共同按钮规则，`data-variant` 支持 default、outline、secondary、ghost、destructive、link。自定义多行卡片可声明材质角色并保留自身布局。复选与单选保留原生 input 的值、键盘和无障碍语义，通过共同 CSS 对齐宿主形态；强制颜色模式保留系统反馈。`kbd`、`pre/code`、`output`、`details/summary`、表头、日期 / 文件 / 颜色输入和进度类控件同样包含在完整规则中。
 
+相关设置或表单参数可用原生 `fieldset` / `legend`，与宿主共用嵌边组标题：顶部 8px、其余 12px 内边距，标题 14px 中等字重。legend 不占组内的额外垂直间距，也无需添加背景遮挡边线。控件组、普通正文、输出列表与画布的选择原则见[界面规范](../docs/conventions/ui-guidelines.md#组件选择顺序)。
+
 隔离文档沿用浏览器默认的按需滚动槽，不为无需整页滚动的内容预留空槽，避免自定义背景右侧露出宿主底色；实际溢出时仍由文档原生滚动条占位。宿主普通页面和侧栏的稳定滚动槽不受影响。
 
 默认样式直接覆盖普通文档 DOM，不会穿透 Web Components 的 Shadow DOM。当前宿主提供 `starter.applyStyles(root)`，组件可在创建 shadow root 后显式接入，并在卸载时调用返回的清理函数；重复接入按引用计数释放。注册的 root 使用相同完整规则并随主题样式更新，其后新增控件无需再次接入。不改写 `attachShadow`、不扫描其他组件，也不增加原生能力。使用当前 SDK 的插件声明 `minHostVersion: "0.1.7"`，并随当前开发宿主一起验证；开发快照不维护旧 SDK 的适配分支或历史宿主验证矩阵。

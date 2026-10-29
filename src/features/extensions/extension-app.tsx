@@ -633,7 +633,7 @@ export function ExtensionApp({
           </>
         }
       >
-        <div className="min-w-0 space-y-5" aria-busy={busy}>
+        <div className="min-w-0 space-y-3" aria-busy={busy}>
           {documentId ? (
             <ExtensionCustomUi
               key={surfaceRevision}
