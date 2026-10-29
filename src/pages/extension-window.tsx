@@ -25,7 +25,7 @@ export default function ExtensionWindow() {
         className="app-shell text-foreground"
         style={{ "--app-sidebar-width": "0px" } as CSSProperties}
       >
-        <WindowBackground />
+        <WindowBackground videoPlayback={false} />
         <div ref={chrome} className="app-chrome">
           <TitleBar standalone extension={item?.package.manifest} />
         </div>

@@ -7,7 +7,7 @@ use crate::{
     extensions::{ExtensionInfo, ExtensionPermission, valid_id},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use image::{ImageFormat, ImageReader, codecs::jpeg::JpegEncoder};
+use image::{ImageFormat, ImageReader, codecs::jpeg::JpegEncoder, imageops::FilterType};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -21,7 +21,9 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 pub(crate) const IMAGE_LIMIT: usize = 16 * 1024 * 1024;
+pub(crate) const LOCAL_IMAGE_LIMIT: usize = 64 * 1024 * 1024;
 const MAX_PIXELS: u64 = 16_000_000;
+const MAX_LOCAL_PIXELS: u64 = 100_000_000;
 const RESOURCE_TTL: Duration = Duration::from_secs(10 * 60);
 const OWNER_COUNT_LIMIT: usize = 8;
 const OWNER_BYTES_LIMIT: usize = 32 * 1024 * 1024;
@@ -260,16 +262,27 @@ fn image_capacity() -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
 }
 
 pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::DynamicImage> {
+    decode_with_limits(bytes, mime, false)
+}
+
+fn decode_with_limits(bytes: &[u8], mime: &str, local: bool) -> NativeResult<image::DynamicImage> {
     if bytes.is_empty() {
         return Err(NativeError::new(
             ErrorCode::ExtensionImageInvalid,
             "图片内容为空",
         ));
     }
-    if bytes.len() > IMAGE_LIMIT {
+    let byte_limit = if local {
+        LOCAL_IMAGE_LIMIT
+    } else {
+        IMAGE_LIMIT
+    };
+    let pixel_limit = if local { MAX_LOCAL_PIXELS } else { MAX_PIXELS };
+    let edge_limit = if local { 32_768 } else { 8192 };
+    if bytes.len() > byte_limit {
         return Err(NativeError::new(
             ErrorCode::ExtensionImageTooLarge,
-            "图片不超过 16 MiB",
+            "图片文件超过可处理的大小",
         ));
     }
     let format = image::guess_format(bytes).map_err(|_| image_decode_error("图片内容无效"))?;
@@ -283,9 +296,9 @@ pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::Dyna
         return Err(image_decode_error("图片 MIME 与实际内容不一致"));
     }
     let mut limits = image::Limits::default();
-    limits.max_image_width = Some(8192);
-    limits.max_image_height = Some(8192);
-    limits.max_alloc = Some(128 * 1024 * 1024);
+    limits.max_image_width = Some(edge_limit);
+    limits.max_image_height = Some(edge_limit);
+    limits.max_alloc = Some(if local { 512 } else { 128 } * 1024 * 1024);
     let mut metadata_reader = ImageReader::with_format(Cursor::new(bytes), format);
     metadata_reader.limits(limits.clone());
     let (width, height) = metadata_reader
@@ -293,13 +306,13 @@ pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::Dyna
         .map_err(|error| image_reader_error(error, "无法读取图片尺寸"))?;
     if width == 0
         || height == 0
-        || width > 8192
-        || height > 8192
-        || u64::from(width) * u64::from(height) > MAX_PIXELS
+        || width > edge_limit
+        || height > edge_limit
+        || u64::from(width) * u64::from(height) > pixel_limit
     {
         return Err(NativeError::new(
             ErrorCode::ExtensionImageTooLarge,
-            "图片每边最多 8192 像素，总计最多 1600 万像素",
+            "图片尺寸超过可处理的范围",
         ));
     }
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
@@ -327,21 +340,37 @@ fn image_reader_error(error: image::ImageError, message: &str) -> NativeError {
 /// 调用方已经持有处理名额时使用；本机文件和图库应调用有界入口。
 pub(crate) fn render_image(bytes: &[u8], mime: &str, thumbnail: bool) -> NativeResult<String> {
     let decoded = decode_image(bytes, mime)?;
-    for edge in if thumbnail {
-        &[320, 240, 160][..]
+    render_decoded(&decoded, thumbnail)
+}
+
+fn render_decoded(decoded: &image::DynamicImage, thumbnail: bool) -> NativeResult<String> {
+    let qualities = if thumbnail {
+        &[85, 76, 65][..]
     } else {
-        &[1600, 1280, 960, 720, 480][..]
+        &[82, 64, 46][..]
+    };
+    for edge in if thumbnail {
+        &[320, 240, 160, 96, 64][..]
+    } else {
+        &[1600, 1200, 900, 675, 506, 379, 284, 213, 159, 119, 89, 64][..]
     } {
+        // 使用平滑重采样，先调编码质量再缩小尺寸，避免复杂壁纸过早丢失细节。
         let resized = decoded
-            .thumbnail((*edge).min(decoded.width()), (*edge).min(decoded.height()))
+            .resize(
+                (*edge).min(decoded.width()),
+                (*edge).min(decoded.height()),
+                FilterType::Triangle,
+            )
             .to_rgb8();
-        let mut output = Vec::new();
-        JpegEncoder::new_with_quality(&mut output, if thumbnail { 65 } else { 76 })
-            .encode_image(&resized)
-            .map_err(|_| failed("无法编码图片预览"))?;
-        let data = format!("data:image/jpeg;base64,{}", STANDARD.encode(output));
-        if data.len() <= if thumbnail { 24 * 1024 } else { 94 * 1024 } {
-            return Ok(data);
+        for quality in qualities {
+            let mut output = Vec::new();
+            JpegEncoder::new_with_quality(&mut output, *quality)
+                .encode_image(&resized)
+                .map_err(|_| failed("无法编码图片预览"))?;
+            let data = format!("data:image/jpeg;base64,{}", STANDARD.encode(output));
+            if data.len() <= if thumbnail { 24 * 1024 } else { 96 * 1024 } {
+                return Ok(data);
+            }
         }
     }
     Err(invalid("图片无法压缩到宿主预览额度内"))
@@ -364,6 +393,13 @@ pub(crate) fn bounded_render_image(
     thumbnail: bool,
 ) -> NativeResult<String> {
     render_with_capacity(bytes, mime, thumbnail, image_workers())
+}
+
+/// 用户主动选择的本机大图先查尺寸再解码，与网络图片共用处理名额但使用独立输入额度。
+pub(crate) fn render_local_wallpaper(bytes: &[u8]) -> NativeResult<String> {
+    let _capacity = image_capacity()?;
+    let decoded = decode_with_limits(bytes, "", true)?;
+    render_decoded(&decoded, false)
 }
 
 fn metadata(resource: &Resource) -> Value {
@@ -903,6 +939,27 @@ mod tests {
     }
 
     #[test]
+    fn local_large_photos_are_optimized_without_raising_network_limits() {
+        let bytes = png(4001, 4000);
+        assert_eq!(
+            decode_image(&bytes, "image/png").unwrap_err().code,
+            ErrorCode::ExtensionImageTooLarge
+        );
+        let decoded = decode_with_limits(&bytes, "image/png", true).unwrap();
+        let rendered = render_decoded(&decoded, false).unwrap();
+        assert!(rendered.len() <= 96 * 1024);
+        let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let optimized = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert!(optimized.width() <= 1600 && optimized.height() <= 1600);
+        assert_eq!(
+            decode_with_limits(&png(32_769, 1), "image/png", true)
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionImageTooLarge
+        );
+    }
+
+    #[test]
     fn invalid_images_never_become_resources_and_previews_are_reencoded_within_budget() {
         let bytes = png(2, 3);
         for (bytes, mime) in [
@@ -937,7 +994,7 @@ mod tests {
         assert!(metadata(&first).get("content").is_none());
         for thumbnail in [true, false] {
             let rendered = render_image(&bytes, "image/png", thumbnail).unwrap();
-            assert!(rendered.len() <= if thumbnail { 24 * 1024 } else { 94 * 1024 });
+            assert!(rendered.len() <= if thumbnail { 24 * 1024 } else { 96 * 1024 });
             let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
             let rendered = STANDARD.decode(encoded).unwrap();
             let decoded = decode_image(&rendered, "image/jpeg").unwrap();
@@ -951,6 +1008,35 @@ mod tests {
             assert!(decoded.width() <= edge);
             assert!(decoded.height() <= edge);
         }
+    }
+
+    #[test]
+    fn detailed_wallpapers_keep_full_resolution_before_reducing_dimensions() {
+        let mut state = 7_u32;
+        let source = image::RgbImage::from_fn(1600, 900, |x, y| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = ((state >> 24) % 16) as i16 - 8;
+            image::Rgb([
+                (48 + x as i16 / 10 + noise).clamp(0, 255) as u8,
+                (64 + y as i16 / 7 + noise).clamp(0, 255) as u8,
+                (176 + x as i16 / 20 - y as i16 / 20 + noise).clamp(0, 255) as u8,
+            ])
+        });
+        let mut fixed_quality = Vec::new();
+        JpegEncoder::new_with_quality(&mut fixed_quality, 76)
+            .encode_image(&source)
+            .unwrap();
+        // 旧固定质量策略会为这张有纹理的壁纸降低分辨率。
+        assert!(fixed_quality.len().div_ceil(3) * 4 + 23 > 96 * 1024);
+        let mut original = Vec::new();
+        image::DynamicImage::ImageRgb8(source)
+            .write_to(&mut Cursor::new(&mut original), ImageFormat::Png)
+            .unwrap();
+        let rendered = render_image(&original, "image/png", false).unwrap();
+        assert!(rendered.len() <= 96 * 1024);
+        let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (1600, 900));
     }
 
     #[test]

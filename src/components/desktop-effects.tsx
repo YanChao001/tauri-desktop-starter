@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { AppWindowIcon, ClipboardListIcon, DownloadIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useRegisterCommands } from "@/providers/commands";
 import { useSettings } from "@/providers/settings";
@@ -54,6 +55,7 @@ export function DesktopEffects() {
         id: "open-window",
         labelKey: "commands.openWindow",
         group: "window",
+        icon: AppWindowIcon,
         available: isTauri,
         run: async () => {
           await openSecondaryWindow();
@@ -63,6 +65,7 @@ export function DesktopEffects() {
         id: "check-updates",
         labelKey: "commands.checkUpdates",
         group: "tools",
+        icon: DownloadIcon,
         available: isTauri,
         run: async () => {
           navigate("/settings?section=updates");
@@ -73,6 +76,7 @@ export function DesktopEffects() {
         id: "copy-diagnostics",
         labelKey: "commands.copyDiagnostics",
         group: "tools",
+        icon: ClipboardListIcon,
         available: isTauri,
         run: async () => {
           await copyText(JSON.stringify(await getDiagnosticsReport(), null, 2));

@@ -46,6 +46,7 @@ mod system_commands;
 pub mod update_signature;
 mod updater;
 mod wallpaper_commands;
+mod wallpaper_video;
 mod wallpapers;
 mod window_geometry;
 mod workbench;
@@ -66,7 +67,11 @@ fn logging_plugin(
         targets.push(tauri_plugin_log::Target::new(target));
     }
     tauri_plugin_log::Builder::new()
-        .targets(targets)
+        .targets(targets.into_iter().map(|target| {
+            target.format(|out, message, _record| {
+                out.finish(format_args!("{}", redaction::redact(&message.to_string())));
+            })
+        }))
         .level(log::LevelFilter::Info)
         .max_file_size(1_000_000)
         .rotation_strategy(RotationStrategy::KeepSome(3))
@@ -123,6 +128,7 @@ pub fn run() {
         .manage(lifecycle::LifecycleState::default())
         .manage(system_commands::ActivationInbox::default());
     let builder = extensions::ui::register_protocol(builder);
+    let builder = wallpaper_video::register_protocol(builder);
 
     // 单实例必须最先注册，让重复启动在初始化日志等共享资源前退出。
     #[cfg(desktop)]
@@ -193,6 +199,9 @@ pub fn run() {
         ));
         app.manage(wallpapers::WallpaperStore::new(
             initialized.recovery.wallpaper_path(),
+        ));
+        app.manage(wallpaper_video::WallpaperVideoStore::new(
+            &initialized.recovery.wallpaper_path(),
         ));
         app.manage(paths);
         app.manage(initialized.recovery);
@@ -314,10 +323,10 @@ pub fn run() {
                         .approved_exit
                         .load(std::sync::atomic::Ordering::Acquire)
                 {
-                    window
-                        .app_handle()
-                        .state::<system_commands::SystemState>()
-                        .secondary_closed();
+                    let app = window.app_handle().clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        desktop::persist_secondary_closed(&app)
+                    });
                 }
             }
         })

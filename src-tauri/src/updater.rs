@@ -304,12 +304,9 @@ impl UpdateManager {
                 )
             })?;
         let paths = app.state::<DataPaths>().inner().clone();
-        if blocking::run(move || load_policy(&paths)).await?.as_ref() != Some(&policy) {
-            return Err(NativeError::new(
-                ErrorCode::UpdateNotConfigured,
-                "Update deployment configuration changed; check again",
-            ));
-        }
+        let expected_policy = policy.clone();
+        blocking::run(move || require_unchanged_policy(load_policy(&paths)?, &expected_policy))
+            .await?;
         // 检查结果会缓存更新句柄；下载按此刻已提交的宿主偏好重新选择传输。
         // configure_client 只限制 HTTPS，不捕获检查时的代理模式。
         update.no_proxy = app.state::<SettingsStore>().network_mode()? == NetworkMode::Direct;
@@ -360,11 +357,14 @@ impl UpdateManager {
         .await?;
         self.event(app, operation_id, UpdateStage::Installing, None, None);
         let extensions = app.state::<crate::extensions::ExtensionStore>().pause();
+        let paths = app.state::<DataPaths>().inner().clone();
         blocking::run(move || {
             // 停止等待不会取消阻塞安装；占用必须随真实安装任务完成后再释放。
             let _authorization = authorization;
             extensions.wait_stopped();
             let _extensions = extensions;
+            // 下载与退出协商可能耗时数分钟；提交安装前重新确认部署仍允许此次更新。
+            require_unchanged_policy(load_policy(&paths)?, &policy)?;
             update.install(bytes).map_err(|e| {
                 NativeError::operation(
                     ErrorCode::UpdateInstallFailed,
@@ -376,6 +376,19 @@ impl UpdateManager {
         .await?;
         Ok(())
     }
+}
+
+fn require_unchanged_policy(
+    current: Option<UpdatePolicy>,
+    expected: &UpdatePolicy,
+) -> NativeResult<()> {
+    if current.as_ref() != Some(expected) {
+        return Err(NativeError::new(
+            ErrorCode::UpdateNotConfigured,
+            "Update deployment configuration changed; check again",
+        ));
+    }
+    Ok(())
 }
 
 fn check_error(error: tauri_plugin_updater::Error) -> NativeError {
@@ -439,7 +452,24 @@ pub fn load_policy(paths: &DataPaths) -> NativeResult<Option<UpdatePolicy>> {
                 e,
             )
         })?;
-    let policy = match File::open(paths.config.join("deployment.json")) {
+    load_deployment_policy(branded.updates, &paths.config.join("deployment.json"))
+}
+
+fn load_deployment_policy(
+    mut policy: UpdatePolicy,
+    path: &std::path::Path,
+) -> NativeResult<Option<UpdatePolicy>> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct UpdateOverride {
+        endpoint: String,
+        public_key: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct DeploymentOverride {
+        updates: UpdateOverride,
+    }
+    match File::open(path) {
         Ok(file) => {
             let mut bytes = Vec::new();
             file.take(16 * 1024 + 1)
@@ -457,7 +487,7 @@ pub fn load_policy(paths: &DataPaths) -> NativeResult<Option<UpdatePolicy>> {
                     "Deployment configuration is too large",
                 ));
             }
-            serde_json::from_slice::<Deployment>(&bytes)
+            let overrides = serde_json::from_slice::<DeploymentOverride>(&bytes)
                 .map_err(|e| {
                     NativeError::operation(
                         ErrorCode::UpdateNotConfigured,
@@ -465,9 +495,21 @@ pub fn load_policy(paths: &DataPaths) -> NativeResult<Option<UpdatePolicy>> {
                         e,
                     )
                 })?
-                .updates
+                .updates;
+            // 运行期文件可以选择镜像，不能改变安装包内固定的验签信任根。
+            if overrides
+                .public_key
+                .as_ref()
+                .is_some_and(|key| key != &policy.public_key)
+            {
+                return Err(NativeError::new(
+                    ErrorCode::UpdateNotConfigured,
+                    "Deployment cannot replace the built-in update signing public key",
+                ));
+            }
+            policy.endpoint = overrides.endpoint;
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => branded.updates,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
             return Err(NativeError::operation(
                 ErrorCode::StorageIo,
@@ -475,7 +517,7 @@ pub fn load_policy(paths: &DataPaths) -> NativeResult<Option<UpdatePolicy>> {
                 error,
             ));
         }
-    };
+    }
     if policy.endpoint.trim().is_empty() || policy.public_key.trim().is_empty() {
         return Ok(None);
     }
@@ -576,33 +618,100 @@ mod tests {
     }
 
     #[test]
-    fn missing_key_stays_unconfigured_and_invalid_overrides_fail_closed() {
+    fn deployment_can_change_endpoint_but_cannot_replace_the_signing_key() {
         let temp = tempfile::tempdir().unwrap();
         let paths = DataPaths {
             config: temp.path().into(),
             data: temp.path().into(),
             logs: temp.path().into(),
         };
+        let load = || {
+            load_deployment_policy(
+                policy("https://built-in.example/update"),
+                &paths.config.join("deployment.json"),
+            )
+        };
         fs::write(
             paths.config.join("deployment.json"),
             r#"{"updates":{"endpoint":"https://example.com/update","publicKey":""}}"#,
         )
         .unwrap();
-        assert!(load_policy(&paths).unwrap().is_none());
+        assert_eq!(load().unwrap_err().code, ErrorCode::UpdateNotConfigured);
         fs::write(
             paths.config.join("deployment.json"),
-            r#"{"updates":{"endpoint":"http://example.com/update","publicKey":"key"}}"#,
+            r#"{"updates":{"endpoint":"https://example.com/update","publicKey":"attacker-key"}}"#,
         )
         .unwrap();
-        assert!(load_policy(&paths).is_err());
+        assert_eq!(load().unwrap_err().code, ErrorCode::UpdateNotConfigured);
+        fs::write(
+            paths.config.join("deployment.json"),
+            r#"{"updates":{"endpoint":"https://example.com/update"}}"#,
+        )
+        .unwrap();
+        let mirrored = load().unwrap().unwrap();
+        assert_eq!(mirrored.endpoint, "https://example.com/update");
+        assert_eq!(mirrored.public_key, "deployment-owned-public-key");
+        assert!(
+            load_deployment_policy(
+                UpdatePolicy {
+                    endpoint: "https://built-in.example/update".into(),
+                    public_key: String::new(),
+                },
+                &paths.config.join("deployment.json")
+            )
+            .unwrap()
+            .is_none()
+        );
+        fs::write(
+            paths.config.join("deployment.json"),
+            serde_json::json!({"updates": {"endpoint": "https://example.com/same-key", "publicKey": mirrored.public_key}}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            load().unwrap().unwrap().endpoint,
+            "https://example.com/same-key"
+        );
+        fs::write(
+            paths.config.join("deployment.json"),
+            r#"{"updates":{"endpoint":"http://example.com/update"}}"#,
+        )
+        .unwrap();
+        assert!(load().is_err());
+        fs::write(
+            paths.config.join("deployment.json"),
+            r#"{"updates":{"endpoint":""}}"#,
+        )
+        .unwrap();
+        assert!(load().unwrap().is_none());
         fs::write(
             paths.config.join("deployment.json"),
             vec![b' '; 16 * 1024 + 1],
         )
         .unwrap();
-        assert_eq!(
-            load_policy(&paths).unwrap_err().code,
-            ErrorCode::InputTooLong
-        );
+        assert_eq!(load().unwrap_err().code, ErrorCode::InputTooLong);
+    }
+
+    #[test]
+    fn installation_rechecks_deployment_changes_after_an_earlier_successful_check() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("deployment.json");
+        let checked = policy("https://built-in.example/update");
+        let recheck =
+            || require_unchanged_policy(load_deployment_policy(checked.clone(), &path)?, &checked);
+        assert!(recheck().is_ok());
+        for endpoint in ["https://changed.example/update", ""] {
+            fs::write(
+                &path,
+                serde_json::json!({"updates": {"endpoint": endpoint}}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(recheck().unwrap_err().code, ErrorCode::UpdateNotConfigured);
+        }
+        fs::write(
+            &path,
+            serde_json::json!({"updates": {"endpoint": checked.endpoint}}).to_string(),
+        )
+        .unwrap();
+        assert!(recheck().is_ok());
     }
 }

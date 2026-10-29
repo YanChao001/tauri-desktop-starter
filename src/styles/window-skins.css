@@ -15,13 +15,9 @@
   mask-size: cover;
   mask-position: center;
   mask-repeat: no-repeat;
-  opacity: calc(0.18 * var(--skin-strength));
-}
-.dark .skin-scene {
-  opacity: calc(0.16 * var(--skin-strength));
+  opacity: var(--skin-exposure);
 }
 .pattern-artwork--preview {
-  --skin-strength: 1;
   border-radius: inherit;
 }
 .pattern-artwork--preview .skin-scene {
@@ -35,18 +31,11 @@
   width: 100%;
   height: 100%;
   object-position: center;
-  opacity: calc(0.36 * var(--skin-strength));
+  opacity: var(--skin-exposure);
 }
 html:not([data-background="plain"]) {
   --muted-foreground: oklch(0.36 0 0);
 }
 html.dark:not([data-background="plain"]) {
   --muted-foreground: oklch(0.8 0 0);
-}
-html[data-background="custom"] {
-  --skin-chrome-opacity: 50%;
-  --skin-sidebar-opacity: 50%;
-}
-html[data-background="custom"] .app-main {
-  background: color-mix(in oklab, var(--background) 50%, transparent);
 }

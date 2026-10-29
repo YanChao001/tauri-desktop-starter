@@ -60,12 +60,12 @@
 }
 
 .app-sidebar-link:hover {
-  background: color-mix(in oklab, var(--sidebar-accent) 58%, transparent);
+  background: var(--surface-state-hover);
   color: var(--sidebar-foreground);
 }
 
 .app-sidebar-link[aria-current="page"] {
-  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
+  background: var(--surface-state-selected);
   color: var(--sidebar-foreground);
   font-weight: 500;
 }
@@ -86,7 +86,7 @@
   min-width: 0;
   align-items: center;
   border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--sidebar-accent) 86%, transparent);
+  background: var(--surface-state-selected);
 }
 
 .app-sidebar-extension .app-sidebar-link {
@@ -124,7 +124,7 @@
 .app-sidebar-command {
   min-height: 36px;
   border: 1px solid var(--sidebar-border);
-  background: color-mix(in oklab, var(--sidebar-accent) 22%, transparent);
+  background: var(--control-background);
   color: var(--muted-foreground);
   font-size: 0.72rem;
   transition:
@@ -133,7 +133,7 @@
 }
 
 .app-sidebar-command:hover {
-  background: color-mix(in oklab, var(--sidebar-accent) 66%, transparent);
+  background: var(--surface-state-hover);
   color: var(--sidebar-foreground);
 }
 
@@ -184,7 +184,7 @@
   width: 100%;
   max-width: 1180px;
   margin-inline: auto;
-  padding: 1.25rem 1.75rem 2.5rem;
+  padding: 1rem 1.5rem 1.5rem;
 }
 
 /* 加载占位保留普通页面滚动槽；隔离文档就绪后使用完整内容区的滚动宽度。 */
@@ -205,7 +205,7 @@
 }
 
 .app-route-context {
-  margin-bottom: 1.15rem;
+  margin-bottom: 0.75rem;
   color: var(--muted-foreground);
   font-size: 0.75rem;
   line-height: 1.5;
@@ -270,7 +270,7 @@
 }
 .app-title-menu-trigger:is(:hover, [data-state="open"]),
 .app-title-language:is(:hover, [data-state="open"]) {
-  background-color: var(--muted);
+  background-color: var(--surface-state-hover);
   color: var(--foreground);
 }
 .app-title-menu-trigger:focus-visible {
@@ -341,23 +341,21 @@
 .skin-gallery {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
   gap: 0.75rem;
 }
 .skin-gallery-card {
   min-width: 0;
 }
 .wallpaper-library {
-  display: grid;
-  gap: 0.85rem;
+  min-width: 0;
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
-  padding: 1rem;
-  background: color-mix(in oklab, var(--background) 45%, transparent);
+  background: var(--surface-card-muted);
 }
 .wallpaper-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
   gap: 0.75rem;
 }
 .wallpaper-card {
@@ -365,7 +363,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--background);
+  background: var(--surface-card);
 }
 .wallpaper-card[data-selected="true"] {
   border-color: var(--primary);
@@ -411,39 +409,126 @@
   background: var(--primary);
   color: var(--primary-foreground);
 }
-@container settings (max-width: 620px) {
-  .skin-gallery {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
-.app-shell-immersive .app-chrome,
-.app-shell-immersive .app-sidebar,
 .app-shell-immersive .app-route-context {
   display: none;
 }
-.app-shell-immersive .app-main {
-  inset: 0;
+.app-shell.app-shell-immersive {
+  --app-content-inset: 0;
 }
-.immersive-exit {
-  position: fixed;
-  top: 0;
-  right: 1rem;
-  z-index: 30;
-  padding: 0.75rem 0.25rem;
+.app-shell-immersive .app-chrome,
+.app-shell-immersive .app-sidebar {
+  visibility: hidden;
+  pointer-events: none;
   opacity: 0;
-  transition: opacity 150ms ease;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    visibility 0s linear 220ms,
+    width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.immersive-exit:is(:hover, :focus-within) {
+.app-shell-immersive .app-chrome {
+  transform: translateY(-100%);
+}
+.app-shell-immersive .app-title-bar,
+.app-shell-immersive .app-sidebar {
+  --muted-foreground: var(--glass-muted-foreground);
+  background: var(--surface-dialog);
+  backdrop-filter: blur(var(--surface-popup-blur));
+}
+.app-shell-browser.app-shell-immersive .app-sidebar {
+  display: flex;
+}
+.app-shell-immersive .app-sidebar {
+  inset-block-start: 0;
+  padding-block-start: var(--app-chrome-height);
+  transform: translateX(-100%);
+}
+.app-shell-immersive:has(.immersive-edge[data-edge="top"][aria-expanded="true"])
+  .app-chrome,
+.app-shell-immersive:has(
+    .immersive-edge[data-edge="left"][aria-expanded="true"]
+  )
+  .app-sidebar {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+  transform: translate(0);
+  transition-delay: 0s;
+}
+.immersive-edge {
+  position: fixed;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.immersive-edge[data-edge="top"] {
+  inset: 0 0 auto;
+  height: 6px;
+}
+.immersive-edge[data-edge="left"] {
+  inset: 10px auto 0 0;
+  width: 6px;
+}
+.immersive-edge svg {
+  width: 1rem;
+  height: 1rem;
+  opacity: 0;
+}
+.immersive-edge:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+  background: var(--popover);
+}
+.immersive-edge:focus-visible svg {
   opacity: 1;
 }
-.immersive-exit kbd {
-  font-size: 10px;
-  color: var(--muted-foreground);
+.immersive-edge[data-edge="top"]:focus-visible {
+  inset-inline: 45% 45%;
+  height: 32px;
 }
-@media (hover: none), (forced-colors: active) {
-  .immersive-exit {
+.immersive-edge[data-edge="left"]:focus-visible {
+  inset-block: 45% 45%;
+  width: 32px;
+}
+@media (hover: none) {
+  .immersive-edge[data-edge="top"] {
+    inset: 0 auto auto 50%;
+    width: 44px;
+    height: 32px;
+    margin-inline-start: -22px;
+  }
+  .immersive-edge[data-edge="left"] {
+    inset: 50% auto auto 0;
+    width: 32px;
+    height: 44px;
+    margin-block-start: -22px;
+  }
+  .immersive-edge {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--popover);
+  }
+  .immersive-edge svg {
     opacity: 1;
+  }
+  .immersive-edge[aria-expanded="true"]:not(:focus) {
+    visibility: hidden;
+  }
+}
+html[data-motion="reduced"]
+  .app-shell-immersive
+  :is(.app-chrome, .app-sidebar) {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-immersive :is(.app-chrome, .app-sidebar) {
+    transition: none;
   }
 }
 
@@ -457,7 +542,7 @@
 @media (max-width: 1050px) {
   .app-page-content,
   .app-extension-window-content:has([data-extension-loading]) {
-    padding: 1rem 1.25rem 2rem;
+    padding: 1rem 1.25rem 1.5rem;
   }
 }
 

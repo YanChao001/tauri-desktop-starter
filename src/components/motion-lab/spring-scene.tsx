@@ -93,6 +93,7 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
   return (
     <>
       <div
+        data-surface="artwork"
         className="lab-stage lab-spring-stage"
         data-testid="spring-stage"
         ref={stageRef}
@@ -255,6 +256,7 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
           <div>
             {presets.map(({ label, ...preset }) => (
               <button
+                data-surface="control"
                 key={label}
                 type="button"
                 aria-pressed={Object.entries(preset).every(
@@ -268,7 +270,7 @@ export function SpringScene({ active, reduced, replay, stageRef }: SceneProps) {
             ))}
           </div>
         </div>
-        <div className="lab-response">
+        <div data-surface="reading" className="lab-response">
           <div>
             <span>{t("lab.response")}</span>
             <strong>

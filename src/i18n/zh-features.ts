@@ -63,7 +63,7 @@ export const zhFeatures = {
   "desktop.title": "桌面集成",
   "desktop.settingsTitle": "窗口与运行",
   "desktop.browserOnly":
-    "登录启动、后台运行和多窗口需要桌面应用，浏览器中无法更改这些选项。",
+    "窗口大小和系统集成功能需要桌面应用，浏览器中无法更改。",
   "desktop.description": "管理开机启动、后台运行和多窗口，所有状态均来自本机。",
   "desktop.autostart": "登录时启动",
   "desktop.autostartDescription": "在当前用户登录系统后自动运行应用",
@@ -129,10 +129,10 @@ export const zhFeatures = {
   "updates.installed": "更新已安装，重新启动后生效",
   "updates.restart": "重新启动应用",
   "updates.releaseNotes": "版本说明",
+  "updates.releaseNotesTitle": "版本说明 · {version}",
+  "updates.noReleaseNotes": "此版本未提供更新说明。",
   "updates.notConfigured": "暂时无法在应用内更新，请前往版本记录查看新版本。",
   "updates.configuration": "更新偏好",
-  "updates.configurationDescription":
-    "获取稳定版更新，安装前验证更新包的来源与完整性。",
   "updates.autoCheck": "启动时检查更新",
   "updates.autoCheckHint":
     "应用就绪后在后台检查，发现新版本时提醒；下载和安装由你确认。",
@@ -148,7 +148,6 @@ export const zhFeatures = {
     "暂时没有适合当前系统和安装方式的更新包，请从版本记录查看。",
   "updates.endpoint": "更新来源",
   "updates.endpointDisabled": "此应用尚未启用自动更新",
-  "updates.keyConfigured": "更新验证已配置",
   "updates.keyMissing": "更新验证尚未配置",
   "errors.VALIDATION": "输入内容无效，请检查后重试",
   "errors.CONFLICT": "数据已被其他窗口修改，请刷新后合并",

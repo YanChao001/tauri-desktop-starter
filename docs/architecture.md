@@ -42,6 +42,7 @@ flowchart LR
 | `storage.rs` / `database.rs` / `data_commands.rs`                               | 原子设置；SQLite 迁移、事务、版本、草稿及逻辑备份                      |
 | `network.rs` / `demo_http.rs` / `network_commands.rs`                           | 原生 HTTP 连接偏好与请求头规则；有界演示请求及按窗口取消               |
 | `workbench.rs` / `workbench_commands.rs`                                        | 文件授权、条件保存、扫描 / 哈希队列和持久历史                          |
+| `wallpapers.rs` / `wallpaper_commands.rs` / `wallpaper_video.rs`                | 壁纸图库、受控视频副本、容量与播放协议                                 |
 | `desktop.rs` / `window_geometry.rs` / `autostart.rs`                            | 窗口与托盘、逻辑尺寸和位置适配、平台自启动                             |
 | `lifecycle.rs` / `system_commands.rs` / `recovery.rs`                           | 退出协商；工作区、激活、凭据与固定 worker；启动隔离和重启恢复          |
 | `extensions.rs` / `extension_*.rs`                                              | 扩展安装、执行、授权、受控服务、界面、市场与旧数据恢复，分工见扩展指南 |
@@ -55,7 +56,7 @@ Rust 表项未写完整路径时均位于 `src-tauri/src/`。小领域继续放�
 
 路由、导航与页面命令复用 [`routes.tsx`](../src/routes.tsx)。完整 demo、`minimal` 的展示范围、各页数据生命周期及兼容入口统一见 [体验现有模块](./demo-modules.md#体验现有模块)；隐藏入口不会移除原生能力。
 
-页面按需加载，静态与动态插件侧栏入口的悬停、键盘聚焦只预载模块，不挂载页面、运行 Wasm 或执行 IPC。普通页面的 Suspense 按 pathname 重建，未加载页面显示共用 PageLoading 骨架，路由错误边界随导航重置；插件结果仅在出现 Markdown 块时加载对应解析器，HTML 插件与普通表单首屏不等待该依赖。外壳提供标题栏、可调宽侧栏、位置提示和独立滚动区，布局与焦点规则见 [界面规范](./conventions/ui-guidelines.md#布局常量)。
+页面按需加载，静态与动态插件侧栏入口的悬停、键盘聚焦只预载模块，不挂载页面、运行 Wasm 或执行 IPC。普通页面的 Suspense 按 pathname 重建，未加载页面显示共用 PageLoading 骨架；路由错误边界随导航清除已捕获的错误，重复导航当前页面或改变查询参数时保留正常页面的状态，不因错误边界重建而重复加载数据。插件结果仅在出现 Markdown 块时加载对应解析器，HTML 插件与普通表单首屏不等待该依赖。外壳提供标题栏、可调宽侧栏、位置提示和独立滚动区，布局与焦点规则见 [界面规范](./conventions/ui-guidelines.md#布局常量)。
 
 `features/journeys/` 用 URL 的 `journey` / `step` 参数表示跨页导览，校验路线、步骤和页面是否匹配；只提示与导航，不执行操作、推断完成或持久化流程。演示表单、CSV 和 fixture 不写原生数据库；原生页面在浏览器显示环境说明，通信页保留可提交表单，实际调用仍由门面拒绝不支持的环境。
 
@@ -65,7 +66,7 @@ DemoMotion / useDemoMotion 协调用户偏好、系统减少动效、文档可�
 
 AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留最近使用的最多 3 个插件页面；容器按稳定 DOM 顺序挂载，非当前页面使用 `hidden` / `inert`，避免重排 iframe 导致重建。活动状态控制隐藏页面的请求、轮询、语言刷新、尺寸观察和首屏计时；LRU 移出只释放界面与端口，会话缓存仍保护未保存草稿和在途操作。包身份失效、禁用或必需授权撤销立即释放旧界面，可选授权变化同步最新快照。限额、兼容与取舍见 [ADR 0016](./adr/0016-retain-extension-surfaces.md)，具体契约见 [自定义界面](./extensions.md#自定义界面)。
 
-会话缓存只回收非活动的干净工作，凭据系统调用按插件协调，不持全局注册表锁等待外部服务。隔离 HTML 通过 SDK 消费语义 token 和基础控件规则，Shadow DOM 由作者显式接入，不共享宿主组件实例。SDK 公共 DTO 从 Rust 生成绑定提取闭合依赖，独立插件开发无需引用宿主源码树；公开入口与一致性边界见 [界面 SDK](../sdk/README.md)。
+会话缓存只回收非活动的干净工作，凭据系统调用按插件协调，不持全局注册表锁等待外部服务。宿主与隔离 HTML 共用原生 CSS 的材质配置和完整控件规则；[ui-theme.ts](../src/lib/ui-theme.ts) 装配同一原文，`ExtensionCustomUi` 在嵌入页与独立窗口中将样式及自动收集的主题变量经现有主题快照发送。SDK 不维护另一份控件 CSS，不按当前 DOM 裁剪；Shadow DOM 由作者显式接入，不共享宿主组件实例。内置和市场插件的普通 UI 一致性、布局职责与明确设计例外由 [共同外观规范](./conventions/ui-guidelines.md#宿主与插件的共同外观) 维护，运行时同步及注入边界见 [界面 SDK](../sdk/README.md#默认外观与动效)，取舍见 [ADR 0022](./adr/0022-shared-control-materials.md)。SDK 公共 DTO 从 Rust 生成绑定提取闭合依赖，独立插件开发无需引用宿主源码树。
 
 命令清单可选择标准或计算预算；原生执行、效果往返、离线 CLI 与预编译均使用已校验清单的档位，编译缓存按预算区分。选择只改变有界 Wasm fuel，不新增权限或延长墙钟；版本与限额见[扩展指南](./extensions.md#执行存储与生命周期)，取舍见 [ADR 0019](./adr/0019-bounded-extension-compute.md)。
 
@@ -75,13 +76,13 @@ AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留�
 
 主 / 次窗口固定为 `main` / `secondary`，重复打开次窗口会聚焦已有实例；扩展窗口使用宿主生成的 `extension-*` 标签。窗口共用原生设置与数据库，各自保留渲染状态。单实例插件先初始化，重复启动请求异步交给激活流程；主窗口配置 `create: false`，待原生状态就绪后从阻塞任务池创建。
 
-窗口初始隐藏，App 的 [`useRevealWindow`](../src/hooks/use-reveal-window.ts) 等两次动画帧后握手显示，Rust 提供三秒兜底。显示握手不等待路由或数据完成，不能作为页面可交互的性能证据。窗口状态插件恢复位置和显示状态，`window_geometry.rs` 独立持久化逻辑尺寸；旧物理尺寸仅供首次迁移，避免重复恢复。DPI 与工作区变化触发有界适配，不在持有插件锁时同步修改几何；存档由后台 worker 写入。
+窗口初始隐藏，App 的 [`useRevealWindow`](../src/hooks/use-reveal-window.ts) 等两次动画帧后握手显示，Rust 提供三秒兜底。显示握手不等待路由或数据完成，不能作为页面可交互的性能证据。窗口状态插件恢复位置和显示状态，`window_geometry.rs` 独立持久化逻辑尺寸；旧物理尺寸仅供首次迁移，避免重复恢复。DPI 与工作区变化触发有界适配，不在持有插件锁时同步修改几何；存档由后台 worker 写入。未来或无法读取的既有尺寸存档只在内存中回落，普通窗口事件和退出不覆盖原件；明确恢复默认尺寸成功落盘后，才恢复自动持久化。
 
 启动位置 `remember` / `center` 仅用于新建窗口，重复激活与切换偏好不重新定位当前窗口。初始化按可用工作区调整，临时缩小保留首选尺寸，普通移动不持续吸附边缘。尺寸预设使用 DIP，应用前还原最大化 / 最小化 / 全屏，持久化完成后命令才返回。相关平台限制与排查见 [窗口排障](./troubleshooting.md#远程桌面断开后窗口过大或落在屏幕外)。
 
 主 / 次窗口启用后台运行且托盘可用时关闭改为隐藏，扩展窗口仍正常关闭。关闭、退出、重启和安装更新共用 `lifecycle.rs`：收集相关窗口的脏工作，保存 / 放弃成功后继续，失败或取消则保留窗口。生命周期操作从协商到实际执行保持互斥，与窗口创建协调，防止新窗口绕过协商快照；关闭获准后拒绝该窗口的晚到扩展调用，并等待在途执行结束。
 
-UnsavedWorkProvider 保留离页后的保存回调；主窗口登记后台任务，“保存”表示等待完成，“放弃”表示合作取消并等待 worker 退出。前端停止等待不能回滚已写入或已取消的工作。浏览器保留 `beforeunload` 提醒，但不能控制全部外部关闭方式。
+UnsavedWorkProvider 保留离页后的保存回调；主窗口登记后台任务，“保存”表示等待完成，“放弃”表示合作取消并等待 worker 退出。任务结算等待最多两分钟，超时保留未完成状态并允许稍后重试，不继续轮询或宣称原生任务已经取消。前端停止等待不能回滚已写入或已取消的工作。浏览器保留 `beforeunload` 提醒，但不能控制全部外部关闭方式。
 
 工作区仅恢复主 / 次窗口的非隐藏静态路由及次窗口打开状态，不持久化动态扩展会话路径。文件关联在原生授权与读取验证后发布资源 ID、文件名及错误，不缓存正文；主窗口先订阅再读激活快照，通过 ID 去重，既有文件加载 IPC 完成交接。接收、读取和缓存均有界，旧结果不能覆盖较新导航或用户编辑，授权淘汰后需重新选择。限制与具体协议以 [`system_commands.rs`](../src-tauri/src/system_commands.rs) 和 [`use-workspace.ts`](../src/hooks/use-workspace.ts) 为准。
 
@@ -93,6 +94,10 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 页面、组件和 Hook 仅依赖 `lib/tauri.ts`，由门面加载生成命令、检查环境并归一化结果；不手改生成文件、不拼命令字符串、不再写一套 DTO。命令返回 `NativeResult<T>`，错误包含 `code`、`message`、`retryable`；前端按稳定 code 分支，不解析错误文本或直接 `String(error)`。生成类型不能替代 Rust 的入参、大小和路径校验；阻塞 I/O 通过 `blocking::run` / `spawn_blocking` 移出异步线程。
 
+`blocking::run` 在进入阻塞池前限制最多 16 个在途调用，满额立即返回 `NATIVE_BUSY`，不再堆积等待线程。停止前端等待不会释放仍在执行的同步任务名额，也不伪造写入超时或回滚；领域队列、网络、Wasm 与生命周期继续各自管理预算。`retryable` 按稳定错误码提供保守默认值，领域可按已确认的传输失败等原因细分，表示允许用户再试，不代表有副作用的调用可以自动重放。
+
+恢复管理使用独立操作锁串行化试恢复和暂存，状态查询只短暂取得快照锁；恢复期间查询状态不等待备份和 SQLite 校验。扩展运行和启动预热先在注册表锁内登记租约，再移出锁读取和校验模块，租约仍保护文件免于被缓存清理。缓存清理在异步和同步调用方都交给阻塞 worker，租约析构不内联重入注册表。
+
 设置与任务事件携带 revision，笔记事件通知重查，更新事件含 operationId 和阶段，退出协商使用请求 ID。订阅后再读快照，按各自版本或操作身份过滤旧消息，不假设事件与命令返回在跨窗口具有统一顺序。事件不是持久消息队列，写入结果以命令返回为准。
 
 事件门面显式监听当前 WebviewWindow，避免全局 `Any` 监听收到其他窗口的定向事件；原生广播仍可匹配窗口目标。异步订阅须在卸载、StrictMode 重建及取消函数晚到时释放，回调也要检查订阅是否已失效。
@@ -103,7 +108,11 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 设置 schema 与迁移由 [`settings-model.ts`](../src/lib/settings-model.ts) 定义，读取旧扁平格式、schema 1 包装格式与后续兼容版本，按白名单规范化字段；未来 schema 阻止自动覆盖，明确重置后才可替换。首次语言匹配系统偏好，已保存选择优先，重置保留语言。主题进入同一模型；只有模板原命名空间兼容通用旧 `theme` 键，避免派生应用继承其他站点偏好。
 
-桌面以 `settings.json` 为权威快照，使用原子替换与 revision compare-and-swap。Rust 校验结构、额度及原生使用字段；前端负责迁移与未来 schema 保护。SettingsSync 分离未提交与在途字段，冲突后重读并有限重试，失败保留修改；跨窗口只接受新 revision。浏览器独立使用 localStorage，桌面的本地缓存仅供首屏与旧设置迁移。
+自定义强调色与预设 ID 同属设置快照，只保存规范化的原色，不保存派生的明暗色值。`accent-colors.ts` 负责输入边界和可读变体，`applySettings` 提交专用 CSS 变量，业务组件和插件继续消费已有语义 token；切换预设保留已记忆的自定义原色，不直接覆盖 inline `--primary`。新增颜色与其他偏好共用 revision 合并和多窗口同步。
+
+皮肤强度在当前设置中保存为数值档位，原三档分别迁移为相近的 30%、50%、70%，不改变背景图片等其他偏好；取值和默认值由设置模型维护，呈现规则见 [界面规范](./conventions/ui-guidelines.md#外观设置)。原生未来版本判断与壁纸服务写入共用同一 schema 上限，避免应用图片时将新结构降回旧版本。
+
+桌面以 `settings.json` 为权威快照，使用原子替换与 revision compare-and-swap。Rust 校验结构、额度及原生使用字段，普通保存也会拒绝覆盖已加载的未来 schema；前端负责迁移与未来版本提示，显式重置沿用独立入口。SettingsSync 分离未提交与在途字段，冲突后重读并有限重试，失败保留修改；跨窗口只接受新 revision。浏览器独立使用 localStorage，各标签页维持自己的已加载偏好，刷新后读取最后保存的设置。两种环境均不以其他窗口的主题缓存事件直接改色，避免绕过设置模型或形成反复回写；桌面的本地缓存仅供首屏与旧设置迁移。
 
 宿主“设置 → 网络”的 `networkMode` 统一管理后续原生 HTTP：默认 `system` 跟随系统 / 环境代理，`direct` 禁用代理。市场、应用更新、网络演示和扩展请求读取已保存偏好，不修改进程代理环境，也不重启或改写已开始的操作；单次市场操作的目录刷新和包下载共用开始时的模式。更新下载前重新读取，检查后切换连接方式仍可生效。浏览器 fetch、WebView WSS、系统浏览器外链和 LAN 连接由各自环境管理，浏览器预览禁用该选项。
 
@@ -113,7 +122,7 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 恢复默认设置同时恢复已打开及已记忆窗口的默认尺寸，并约束到工作区；启动位置恢复 `remember`，保留当前位置及必要的可见性修正。尺寸与偏好依次持久化，各有独立失败边界，失败保留确认与重试；不删除笔记、日志、图库或 WebView 数据，也不修改系统自启动。自定义背景与独立图库的存储关系见下节。
 
-`browserStorageNamespace` 隔离设置键、主题缓存、图库 IndexedDB 与广播通道。初始化改应用标识时默认改用新 identifier，切换不会删除或自动导入旧数据；它区分同源应用数据，不构成脚本安全隔离，见 [项目初始化](./development.md#项目初始化)。
+`browserStorageNamespace` 隔离设置键、主题缓存、图库 / 视频 IndexedDB 与广播通道。初始化改应用标识时默认改用新 identifier，切换不会删除或自动导入旧数据；它区分同源应用数据，不构成脚本安全隔离，见 [项目初始化](./development.md#项目初始化)。
 
 ## 数据存储
 
@@ -124,6 +133,7 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 | 笔记备份                | `appDataDir/backups/`；版本化逻辑 JSON，包含全部笔记、回收站与窗口草稿                                      |
 | 文件与任务              | 外部文件须明确授权；记录、任务历史与报告在 `appDataDir/workbench/`                                          |
 | 壁纸图库                | 桌面 `appDataDir/wallpapers.json` 原子更新；浏览器为独立 IndexedDB；不在笔记备份内，隔离恢复使用临时图库    |
+| 壁纸视频                | 桌面图库同级 `wallpaper-media/` 的受控副本；浏览器为独立 IndexedDB Blob；不在笔记备份或恢复归档内           |
 | 扩展安装与市场信任      | `appDataDir/extensions/` 与 `extension-market/`，不在笔记备份或恢复归档内                                   |
 | 扩展私有数据与 LAN 历史 | `appDataDir/extension-data/`；KV / 凭据别名与 `lan/` 聊天历史及有界附件缓存分别管理，不随会话导出或笔记备份 |
 | 扩展图片资源            | 有界短期内存缓存，与插件身份、窗口和有效期绑定，不持久化或随会话恢复授权                                    |
@@ -132,7 +142,11 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 数据目录由 Tauri 路径 API 决定，不写入 exe 所在目录。扩展各存储、系统凭据及生命周期的边界统一见 [扩展指南](./extensions.md#执行存储与生命周期)，日志见 [排障手册](./troubleshooting.md#先看日志)，测试目录隔离见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。
 
-壁纸图库最多 24 张，每张保存经重编码的 JPEG / WebP data URL，连同前缀最多 96 KiB；以内容 SHA-256 去重，不保存原图路径、远端 URL 或 SVG。设置中的 `customBackground` 另存当前选择的自包含副本、名称和填充方式：切换内置皮肤保留选择，取消图片背景或重置偏好清除副本但保留图库，缺少合法图片时回落纯色。首次建立图库可导入旧设置副本，已有图库不重复迁入；未知版本或损坏内容拒绝写入，不清空重建。额度与兼容实现见 [`wallpapers.rs`](../src-tauri/src/wallpapers.rs)、[`wallpaper-library.ts`](../src/lib/wallpaper-library.ts) 和 [`background-image.ts`](../src/lib/background-image.ts)，历史决策见 [ADR 0004](./adr/0004-wallpaper-library.md)。
+壁纸图库最多 24 项，图片及视频封面保存为经重编码的 JPEG / WebP data URL，连同前缀最多 96 KiB；图片以内容 SHA-256 去重，视频身份包含媒体引用，避免相同封面合并不同视频。图库不保存用户原始路径、远端 URL 或 SVG。本机图片输入允许至多 64 MiB、1 亿像素，先检查尺寸再解码，自动调整编码质量和尺寸直至适合存档；浏览器优先使用 WebP，原生插件使用 JPEG，因此相同原图的编码结果不要求一致。远程图片下载和解码仍使用扩展服务自己的额度，不随本机输入放宽。图库卡片按显示尺寸和屏幕像素密度生成平滑的临时 PNG 缩略图，不写回图库或当前背景。
+
+本机 MP4 / WebM 视频独立保存，单个最多 128 MiB，媒体总量最多 512 MiB；原生选择经系统对话框并复制到图库同级 `wallpaper-media/<SHA-256>.<固定后缀>`，浏览器存入独立 IndexedDB Blob。`customBackground` 另存当前选择的封面、名称、填充方式及可选 `video: { id, mime }`，不把视频字节或播放 URL 放入设置。主 / 次窗口经 `wallpaper-media` 专用协议按有界字节范围读取受控文件；浏览器在播放期间创建并释放 object URL。独立插件窗口仅显示视频封面，不请求主 / 次窗口的媒体协议。前端实际解码后提取封面再加入图库，播放失败或视频副本缺失时保留封面，并遵循全局动效活动策略。媒体选择、校验和流式读取的安全边界见[入参校验](./security.md#入参校验)。
+
+切换内置皮肤保留当前选择，取消背景或重置偏好清除设置副本但保留图库；缺少合法封面时回落纯色。首次建立图库可导入旧设置副本，已有图库不重复迁入。设置 schema 5 和图库格式 2 支持视频引用，旧纯图片图库可读取并在后续写入时迁移；未知版本或损坏内容拒绝写入，不清空重建。删除图库条目不立即删除媒体；导入前回收仅处理未被当前设置或图库引用、且超过最近 10 分钟导入保护期的副本，不能把损坏或未来存档当作空引用集。隔离恢复使用临时图库及同级媒体目录，现有笔记备份和启动恢复归档都不携带视频。当前规则见 [`wallpapers.rs`](../src-tauri/src/wallpapers.rs)、[`wallpaper_video.rs`](../src-tauri/src/wallpaper_video.rs)、[`wallpaper-library.ts`](../src/lib/wallpaper-library.ts)、[`video-wallpaper.ts`](../src/lib/video-wallpaper.ts) 和 [`background-image.ts`](../src/lib/background-image.ts)，取舍见 [ADR 0004](./adr/0004-wallpaper-library.md) 与 [ADR 0021](./adr/0021-managed-video-wallpapers.md)。
 
 SQLite 用 `PRAGMA user_version` 标记 schema，迁移在事务中完成，未来版本拒绝修改。查询分页，更新与批量回收 / 恢复 / 永久删除校验 `expectedVersion`，整批冲突回滚；不向前端开放任意 SQL、数据库路径或通用文件权限。笔记草稿按窗口标签持久化，读取完成前暂停编辑与备份写入，保存正式笔记和放弃草稿各有独立动作并参加退出协商。
 
@@ -140,7 +154,7 @@ SQLite 用 `PRAGMA user_version` 标记 schema，迁移在事务中完成，未�
 
 外部备份导入限 16 MiB、50,000 条笔记与 128 份草稿，超限拒绝且不截断。应用生成的完整备份不套用外部额度，较大备份可在原目录预览、恢复、原生导出和用于启动恢复；导出后经外部导入仍受上述限制。当前使用完整内存 JSON 快照，不支持任意规模或流式跨安装导入。
 
-文件工作台只接受原生选择、关联或拖入授权，后续以资源 ID 访问；文本最多 2 MiB，图片最多 8 MiB 且只读。JSON 与应用专属文档保存前校验，Markdown 不执行 HTML。保存先写同目录临时文件、比较原内容 SHA-256，再原子替换；外部冲突保留草稿，提供审阅与另存。这不是跨进程锁，仍存在最终检查与替换间的竞态。
+文件工作台只接受原生选择、关联或拖入授权，后续以资源 ID 访问；文本最多 2 MiB，图片最多 8 MiB 且只读。JSON 与应用专属文档保存前校验，Markdown 不执行 HTML。Markdown 超过结构化预览行数上限时改用完整纯文本预览，代码着色只处理有界前段、尾部保留原文；编辑、保存和导出始终保留全文，阈值见 [document-preview.tsx](../src/components/workbench/document-preview.tsx) 与 [code-block.tsx](../src/components/code-block.tsx)。保存先写同目录临时文件、比较原内容 SHA-256，再原子替换；外部冲突保留草稿，提供审阅与另存。这不是跨进程锁，仍存在最终检查与替换间的竞态。
 
 扫描 / SHA-256 在 Rust 阻塞任务池运行，最多 2 项执行、10 项 FIFO 排队；排队直接取消，运行合作取消并等待释放执行位。离页 / 隐藏不停任务，重启标记 `interrupted`，重试从头运行；最近保留 30 项，完整报告可导出。超文件数或深度限制时标记截断，具体额度见 [`workbench.rs`](../src-tauri/src/workbench.rs) 常量。
 

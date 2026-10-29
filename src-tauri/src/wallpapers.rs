@@ -18,6 +18,54 @@ const MAX_LIBRARY_BYTES: u64 = 24 * 100 * 1024;
 pub struct WallpaperInput {
     pub name: String,
     pub data_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<WallpaperVideo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WallpaperVideo {
+    pub id: String,
+    pub mime: WallpaperVideoMime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq)]
+pub enum WallpaperVideoMime {
+    #[serde(rename = "video/mp4")]
+    Mp4,
+    #[serde(rename = "video/webm")]
+    Webm,
+}
+
+impl WallpaperVideoMime {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Mp4 => "video/mp4",
+            Self::Webm => "video/webm",
+        }
+    }
+}
+
+impl WallpaperVideo {
+    pub(crate) fn valid(&self) -> bool {
+        self.id.len() == 64
+            && self
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }
+
+    pub(crate) fn filename(&self) -> String {
+        format!(
+            "{}.{}",
+            self.id,
+            if self.mime == WallpaperVideoMime::Mp4 {
+                "mp4"
+            } else {
+                "webm"
+            }
+        )
+    }
 }
 
 #[cfg(test)]
@@ -29,6 +77,7 @@ mod tests {
     fn input(index: usize) -> WallpaperInput {
         WallpaperInput {
             name: format!("image-{index}.webp"),
+            video: None,
             data_url: format!(
                 "data:image/webp;base64,{}",
                 STANDARD.encode(format!("RIFF0000WEBP{index}"))
@@ -95,13 +144,38 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("wallpapers.json");
         let store = WallpaperStore::new(path.clone());
-        for source in ["{broken", r#"{"version":2,"images":[],"future":true}"#] {
+        for source in ["{broken", r#"{"version":3,"images":[],"future":true}"#] {
             fs::write(&path, source).unwrap();
             assert!(store.list(Some(input(1))).is_err());
             assert!(store.add(input(1)).is_err());
             assert!(store.remove("id").is_err());
             assert_eq!(fs::read_to_string(&path).unwrap(), source);
         }
+    }
+
+    #[test]
+    fn legacy_media_validation_precedes_initial_write_and_does_not_block_an_existing_library() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("wallpapers.json");
+        let store = WallpaperStore::new(path.clone());
+        assert!(
+            store
+                .list_with_validation(Some(input(0)), |_| Err(NativeError::new(
+                    ErrorCode::NotFound,
+                    "Media unavailable"
+                )))
+                .is_err()
+        );
+        assert!(!path.exists());
+        let entry = store.add(input(1)).unwrap();
+        assert_eq!(
+            store
+                .list_with_validation(Some(input(0)), |_| panic!(
+                    "Existing libraries do not initialize legacy media"
+                ))
+                .unwrap(),
+            vec![entry]
+        );
     }
 
     #[test]
@@ -141,6 +215,8 @@ pub struct Wallpaper {
     pub id: String,
     pub name: String,
     pub data_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<WallpaperVideo>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -161,12 +237,23 @@ fn invalid(message: &str) -> NativeError {
 
 fn image(input: WallpaperInput) -> NativeResult<Wallpaper> {
     validate_custom_background(&serde_json::json!({
-        "name": input.name, "dataUrl": input.data_url, "fit": "cover"
+        "name": input.name, "dataUrl": input.data_url, "fit": "cover", "video": input.video
     }))?;
     Ok(Wallpaper {
-        id: format!("{:x}", Sha256::digest(input.data_url.as_bytes())),
+        id: input.video.as_ref().map_or_else(
+            || format!("{:x}", Sha256::digest(input.data_url.as_bytes())),
+            |video| {
+                format!(
+                    "{:x}",
+                    Sha256::digest(
+                        format!("video:{}:{}", video.id, video.mime.as_str()).as_bytes()
+                    )
+                )
+            },
+        ),
         name: input.name,
         data_url: input.data_url,
+        video: input.video,
     })
 }
 
@@ -201,7 +288,7 @@ impl WallpaperStore {
         }
         let library: Library = serde_json::from_slice(&bytes)
             .map_err(|_| invalid("Cannot decode wallpaper library"))?;
-        if library.version != 1 || library.images.len() > MAX_IMAGES {
+        if !matches!(library.version, 1 | 2) || library.images.len() > MAX_IMAGES {
             return Err(invalid("Unsupported wallpaper library format"));
         }
         let mut ids = std::collections::HashSet::new();
@@ -209,6 +296,7 @@ impl WallpaperStore {
             let checked = image(WallpaperInput {
                 name: entry.name.clone(),
                 data_url: entry.data_url.clone(),
+                video: entry.video.clone(),
             })?;
             if checked.id != entry.id || !ids.insert(&entry.id) {
                 return Err(invalid("Invalid wallpaper identity"));
@@ -218,8 +306,11 @@ impl WallpaperStore {
     }
 
     fn write(&self, library: &Library) -> NativeResult<()> {
-        let bytes =
-            serde_json::to_vec(library).map_err(|_| invalid("Cannot encode wallpaper library"))?;
+        let bytes = serde_json::to_vec(&Library {
+            version: 2,
+            images: library.images.clone(),
+        })
+        .map_err(|_| invalid("Cannot encode wallpaper library"))?;
         if bytes.len() as u64 > MAX_LIBRARY_BYTES {
             return Err(invalid("Wallpaper library exceeds its limit"));
         }
@@ -227,12 +318,23 @@ impl WallpaperStore {
     }
 
     pub fn list(&self, legacy: Option<WallpaperInput>) -> NativeResult<Vec<Wallpaper>> {
+        self.list_with_validation(legacy, |_| Ok(()))
+    }
+
+    pub(crate) fn list_with_validation(
+        &self,
+        legacy: Option<WallpaperInput>,
+        validate: impl FnOnce(&WallpaperInput) -> NativeResult<()>,
+    ) -> NativeResult<Vec<Wallpaper>> {
         let _guard = self
             .writing
             .lock()
             .map_err(|_| invalid("Wallpaper library is unavailable"))?;
         if let Some(library) = self.read()? {
             return Ok(library.images);
+        }
+        if let Some(input) = &legacy {
+            validate(input)?;
         }
         let library = Library {
             version: 1,
@@ -282,6 +384,7 @@ impl WallpaperStore {
         let renamed = image(WallpaperInput {
             name,
             data_url: entry.data_url.clone(),
+            video: entry.video.clone(),
         })?;
         *entry = renamed.clone();
         self.write(&library)?;

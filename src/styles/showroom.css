@@ -69,7 +69,6 @@
   padding: 0.1rem 0.3rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--card);
 }
 .showroom-command-link:focus-visible {
   outline: 2px solid var(--ring);
@@ -255,7 +254,6 @@
   padding: 0.85rem 1rem;
   color: var(--foreground);
   border: 1px solid color-mix(in oklch, var(--scene-main) 35%, var(--border));
-  background: var(--card);
   border-radius: var(--radius-xl);
   box-shadow: 0 0.8rem 2.5rem #00000014;
   animation: showroom-note-float 8s ease-in-out infinite;
@@ -340,11 +338,11 @@
     border-color 0.2s;
 }
 .showroom-vibe:hover {
-  background: var(--muted);
+  background: var(--surface-state-hover);
   border-color: color-mix(in oklch, var(--foreground) 35%, var(--border));
 }
 .showroom-vibe[data-selected="true"] {
-  background: var(--muted);
+  background: var(--surface-state-selected);
   border-color: color-mix(in oklch, var(--foreground) 35%, var(--border));
 }
 .showroom-vibe:has(:focus-visible) {
@@ -410,7 +408,7 @@
     border-color 150ms;
 }
 .showroom-workspace-link:hover {
-  background: var(--accent);
+  background: var(--surface-state-hover);
   border-color: var(--primary);
 }
 .showroom-workspace-link > svg:last-child {

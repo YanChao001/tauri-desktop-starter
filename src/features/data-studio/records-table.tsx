@@ -51,6 +51,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
+import { getLocale } from "@/i18n/registry";
 import {
   archiveDemoRecords,
   createDemoRecords,
@@ -85,6 +87,7 @@ const INITIAL_WIDTHS: Record<string, number> = {
 
 export function RecordsTable() {
   const { t, language } = useI18n();
+  const latest = useLatestTranslator();
   const [records, setRecords] = useState(createDemoRecords);
   const [dirty, setDirty] = useState(false);
   const [imported, setImported] = useState(false);
@@ -98,6 +101,13 @@ export function RecordsTable() {
   const [detail, setDetail] = useState<DemoRecord | null>(null);
   const detailOrigin = useRef<HTMLButtonElement | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  const numberFormat = useMemo(
+    () =>
+      new Intl.NumberFormat(getLocale(language).documentLang, {
+        maximumFractionDigits: 2,
+      }),
+    [language],
+  );
   // 表格按 data 缓存 accessor 值；翻译变化必须同时更新行模型和搜索值。
   const data = useMemo(
     () =>
@@ -157,10 +167,7 @@ export function RecordsTable() {
         }),
         column.accessor("budget", {
           header: t("labs.data.budget"),
-          cell: ({ getValue }) =>
-            new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en", {
-              maximumFractionDigits: 2,
-            }).format(getValue()),
+          cell: ({ getValue }) => numberFormat.format(getValue()),
           sortFn: "basic",
         }),
         column.display({
@@ -170,7 +177,7 @@ export function RecordsTable() {
           ),
           cell: ({ row }) => (
             <Button
-              size="icon-sm"
+              size="icon"
               variant="ghost"
               aria-label={t("experience.table.details", {
                 id: row.original.id,
@@ -185,7 +192,7 @@ export function RecordsTable() {
           ),
         }),
       ]),
-    [t, language],
+    [t, numberFormat],
   );
   const table = useTable({
     features,
@@ -201,19 +208,20 @@ export function RecordsTable() {
     ? table.getSortedRowModel().rows
     : table.getRowModel().rows;
   const virtualizer = useVirtualizer({
+    enabled: virtual,
     count: virtual ? rows.length : 0,
     getScrollElement: () => scroll.current,
-    estimateSize: () => 48,
+    // 默认字号按约 40px 估算，实际测量涵盖字号变化与表格边框。
+    estimateSize: () => 40,
     overscan: 6,
   });
   const items = virtualizer.getVirtualItems();
   const visible = virtual
     ? items.length
-      ? items.flatMap((item) =>
-          rows[item.index]
-            ? [{ row: rows[item.index]!, index: item.index }]
-            : [],
-        )
+      ? items.flatMap((item) => {
+          const row = rows[item.index];
+          return row ? [{ row, index: item.index }] : [];
+        })
       : rows.slice(0, 12).map((row, index) => ({ row, index }))
     : rows.map((row, index) => ({ row, index }));
   const selected = table.getSelectedRowIds();
@@ -241,7 +249,6 @@ export function RecordsTable() {
         `records.${format}`,
         format === "csv" ? recordsCsv(data) : JSON.stringify(data, null, 2),
       );
-      signal?.throwIfAborted();
       if (path === null)
         throw new NativeBridgeError({
           code: "USER_CANCELLED",
@@ -249,7 +256,7 @@ export function RecordsTable() {
           retryable: false,
         });
       if (!filtered) setDirty(false);
-      toast.success(t("csv.saved"));
+      toast.success(latest("csv.saved"));
     } finally {
       exportLock.current = false;
       setExporting(false);
@@ -313,7 +320,7 @@ export function RecordsTable() {
             disabled={exporting}
             onClick={() =>
               void exportRecords("csv").catch((error: unknown) =>
-                toast.error(nativeErrorText(error, t)),
+                toast.error(nativeErrorText(error, latest)),
               )
             }
           >
@@ -324,7 +331,7 @@ export function RecordsTable() {
             disabled={exporting}
             onClick={() =>
               void exportRecords("json").catch((error: unknown) =>
-                toast.error(nativeErrorText(error, t)),
+                toast.error(nativeErrorText(error, latest)),
               )
             }
           >
@@ -335,7 +342,7 @@ export function RecordsTable() {
             disabled={exporting}
             onClick={() =>
               void exportRecords("csv", true).catch((error: unknown) =>
-                toast.error(nativeErrorText(error, t)),
+                toast.error(nativeErrorText(error, latest)),
               )
             }
           >
@@ -404,11 +411,6 @@ export function RecordsTable() {
           <span className="min-w-0 truncate tabular-nums">
             {t("labs.data.selected", { count: selected.length })}
           </span>
-          <HelpTooltip
-            label={`${t("labs.data.records")} · ${t("labs.data.virtual")}`}
-          >
-            {t("labs.data.virtualHint")}
-          </HelpTooltip>
         </div>
         <Dialog
           open={replacement !== null}
@@ -461,7 +463,7 @@ export function RecordsTable() {
                   <col key={id} style={{ width }} />
                 ))}
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-card">
+            <thead data-surface="reading" className="sticky top-0 z-10">
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
                   {group.headers
@@ -470,7 +472,7 @@ export function RecordsTable() {
                       <th
                         key={header.id}
                         scope="col"
-                        className="relative h-11 border-b px-3 text-xs font-medium"
+                        className="relative h-10 border-b px-3 py-1 text-xs font-medium"
                         aria-sort={
                           header.column.getCanSort()
                             ? header.column.getIsSorted() === "asc"
@@ -483,8 +485,10 @@ export function RecordsTable() {
                       >
                         {header.column.getCanSort() ? (
                           <button
+                            data-surface="transparent"
+                            data-variant="ghost"
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="inline-flex min-h-8 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={header.column.getToggleSortingHandler()}
                           >
                             <table.FlexRender header={header} />
@@ -527,6 +531,7 @@ export function RecordsTable() {
                 <tr aria-hidden="true">
                   <td
                     colSpan={columns.length - hidden.size}
+                    className="border-0 p-0"
                     style={{ height: first.start }}
                   />
                 </tr>
@@ -534,6 +539,8 @@ export function RecordsTable() {
               {visible.map(({ row, index }) => (
                 <tr
                   key={row.id}
+                  ref={virtual ? virtualizer.measureElement : undefined}
+                  data-index={virtual ? index : undefined}
                   aria-rowindex={
                     virtual
                       ? index + 2
@@ -542,15 +549,14 @@ export function RecordsTable() {
                         index +
                         2
                   }
-                  className="border-b last:border-0 hover:bg-muted/50"
-                  style={{ height: 48 }}
+                  className="h-10 border-b last:border-0 hover:bg-(--surface-state-hover)"
                   data-state={row.getIsSelected() ? "selected" : undefined}
                 >
                   {row
                     .getAllCells()
                     .filter((cell) => !hidden.has(cell.column.id))
                     .map((cell) => (
-                      <td key={cell.id} className="truncate px-3 py-2">
+                      <td key={cell.id} className="truncate px-3 py-1">
                         <table.FlexRender cell={cell} />
                       </td>
                     ))}
@@ -560,6 +566,7 @@ export function RecordsTable() {
                 <tr aria-hidden="true">
                   <td
                     colSpan={columns.length - hidden.size}
+                    className="border-0 p-0"
                     style={{ height: virtualizer.getTotalSize() - last.end }}
                   />
                 </tr>

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ACCENTS,
   applySettings,
   DEFAULT_SETTINGS,
   loadSettings,
@@ -30,6 +31,51 @@ describe("versioned settings model", () => {
     vi.spyOn(navigator, "languages", "get").mockReturnValue(["zh-CN"]);
   });
   afterEach(() => vi.restoreAllMocks());
+  it("扩展主题色可往返保存，旧偏好补齐自定义颜色而不改原预设", () => {
+    for (const accent of ACCENTS) {
+      const settings = { ...DEFAULT_SETTINGS, accent, customAccent: "#123ABC" };
+      expect(migrateSettings(settingsDocument(settings))).toEqual(settings);
+    }
+    for (const document of [
+      { accent: "blue" },
+      { schemaVersion: 1, settings: { accent: "blue" } },
+      { schemaVersion: 5, accent: "blue" },
+    ])
+      expect(migrateSettings(document)).toMatchObject({
+        accent: "blue",
+        customAccent: DEFAULT_SETTINGS.customAccent,
+      });
+    expect(settingsDocument(DEFAULT_SETTINGS).schemaVersion).toBe(6);
+  });
+
+  it("自定义颜色在存档与补丁边界规范化，切换预设保留已选颜色", () => {
+    const custom = migrateSettings({
+      accent: "custom",
+      customAccent: " #aBc ",
+    });
+    expect(custom).toMatchObject({ accent: "custom", customAccent: "#AABBCC" });
+    expect(
+      normalizeSettingsPatch(DEFAULT_SETTINGS, {
+        accent: "custom",
+        customAccent: " #12abEF ",
+      }),
+    ).toEqual({ accent: "custom", customAccent: "#12ABEF" });
+    expect(normalizeSettingsPatch(custom, { accent: "teal" })).toEqual({
+      accent: "teal",
+    });
+    expect(migrateSettings({ ...custom, accent: "teal" }).customAccent).toBe(
+      "#AABBCC",
+    );
+    expect(
+      migrateSettings({
+        accent: "custom",
+        customAccent: "url(https://example.com)",
+      }),
+    ).toMatchObject({
+      accent: "custom",
+      customAccent: DEFAULT_SETTINGS.customAccent,
+    });
+  });
   it("defaults legacy startup update checks on and preserves an explicit opt-out", () => {
     expect(
       migrateSettings({ schemaVersion: 3, language: "en" }).autoCheckUpdates,
@@ -94,7 +140,7 @@ describe("versioned settings model", () => {
     );
   });
 
-  it("schema 2 升级保留偏好，导入图片随 schema 3 存档并可移除", () => {
+  it("schema 2 升级保留偏好，导入图片随当前 schema 存档并可移除", () => {
     const old = migrateSettings({
       schemaVersion: 2,
       language: "en",
@@ -120,7 +166,7 @@ describe("versioned settings model", () => {
       customBackground,
     });
     expect(migrateSettings(settingsDocument(custom))).toEqual(custom);
-    expect(settingsDocument(custom).schemaVersion).toBe(3);
+    expect(settingsDocument(custom).schemaVersion).toBe(SETTINGS_VERSION);
     expect(normalizeSettingsPatch(custom, { customBackground: null })).toEqual({
       customBackground: null,
       background: "plain",
@@ -231,7 +277,7 @@ describe("versioned settings model", () => {
       schemaVersion: 999,
       sidebarWidth: 999,
       language: "bad",
-      accent: "pink",
+      accent: "invalid-accent",
       unexpected: true,
     } as unknown as Partial<AppSettings>;
     const patch = normalizeSettingsPatch(current, unsafe);
@@ -269,7 +315,11 @@ describe("loadSettings", () => {
   it("非法枚举值回落到默认值，合法值保留", () => {
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ accent: "pink", language: "fr", menuBar: false }),
+      JSON.stringify({
+        accent: "invalid-accent",
+        language: "fr",
+        menuBar: false,
+      }),
     );
     const settings = loadSettings();
     expect(settings.accent).toBe("neutral");
@@ -311,18 +361,79 @@ describe("loadSettings", () => {
     );
     expect(loadSettings()).toMatchObject({
       background: "moonlit",
-      backgroundIntensity: "strong",
+      backgroundIntensity: 70,
     });
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ backgroundIntensity: "invalid" }),
     );
-    expect(loadSettings().backgroundIntensity).toBe("balanced");
+    expect(loadSettings().backgroundIntensity).toBe(50);
   });
+  it.each([
+    ["subtle", 30],
+    ["balanced", 50],
+    ["strong", 70],
+    [0, 0],
+    [100, 100],
+    [34, 30],
+    [36, 40],
+    [-10, 0],
+    [110, 100],
+    [NaN, 50],
+    [Infinity, 50],
+    ["90", 50],
+  ] as const)(
+    "强度 %s 迁移或规范化为 %s，保留其他偏好",
+    (backgroundIntensity, expected) => {
+      expect(
+        migrateSettings({
+          schemaVersion: 3,
+          backgroundIntensity,
+          accent: "rose",
+        }),
+      ).toMatchObject({ backgroundIntensity: expected, accent: "rose" });
+    },
+  );
 });
 
 describe("applySettings", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("自定义主题色只写专属变量，预设切换保留变量键且重置恢复默认配色", () => {
+    const root = document.documentElement;
+    root.classList.add("dark");
+    root.style.removeProperty("--primary");
+    applySettings(
+      { ...DEFAULT_SETTINGS, accent: "custom", customAccent: "#000000" },
+      { includeTheme: false },
+    );
+    expect(root.dataset.accent).toBe("custom");
+    expect(root.style.getPropertyValue("--custom-accent-light")).toBe(
+      "#000000",
+    );
+    const dark = root.style.getPropertyValue("--custom-accent-dark");
+    expect(dark).toMatch(/^#[0-9A-F]{6}$/);
+    expect(dark).not.toBe("#000000");
+    expect(root.style.getPropertyValue("--primary")).toBe("");
+    expect(root).toHaveClass("dark");
+    applySettings(
+      { ...DEFAULT_SETTINGS, accent: "cyan", customAccent: "#000000" },
+      { includeTheme: false },
+    );
+    expect(root.dataset.accent).toBe("cyan");
+    expect(root.style.getPropertyValue("--custom-accent-light")).toBe(
+      "#000000",
+    );
+    expect(root.style.getPropertyValue("--custom-accent-dark")).toBe(dark);
+    applySettings(DEFAULT_SETTINGS, { includeTheme: false });
+    expect(root.dataset.accent).toBe("neutral");
+    expect(root.style.getPropertyValue("--custom-accent-light")).not.toBe(
+      "#000000",
+    );
+    expect(root.style.getPropertyValue("--custom-accent-dark")).toMatch(
+      /^#[0-9A-F]{6}$/,
+    );
+    expect(root.style.getPropertyValue("--primary")).toBe("");
+  });
   it("运行时应用其余偏好时保留主题旧帧，由主题同步统一提交", () => {
     const root = document.documentElement;
     root.classList.remove("light");
@@ -361,14 +472,15 @@ describe("applySettings", () => {
       font: "mono",
       language: "en",
       motion: "reduced",
-      backgroundIntensity: "subtle",
+      backgroundIntensity: 30,
     });
 
     const root = document.documentElement;
     expect(root.dataset.accent).toBe("rose");
     expect(root.dataset.font).toBe("mono");
     expect(root.dataset.motion).toBe("reduced");
-    expect(root.dataset.backgroundIntensity).toBe("subtle");
+    expect(root.dataset.backgroundIntensity).toBe("30");
+    expect(root.style.getPropertyValue("--skin-exposure")).toBe("0.3");
     expect(root.lang).toBe("en");
   });
 });

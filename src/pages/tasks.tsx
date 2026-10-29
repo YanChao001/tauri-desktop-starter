@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpenIcon, PlayIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -101,11 +102,16 @@ export default function Tasks() {
       void recentWorkbenchFiles()
         .then((entries) => {
           if (!disposed)
-            setDirectories(
-              entries
-                .filter((entry) => entry.directory)
+            setDirectories((current) => [
+              ...current,
+              ...entries
+                .filter(
+                  (entry) =>
+                    entry.directory &&
+                    !current.some((directory) => directory.id === entry.id),
+                )
                 .map(({ id, name, path }) => ({ id, name, path })),
-            );
+            ]);
         })
         .catch((reason) => {
           if (!disposed) toast.error(nativeErrorText(reason, latest));
@@ -148,7 +154,7 @@ export default function Tasks() {
   return (
     <NativePage title={t("tasks.title")} description={t("tasks.description")}>
       <section
-        className="@container space-y-3 rounded-xl border bg-card p-4"
+        className="@container space-y-3 rounded-xl border app-surface p-4"
         aria-busy={pending !== null || (!snapshot && !error)}
       >
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 @3xl:grid-cols-[minmax(0,1fr)_12rem_auto]">
@@ -247,10 +253,6 @@ export default function Tasks() {
                 ? `${t("tasks.active", { count: snapshot.active })} · ${t("tasks.queued", { count: snapshot.queued })}`
                 : t(error ? "tasks.countUnavailable" : "tasks.loading")}
             </p>
-            <HelpTooltip label={`${t("tasks.kind")} · ${t("title.help")}`}>
-              <p>{t("tasks.limits")}</p>
-              <p>{t("tasks.capacity")}</p>
-            </HelpTooltip>
           </div>
           {directoryId ? (
             <div className="flex min-w-0 items-center gap-1">
@@ -274,9 +276,6 @@ export default function Tasks() {
       </section>
       <div className="flex items-center gap-2">
         <h3 className="text-base font-medium">{t("tasks.history")}</h3>
-        <HelpTooltip label={`${t("tasks.history")} · ${t("title.help")}`}>
-          {t("tasks.historyHint")}
-        </HelpTooltip>
       </div>
       {!snapshot ? (
         error ? (
@@ -287,17 +286,17 @@ export default function Tasks() {
         ) : (
           <p
             role="status"
-            className="rounded-xl border bg-card p-4 text-sm text-muted-foreground"
+            className="rounded-xl border app-surface p-4 text-sm text-muted-foreground"
           >
             {t("tasks.loading")}
           </p>
         )
       ) : !snapshot.tasks.length ? (
-        <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+        <p className="rounded-xl border app-surface p-4 text-sm text-muted-foreground">
           {t("tasks.empty")}
         </p>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-3">
           {snapshot.tasks.map((task) => {
             const active =
               task.status === "queued" ||
@@ -309,7 +308,7 @@ export default function Tasks() {
             return (
               <li
                 key={task.id}
-                className="min-w-0 space-y-3 rounded-xl border bg-card p-4"
+                className="min-w-0 space-y-3 rounded-xl border app-surface p-4"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -325,7 +324,7 @@ export default function Tasks() {
                   </Badge>
                   <span className="text-xs text-muted-foreground">
                     {new Date(Number(task.startedAt)).toLocaleString(
-                      language === "zh" ? "zh-CN" : "en",
+                      getLocale(language).documentLang,
                     )}
                   </span>
                 </div>
@@ -429,13 +428,16 @@ export default function Tasks() {
                 {expanded === task.id ? (
                   <div className="min-w-0 space-y-2 border-t pt-3">
                     {task.message || task.failure?.message ? (
-                      <details className="rounded-md border p-2 text-xs">
-                        <summary className="cursor-pointer font-medium">
+                      <details
+                        data-disclosure-radius="md"
+                        className="border text-xs"
+                      >
+                        <summary className="cursor-pointer px-3 py-2 font-medium">
                           {t("tasks.diagnostics")}
                         </summary>
                         <p
                           tabIndex={0}
-                          className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="mx-3 my-2 max-h-32 overflow-auto whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           {task.message ?? task.failure?.message}
                         </p>

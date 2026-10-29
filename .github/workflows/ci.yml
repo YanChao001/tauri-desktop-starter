@@ -101,6 +101,8 @@ jobs:
       - run: |
           printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           pnpm exec playwright install --with-deps --only-shell chromium
+      - name: 宿主与隔离 SDK 共享样式对照
+        run: pnpm test:extensions:styles
       - run: pnpm exec playwright test
       - name: 保留浏览器截图、性能采样与失败 trace
         if: always()
@@ -175,6 +177,9 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+      - name: Wasmtime 缓存补丁压缩往返
+        run: pnpm test:wasmtime-cache
+
       - name: 扩展 worker 隔离、取消与协议回归（无 GUI）
         run: pnpm extension:test:worker
 
@@ -239,16 +244,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/extension-tools
-          curl --fail --location --retry 2 https://github.com/extism/js-pdk/releases/download/v1.7.0/extism-js-x86_64-linux-v1.7.0.gz -o artifacts/extension-tools/extism-js.gz
-          printf '63b72da2f5e88655522dc21477de549f238a2f40546a69ce4e0fce7e78654035  artifacts/extension-tools/extism-js.gz\n' | sha256sum --check
-          gzip --decompress --stdout artifacts/extension-tools/extism-js.gz > artifacts/extension-tools/extism-js
-          chmod +x artifacts/extension-tools/extism-js
-          curl --fail --location --retry 2 https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz -o artifacts/extension-tools/binaryen.tar.gz
-          printf '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  artifacts/extension-tools/binaryen.tar.gz\n' | sha256sum --check
-          tar -xzf artifacts/extension-tools/binaryen.tar.gz -C artifacts/extension-tools
-          export EXTISM_JS="$PWD/artifacts/extension-tools/extism-js"
-          export PATH="$PWD/artifacts/extension-tools/binaryen-version_133/bin:$PATH"
+          mkdir -p .cache/extension-tools
+          curl --fail --location --retry 2 https://github.com/extism/js-pdk/releases/download/v1.7.0/extism-js-x86_64-linux-v1.7.0.gz -o .cache/extension-tools/extism-js.gz
+          printf '63b72da2f5e88655522dc21477de549f238a2f40546a69ce4e0fce7e78654035  .cache/extension-tools/extism-js.gz\n' | sha256sum --check
+          gzip --decompress --stdout .cache/extension-tools/extism-js.gz > .cache/extension-tools/extism-js
+          chmod +x .cache/extension-tools/extism-js
+          curl --fail --location --retry 2 https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz -o .cache/extension-tools/binaryen.tar.gz
+          printf '2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  .cache/extension-tools/binaryen.tar.gz\n' | sha256sum --check
+          tar -xzf .cache/extension-tools/binaryen.tar.gz -C .cache/extension-tools
+          export EXTISM_JS="$PWD/.cache/extension-tools/extism-js"
+          export PATH="$PWD/.cache/extension-tools/binaryen-version_133/bin:$PATH"
           pnpm --dir examples/extensions install --frozen-lockfile
           pnpm --dir examples/extensions typecheck
           pnpm --dir examples/extensions build

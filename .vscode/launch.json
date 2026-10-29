@@ -10,6 +10,8 @@
           "build",
           "--manifest-path",
           "${workspaceFolder}/src-tauri/Cargo.toml",
+          "--bin",
+          "tauri-desktop-starter",
           "--no-default-features"
         ],
         "filter": { "kind": "bin" }

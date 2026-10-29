@@ -54,7 +54,7 @@ function ViewTable({
       >
         <table className="w-full text-left text-sm">
           {label ? <caption className="sr-only">{label}</caption> : null}
-          <thead className="bg-muted/50">
+          <thead data-surface="reading">
             <tr>
               {columns.map((column, i) => (
                 <th scope="col" key={i} className="px-4 py-3 font-medium">
@@ -113,7 +113,7 @@ function ViewTable({
 function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "markdown")
     return (
-      <div className="min-w-0 rounded-xl border bg-card p-5">
+      <div className="min-w-0 rounded-xl border app-surface p-4">
         <Suspense fallback={<Skeleton className="h-24 w-full" />}>
           <SafeMarkdown content={block.text} />
         </Suspense>
@@ -123,7 +123,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
     return (
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {block.items.map((metric, i) => (
-          <div key={i} className="min-w-0 rounded-xl border bg-card p-4">
+          <div key={i} className="min-w-0 rounded-xl border app-surface p-4">
             <dt className="text-xs text-muted-foreground">{metric.label}</dt>
             <dd className="mt-2 break-words text-xl font-semibold tracking-tight">
               {metric.value}
@@ -135,7 +135,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   if (block.kind === "progress") {
     if (block.value === null || block.max === null) return null;
     return (
-      <div className="space-y-2 rounded-xl border bg-card p-4">
+      <div className="space-y-2 rounded-xl border app-surface p-4">
         <div className="flex items-center justify-between gap-3 text-sm">
           <span>{block.label}</span>
           <span className="text-muted-foreground">
@@ -153,7 +153,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
   }
   if (block.kind === "image")
     return (
-      <figure className="overflow-hidden rounded-xl border bg-card p-3">
+      <figure className="overflow-hidden rounded-xl border app-surface p-3">
         <img
           src={block.src}
           alt={block.alt}
@@ -164,7 +164,7 @@ function ViewBlock({ block }: { block: ExtensionViewBlock }) {
     );
   if (block.kind === "chart")
     return (
-      <div className="min-w-0 space-y-3 rounded-xl border bg-card p-4">
+      <div className="min-w-0 space-y-3 rounded-xl border app-surface p-4">
         <Suspense
           fallback={
             <Skeleton
@@ -224,17 +224,20 @@ export function ExtensionView({
   const body = (
     <div
       className={cn(
-        "grid min-w-0 gap-6",
+        "grid min-w-0 gap-4",
         controls && (view.blocks?.length ?? 0) > 0 && "lg:grid-cols-2",
       )}
     >
       {controls ? (
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-3">
           {view.fields.map((field) => {
             const fieldId = `${id}-${field.id}`;
             const value = fields[field.id] ?? "";
             const byteLimit = extensionFieldBytes(field);
-            const fieldError = view.errors?.[field.id];
+            const fieldError =
+              view.errors && Object.hasOwn(view.errors, field.id)
+                ? view.errors[field.id]
+                : undefined;
             const invalid = invalidFields.has(field.id) || Boolean(fieldError);
             const errorText = invalidFields.has(field.id)
               ? invalidFieldValues?.has(field.id)
@@ -304,7 +307,7 @@ export function ExtensionView({
                           aria-invalid={invalid}
                           aria-describedby={invalid ? errorId : undefined}
                           data-operation-locked={blocked}
-                          className={cn("w-full", LOCKED_CONTROL_CLASS)}
+                          className={cn("w-full", LOCKED_INPUT_CLASS)}
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -360,7 +363,7 @@ export function ExtensionView({
               className={cn(
                 "grid gap-2",
                 group.board &&
-                  "mx-auto w-full max-w-[22rem] rounded-2xl border bg-muted/30 p-3",
+                  "mx-auto w-full max-w-[22rem] rounded-2xl border app-surface p-3",
               )}
               style={{
                 gridTemplateColumns: `repeat(${group.columns}, minmax(0, 1fr))`,
@@ -369,11 +372,12 @@ export function ExtensionView({
               {group.actions.map((action) =>
                 group.board && action.disabled ? (
                   <span
+                    data-surface="solid"
                     key={action.id}
                     role={action.ariaLabel ? "group" : undefined}
                     aria-label={action.ariaLabel ?? undefined}
                     className={cn(
-                      "flex aspect-square min-w-0 items-center justify-center rounded-xl border bg-card p-0 text-center font-semibold leading-none text-card-foreground",
+                      "flex aspect-square min-w-0 items-center justify-center rounded-xl border p-0 text-center font-semibold leading-none text-card-foreground",
                       group.columns >= 6 || action.label.length >= 5
                         ? "text-sm"
                         : action.label.length >= 3
@@ -419,7 +423,7 @@ export function ExtensionView({
         </div>
       ) : null}
       {(view.blocks?.length ?? 0) > 0 ? (
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-3">
           {view.blocks?.map((block, i) => (
             <ViewBlock key={i} block={block} />
           ))}
@@ -437,7 +441,7 @@ export function ExtensionView({
       }}
     >
       <TabsList
-        className="mb-4 grid w-full gap-1 bg-muted/50 p-1 group-data-horizontal/tabs:h-auto"
+        className="mb-4 grid w-full gap-1 p-1 group-data-horizontal/tabs:h-auto"
         style={{
           gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 8rem), 1fr))",
         }}

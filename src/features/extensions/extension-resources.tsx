@@ -164,40 +164,40 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
         ? ""
         : t("ext.noOutput");
   return (
-    <div className="space-y-4 border-t pt-4">
+    <div className="min-w-0 space-y-3">
       {hasStorage ? (
-        <div className="space-y-2">
-          <div className="flex min-w-0 items-center gap-3">
-            <h4 className="flex shrink-0 items-center gap-2 font-medium">
+        <fieldset className="min-w-0 space-y-3" aria-label={t("ext.storage")}>
+          <legend className="max-w-full text-sm font-medium">
+            <h4 className="inline-flex items-center gap-2 text-sm font-medium">
               {t("ext.storage")}
               <HelpTooltip label={`${t("ext.storage")} · ${t("title.help")}`}>
                 {t("ext.storageHint")}
               </HelpTooltip>
             </h4>
-            <div
-              role="status"
-              aria-label={t("ext.storage")}
-              className="flex h-7 min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground"
-            >
-              <TooltipProvider delayDuration={650}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      tabIndex={storageStatusText ? 0 : undefined}
-                      className="truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {storageStatusText}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[min(18rem,var(--radix-tooltip-content-available-width))] break-words">
+          </legend>
+          <div
+            role="status"
+            aria-label={t("ext.storage")}
+            className="flex min-h-5 min-w-0 items-center gap-2 text-sm text-muted-foreground"
+          >
+            <TooltipProvider delayDuration={650}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={storageStatusText ? 0 : undefined}
+                    className="truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     {storageStatusText}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {storageError ? <ReadFailure error={storageError} /> : null}
-            </div>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[min(18rem,var(--radix-tooltip-content-available-width))] break-words">
+                  {storageStatusText}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {storageError ? <ReadFailure error={storageError} /> : null}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -258,11 +258,11 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
               </DialogContent>
             </Dialog>
           </div>
-        </div>
+        </fieldset>
       ) : null}
       {manifest.network.length ? (
         <form
-          className="space-y-3"
+          className="min-w-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (!origin || !alias.trim() || !secret) return;
@@ -279,19 +279,24 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
             });
           }}
         >
-          <div className="flex min-w-0 items-center gap-3">
-            <h4 className="flex shrink-0 items-center gap-2 font-medium">
-              {t("ext.credentials")}
-              <HelpTooltip
-                label={`${t("ext.credentials")} · ${t("title.help")}`}
-              >
-                {t("ext.credentialsHint")}
-              </HelpTooltip>
-            </h4>
+          <fieldset
+            className="min-w-0 space-y-3"
+            aria-label={t("ext.credentials")}
+          >
+            <legend className="max-w-full text-sm font-medium">
+              <h4 className="inline-flex items-center gap-2 text-sm font-medium">
+                {t("ext.credentials")}
+                <HelpTooltip
+                  label={`${t("ext.credentials")} · ${t("title.help")}`}
+                >
+                  {t("ext.credentialsHint")}
+                </HelpTooltip>
+              </h4>
+            </legend>
             <div
               role="status"
               aria-label={t("ext.credentials")}
-              className="flex h-7 min-w-0 flex-1 items-center text-sm text-muted-foreground"
+              className="flex min-w-0 items-center text-sm text-muted-foreground empty:hidden"
             >
               {credentialsError ? (
                 <ReadFailure error={credentialsError} />
@@ -299,100 +304,104 @@ export function ExtensionResources({ item }: { item: ExtensionInfo }) {
                 <span className="truncate">{t("common.loading")}</span>
               ) : null}
             </div>
-          </div>
-          {slots.map((slot) => (
-            <div
-              key={`${slot.origin}:${slot.alias}`}
-              className="flex min-w-0 items-center justify-between gap-2 text-sm"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate">
-                  {slot.alias} · {slot.origin}
-                </span>
-                <HelpTooltip
-                  label={`${slot.alias} · ${t("title.help")}`}
-                  className="shrink-0"
-                >
-                  <span className="break-all select-text">
+            {slots.map((slot) => (
+              <div
+                key={`${slot.origin}:${slot.alias}`}
+                className="flex min-w-0 items-center justify-between gap-2 text-sm"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate">
                     {slot.alias} · {slot.origin}
                   </span>
-                </HelpTooltip>
+                  <HelpTooltip
+                    label={`${slot.alias} · ${t("title.help")}`}
+                    className="shrink-0"
+                  >
+                    <span className="break-all select-text">
+                      {slot.alias} · {slot.origin}
+                    </span>
+                  </HelpTooltip>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="shrink-0"
+                  disabled={busy}
+                  onClick={(event) => {
+                    deleteTrigger.current = event.currentTarget;
+                    setError(null);
+                    setCredentialToDelete(slot);
+                  }}
+                  aria-label={t("ext.deleteCredentialNamed", {
+                    alias: slot.alias,
+                  })}
+                >
+                  {t("ext.deleteCredential")}
+                </Button>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                className="shrink-0"
-                disabled={busy}
-                onClick={(event) => {
-                  deleteTrigger.current = event.currentTarget;
-                  setError(null);
-                  setCredentialToDelete(slot);
-                }}
-                aria-label={t("ext.deleteCredentialNamed", {
-                  alias: slot.alias,
-                })}
-              >
-                {t("ext.deleteCredential")}
-              </Button>
+            ))}
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-origin`}>
+                {t("ext.credentialOrigin")}
+              </Label>
+              <Select value={origin} onValueChange={setOrigin} disabled={busy}>
+                <SelectTrigger id={`${id}-origin`} className="w-full min-w-0">
+                  <SelectValue className="min-w-0 truncate" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {manifest.network.map((rule) => (
+                    <SelectItem key={rule.origin} value={rule.origin}>
+                      {rule.origin}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ))}
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-origin`}>{t("ext.credentialOrigin")}</Label>
-            <Select value={origin} onValueChange={setOrigin} disabled={busy}>
-              <SelectTrigger id={`${id}-origin`} className="w-full min-w-0">
-                <SelectValue className="min-w-0 truncate" />
-              </SelectTrigger>
-              <SelectContent position="popper">
-                {manifest.network.map((rule) => (
-                  <SelectItem key={rule.origin} value={rule.origin}>
-                    {rule.origin}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-alias`}>{t("ext.credentialAlias")}</Label>
-            <Input
-              id={`${id}-alias`}
-              value={alias}
-              maxLength={64}
-              pattern="[A-Za-z0-9][A-Za-z0-9._-]*"
-              disabled={busy}
-              onChange={(event) => setAlias(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-secret`}>{t("ext.credentialSecret")}</Label>
-            <Input
-              id={`${id}-secret`}
-              type="password"
-              autoComplete="new-password"
-              value={secret}
-              maxLength={8192}
-              disabled={busy}
-              onChange={(event) => setSecret(event.target.value)}
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              disabled={busy || !alias.trim() || !secret}
-            >
-              {t("ext.saveCredential")}
-            </Button>
-            {!hasStorage ? (
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-alias`}>{t("ext.credentialAlias")}</Label>
+              <Input
+                id={`${id}-alias`}
+                value={alias}
+                maxLength={64}
+                pattern="[A-Za-z0-9][A-Za-z0-9._-]*"
+                disabled={busy}
+                onChange={(event) => setAlias(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-secret`}>
+                {t("ext.credentialSecret")}
+              </Label>
+              <Input
+                id={`${id}-secret`}
+                type="password"
+                autoComplete="new-password"
+                value={secret}
+                maxLength={8192}
+                disabled={busy}
+                onChange={(event) => setSecret(event.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button
-                type="button"
                 variant="outline"
-                disabled={busy || loading}
-                onClick={() => void act(async () => {})}
+                disabled={busy || !alias.trim() || !secret}
               >
-                {t("common.refresh")}
+                {t("ext.saveCredential")}
               </Button>
-            ) : null}
-          </div>
+              {!hasStorage ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || loading}
+                  onClick={() => void act(async () => {})}
+                >
+                  {t("common.refresh")}
+                </Button>
+              ) : null}
+            </div>
+          </fieldset>
         </form>
       ) : null}
       <Dialog

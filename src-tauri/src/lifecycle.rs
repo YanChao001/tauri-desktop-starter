@@ -436,8 +436,9 @@ pub fn request_action(app: &tauri::AppHandle, action: LifecycleAction, label: Op
                     .state::<crate::extensions::ExtensionStore>()
                     .inner()
                     .clone();
-                extensions.begin_shutdown();
                 if crate::blocking::run(move || {
+                    // 先获得阻塞执行名额；队列满时不能提前永久关闭扩展入口。
+                    extensions.begin_shutdown();
                     extensions.wait_stopped();
                     Ok(())
                 })

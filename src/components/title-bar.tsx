@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  CheckIcon,
-  Code2Icon,
-  CopyIcon,
-  InfoIcon,
   Maximize2Icon,
+  MinimizeIcon,
   MinusIcon,
   MonitorIcon,
   MoonIcon,
-  RefreshCwIcon,
-  SettingsIcon,
   SunIcon,
   SearchIcon,
   XIcon,
@@ -75,7 +70,7 @@ export function TitleBar({
   const { t } = useI18n();
   const { settings } = useSettings();
   const { theme } = useThemeSwitch();
-  const { execute, aboutOpen, setAboutOpen } = useCommands();
+  const { execute, aboutOpen, setAboutOpen, fullscreen } = useCommands();
   const mac = isMacOS();
 
   const native = isTauri();
@@ -126,7 +121,7 @@ export function TitleBar({
     <div
       data-tauri-drag-region
       data-standalone={standalone}
-      className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b bg-background/80 backdrop-blur"
+      className="app-title-bar flex h-10 shrink-0 select-none items-stretch border-b"
     >
       <div
         data-extension-window-identity={standalone ? "" : undefined}
@@ -177,33 +172,48 @@ export function TitleBar({
           >
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.file")}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-44">
-                <CommandMenuItem id="open-settings" icon={SettingsIcon} />
+                <CommandMenuItem id="open-settings" />
                 <DropdownMenuSeparator />
-                <CommandMenuItem id="reload" icon={RefreshCwIcon} />
-                <CommandMenuItem id="quit" icon={XIcon} />
+                <CommandMenuItem id="reload" />
+                <CommandMenuItem id="quit" />
               </DropdownMenuContent>
             </DropdownMenu>
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.edit")}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <CommandMenuItem id="copy-link" icon={CopyIcon} />
-                <CommandMenuItem id="select-all" icon={CheckIcon} />
+                <CommandMenuItem id="copy-link" />
+                <CommandMenuItem id="select-all" />
               </DropdownMenuContent>
             </DropdownMenu>
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.view")}
                 </button>
               </DropdownMenuTrigger>
@@ -235,19 +245,24 @@ export function TitleBar({
                 </DropdownMenuCheckboxItem>
                 <CommandMenuItem id="toggle-sidebar" />
                 <CommandMenuItem id="toggle-fullscreen" />
-                <CommandMenuItem id="command-palette" icon={SearchIcon} />
+                <CommandMenuItem id="command-palette" />
               </DropdownMenuContent>
             </DropdownMenu>
 
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="app-title-menu-trigger">
+                <button
+                  data-surface="transparent"
+                  type="button"
+                  data-variant="ghost"
+                  className="app-title-menu-trigger"
+                >
                   {t("title.help")}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <CommandMenuItem id="open-docs" icon={InfoIcon} />
-                <CommandMenuItem id="open-repo" icon={Code2Icon} />
+                <CommandMenuItem id="open-docs" />
+                <CommandMenuItem id="open-repo" />
                 <DropdownMenuSeparator />
                 <CommandMenuItem id="check-updates" />
                 <CommandMenuItem id="copy-diagnostics" />
@@ -309,6 +324,25 @@ export function TitleBar({
           </TooltipContent>
         </Tooltip>
 
+        {fullscreen && !standalone ? (
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 rounded-none"
+                aria-label={t("title.exitFullscreen")}
+                aria-keyshortcuts="F11 Escape"
+                onClick={() => void execute("exit-fullscreen")}
+              >
+                <MinimizeIcon className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {t("title.fullscreenHint")}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         {standalone ? (
           <ExtensionChromeSlot
             placement="titlebar"
@@ -321,11 +355,13 @@ export function TitleBar({
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
+                  data-surface="transparent"
                   type="button"
                   aria-label={t("title.minimize")}
                   data-window-control
+                  data-variant="ghost"
                   onClick={() => void execute("minimize-window")}
-                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-(--surface-state-hover) hover:text-foreground"
                 >
                   <MinusIcon className="size-4" />
                 </button>
@@ -337,13 +373,15 @@ export function TitleBar({
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
+                  data-surface="transparent"
                   type="button"
                   aria-label={
                     maximized ? t("title.restore") : t("title.maximize")
                   }
                   data-window-control
+                  data-variant="ghost"
                   onClick={() => void execute("toggle-maximize")}
-                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-(--surface-state-hover) hover:text-foreground"
                 >
                   <Maximize2Icon className="size-3.5" />
                 </button>
@@ -355,9 +393,11 @@ export function TitleBar({
             <Tooltip disableHoverableContent>
               <TooltipTrigger asChild>
                 <button
+                  data-surface="transparent"
                   type="button"
                   aria-label={t("title.close")}
                   data-window-control
+                  data-variant="ghost"
                   onClick={() => void execute("close-window")}
                   className="flex w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
                 >

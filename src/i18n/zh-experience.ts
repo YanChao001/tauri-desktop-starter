@@ -71,9 +71,8 @@ export const zhExperience = {
   "experience.reliability.4": "确认备份与恢复内容",
   "experience.reliability.4Hint":
     "导出并预览备份，核对笔记、回收站与草稿。仅在隔离测试数据上执行恢复。",
-  "experience.previewTitle": "在桌面中，这一步会发生什么",
-  "experience.previewHint":
-    "以下是本页的操作流程示意，不会实际操作你的系统或文件。",
+  "experience.previewTitle": "在桌面应用中体验",
+  "experience.previewHint": "此功能需要桌面应用，以下为操作流程预览。",
   "experience.previewOpen": "查看完整体验路线",
   "experience.preview.workbench.1": "选择或拖入文件",
   "experience.preview.workbench.2": "预览、编辑与冲突处理",

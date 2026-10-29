@@ -42,7 +42,7 @@ export default function Media() {
           value="content"
           forceMount
           hidden={view !== "content"}
-          className="demo-tab-panel space-y-5"
+          className="demo-tab-panel space-y-4"
         >
           <MarkdownPanel />
           <MediaPreview active={view === "content"} />
@@ -58,7 +58,7 @@ export default function Media() {
               fallback={
                 <div
                   role="status"
-                  className="min-h-96 rounded-xl bg-card p-4 text-sm text-muted-foreground"
+                  className="min-h-96 rounded-xl app-surface p-4 text-sm text-muted-foreground"
                 >
                   {t("labs.loading")}
                 </div>
@@ -72,7 +72,7 @@ export default function Media() {
           value="connections"
           forceMount
           hidden={view !== "connections"}
-          className="demo-tab-panel space-y-5"
+          className="demo-tab-panel space-y-4"
         >
           {visited.has("connections") && (
             <>

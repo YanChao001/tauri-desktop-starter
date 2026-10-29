@@ -177,7 +177,7 @@ export function ExtensionRecovery({
   return (
     <section
       aria-label={t("ext.recovery.title")}
-      className="space-y-3 rounded-xl border bg-card p-5"
+      className="min-w-0 space-y-3 rounded-xl border app-surface p-4"
     >
       <h3 className="flex items-center gap-2 font-semibold">
         {t("ext.recovery.title")}
@@ -194,7 +194,8 @@ export function ExtensionRecovery({
           <p
             aria-label={t("ext.recovery.archiveLocation")}
             tabIndex={0}
-            className="max-h-24 overflow-auto break-all rounded-md bg-muted p-3 font-mono text-xs select-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-surface="reading"
+            className="max-h-24 overflow-auto break-all rounded-md p-3 font-mono text-xs select-text outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {archivePath}
           </p>

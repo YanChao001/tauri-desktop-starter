@@ -102,7 +102,7 @@ export default function Diagnostics() {
         </CardHeader>
         <CardContent>
           <details>
-            <summary className="cursor-pointer rounded-sm text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <summary className="cursor-pointer text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {t("diagnostics.details")}
             </summary>
             <CodeBlock

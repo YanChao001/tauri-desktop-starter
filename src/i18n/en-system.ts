@@ -1,5 +1,7 @@
 import type { zhSystem } from "./zh-system";
 export const enSystem: Record<keyof typeof zhSystem, string> = {
+  "nativeError.busy":
+    "Too many native operations are running. Please try again shortly.",
   "lifecycle.title": "Save unfinished work",
   "lifecycle.description":
     "This action needs every window to be ready ({count} total). Save or finish your work first.",

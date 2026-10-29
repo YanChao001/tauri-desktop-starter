@@ -123,8 +123,7 @@ test("the local network fixture supports GET, keyboard POST, cache and offline s
   await expect(result).toContainText('"method": "GET"');
   await expect(
     page.locator("[data-sonner-toast]").filter({
-      hasText:
-        "Showing the last result offline. It may be out of date; no request was made.",
+      hasText: "Showing the last result. It may be out of date.",
     }),
   ).toBeVisible();
   expect(external).toEqual([]);
@@ -145,7 +144,10 @@ test("virtual scrolling reaches the last of 10,000 records with a bounded DOM an
   page,
 }) => {
   await page.goto("./#/data-studio");
-  await page.getByRole("checkbox", { name: "Continuous scrolling" }).check();
+  await page.getByText("Continuous scrolling", { exact: true }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Continuous scrolling" }),
+  ).toBeChecked();
   const table = page.getByRole("region", { name: "Demo records" });
   await expect(table.getByRole("table")).toHaveAttribute(
     "aria-rowcount",

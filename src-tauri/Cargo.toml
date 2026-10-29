@@ -1,6 +1,6 @@
 [package]
 name = "tauri-desktop-starter"
-version = "0.1.7"
+version = "0.1.8"
 description = "A complete desktop application starter"
 authors = ["Tauri Desktop Starter contributors"]
 license = "MIT"
@@ -63,6 +63,10 @@ tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
 default = []
 e2e = ["dep:tauri-plugin-wdio-webdriver"]
 bindings = []
+
+# 仅替换缓存 crate 的压缩依赖约束；来源、差异与撤销条件见补丁目录 README。
+[patch.crates-io]
+wasmtime-internal-cache = { path = "vendor/wasmtime-internal-cache" }
 
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.6"

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useExtensionActivity } from "./extension-activity";
 
 export type ExtensionSessionCloseHandle = {
@@ -43,6 +44,7 @@ export function ExtensionSessionClose({
   returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const active = useExtensionActivity();
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState(false);
@@ -104,7 +106,7 @@ export function ExtensionSessionClose({
       if (!controller.signal.aborted) {
         setError(reason);
         setOpen(true);
-        toast.error(nativeErrorText(reason, t), {
+        toast.error(nativeErrorText(reason, latest), {
           id: "extension-session-close",
         });
       }

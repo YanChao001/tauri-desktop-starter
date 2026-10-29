@@ -271,6 +271,25 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T
         .flatten()
 }
 
+fn load_saved_geometry(path: &std::path::Path) -> (SavedGeometry, bool) {
+    if let Some(saved) = read_json::<SavedGeometry>(path).filter(|saved| saved.schema_version == 1)
+    {
+        return (saved, true);
+    }
+    // 无法理解的已有存档只在内存中回落；普通窗口事件和退出不能覆盖未来结构。
+    let writable = matches!(
+        std::fs::symlink_metadata(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    );
+    (
+        SavedGeometry {
+            schema_version: 1,
+            ..Default::default()
+        },
+        writable,
+    )
+}
+
 #[derive(Default, Deserialize)]
 struct PluginWindowState {
     width: u32,
@@ -487,6 +506,7 @@ struct GeometryState {
     cache: Mutex<Cache>,
     writing: Mutex<()>,
     operations: Mutex<()>,
+    writable: AtomicBool,
     dirty: AtomicBool,
     stopped: AtomicBool,
     queued: AtomicBool,
@@ -494,7 +514,17 @@ struct GeometryState {
 
 impl GeometryState {
     fn save(&self) -> NativeResult<()> {
+        self.persist(false)
+    }
+
+    fn persist(&self, reset: bool) -> NativeResult<()> {
         let _writing = self.writing.lock().map_err(|_| geometry_unavailable())?;
+        if !reset && !self.writable.load(Ordering::Acquire) {
+            return Err(NativeError::new(
+                ErrorCode::StorageCorrupt,
+                "Unsupported window geometry is preserved; reset explicitly before saving",
+            ));
+        }
         let bytes = serde_json::to_vec_pretty(
             &self.cache.lock().map_err(|_| geometry_unavailable())?.saved,
         )
@@ -503,7 +533,10 @@ impl GeometryState {
         })?;
         atomic_write(&self.path, &bytes).map_err(|error| {
             NativeError::operation(ErrorCode::StorageIo, "Cannot save window geometry", error)
-        })
+        })?;
+        // 明确重置成功后才允许后续普通保存；写入失败继续保留保护状态。
+        self.writable.store(true, Ordering::Release);
+        Ok(())
     }
 }
 
@@ -813,7 +846,7 @@ pub fn reset(window: tauri::WebviewWindow, center: bool) -> NativeResult<WindowG
         drop(cache);
         describe(&window.as_ref().window(), &copy)
     })?;
-    state.save()?;
+    state.persist(true)?;
     Ok(result)
 }
 
@@ -1216,12 +1249,7 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
         .setup(|app, _| {
             let paths = DataPaths::resolve(app)?;
             let path = paths.config.join("window-geometry.json");
-            let saved = read_json::<SavedGeometry>(&path)
-                .filter(|saved| saved.schema_version == 1)
-                .unwrap_or(SavedGeometry {
-                    schema_version: 1,
-                    windows: HashMap::new(),
-                });
+            let (saved, writable) = load_saved_geometry(&path);
             // 旧插件未保存 DPI，仅在缺少逻辑存档时迁移物理尺寸，并按当前工作区约束。
             let legacy: HashMap<String, PluginWindowState> =
                 read_json(&app.path().app_config_dir()?.join(app.filename())).unwrap_or_default();
@@ -1242,6 +1270,7 @@ pub fn init() -> TauriPlugin<tauri::Wry> {
                 }),
                 writing: Mutex::new(()),
                 operations: Mutex::new(()),
+                writable: AtomicBool::new(writable),
                 dirty: AtomicBool::new(false),
                 stopped: AtomicBool::new(false),
                 queued: AtomicBool::new(false),
@@ -1626,6 +1655,7 @@ mod tests {
     fn logical_sizes_round_trip_per_window_without_saved_monitor_dpi() {
         let directory = tempfile::tempdir().unwrap();
         let file = directory.path().join("window-geometry.json");
+        assert!(load_saved_geometry(&file).1);
         let saved = SavedGeometry {
             schema_version: 1,
             windows: HashMap::from([
@@ -1634,7 +1664,8 @@ mod tests {
             ]),
         };
         atomic_write(&file, &serde_json::to_vec(&saved).unwrap()).unwrap();
-        let loaded: SavedGeometry = read_json(&file).unwrap();
+        let (loaded, writable) = load_saved_geometry(&file);
+        assert!(writable);
         assert_eq!(loaded.windows["main"], size(1120.0, 740.0));
         assert_eq!(loaded.windows["secondary"], size(960.0, 640.0));
         let fitted = fit_window(
@@ -1647,6 +1678,79 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fitted.size, PhysicalSize::new(2240, 1480));
+    }
+
+    fn stored_geometry(path: PathBuf) -> GeometryState {
+        let (saved, writable) = load_saved_geometry(&path);
+        GeometryState {
+            path,
+            cache: Mutex::new(Cache {
+                saved,
+                legacy: HashMap::new(),
+                positions: HashMap::new(),
+                entries: HashMap::new(),
+            }),
+            writing: Mutex::new(()),
+            operations: Mutex::new(()),
+            writable: AtomicBool::new(writable),
+            dirty: AtomicBool::new(false),
+            stopped: AtomicBool::new(false),
+            queued: AtomicBool::new(false),
+        }
+    }
+
+    #[test]
+    fn unsupported_geometry_stays_intact_until_an_explicit_reset_succeeds() {
+        for original in [
+            r#"{"schemaVersion":2,"windows":{"main":{"futureSize":"keep"}}}"#,
+            r#"{"schemaVersion":2,"windows":{}}"#,
+            "{damaged",
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("window-geometry.json");
+            std::fs::write(&path, original).unwrap();
+            let state = stored_geometry(path.clone());
+            state
+                .cache
+                .lock()
+                .unwrap()
+                .saved
+                .windows
+                .insert("main".into(), size(1120.0, 740.0));
+            assert_eq!(state.save().unwrap_err().code, ErrorCode::StorageCorrupt);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+
+            state.persist(true).unwrap();
+            let (saved, writable) = load_saved_geometry(&path);
+            assert!(writable);
+            assert_eq!(saved.schema_version, 1);
+            assert_eq!(saved.windows["main"], size(1120.0, 740.0));
+            state
+                .cache
+                .lock()
+                .unwrap()
+                .saved
+                .windows
+                .insert("main".into(), size(960.0, 640.0));
+            state.save().unwrap();
+            assert_eq!(
+                load_saved_geometry(&path).0.windows["main"],
+                size(960.0, 640.0)
+            );
+        }
+    }
+
+    #[test]
+    fn failed_geometry_reset_does_not_enable_later_automatic_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("window-geometry.json");
+        std::fs::create_dir(&path).unwrap();
+        let state = stored_geometry(path.clone());
+        assert!(state.persist(true).is_err());
+        assert_eq!(state.save().unwrap_err().code, ErrorCode::StorageCorrupt);
+        assert!(path.is_dir());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]

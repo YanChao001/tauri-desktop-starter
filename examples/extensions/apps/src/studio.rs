@@ -3,12 +3,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{
-    data::csv_cell,
-    view::{View, artifact, button, markdown, tr, valid_text},
-};
+use crate::view::{View, artifact, button, markdown, tr, valid_text};
 
 pub(crate) const MAX_WORKSPACE: usize = 65_536;
+
+fn csv_cell(value: &str) -> String {
+    let safe = if value.starts_with(['\t', '\r', '\n'])
+        || value.trim_start().starts_with(['=', '+', '-', '@'])
+    {
+        format!("'{value}")
+    } else {
+        value.into()
+    };
+    format!("\"{}\"", safe.replace('"', "\"\""))
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -137,8 +145,8 @@ pub(crate) fn render(fields: &Value, zh: bool) -> View {
         ],
         blocks: vec![markdown(tr(
             zh,
-            "自定义界面提供创意画布、数据图表和流程模拟。此通用视图是工作台导出入口；文本、表格、待办及文件网络工具仍可通过页签打开。导出文件生成后，点击产物保存。",
-            "The custom interface offers a creative canvas, data charts and flow simulation. This generic view provides workspace export; text, dataset, tasks and files/network tools remain in their tabs. After generating an export, save its artifact.",
+            "自定义界面提供创意画布、数据图表和流程模拟。此通用视图是工作台导出入口；导出文件生成后，点击产物保存。",
+            "The custom interface offers a creative canvas, data charts and flow simulation. This generic view provides workspace export. After generating an export, save its artifact.",
         ))],
     }
 }

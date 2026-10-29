@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ResourceLibrary } from "@/components/showcase/resource-library";
@@ -31,9 +32,11 @@ vi.mock("@/hooks/use-demo-motion", () => ({
 
 function renderPlayground() {
   return render(
-    <TooltipProvider>
-      <Components />
-    </TooltipProvider>,
+    <MemoryRouter>
+      <TooltipProvider>
+        <Components />
+      </TooltipProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -180,6 +183,25 @@ describe("交互组件舞台", () => {
     expect(
       screen.getByRole("checkbox", { name: "playground.showAuthor" }),
     ).toBeChecked();
+  });
+
+  it("动效与控件共用标签，切换保留输入和动效场景", async () => {
+    const user = userEvent.setup();
+    renderPlayground();
+    const name = screen.getByRole("textbox", { name: "playground.name" });
+    await user.type(name, "Keep this project");
+    await user.click(screen.getByRole("tab", { name: /nav.motion/ }));
+    await act(async () => vi.dynamicImportSettled());
+    await screen.findByRole("tab", { name: "lab.layout" });
+    await user.click(screen.getByRole("tab", { name: "lab.layout" }));
+    await user.click(screen.getByRole("tab", { name: /playground.inputs/ }));
+    expect(name).toBeVisible();
+    expect(name).toHaveValue("Keep this project");
+    await user.click(screen.getByRole("tab", { name: /nav.motion/ }));
+    expect(screen.getByRole("tab", { name: "lab.layout" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   it("重组真实改变画布类型/构图/能量，配置浮层展示当前值", async () => {

@@ -15,7 +15,9 @@ import type { UnsavedWork } from "@/providers/unsaved-work";
 import Database from "./database";
 import { toast } from "sonner";
 
-vi.mock("@/lib/tauri", () => ({
+vi.mock("@/lib/tauri", async (original) => ({
+  NativeBridgeError: (await original<typeof import("@/lib/tauri")>())
+    .NativeBridgeError,
   isTauri: () => true,
   queryNotes: vi.fn(),
   getNote: vi.fn(),
@@ -51,7 +53,9 @@ vi.mock("@/providers/unsaved-work", () => ({
     lifecycle.current = work;
   },
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
+}));
 const first: Note = {
   id: 1,
   title: "First note",
@@ -217,11 +221,21 @@ describe("native note editor", () => {
   });
 
   it.each([
-    { label: "Search notes", value: "界".repeat(100) },
-    { label: "Content", value: "界".repeat(22000) },
+    {
+      label: "Search notes",
+      value: "界".repeat(100),
+      message:
+        "Content search allows up to 200 UTF-8 bytes. Shorten the query.",
+    },
+    {
+      label: "Content",
+      value: "界".repeat(22000),
+      message:
+        "Note content is limited to 64 KiB (65536 UTF-8 bytes). Shorten it before saving.",
+    },
   ])(
     "keeps the full $label length error associated with its field and available through keyboard focus",
-    async ({ label, value }) => {
+    async ({ label, value, message }) => {
       await open();
       await waitFor(() => expect(body()).toBeEnabled());
       const field = screen.getByRole(
@@ -229,7 +243,6 @@ describe("native note editor", () => {
         { name: label },
       );
       fireEvent.change(field, { target: { value } });
-      const message = "The input is too long. Shorten it and try again.";
       expect(field).toHaveAttribute("aria-invalid", "true");
       expect(field).toHaveAccessibleDescription(message);
       const descriptionId = field.getAttribute("aria-describedby")!;
@@ -452,9 +465,10 @@ describe("native note editor", () => {
     expect(body()).toHaveAttribute("aria-invalid", "false");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
-  it("ignores obsolete note subscriptions after search changes and cleanup", async () => {
+  it("keeps one subscription across filters and refreshes the current query until cleanup", async () => {
     const view = await open();
-    const obsolete = events[0]!;
+    const subscribed = events[0]!;
+    vi.mocked(native.queryNotes).mockClear();
     fireEvent.change(screen.getByRole("searchbox"), {
       target: { value: "new" },
     });
@@ -463,9 +477,14 @@ describe("native note editor", () => {
         expect.objectContaining({ search: "new" }),
       ),
     );
+    expect(native.onNotesChanged).toHaveBeenCalledOnce();
+    expect(native.queryNotes).toHaveBeenCalledOnce();
     const count = vi.mocked(native.queryNotes).mock.calls.length;
-    await act(async () => obsolete());
-    expect(native.queryNotes).toHaveBeenCalledTimes(count);
+    await act(async () => subscribed());
+    expect(native.queryNotes).toHaveBeenCalledTimes(count + 1);
+    expect(native.queryNotes).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: "new" }),
+    );
     view.unmount();
     const after = vi.mocked(native.queryNotes).mock.calls.length;
     await act(async () => events.forEach((handler) => handler()));
@@ -572,6 +591,53 @@ describe("native note editor", () => {
     expect(
       screen.getByRole("checkbox", { name: "Select First note" }),
     ).toBeChecked();
+  });
+
+  it("returns to the last available page after another window removes the final page, preserving edits", async () => {
+    notes = Array.from({ length: 51 }, (_, index) => ({
+      ...first,
+      id: index + 1,
+      title: `Note ${index + 1}`,
+    }));
+    await open();
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    fireEvent.click(await screen.findByText("Note 51"));
+    fireEvent.change(body(), { target: { value: "Keep my unsaved draft" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Note 51" }));
+
+    notes = notes.slice(0, 50);
+    await act(async () => events.forEach((handler) => handler()));
+
+    expect(await screen.findByText("Note 1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByText("0 selected")).toBeVisible();
+    expect(title()).toHaveValue("Note 51");
+    expect(body()).toHaveValue("Keep my unsaved draft");
+    expect(lifecycle.current?.dirty).toBe(true);
+  });
+
+  it("returns to the first page when the last remaining notes are removed", async () => {
+    notes = Array.from({ length: 51 }, (_, index) => ({
+      ...first,
+      id: index + 1,
+      title: `Note ${index + 1}`,
+    }));
+    await open();
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await screen.findByText("Note 51");
+
+    notes = [];
+    await act(async () => events.forEach((handler) => handler()));
+
+    await waitFor(() =>
+      expect(native.queryNotes).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 0 }),
+      ),
+    );
+    expect(
+      await screen.findByText("No notes yet. Create your first note."),
+    ).toBeVisible();
   });
 
   it("shows remote content after conflict and keeps local text with the reviewed remote version", async () => {

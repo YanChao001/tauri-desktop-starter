@@ -99,3 +99,13 @@ it("浏览器退出事件同步状态，不调用原生查询", async () => {
   expect(result.current.fullscreen).toBe(false);
   expect(windowState.isWindowFullscreen).not.toHaveBeenCalled();
 });
+
+it("卸载后忽略旧订阅的晚到尺寸事件，不再发起原生查询", async () => {
+  const { unmount } = renderHook(useFullscreen);
+  await waitFor(() =>
+    expect(windowState.isWindowFullscreen).toHaveBeenCalledOnce(),
+  );
+  unmount();
+  await act(async () => windowState.changed());
+  expect(windowState.isWindowFullscreen).toHaveBeenCalledOnce();
+});

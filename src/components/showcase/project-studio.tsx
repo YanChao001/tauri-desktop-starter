@@ -37,7 +37,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { CodeBlock } from "@/components/code-block";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
@@ -148,8 +147,10 @@ export function ProjectStudio({ active }: { active: boolean }) {
             </SelectContent>
           </Select>
         </div>
-        <fieldset className="studio-field">
-          <legend>{t("playground.color")}</legend>
+        <fieldset className="mb-3 space-y-2 p-3">
+          <legend className="text-sm font-medium">
+            {t("playground.color")}
+          </legend>
           <RadioGroup
             value={project.palette}
             onValueChange={(palette) => update({ palette })}
@@ -160,17 +161,24 @@ export function ProjectStudio({ active }: { active: boolean }) {
               <label
                 key={item.value}
                 className="studio-swatch"
+                data-surface="control"
                 data-palette={item.value}
               >
                 <RadioGroupItem value={item.value} aria-label={t(item.label)} />
-                <span className="studio-swatch-dot" aria-hidden="true" />
+                <span
+                  data-surface="artwork"
+                  className="studio-swatch-dot"
+                  aria-hidden="true"
+                />
                 <span>{t(item.label)}</span>
               </label>
             ))}
           </RadioGroup>
         </fieldset>
-        <fieldset className="studio-field">
-          <legend>{t("playground.composition")}</legend>
+        <fieldset className="mb-3 space-y-2 p-3">
+          <legend className="text-sm font-medium">
+            {t("playground.composition")}
+          </legend>
           <RadioGroup
             value={project.composition}
             onValueChange={(composition) => update({ composition })}
@@ -189,7 +197,8 @@ export function ProjectStudio({ active }: { active: boolean }) {
           <div className="flex items-center justify-between gap-3">
             <Label id="studio-energy">{t("playground.energy")}</Label>
             <output
-              className="playground-number"
+              data-surface="transparent"
+              className="playground-number inline overflow-visible p-0"
               aria-labelledby="studio-energy"
             >
               {project.energy}
@@ -206,9 +215,6 @@ export function ProjectStudio({ active }: { active: boolean }) {
         <div className="studio-switch-row">
           <div className="flex items-center gap-1">
             <Label htmlFor="studio-glow">{t("playground.glow")}</Label>
-            <HelpTooltip label={t("playground.glowDescription")}>
-              {t("playground.glowDescription")}
-            </HelpTooltip>
           </div>
           <Switch
             id="studio-glow"
@@ -248,6 +254,7 @@ export function ProjectStudio({ active }: { active: boolean }) {
         </div>
       </div>
       <div
+        data-surface="artwork"
         className="studio-canvas"
         data-palette={project.palette}
         data-composition={project.composition}

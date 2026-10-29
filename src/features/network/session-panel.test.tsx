@@ -16,6 +16,7 @@ const native = vi.hoisted(() => ({
   getDemoCredential: vi.fn(),
   deleteDemoCredential: vi.fn(),
 }));
+const locale = vi.hoisted(() => ({ language: "en" as "en" | "zh" }));
 vi.mock("@/lib/tauri", () => ({ ...native, isTauri: () => true }));
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -23,13 +24,20 @@ vi.mock("sonner", () => ({
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
-  const t = createTranslator(en);
-  return { useI18n: () => ({ language: "en", t }) };
+  const { zhCN } = await import("@/i18n/zh-CN");
+  const translators = { en: createTranslator(en), zh: createTranslator(zhCN) };
+  return {
+    useI18n: () => ({
+      language: locale.language,
+      t: translators[locale.language],
+    }),
+  };
 });
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.resetAllMocks();
+  locale.language = "en";
 });
 
 it("expires a local session on time and returns to guest on sign-out", async () => {
@@ -144,4 +152,22 @@ it("凭据写入失败通过 toast 反馈并保留输入供重试", async () => 
   expect(input).toHaveValue("keep secret input");
   expect(input).toBeEnabled();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("凭据操作完成时使用等待期间切换后的语言", async () => {
+  let complete!: () => void;
+  native.setDemoCredential.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      complete = resolve;
+    }),
+  );
+  const view = render(<CredentialPanel />);
+  fireEvent.change(screen.getByLabelText("Test content"), {
+    target: { value: "private test content" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save securely" }));
+  locale.language = "zh";
+  view.rerender(<CredentialPanel />);
+  await act(async () => complete());
+  expect(toast.success).toHaveBeenCalledWith("测试内容已保存，输入框已清空。");
 });

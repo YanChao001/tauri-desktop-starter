@@ -95,12 +95,16 @@ export function TextDiff({
               {(["local", "remote"] as const).map((side) => (
                 <div
                   key={side}
-                  className={`min-w-0 rounded-md border p-2 ${block.changed ? (side === "local" ? "border-destructive/30 bg-destructive/5" : "border-primary/30 bg-primary/5") : "bg-muted/30 text-muted-foreground"}`}
+                  data-surface="reading"
+                  className={`min-w-0 rounded-md border p-2 ${block.changed ? (side === "local" ? "border-destructive/30" : "border-primary/30") : "text-muted-foreground"}`}
                 >
                   <span className="text-xs font-medium">
                     {t(side === "local" ? "diff.local" : "diff.remote")}
                   </span>
-                  <pre className="mt-1 whitespace-pre-wrap break-all text-xs">
+                  <pre
+                    data-surface="transparent"
+                    className="mt-1 whitespace-pre-wrap break-all text-xs"
+                  >
                     {preview(block[side], block.changed)}
                   </pre>
                 </div>

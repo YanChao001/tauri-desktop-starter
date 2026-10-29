@@ -284,17 +284,26 @@ export const commands = {
     legacy: {
       name: string;
       dataUrl: string;
+      video?: WallpaperVideo | null;
     } | null,
   ) =>
-    typedError<Wallpaper[], NativeError>(
+    typedError<Wallpaper_Serialize[], NativeError>(
       __TAURI_INVOKE("list_wallpapers", { legacy }),
     ),
-  addWallpaper: (input: WallpaperInput) =>
-    typedError<Wallpaper, NativeError>(
+  chooseWallpaperVideo: () =>
+    typedError<
+      {
+        name: string;
+        video: WallpaperVideo;
+      } | null,
+      NativeError
+    >(__TAURI_INVOKE("choose_wallpaper_video")),
+  addWallpaper: (input: WallpaperInput_Deserialize) =>
+    typedError<Wallpaper_Serialize, NativeError>(
       __TAURI_INVOKE("add_wallpaper", { input }),
     ),
   renameWallpaper: (id: string, name: string) =>
-    typedError<Wallpaper, NativeError>(
+    typedError<Wallpaper_Serialize, NativeError>(
       __TAURI_INVOKE("rename_wallpaper", { id, name }),
     ),
   removeWallpaper: (id: string) =>
@@ -306,6 +315,10 @@ export const commands = {
   saveSettingsSnapshot: (settings: JsonValue, expectedRevision: number) =>
     typedError<SettingsSnapshot, NativeError>(
       __TAURI_INVOKE("save_settings_snapshot", { settings, expectedRevision }),
+    ),
+  resetSettingsSnapshot: (settings: JsonValue, expectedRevision: number) =>
+    typedError<SettingsSnapshot, NativeError>(
+      __TAURI_INVOKE("reset_settings_snapshot", { settings, expectedRevision }),
     ),
   createNote: (input: NoteInput) =>
     typedError<Note, NativeError>(__TAURI_INVOKE("create_note", { input })),
@@ -535,6 +548,14 @@ export const commands = {
     ),
   deleteDemoCredential: () =>
     typedError<null, NativeError>(__TAURI_INVOKE("delete_demo_credential")),
+  registerDemoShortcut: (shortcut: string) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("register_demo_shortcut", { shortcut }),
+    ),
+  unregisterDemoShortcut: (shortcut: string) =>
+    typedError<null, NativeError>(
+      __TAURI_INVOKE("unregister_demo_shortcut", { shortcut }),
+    ),
   runDemoSidecar: (input: string) =>
     typedError<DemoWorkerOutput, NativeError>(
       __TAURI_INVOKE("run_demo_sidecar", { input }),
@@ -633,6 +654,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "PLATFORM_UNAVAILABLE"
+  | "NATIVE_BUSY"
   | "HTTP_TIMEOUT"
   | "AUTOSTART_ERROR"
   | "UPDATE_NOT_CONFIGURED"
@@ -1370,15 +1392,47 @@ export type UpdateStatus = {
   date: string | null;
 };
 
-export type Wallpaper = {
+export type Wallpaper = Wallpaper_Serialize | Wallpaper_Deserialize;
+
+export type WallpaperInput =
+  WallpaperInput_Serialize | WallpaperInput_Deserialize;
+
+export type WallpaperInput_Deserialize = {
+  name: string;
+  dataUrl: string;
+  video?: WallpaperVideo | null;
+};
+
+export type WallpaperInput_Serialize = {
+  name: string;
+  dataUrl: string;
+  video?: WallpaperVideo | null;
+};
+
+export type WallpaperVideo = {
+  id: string;
+  mime: WallpaperVideoMime;
+};
+
+export type WallpaperVideoChoice = {
+  name: string;
+  video: WallpaperVideo;
+};
+
+export type WallpaperVideoMime = "video/mp4" | "video/webm";
+
+export type Wallpaper_Deserialize = {
   id: string;
   name: string;
   dataUrl: string;
+  video?: WallpaperVideo | null;
 };
 
-export type WallpaperInput = {
+export type Wallpaper_Serialize = {
+  id: string;
   name: string;
   dataUrl: string;
+  video?: WallpaperVideo | null;
 };
 
 export type WindowGeometry = {

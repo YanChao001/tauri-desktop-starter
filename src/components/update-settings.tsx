@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   DownloadIcon,
@@ -8,9 +8,9 @@ import {
 } from "lucide-react";
 import { ExternalLink } from "@/components/external-link";
 import { SettingRow } from "@/components/setting-row";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
@@ -26,9 +26,16 @@ import { getLocale } from "@/i18n/registry";
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { APP_CONFIG } from "@/config/app";
 import { useUpdates, checkUpdates, installUpdate } from "@/lib/updates-store";
-import { isTauri, relaunchApp } from "@/lib/tauri";
+import { isTauri, relaunchApp, type UpdateStatus } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { version as buildVersion } from "../../package.json";
+
+const ReleaseNotesMarkdown = lazy(() =>
+  import("@/components/safe-markdown").then(({ SafeMarkdown }) => ({
+    default: SafeMarkdown,
+  })),
+);
+
 export function UpdateSettings() {
   const { t, language } = useI18n();
   const native = isTauri();
@@ -38,6 +45,10 @@ export function UpdateSettings() {
   const [confirmInstall, setConfirmInstall] = useState<number | null>(null);
   const installingRef = useRef(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [releaseNotes, setReleaseNotes] = useState<Pick<
+    UpdateStatus,
+    "version" | "body"
+  > | null>(null);
   const [restarting, setRestarting] = useState(false);
   const configured =
     status?.configured ?? Boolean(APP_CONFIG.updates.publicKey);
@@ -146,11 +157,9 @@ export function UpdateSettings() {
       onFocusCapture={() => setEngaged(true)}
       onPointerDownCapture={() => setEngaged(true)}
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("updates.title")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+        <legend className="text-sm font-medium">{t("updates.title")}</legend>
+        <div className="space-y-3">
           <div className="relative pb-1.5">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <div className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-3 gap-y-1">
@@ -177,6 +186,19 @@ export function UpdateSettings() {
                 tabIndex={-1}
                 data-testid="updates-actions"
               >
+                {status?.available ? (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setReleaseNotes({
+                        version: status.version,
+                        body: status.body,
+                      })
+                    }
+                  >
+                    {t("updates.releaseNotes")}
+                  </Button>
+                ) : null}
                 <Button
                   className="min-w-40"
                   variant={
@@ -225,20 +247,7 @@ export function UpdateSettings() {
               />
             ) : null}
           </div>
-          {status?.available && status.body ? (
-            <details className="text-sm">
-              <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                {t("updates.releaseNotes")}
-              </summary>
-              <p
-                tabIndex={0}
-                className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {status.body}
-              </p>
-            </details>
-          ) : null}
-          <div className="border-t [&>.settings-row]:py-3">
+          <div className="border-t pt-2 [&>.settings-row]:py-0">
             <SettingRow
               id="settings-updates-auto"
               icon={RefreshCwIcon}
@@ -260,38 +269,84 @@ export function UpdateSettings() {
               />
             </SettingRow>
           </div>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-3">
-            <details className="min-w-0 flex-1 basis-44 text-xs text-muted-foreground">
-              <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <div className="border-t pt-2">
+            <details className="min-w-0 text-xs text-muted-foreground">
+              <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {t("updates.endpoint")}
               </summary>
-              <div className="mt-3 space-y-2">
-                <p>{t("updates.configurationDescription")}</p>
-                <p>
-                  {t(
-                    configured ? "updates.keyConfigured" : "updates.keyMissing",
-                  )}
-                </p>
+              <div className="space-y-2 px-3 py-2">
+                {!configured ? <p>{t("updates.keyMissing")}</p> : null}
                 <p className="break-all font-mono">
                   {status
                     ? (status.endpoint ?? t("updates.endpointDisabled"))
                     : APP_CONFIG.updates.endpoint}
                 </p>
-                {checkedAt ? (
-                  <p>{t("updates.lastChecked", { time: checkedAt })}</p>
-                ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  {checkedAt ? (
+                    <p className="min-w-0 break-words">
+                      {t("updates.lastChecked", { time: checkedAt })}
+                    </p>
+                  ) : null}
+                  <ExternalLink
+                    href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
+                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {t("updates.releases")}
+                    <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
+                  </ExternalLink>
+                </div>
               </div>
             </details>
-            <ExternalLink
-              href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
-              className="inline-flex shrink-0 items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {t("updates.releases")}
-              <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
-            </ExternalLink>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
+      <Dialog
+        open={releaseNotes !== null}
+        onOpenChange={(open) => {
+          if (!open) setReleaseNotes(null);
+        }}
+      >
+        <DialogContent
+          closeLabel={t("common.close")}
+          aria-describedby={undefined}
+          className="flex min-h-0 flex-col overflow-hidden sm:max-w-3xl"
+        >
+          <DialogHeader className="shrink-0 pr-8">
+            <DialogTitle>
+              {releaseNotes?.version
+                ? t("updates.releaseNotesTitle", {
+                    version: releaseNotes.version,
+                  })
+                : t("updates.releaseNotes")}
+            </DialogTitle>
+          </DialogHeader>
+          {/* Radix 的测量层默认 display:table；正文宽度跟随视口，代码与表格各自滚动。 */}
+          <ScrollArea className="min-h-0 min-w-0 [&>[data-slot=scroll-area-viewport]]:max-h-[60dvh] [&>[data-slot=scroll-area-viewport]>div]:block!">
+            <div
+              role="region"
+              aria-label={t("updates.releaseNotes")}
+              tabIndex={0}
+              className="rounded-sm p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_h4]:font-semibold [&_p]:leading-relaxed [&_li]:leading-relaxed [&_a]:break-all"
+            >
+              {releaseNotes?.body?.trim() ? (
+                <Suspense
+                  fallback={
+                    <p role="status" className="text-sm text-muted-foreground">
+                      {t("common.loading")}
+                    </p>
+                  }
+                >
+                  <ReleaseNotesMarkdown content={releaseNotes.body} />
+                </Suspense>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("updates.noReleaseNotes")}
+                </p>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={
           confirmInstall !== null &&

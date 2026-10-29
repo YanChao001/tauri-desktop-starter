@@ -1,6 +1,8 @@
+import { getLocale } from "@/i18n/registry";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -12,6 +14,7 @@ import { NativePage, ResourceError } from "@/components/native-page";
 import { BackupPanel } from "@/components/database/backup-panel";
 import { ConflictPanel } from "@/components/database/conflict-panel";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { PageLoading } from "@/components/page-loading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +51,7 @@ import {
   saveNoteDraft,
   onNotesChanged,
   isTauri,
+  NativeBridgeError,
   type Note,
   type NoteDraft,
 } from "@/lib/tauri";
@@ -152,6 +156,26 @@ export default function Database() {
     [search, offset, sort, trash],
   );
   const { data: page, error, loading, reload } = useNativeResource(load);
+  useEffect(() => {
+    if (
+      loading ||
+      error ||
+      !page ||
+      page.offset !== offset ||
+      offset === 0 ||
+      offset < page.total
+    )
+      return;
+    // 删除或其他窗口的变更可能使末页消失；只根据当前页的已完成查询纠正位置。
+    setOffset(
+      Math.max(0, Math.floor((page.total - 1) / page.limit) * page.limit),
+    );
+    setSelected(new Set());
+  }, [page, loading, error, offset]);
+  const latestReload = useRef(reload);
+  useLayoutEffect(() => {
+    latestReload.current = reload;
+  }, [reload]);
   const notes = page?.items;
   const {
     draft,
@@ -223,9 +247,8 @@ export default function Database() {
   const searchTooLong = utf8Length(query) > 200;
   const bodyTooLong = utf8Length(draft.body) > 65536;
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || pending || draftReady || mutationError) return;
     let stopped = false;
-    if (editor.pending) return;
     if (isDirty(editor.draft, editor.original)) {
       setDraftReady(true);
       return;
@@ -249,7 +272,7 @@ export default function Database() {
     return () => {
       stopped = true;
     };
-  }, []);
+  }, [pending, draftReady, mutationError]);
   useEffect(() => {
     if (
       !draftReady ||
@@ -323,13 +346,14 @@ export default function Database() {
     let stopped = false;
     let unlisten: (() => void) | undefined;
     void onNotesChanged(() => {
-      if (!stopped) void reload();
+      if (!stopped) void latestReload.current();
     })
       .then((stop) => {
         if (stopped) stop();
         else {
           unlisten = stop;
-          void reload();
+          // 订阅建立后的快照补齐首次查询期间的事件；筛选变化不重建订阅。
+          void latestReload.current();
         }
       })
       .catch((reason) => {
@@ -339,7 +363,7 @@ export default function Database() {
       stopped = true;
       unlisten?.();
     };
-  }, [reload]);
+  }, []);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -403,14 +427,25 @@ export default function Database() {
       signal?.throwIfAborted();
       return;
     }
-    if (editor.pending) return Promise.reject({ code: "CONFLICT" });
+    if (editor.pending)
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "A note operation is already in progress",
+        retryable: false,
+      });
     if (
       !editor.draft.title.trim() ||
       utf8Length(editor.draft.body) > 65536 ||
       (!asCopy && !isDirty(editor.draft, editor.original))
     )
       return isDirty(editor.draft, editor.original)
-        ? Promise.reject({ code: "INVALID_ARGUMENT" })
+        ? Promise.reject(
+            new NativeBridgeError({
+              code: "INVALID_ARGUMENT",
+              message: "The note cannot be saved with the current input",
+              retryable: false,
+            }),
+          )
         : Promise.resolve();
     const current = editor.draft;
     changeEditor({ pending: true, error: null });
@@ -465,7 +500,12 @@ export default function Database() {
     signal?.throwIfAborted();
     if (saving) await saving.catch(() => {});
     signal?.throwIfAborted();
-    if (editor.pending) throw { code: "CONFLICT" };
+    if (editor.pending)
+      throw new NativeBridgeError({
+        code: "CONFLICT",
+        message: "A note operation is already in progress",
+        retryable: false,
+      });
     changeEditor({ pending: true });
     try {
       applyDraft(editor.original);
@@ -553,12 +593,15 @@ export default function Database() {
     draft.id !== null ||
     dirty ||
     pending;
+  const inlineConflict = conflicted && !confirmDelete && bulkAction === null;
   useEffect(() => {
-    if (draftReady && mutationError)
+    if (!draftReady || !mutationError) return;
+    if (inlineConflict) toast.dismiss("note-editor-error");
+    else
       toast.error(nativeErrorText(mutationError, latest), {
         id: "note-editor-error",
       });
-  }, [draftReady, mutationError, latest]);
+  }, [draftReady, mutationError, inlineConflict, latest]);
   useEffect(() => {
     if (error && page)
       toast.error(nativeErrorText(error, latest), { id: "note-query-error" });
@@ -570,11 +613,19 @@ export default function Database() {
     >
       <ResourceError error={page ? null : error} retry={() => void reload()} />
       {!draftReady ? (
-        <ResourceError error={mutationError} retry={() => void retryDraft()} />
-      ) : mutationError && conflicted ? (
+        mutationError ? (
+          <ResourceError
+            error={mutationError}
+            retry={() => void retryDraft()}
+          />
+        ) : (
+          <PageLoading />
+        )
+      ) : mutationError && inlineConflict ? (
         <div
           role="alert"
-          className="rounded-lg border border-destructive/40 bg-background p-3 text-sm"
+          data-surface="solid"
+          className="rounded-lg border border-destructive/40 p-3 text-sm"
         >
           {nativeErrorText(mutationError, t)}
         </div>
@@ -687,11 +738,11 @@ export default function Database() {
             role={searchTooLong ? "alert" : undefined}
             className="min-w-0 flex-1 truncate text-xs text-destructive"
           >
-            {searchTooLong ? t("errors.INPUT_TOO_LONG") : null}
+            {searchTooLong ? t("search.limit") : null}
           </p>
           {searchTooLong ? (
             <HelpTooltip label={`${t("database.search")} · ${t("title.help")}`}>
-              {t("errors.INPUT_TOO_LONG")}
+              {t("search.limit")}
             </HelpTooltip>
           ) : null}
           <div className="ml-auto flex items-center gap-2 text-sm">
@@ -787,12 +838,14 @@ export default function Database() {
                             }
                           />
                           <button
+                            data-surface="transparent"
+                            data-variant="ghost"
                             type="button"
                             disabled={pending}
                             aria-pressed={draft.id === note.id}
                             onClick={() => editNote(note)}
                             className={cn(
-                              "min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted",
+                              "min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-(--surface-state-hover)",
                               draft.id === note.id && "bg-primary/10",
                             )}
                           >
@@ -801,7 +854,7 @@ export default function Database() {
                             </span>
                             <span className="mt-1 block truncate text-[11px] text-muted-foreground">
                               {new Date(note.updatedAt).toLocaleString(
-                                language === "zh" ? "zh-CN" : "en",
+                                getLocale(language).documentLang,
                               )}
                             </span>
                           </button>
@@ -883,13 +936,13 @@ export default function Database() {
                         role={bodyTooLong ? "alert" : undefined}
                         className="min-w-0 truncate text-xs text-destructive"
                       >
-                        {bodyTooLong ? t("errors.INPUT_TOO_LONG") : null}
+                        {bodyTooLong ? t("data.bodyLimit") : null}
                       </p>
                       {bodyTooLong ? (
                         <HelpTooltip
                           label={`${t("database.bodyLabel")} · ${t("title.help")}`}
                         >
-                          {t("errors.INPUT_TOO_LONG")}
+                          {t("data.bodyLimit")}
                         </HelpTooltip>
                       ) : null}
                     </div>

@@ -1,9 +1,24 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DocumentPreview, MarkdownPreview } from "./document-preview";
+
+vi.mock("@/providers/i18n", () => ({
+  useI18n: () => ({ t: (key: string) => key }),
+}));
 
 afterEach(cleanup);
 describe("safe Markdown preview", () => {
+  it("多行 Markdown 使用有界纯文本预览并保留全文", () => {
+    const content = "# 标题\n\n".repeat(1500) + "<script>末尾🐈</script>";
+    const { container } = render(<MarkdownPreview content={content} />);
+    expect(container.querySelectorAll("*").length).toBeLessThan(20);
+    expect(container.querySelector("code")?.textContent).toBe(content);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "workbench.markdownPlainPreview",
+    );
+    expect(container.querySelector("script")).toBeNull();
+  });
+
   it("Rust 与 JSON 围栏复用安全高亮，未知语言保持纯文本", () => {
     const { container } = render(
       <MarkdownPreview

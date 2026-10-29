@@ -67,7 +67,7 @@ export const enFeatures = {
   "desktop.title": "Desktop integration",
   "desktop.settingsTitle": "Windows & startup",
   "desktop.browserOnly":
-    "Launch at login, background operation and multiple windows require the desktop app. These options cannot be changed in the browser.",
+    "Window sizes and system integration require the desktop app and cannot be changed in the browser.",
   "desktop.description":
     "Manage startup, background behavior and windows using real device status.",
   "desktop.autostart": "Launch at login",
@@ -138,11 +138,11 @@ export const enFeatures = {
   "updates.installed": "Update installed. Restart to apply it.",
   "updates.restart": "Restart application",
   "updates.releaseNotes": "Release notes",
+  "updates.releaseNotesTitle": "Release notes · {version}",
+  "updates.noReleaseNotes": "No release notes were provided for this version.",
   "updates.notConfigured":
     "In-app updates are unavailable. View version history for new versions.",
   "updates.configuration": "Update preferences",
-  "updates.configurationDescription":
-    "Get stable releases and verify the update package's origin and integrity before installation.",
   "updates.autoCheck": "Check for updates on startup",
   "updates.autoCheckHint":
     "Check in the background after startup and notify you of new versions. You choose when to download and install.",
@@ -159,7 +159,6 @@ export const enFeatures = {
   "updates.endpoint": "Update source",
   "updates.endpointDisabled":
     "Automatic updates have not been enabled for this app",
-  "updates.keyConfigured": "Update verification configured",
   "updates.keyMissing": "Update verification not configured",
   "errors.VALIDATION": "Please check the input and try again",
   "errors.CONFLICT":

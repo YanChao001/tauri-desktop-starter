@@ -7,16 +7,29 @@ import { reportClientError } from "@/lib/report-error";
 import { errorMessage } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
 
-class PageBoundary extends Component<
-  {
-    children: ReactNode;
-    t: Translate;
-    onBack: () => void;
-    backLabel: MessageKey;
-  },
-  { error: Error | null }
-> {
-  state: { error: Error | null } = { error: null };
+type PageBoundaryProps = {
+  children: ReactNode;
+  t: Translate;
+  onBack: () => void;
+  backLabel: MessageKey;
+  resetKey: string;
+};
+type PageBoundaryState = { error: Error | null; resetKey: string };
+
+class PageBoundary extends Component<PageBoundaryProps, PageBoundaryState> {
+  state: PageBoundaryState = {
+    error: null,
+    resetKey: this.props.resetKey,
+  };
+  static getDerivedStateFromProps(
+    props: PageBoundaryProps,
+    state: PageBoundaryState,
+  ) {
+    // 导航只清除旧错误；用 React key 重建会丢失健康页面的状态并重触发加载。
+    if (props.resetKey !== state.resetKey)
+      return { error: null, resetKey: props.resetKey };
+    return null;
+  }
   static getDerivedStateFromError(error: unknown) {
     return {
       error: error instanceof Error ? error : new Error(errorMessage(error)),
@@ -29,7 +42,11 @@ class PageBoundary extends Component<
     if (!this.state.error) return this.props.children;
     const { t, onBack, backLabel } = this.props;
     return (
-      <section role="alert" className="rounded-xl border bg-card p-6">
+      <section
+        role="alert"
+        data-surface="solid"
+        className="rounded-xl border p-6"
+      >
         <h2 className="text-base font-medium">{t("common.renderError")}</h2>
         <p className="mt-2 break-words font-mono text-xs text-muted-foreground">
           {this.state.error.message}
@@ -67,7 +84,7 @@ export function RouteErrorBoundary({
   const { t } = useI18n();
   return (
     <PageBoundary
-      key={resetKey ?? key}
+      resetKey={resetKey ?? key}
       t={t}
       onBack={onBack ?? (() => navigate("/"))}
       backLabel={backLabel}

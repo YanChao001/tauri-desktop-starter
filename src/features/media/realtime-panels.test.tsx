@@ -233,6 +233,67 @@ it("translates a send failure and retains the unsent message", async () => {
   expect(input).toHaveValue("保留待重试内容");
 });
 
+it("发送回执不会清空等待期间输入的下一条消息", async () => {
+  let finishSend!: () => void;
+  const send = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishSend = resolve;
+      }),
+  );
+  native.websocketConnect.mockResolvedValueOnce({
+    send,
+    close: vi.fn().mockResolvedValue(undefined),
+  });
+  render(<WebSocketPanel />);
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "Online test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  await screen.findByText("Connected", { exact: true });
+  const input = screen.getByLabelText("Message content");
+  fireEvent.change(input, { target: { value: "first message" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(send).toHaveBeenCalledExactlyOnceWith("first message");
+  fireEvent.change(input, { target: { value: "next message" } });
+  await act(async () => finishSend());
+  expect(screen.getByText("Sent: first message")).toBeVisible();
+  expect(input).toHaveValue("next message");
+  expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+});
+
+it("WebSocket 等待连接期间切换语言后用当前语言报告错误", async () => {
+  let fail!: (reason: unknown) => void;
+  native.websocketConnect.mockReturnValueOnce(
+    new Promise((_, reject) => {
+      fail = reject;
+    }),
+  );
+  const view = render(<WebSocketPanel />);
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "Online test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  locale.language = "zh";
+  view.rerender(<WebSocketPanel />);
+  await act(async () => fail({ code: "WEBSOCKET_TIMEOUT" }));
+  expect(toast.error).toHaveBeenCalledWith("连接超时，请重试或使用本地测试。");
+});
+
+it("worker 等待期间切换语言后用当前语言报告失败", async () => {
+  let fail!: (reason: unknown) => void;
+  native.isTauri.mockReturnValue(true);
+  native.runDemoSidecar.mockReturnValueOnce(
+    new Promise((_, reject) => {
+      fail = reject;
+    }),
+  );
+  const view = render(<SidecarPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Convert to uppercase" }));
+  locale.language = "zh";
+  view.rerender(<SidecarPanel />);
+  await act(async () => fail(new Error("Worker failed")));
+  expect(toast.error).toHaveBeenCalledWith("操作失败：Worker failed");
+});
+
 it("worker 失败只弹消息并保留上次输出和当前输入", async () => {
   native.isTauri.mockReturnValue(true);
   native.runDemoSidecar

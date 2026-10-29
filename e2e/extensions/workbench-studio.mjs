@@ -17,10 +17,13 @@ await Promise.all([
   mkdir(output, { recursive: true }),
 ]);
 const temporary = await mkdtemp(join(cache, "workbench-studio-"));
-const [html, sdk] = await Promise.all([
+const [html, sdk, surfaceTokens, controlStyles] = await Promise.all([
   readFile(join(root, "examples/extensions/apps/ui/main.html"), "utf8"),
   readFile(join(root, "sdk/extension-ui.js"), "utf8"),
+  readFile(join(root, "src/styles/surface-tokens.css"), "utf8"),
+  readFile(join(root, "src/styles/control-styles.css"), "utf8"),
 ]);
+const styles = `@layer starter-defaults {\n${surfaceTokens}\n${controlStyles}\n}`;
 // The fixture uses srcdoc rather than the packaged extension-ui protocol.
 const fixtureSdk = sdk.replace(
   /location\.protocol !== "extension-ui:" &&\s*location\.hostname !== "extension-ui\.localhost"/,
@@ -94,7 +97,7 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${address.port}`);
     await page.evaluate(
-      ({ embedded, profile }) => {
+      ({ embedded, profile, styles }) => {
         const root = document.documentElement;
         root.classList.toggle("dark", profile.mode === "dark");
         root.classList.toggle("light", profile.mode !== "dark");
@@ -108,124 +111,19 @@ try {
         tokens["--host-font-family"] =
           style.getPropertyValue("--app-font-sans");
         tokens["--host-font-size"] = "16px";
-        const tabs = ["studio", "text", "data", "todo", "connections"].map(
-          (id) => ({ id: `tab-${id}`, label: id, active: id === "studio" }),
-        );
         const initialView = {
           display: "Studio",
           description: "",
-          tabs,
+          tabs: [],
           fields: [],
           groups: [],
           blocks: [],
         };
-        const tools = {
-          text: {
-            display: "Text tools",
-            description: "Edit text and apply a conversion.",
-            fields: [
-              {
-                id: "text-mode",
-                label: "Conversion",
-                kind: "select",
-                value: "compact-json",
-                options: [{ label: "Compact JSON", value: "compact-json" }],
-              },
-              {
-                id: "text",
-                label: "Text",
-                kind: "textarea",
-                value: "A retained tool draft",
-              },
-            ],
-            action: { id: "analyze", label: "Apply text" },
-            blocks: [
-              { kind: "markdown", text: "Your result will appear here." },
-            ],
-          },
-          data: {
-            display: "CSV / JSON",
-            description: "Preview structured data.",
-            fields: [
-              {
-                id: "data-source",
-                label: "Source",
-                kind: "textarea",
-                value: "label,category,value\nDraft,Build,42",
-              },
-            ],
-            action: { id: "data-preview", label: "Preview data" },
-            blocks: [
-              { kind: "markdown", text: "Load CSV or JSON to preview rows." },
-            ],
-          },
-          todo: {
-            display: "Todo",
-            description: "Keep a local checklist.",
-            fields: [
-              { id: "todo-title", label: "New task", kind: "text", value: "" },
-            ],
-            action: { id: "todo-add", label: "Add task" },
-            blocks: [{ kind: "markdown", text: "Your checklist is empty." }],
-          },
-          connections: {
-            display: "Files and network",
-            description: "Receive a local file or an HTTPS response.",
-            fields: [
-              {
-                id: "network-url",
-                label: "HTTPS URL",
-                kind: "text",
-                value: "https://example.com/data.json",
-              },
-            ],
-            action: { id: "network-fetch", label: "Receive response" },
-            blocks: [
-              { kind: "markdown", text: "Received content appears here." },
-            ],
-          },
-        };
-        const drafts = new Map();
-        const toolView = (active) => {
-          const tool = tools[active.slice(4)];
-          return {
-            ...initialView,
-            tabs: tabs.map((tab) => ({ ...tab, active: tab.id === active })),
-            ...(tool
-              ? {
-                  display: tool.display,
-                  description: tool.description,
-                  fields: tool.fields.map((field) => ({
-                    ...field,
-                    value: drafts.get(field.id) ?? field.value,
-                  })),
-                  groups: [
-                    {
-                      actions: [
-                        { ...tool.action, disabled: false, primary: true },
-                        {
-                          id: `${active.slice(4)}-unavailable`,
-                          label: "Unavailable action",
-                          disabled: true,
-                          primary: false,
-                        },
-                      ],
-                    },
-                  ],
-                  blocks: tool.blocks,
-                }
-              : {}),
-          };
-        };
         window.studioCalls = [];
-        window.studioPendingRun = null;
-        window.studioPendingIdle = null;
-        window.studioIdleAfterCheckpoint = false;
-        window.studioHoldRun = false;
         window.studioState = {
           active: true,
           locale: profile.locale,
-          theme: { mode: profile.mode, motion: "full", tokens },
+          theme: { mode: profile.mode, motion: "full", tokens, styles },
           view: initialView,
           fields: {},
           checkpoint: null,
@@ -243,50 +141,23 @@ try {
           channel.port1.onmessage = ({ data }) => {
             window.studioCalls.push(data);
             let result;
-            if (data.method === "checkpoint") {
+            if (data.method === "checkpoint")
               window.studioState.checkpoint = JSON.parse(data.params.value);
-              if (window.studioIdleAfterCheckpoint) {
-                window.studioIdleAfterCheckpoint = false;
-                window.studioPendingIdle = () => {
-                  window.studioPendingIdle = null;
-                  window.sendStudio({ busy: false });
-                };
-              }
-              result = undefined;
-            } else if (data.method === "artifact") result = false;
+            else if (data.method === "artifact") result = false;
             else if (data.method === "run") {
-              for (const [id, value] of Object.entries(data.params.fields))
-                drafts.set(id, value);
-              const active = data.params.action.startsWith("tab-")
-                ? data.params.action
-                : "tab-studio";
-              result = toolView(active);
-              if (data.params.action === "workspace-export")
-                result.artifacts = [
+              if (data.params.action !== "workspace-export")
+                throw new Error("Unknown workspace action");
+              result = {
+                ...initialView,
+                artifacts: [
                   {
                     name: "studio.json",
-                    media_type: "application/json",
+                    mediaType: "application/json",
+                    encoding: "utf8",
                     content: "{}",
                   },
-                ];
-              const held = window.studioHoldRun;
-              const finish = () => {
-                window.studioPendingRun = null;
-                const fields = Object.fromEntries(
-                  result.fields.map((field) => [field.id, field.value]),
-                );
-                // 宿主视图可能早于 run 回执和最终空闲快照到达，覆盖锁定期间的三次渲染。
-                window.sendStudio({ view: result, fields });
-                window.studioIdleAfterCheckpoint = held;
-                channel.port1.postMessage({ id: data.id, result });
-                if (!held) window.sendStudio({ busy: false });
+                ],
               };
-              window.sendStudio({ busy: true });
-              if (window.studioHoldRun) {
-                window.studioHoldRun = false;
-                window.studioPendingRun = finish;
-              } else finish();
-              return;
             }
             channel.port1.postMessage({ id: data.id, result });
           };
@@ -305,7 +176,7 @@ try {
         iframe.srcdoc = embedded;
         document.body.append(iframe);
       },
-      { embedded, profile },
+      { embedded, profile, styles },
     );
     const frame = page.frames().find((candidate) => candidate.parentFrame());
     await expect(frame.locator("#node-count")).toHaveText("5");
@@ -322,10 +193,6 @@ try {
     const checkScene = async (scene) => {
       await frame.locator(`#studio-tab-${scene}`).click();
       await expect(frame.locator(`#scene-${scene}`)).toBeVisible();
-      if (scene === "tools")
-        await expect(frame.locator("#fields textarea")).toHaveValue(
-          "A retained tool draft",
-        );
       await frame.evaluate(() => window.scrollTo(0, 0));
       const after = await navigation.boundingBox();
       assert.ok(
@@ -416,236 +283,6 @@ try {
       ),
       true,
     );
-    await checkScene("tools");
-    await expect(frame.locator("#fields textarea")).toHaveValue(
-      "A retained tool draft",
-    );
-    await frame.locator("#fields textarea").fill("Draft survives scenes");
-    await frame.locator("#studio-tab-canvas").click();
-    await frame.locator("#studio-tab-tools").click();
-    await expect(frame.locator("#fields textarea")).toHaveValue(
-      "Draft survives scenes",
-    );
-    assert.equal(
-      await page.evaluate(
-        () => window.studioCalls.filter((call) => call.method === "run").length,
-      ),
-      1,
-    );
-    await frame
-      .locator('[data-field="text"]')
-      .fill("Draft survives tool tabs and scenes");
-    await frame.locator('[data-field="text"]').evaluate((input) => {
-      input.setSelectionRange(2, 8);
-    });
-    await frame.evaluate(() => {
-      window.retainedToolTabs = [
-        ...document.querySelectorAll("#tabs [role=tab]"),
-      ];
-      window.toolSwitchTrace = {
-        running: true,
-        samples: [],
-        animations: [],
-      };
-      const animate = Element.prototype.animate;
-      window.restoreToolAnimation = () => {
-        Element.prototype.animate = animate;
-      };
-      Element.prototype.animate = function (frames, options) {
-        if (this.id === "panel" || this.id === "scene-tools")
-          window.toolSwitchTrace.animations.push({ id: this.id, frames });
-        return animate.call(this, frames, options);
-      };
-      const sample = () => {
-        const trace = window.toolSwitchTrace;
-        if (!trace.running) return;
-        const panel = document.querySelector("#panel");
-        const controls = [
-          ...document.querySelectorAll(
-            '#tabs [role=tab], #fields input, #fields select, #fields textarea, #actions [data-action]:not([data-action$="-unavailable"])',
-          ),
-        ];
-        trace.samples.push({
-          selected: document.querySelector('#tabs [aria-selected="true"]')
-            ?.dataset.action,
-          busy: document.querySelector("main").getAttribute("aria-busy"),
-          panelOpacity: getComputedStyle(panel).opacity,
-          panelTransform: getComputedStyle(panel).transform,
-          controls: controls.map((node) => ({
-            id: node.id || node.dataset.action,
-            opacity: getComputedStyle(node).opacity,
-          })),
-          disabledOpacity: getComputedStyle(
-            document.querySelector('#actions [data-action$="-unavailable"]'),
-          ).opacity,
-        });
-        requestAnimationFrame(sample);
-      };
-      sample();
-    });
-    const renderingFrames = async (count) =>
-      frame.evaluate(
-        (remaining) =>
-          new Promise((done) => {
-            const next = () => {
-              remaining--;
-              if (remaining > 0) requestAnimationFrame(next);
-              else done();
-            };
-            requestAnimationFrame(next);
-          }),
-        count,
-      );
-    profileResult.toolSwitches = [];
-    for (const [index, tool] of [
-      "data",
-      "todo",
-      "connections",
-      "text",
-      "data",
-      "text",
-    ].entries()) {
-      const countBefore = await page.evaluate(
-        () => window.studioCalls.filter((call) => call.method === "run").length,
-      );
-      await page.evaluate(() => {
-        if (window.studioPendingRun || window.studioPendingIdle)
-          throw new Error("A run is still pending");
-        window.studioHoldRun = true;
-      });
-      await frame.evaluate((tool) => {
-        window.retainedToolInput = document.querySelector(
-          "#fields input, #fields select, #fields textarea",
-        );
-        const target = document.querySelector(`[data-action="tab-${tool}"]`);
-        target.focus();
-        target.click();
-        // DOM 点击跳过 Playwright 对禁用控件的等待，验证页面锁会拒绝连续导航。
-        document
-          .querySelector('#tabs [role=tab]:not([aria-busy="true"])')
-          .click();
-        target.click();
-      }, tool);
-      await expect
-        .poll(() =>
-          page.evaluate(() => typeof window.studioPendingRun === "function"),
-        )
-        .toBe(true);
-      await expect(frame.locator("main")).toHaveAttribute("aria-busy", "true");
-      await expect(
-        frame.locator(`[data-action="tab-${tool}"]`),
-      ).toHaveAttribute("aria-busy", "true");
-      await renderingFrames(6);
-      const pending = await frame.evaluate(
-        (tool) => ({
-          retainedInput:
-            window.retainedToolInput ===
-            document.querySelector(
-              "#fields input, #fields select, #fields textarea",
-            ),
-          retainedTabs: [
-            ...document.querySelectorAll("#tabs [role=tab]"),
-          ].every(
-            (node, position) => node === window.retainedToolTabs[position],
-          ),
-          focused:
-            document.activeElement ===
-            document.querySelector(`[data-action="tab-${tool}"]`),
-        }),
-        tool,
-      );
-      assert.deepEqual(pending, {
-        retainedInput: true,
-        retainedTabs: true,
-        focused: true,
-      });
-      assert.equal(
-        await page.evaluate(
-          () =>
-            window.studioCalls.filter((call) => call.method === "run").length,
-        ),
-        countBefore + 1,
-        `${profile.name}/${tool}: rapid clicks submitted another run`,
-      );
-      await page.evaluate(() => window.studioPendingRun());
-      await expect(
-        frame.locator(`[data-action="tab-${tool}"]`),
-      ).toHaveAttribute("aria-selected", "true");
-      await expect
-        .poll(() =>
-          page.evaluate(() => typeof window.studioPendingIdle === "function"),
-        )
-        .toBe(true);
-      // 检查点回执可能早于宿主空闲快照，让最后一段锁定状态实际绘制数帧。
-      await renderingFrames(6);
-      await expect(frame.locator("main")).toHaveAttribute("aria-busy", "true");
-      await page.evaluate(() => window.studioPendingIdle());
-      await expect(frame.locator("main")).toHaveAttribute("aria-busy", "false");
-      await renderingFrames(12);
-      assert.equal(
-        await frame.evaluate(
-          (tool) =>
-            document.activeElement ===
-            document.querySelector(`[data-action="tab-${tool}"]`),
-          tool,
-        ),
-        true,
-        `${profile.name}/${tool}: committing a tool changed keyboard focus`,
-      );
-      if (tool === "data") {
-        if (index === 0)
-          await frame
-            .locator('[data-field="data-source"]')
-            .fill("label,category,value\nRetained data draft,Design,57");
-        else
-          await expect(frame.locator('[data-field="data-source"]')).toHaveValue(
-            "label,category,value\nRetained data draft,Design,57",
-          );
-      }
-      if (tool === "text") {
-        await expect(frame.locator('[data-field="text"]')).toHaveValue(
-          "Draft survives tool tabs and scenes",
-        );
-        assert.deepEqual(
-          await frame
-            .locator('[data-field="text"]')
-            .evaluate((input) => [input.selectionStart, input.selectionEnd]),
-          [2, 8],
-          `${profile.name}: text selection was not restored`,
-        );
-      }
-      profileResult.toolSwitches.push(tool);
-    }
-    const trace = await frame.evaluate(() => {
-      window.toolSwitchTrace.running = false;
-      window.restoreToolAnimation();
-      return {
-        ...window.toolSwitchTrace,
-        retainedTabs: [...document.querySelectorAll("#tabs [role=tab]")].every(
-          (node, position) => node === window.retainedToolTabs[position],
-        ),
-      };
-    });
-    assert.ok(trace.samples.length >= 6 * 18);
-    const dimmed = trace.samples.find(
-      (sample) =>
-        sample.panelOpacity !== "1" ||
-        sample.panelTransform !== "none" ||
-        sample.controls.some((control) => control.opacity !== "1") ||
-        sample.disabledOpacity !== "0.5",
-    );
-    assert.equal(
-      dimmed,
-      undefined,
-      `${profile.name}: switching flickered or hid disabled feedback: ${JSON.stringify(dimmed)}`,
-    );
-    assert.deepEqual(
-      trace.animations,
-      [],
-      `${profile.name}: switching animated the entire tool panel`,
-    );
-    assert.equal(trace.retainedTabs, true);
-    profileResult.toolSwitchSamples = trace.samples.length;
     await page.evaluate(() => window.sendStudio({ active: false }));
     await expect(frame.locator("main")).toHaveAttribute(
       "data-playing",
@@ -664,7 +301,7 @@ try {
     assert.deepEqual(errors, [], `${profile.name}: page errors`);
     report.profiles.push(profileResult);
     console.log(
-      `PASS ${profile.name}: stable navigation, no overflow, real chart/pipeline values, flicker-free tool tabs, retained nodes/drafts, active/reduced motion`,
+      `PASS ${profile.name}: stable navigation, no overflow, real chart/pipeline values, retained nodes, active/reduced motion`,
     );
     await page.close();
   }

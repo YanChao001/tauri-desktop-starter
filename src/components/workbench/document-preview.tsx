@@ -2,10 +2,28 @@ import { Fragment, type ReactNode } from "react";
 import { CodeBlock } from "@/components/code-block";
 import { normalizeCodeLanguage } from "@/lib/code-language";
 import type { WorkbenchDocument } from "@/lib/tauri";
+import { useI18n } from "@/providers/i18n";
+
+const MAX_MARKDOWN_PREVIEW_LINES = 2000;
 
 /** Markdown 只渲染 React 文本节点与固定元素，不执行 HTML 或加载远端资源。 */
 export function MarkdownPreview({ content }: { content: string }) {
-  const lines = content.split("\n");
+  const { t } = useI18n();
+  const lines = content.split("\n", MAX_MARKDOWN_PREVIEW_LINES + 1);
+  // 合法大小的文本仍可能包含数十万行；只限制结构化预览，编辑与保存保留全文。
+  if (lines.length > MAX_MARKDOWN_PREVIEW_LINES)
+    return (
+      <div className="space-y-2">
+        <p role="status" className="text-xs text-muted-foreground">
+          {t("workbench.markdownPlainPreview")}
+        </p>
+        <CodeBlock
+          code={content}
+          language="text"
+          className="whitespace-pre-wrap break-words"
+        />
+      </div>
+    );
   const nodes: ReactNode[] = [];
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? "";

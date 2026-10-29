@@ -35,7 +35,8 @@ export function ConflictPanel({
     titleSelection.revision === revision ? titleSelection.choice : "local";
   return (
     <section
-      className="space-y-3 rounded-lg border border-amber-500/50 bg-background p-4"
+      data-surface="solid"
+      className="space-y-3 rounded-lg border border-amber-500/50 p-4"
       aria-label={t("data.conflict")}
     >
       <div className="flex items-center gap-2">
@@ -46,25 +47,32 @@ export function ConflictPanel({
       </div>
       {remote ? (
         <>
-          <RadioGroup
-            aria-label={t("diff.titleChoice")}
-            value={titleChoice}
-            onValueChange={(choice) => setTitleSelection({ revision, choice })}
-            disabled={pending}
-          >
-            <Label htmlFor={`${id}-local`} className="min-w-0">
-              <RadioGroupItem id={`${id}-local`} value="local" />
-              <span className="min-w-0 truncate" title={local.title}>
-                {t("diff.keepTitle")}: {local.title}
-              </span>
-            </Label>
-            <Label htmlFor={`${id}-remote`} className="min-w-0">
-              <RadioGroupItem id={`${id}-remote`} value="remote" />
-              <span className="min-w-0 truncate" title={remote.title}>
-                {t("diff.remoteTitle")}: {remote.title}
-              </span>
-            </Label>
-          </RadioGroup>
+          <fieldset className="min-w-0 space-y-3">
+            <legend id={`${id}-title-choice`} className="text-sm font-medium">
+              {t("diff.titleChoice")}
+            </legend>
+            <RadioGroup
+              aria-labelledby={`${id}-title-choice`}
+              value={titleChoice}
+              onValueChange={(choice) =>
+                setTitleSelection({ revision, choice })
+              }
+              disabled={pending}
+            >
+              <Label htmlFor={`${id}-local`} className="min-w-0">
+                <RadioGroupItem id={`${id}-local`} value="local" />
+                <span className="min-w-0 truncate" title={local.title}>
+                  {t("diff.keepTitle")}: {local.title}
+                </span>
+              </Label>
+              <Label htmlFor={`${id}-remote`} className="min-w-0">
+                <RadioGroupItem id={`${id}-remote`} value="remote" />
+                <span className="min-w-0 truncate" title={remote.title}>
+                  {t("diff.remoteTitle")}: {remote.title}
+                </span>
+              </Label>
+            </RadioGroup>
+          </fieldset>
           <TextDiff
             local={local.body}
             remote={remote.body}
@@ -86,7 +94,10 @@ export function ConflictPanel({
           <h4 className="mt-2 truncate font-medium" title={remote.title}>
             {remote.title}
           </h4>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">
+          <pre
+            data-surface="transparent"
+            className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm"
+          >
             {remote.body}
           </pre>
         </details>

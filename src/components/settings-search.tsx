@@ -60,7 +60,7 @@ export function SettingsSearch() {
             aria-label={t("settings.search")}
             aria-describedby={query.trim() ? id : undefined}
             placeholder={t("settings.searchPlaceholder")}
-            className="h-10 pl-9"
+            className="pl-9"
             onKeyDown={(event) => {
               if (
                 event.nativeEvent.isComposing ||

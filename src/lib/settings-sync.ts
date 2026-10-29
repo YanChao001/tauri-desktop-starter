@@ -14,6 +14,10 @@ export type SettingsBackend = {
     settings: ReturnType<typeof settingsDocument>,
     revision: number,
   ): Promise<SettingsSnapshot>;
+  reset(
+    settings: ReturnType<typeof settingsDocument>,
+    revision: number,
+  ): Promise<SettingsSnapshot>;
   subscribe(handler: (snapshot: SettingsSnapshot) => void): Promise<() => void>;
 };
 type State = {
@@ -38,6 +42,7 @@ export class SettingsSync {
   private stopped = false;
   private blocked = false;
   private needsSeed = false;
+  private resetPending = false;
   private error: string | null = null;
   private initialization: Promise<void> | null = null;
   private unlisten?: () => void;
@@ -182,6 +187,7 @@ export class SettingsSync {
     this.blocked = false;
     this.error = null;
     this.pending = migrateSettings(settings);
+    this.resetPending = true;
     if (this.revision >= 0 && this.unlisten) this.ready = true;
     this.emit();
     if (!this.ready) void this.initialize();
@@ -214,13 +220,15 @@ export class SettingsSync {
         (this.needsSeed || Object.keys(this.pending).length)
       ) {
         const seeding = this.needsSeed;
+        const resetting = this.resetPending;
         this.needsSeed = false;
+        this.resetPending = false;
         this.inFlight = this.pending;
         this.pending = {};
         this.emit();
         const revision = this.revision;
         try {
-          const snapshot = await this.backend.save(
+          const snapshot = await this.backend[resetting ? "reset" : "save"](
             settingsDocument(this.settings()),
             revision,
           );
@@ -229,6 +237,7 @@ export class SettingsSync {
           this.inFlight = {};
           conflicts = 0;
         } catch (error) {
+          this.resetPending ||= resetting;
           this.needsSeed ||= seeding && this.revision === revision;
           this.pending = { ...this.inFlight, ...this.pending };
           this.inFlight = {};

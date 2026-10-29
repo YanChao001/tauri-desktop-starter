@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
   settingsDocument,
   STORAGE_KEY,
+  SETTINGS_VERSION,
   type AppSettings,
 } from "@/lib/settings-model";
 import { SettingsProvider, useSettings } from "./settings";
@@ -14,6 +15,7 @@ vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => false),
   loadSettingsSnapshot: vi.fn(),
   saveSettingsSnapshot: vi.fn(),
+  resetSettingsSnapshot: vi.fn(),
   onSettingsChanged: vi.fn(),
 }));
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -35,10 +37,38 @@ describe("settings provider persistence", () => {
     vi.mocked(desktop.onSettingsChanged).mockReset();
     vi.mocked(desktop.loadSettingsSnapshot).mockReset();
     vi.mocked(desktop.saveSettingsSnapshot).mockReset();
+    vi.mocked(desktop.resetSettingsSnapshot).mockReset();
   });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("浏览器保存规范化自定义主题色，切换预设后仍可恢复并显式重置", async () => {
+    const first = renderHook(useSettings, { wrapper });
+    act(() =>
+      first.result.current.update({ accent: "custom", customAccent: " #a3c " }),
+    );
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      schemaVersion: 6,
+      accent: "custom",
+      customAccent: "#AA33CC",
+    });
+    expect(document.documentElement.dataset.accent).toBe("custom");
+    act(() => first.result.current.update({ accent: "slate" }));
+    first.unmount();
+    const next = renderHook(useSettings, { wrapper });
+    expect(next.result.current.settings).toMatchObject({
+      accent: "slate",
+      customAccent: "#AA33CC",
+    });
+    await act(async () => next.result.current.reset());
+    expect(next.result.current.settings).toEqual(DEFAULT_SETTINGS);
+    expect(document.documentElement.dataset.accent).toBe("neutral");
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      accent: "neutral",
+      customAccent: DEFAULT_SETTINGS.customAccent,
+    });
   });
 
   it("保存启动位置偏好，重新挂载时恢复，重置时回到记住上次位置", async () => {
@@ -130,6 +160,27 @@ describe("settings provider persistence", () => {
     );
   });
 
+  it.each(["", "null", "[]", '"preferences"', "true", "123"])(
+    "保留结构损坏的浏览器存档 %j，直到显式重置",
+    async (raw) => {
+      localStorage.setItem(STORAGE_KEY, raw);
+      const { result } = renderHook(useSettings, { wrapper });
+      act(() => result.current.update({ language: "en", accent: "rose" }));
+      act(() => result.current.retrySave());
+      expect(localStorage.getItem(STORAGE_KEY)).toBe(raw);
+      expect(result.current).toMatchObject({
+        persistence: "error",
+        persistenceError: "STORAGE_UNAVAILABLE",
+        settings: { language: "en", accent: "rose" },
+      });
+      await act(async () => result.current.reset());
+      expect(result.current.persistence).toBe("saved");
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual(
+        settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
+      );
+    },
+  );
+
   it("reloads after a browser read failure and merges only edits made while unavailable", () => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -164,7 +215,7 @@ describe("settings provider persistence", () => {
       result.current.update({
         schemaVersion: 99,
         sidebarWidth: 999,
-        accent: "pink",
+        accent: "invalid-accent",
       } as unknown as Partial<AppSettings>),
     );
     expect(result.current.settings).toMatchObject({
@@ -236,7 +287,7 @@ describe("settings provider persistence", () => {
       revision: 5,
       settings: { schemaVersion: 99 },
     });
-    vi.mocked(desktop.saveSettingsSnapshot).mockImplementation(
+    vi.mocked(desktop.resetSettingsSnapshot).mockImplementation(
       async (settings) => ({
         revision: 6,
         settings: settings as desktop.SettingsSnapshot["settings"],
@@ -264,9 +315,50 @@ describe("settings provider persistence", () => {
     expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
     await act(async () => result.current.reset());
     await waitFor(() => expect(result.current.persistence).toBe("saved"));
+    expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
+    expect(desktop.resetSettingsSnapshot).toHaveBeenCalledExactlyOnceWith(
+      settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
+      5,
+    );
     expect(result.current.settings).toEqual({
       ...DEFAULT_SETTINGS,
       language: "en",
+    });
+  });
+
+  it("keeps future-version caches protected after a reset fails until a later reset succeeds", async () => {
+    const futureCache = JSON.stringify({
+      schemaVersion: 99,
+      future: "preserve",
+    });
+    localStorage.setItem(STORAGE_KEY, futureCache);
+    vi.mocked(desktop.isTauri).mockReturnValue(true);
+    vi.mocked(desktop.onSettingsChanged).mockResolvedValue(vi.fn());
+    vi.mocked(desktop.loadSettingsSnapshot).mockResolvedValue({
+      revision: 5,
+      settings: { schemaVersion: 99 },
+    });
+    vi.mocked(desktop.resetSettingsSnapshot)
+      .mockRejectedValueOnce({ code: "STORAGE_IO" })
+      .mockImplementation(async (settings) => ({ revision: 6, settings }));
+    const { result } = renderHook(useSettings, { wrapper });
+    await waitFor(() =>
+      expect(result.current.persistenceError).toBe("FUTURE_SETTINGS_VERSION"),
+    );
+    await act(async () => {
+      await expect(result.current.reset()).rejects.toEqual({
+        code: "STORAGE_IO",
+      });
+    });
+    act(() => result.current.update({ language: "en" }));
+    expect(result.current.persistence).toBe("error");
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(futureCache);
+    expect(desktop.resetSettingsSnapshot).toHaveBeenCalledOnce();
+    await act(async () => result.current.reset());
+    await waitFor(() => expect(result.current.persistence).toBe("saved"));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      language: "en",
+      schemaVersion: SETTINGS_VERSION,
     });
   });
 

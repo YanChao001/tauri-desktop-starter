@@ -8,7 +8,7 @@ export async function patchSettings(patch) {
     const snapshot = await invoke("load_settings_snapshot");
     assert.equal(snapshot.ok, true);
     const result = await invoke("save_settings_snapshot", {
-      settings: { ...snapshot.value.settings, ...patch, schemaVersion: 3 },
+      settings: { ...snapshot.value.settings, ...patch, schemaVersion: 6 },
       expectedRevision: snapshot.value.revision,
     });
     if (result.ok) return result.value;

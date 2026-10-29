@@ -16,12 +16,12 @@ export default tseslint.config(
       "examples/extensions/dist/**",
       "examples/extensions/**/target/**",
       "src-tauri/**",
-      // shadcn 原子组件沿用上游编码风格；行为修复仍需类型检查与回归验证
-      "src/components/ui/**",
     ],
   },
   {
     files: ["**/*.{js,mjs,cjs,ts,tsx}"],
+    // 上游控件保留编码风格；下方独立的原生边界规则仍覆盖此目录。
+    ignores: ["src/components/ui/**"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2023,
@@ -30,12 +30,16 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks },
     rules: {
       "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
+      "react-hooks/exhaustive-deps": "error",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
     },
+  },
+  {
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    languageOptions: { parser: tseslint.parser },
   },
   {
     // Specta 生成通用错误适配代码，仅对生成目录放宽此规则。
@@ -92,6 +96,11 @@ export default tseslint.config(
       // no-restricted-imports 只检查静态导入，动态 import() 需单独约束。
       "no-restricted-syntax": [
         "error",
+        {
+          selector:
+            "Program > :not(ImportDeclaration):not(ExpressionStatement[directive]) ~ ImportDeclaration",
+          message: "导入声明统一放在模块顶部。",
+        },
         {
           selector: String.raw`ImportExpression[source.value=/^@tauri-apps\//]`,
           message:

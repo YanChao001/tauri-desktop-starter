@@ -1,4 +1,5 @@
 export const zhSystem = {
+  "nativeError.busy": "原生操作繁忙，请稍后重试。",
   "lifecycle.title": "保存未完成的工作",
   "lifecycle.description":
     "此操作需要 {count} 个窗口就绪。先保存或处理未完成的工作；所有窗口准备好后才会继续。",

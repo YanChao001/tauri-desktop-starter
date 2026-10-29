@@ -9,7 +9,7 @@
 }
 .lab-heading {
   position: relative;
-  padding: 0 0 1.25rem;
+  padding: 0 0 1rem;
   padding-right: 6rem;
 }
 .lab-brand-mark {
@@ -48,7 +48,6 @@
   padding: 0.75rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--card);
   font-size: 0.8rem;
   text-align: left;
   white-space: nowrap;
@@ -91,7 +90,7 @@
   border: 1px solid var(--lab-line);
   border-radius: var(--radius-xl);
   overflow: hidden;
-  background: var(--card);
+  background: var(--surface-card);
 }
 .lab-console-heading {
   display: flex;
@@ -307,12 +306,12 @@
 }
 .lab-control-panel {
   min-width: 0;
-  padding: 1.5rem;
+  padding: 1rem;
   border-top: 1px solid var(--lab-line);
-  background: var(--card);
+  background: var(--surface-card);
 }
 .lab-control-panel > h3 {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -367,7 +366,7 @@
 }
 .lab-presets button:hover,
 .lab-presets button[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
   color: var(--foreground);
 }
@@ -379,7 +378,6 @@
   margin-top: 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--background);
 }
 .lab-response > div {
   flex-shrink: 0;
@@ -440,7 +438,6 @@
   padding: 0.25rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--card);
 }
 .lab-layout-tabs button {
   position: relative;
@@ -451,7 +448,7 @@
   cursor: pointer;
 }
 .lab-layout-tabs button:hover {
-  background: var(--accent);
+  background: var(--surface-state-hover);
   color: var(--foreground);
 }
 .lab-layout-tabs button > span:last-child {
@@ -464,7 +461,7 @@
 .lab-layout-selection {
   position: absolute;
   inset: 0;
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
@@ -629,11 +626,11 @@
   cursor: pointer;
 }
 .lab-focus-options button[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--surface-state-selected);
   border-color: var(--primary);
 }
 .lab-focus-options button:hover {
-  background: var(--accent);
+  background: var(--surface-state-hover);
   border-color: var(--primary);
 }
 .lab-focus-options button > svg {
@@ -951,7 +948,7 @@
     right: -5rem;
   }
   .lab-control-panel {
-    padding: 1.2rem;
+    padding: 1rem;
   }
   .lab-console-heading {
     padding: 1.2rem;

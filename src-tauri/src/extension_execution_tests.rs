@@ -12,13 +12,20 @@ fn storage_run() -> (
 ) {
     let temp = crate::extension_paths::temporary_directory();
     let store = ExtensionStore::new(temp.path().join("extensions"), false);
-    store.initialize_bundled().unwrap();
-    let snapshot = store.snapshot().unwrap();
-    let item = snapshot
-        .items
-        .iter()
-        .find(|item| item.package.manifest.id == "starter.extension-lab")
-        .unwrap();
+    // 宿主 effect 测试独立声明所需能力，不依赖内置工作台当前提供哪些业务功能。
+    let mut content: Value = serde_json::from_str(&crate::extensions::demo_package()).unwrap();
+    content["manifest"] = json!({
+        "formatVersion":3,"apiVersion":2,"minHostVersion":"0.1.4",
+        "id":"tests.effect-driver","version":"1.0.0","name":"Effect driver",
+        "author":"Tests","description":"Exercises the host effect protocol",
+        "commands":[{"id":"fixture","title":"Fixture","function":"uppercase",
+            "inputFormat":"json","resultFormat":"view","permissions":["storage"]}],
+        "permissions":["storage"],"optionalPermissions":[],"network":[]
+    });
+    let content = content.to_string();
+    let preview = crate::extensions::preview_package(&content).unwrap();
+    let snapshot = store.install(&content, 0, false, &preview.sha256).unwrap();
+    let item = &snapshot.items[0];
     let id = item.package.manifest.id.clone();
     let hash = item.package.sha256.clone();
     store
@@ -96,60 +103,45 @@ fn fixed_views(first: &Value, second: &Value, first_request_bytes: usize) -> Vec
 }
 
 #[test]
-fn real_lab_driver_finishes_storage_effects_and_persists_across_host_reopen() {
+fn real_wasm_driver_finishes_storage_effects_and_persists_across_host_reopen() {
     tauri::async_runtime::block_on(async {
-        let (temp, prepared, host, settings) = storage_run();
+        let (temp, mut prepared, host, settings) = storage_run();
         assert_eq!(prepared.grants, vec![ExtensionPermission::Storage]);
-        let function = &prepared
-            .package
-            .manifest
-            .commands
-            .iter()
-            .find(|command| command.id == "open")
-            .unwrap()
-            .function;
-        let initial = drive_view(
-            &host,
-            &settings,
-            &prepared,
-            function,
-            ExtensionExecutionBudget::Standard,
-            request(Some("tab-todo"), "", json!({})),
-            "en",
+        let document = json!({"title":"persisted","body":"保留 Unicode 原文"});
+        let first = view(
+            "saving",
+            vec![
+                json!({"kind":"storage","id":"save-document","expectedRevision":0,
+                "changes":{"document":document}}),
+            ],
+        );
+        let second = view("complete", vec![]);
+        let mut initial = request(None, "", json!({}));
+        initial["host"] = serde_json::to_value(
+            host.context(&prepared.package.manifest, &prepared.grants)
+                .unwrap(),
         )
-        .await
         .unwrap();
+        prepared.module = fixed_views(&first, &second, encode(&initial).unwrap().len());
         let completed = drive_view(
             &host,
             &settings,
             &prepared,
-            function,
+            "fixture",
             ExtensionExecutionBudget::Standard,
-            request(
-                Some("todo-add"),
-                &initial.state,
-                json!({"todo":"persisted"}),
-            ),
+            initial,
             "en",
         )
         .await
         .unwrap();
         assert!(completed.effects.is_empty());
-        assert!(
-            completed
-                .fields
-                .iter()
-                .find(|field| field.id == "todo")
-                .unwrap()
-                .value
-                .is_empty()
-        );
+        assert_eq!(completed.state, "complete");
         let snapshot = host
             .storage_snapshot(&prepared.package.manifest.id)
             .unwrap();
         assert_eq!(snapshot.revision, 1);
-        assert_eq!(snapshot.values["todos"][0]["text"], "persisted");
-        assert_eq!(snapshot.values["todos"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot.values["document"], document);
+        assert_eq!(snapshot.values.len(), 1);
         drop(host);
         let reopened = ExtensionHostStore::new(
             temp.path().join("host"),

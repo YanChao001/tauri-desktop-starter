@@ -2,7 +2,7 @@ import type { zhComponents } from "./zh-components";
 
 export const enComponents = {
   "playground.eyebrow": "An experiment you can touch",
-  "playground.title": "Interface playground",
+  "playground.title": "Interaction playground",
   "playground.description":
     "Turn a few controls. See them work together, and give an idea a shape you can feel.",
   "playground.stages": "Interactive stages",
@@ -52,7 +52,7 @@ export const enComponents = {
   "playground.addCollaborator": "Add a collaborator",
   "playground.inviteTitle": "Bring someone into the idea",
   "playground.inviteDescription":
-    "Enter an email and a role to try validation and confirmation. Data stays on this page.",
+    "Simulated invitations stay on this page. No email is sent.",
   "playground.email": "Email address",
   "playground.emailPlaceholder": "name@example.com",
   "playground.role": "Collaboration role",

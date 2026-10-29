@@ -1,0 +1,1735 @@
+/* 宿主、隔离插件文档和显式接入的 ShadowRoot 共用；只使用浏览器原生 CSS。 */
+:where(:root) {
+  --ui-outline-background: var(--control-background);
+  --ui-outline-hover: var(--surface-state-hover);
+  --ui-outline-border: var(--surface-control-border, var(--input));
+  --ui-ghost-hover: var(--surface-state-hover);
+  --ui-destructive-background: color-mix(
+    in oklab,
+    var(--destructive) var(--ui-destructive-opacity),
+    transparent
+  );
+  --ui-destructive-hover: color-mix(
+    in oklab,
+    var(--destructive) var(--ui-destructive-hover-opacity),
+    transparent
+  );
+  --ui-destructive-menu-hover: color-mix(
+    in oklab,
+    var(--destructive) 14%,
+    var(--surface-state-hover)
+  );
+  --ui-check-background: var(--control-background);
+  --ui-invalid-border: var(--destructive);
+  --ui-invalid-ring: color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+:where(body, :host) {
+  --muted-foreground: var(--glass-muted-foreground);
+}
+:where(html[data-starter-ui]) {
+  box-sizing: border-box;
+  font-family: var(--host-font-family, system-ui, sans-serif);
+  font-size: var(--host-font-size, 16px);
+  line-height: 1.5;
+  color: var(--foreground, CanvasText);
+  background: transparent;
+}
+
+:where(*, *::before, *::after) {
+  box-sizing: border-box;
+  border-color: var(--surface-border, var(--border, currentColor));
+}
+:host {
+  font-family: var(--host-font-family, system-ui, sans-serif);
+  font-size: var(--host-font-size, 16px);
+  line-height: 1.5;
+  color: var(--foreground, CanvasText);
+}
+:where(html[data-starter-ui] body) {
+  margin: 0;
+  min-width: 0;
+  padding: 1rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input:not(
+    [type="hidden"],
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  select,
+  textarea,
+  :is([data-slot="select-trigger"], .ui-select),
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  :is([data-slot="checkbox"], .ui-checkbox),
+  :is([data-slot="radio-group-item"], .ui-radio),
+  :is([data-slot="switch"], .ui-switch),
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="tabs-trigger"],
+  [role="tab"],
+  .ui-toggle
+) {
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: inherit;
+  outline: none;
+  transition:
+    color 150ms,
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms,
+    transform 150ms;
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+) {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 2rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius, 0.625rem);
+  background: var(--primary, ButtonFace);
+  color: var(--primary-foreground, ButtonText);
+  font-weight: 500;
+  user-select: none;
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):hover {
+  background: color-mix(
+    in oklab,
+    var(--primary, ButtonFace) 90%,
+    var(--foreground, CanvasText)
+  );
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):active:not([aria-haspopup]) {
+  transform: translateY(1px);
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(:is([data-variant="outline"], .ui-button-outline)) {
+  border-color: var(--ui-outline-border, var(--border));
+  background: var(--ui-outline-background, var(--background, Canvas));
+  color: var(--foreground, CanvasText);
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):where(:is([data-variant="outline"], .ui-button-outline)):hover,
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(
+  :is([data-variant="outline"], .ui-button-outline)[aria-expanded="true"]
+) {
+  background: var(--ui-outline-hover, var(--muted, ButtonFace));
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(:is([data-variant="secondary"], .ui-button-secondary)) {
+  background: var(--surface-state-selected, var(--secondary, ButtonFace));
+  color: var(--foreground, CanvasText);
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):where(:is([data-variant="secondary"], .ui-button-secondary)):hover {
+  background: var(--surface-state-hover);
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(
+  :is([data-variant="secondary"], .ui-button-secondary)[aria-expanded="true"]
+) {
+  background: var(--surface-state-selected, var(--secondary, ButtonFace));
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(
+  :is([data-variant="ghost"], .ui-button-ghost),
+  :is([data-variant="link"], .ui-button-link)
+) {
+  background: transparent;
+  color: var(--foreground, CanvasText);
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):where(:is([data-variant="ghost"], .ui-button-ghost)):hover,
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(:is([data-variant="ghost"], .ui-button-ghost)[aria-expanded="true"]) {
+  background: var(--ui-ghost-hover, var(--muted, ButtonFace));
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(:is([data-variant="destructive"], .ui-button-destructive)) {
+  background: var(--ui-destructive-background);
+  color: var(--surface-destructive-foreground, var(--destructive, Mark));
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):where(:is([data-variant="destructive"], .ui-button-destructive)):is(
+    :hover,
+    :focus-visible
+  ) {
+  background: var(--ui-destructive-hover);
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(:is([data-variant="link"], .ui-button-link)) {
+  color: var(--surface-link-foreground, var(--primary, LinkText));
+  text-underline-offset: 4px;
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):where(:is([data-variant="link"], .ui-button-link)):hover {
+  background: transparent;
+  text-decoration-line: underline;
+}
+:where(
+  input:not(
+    [type="hidden"],
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  select,
+  textarea,
+  :is([data-slot="select-trigger"], .ui-select)
+) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 2rem;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--surface-control-border, var(--input, var(--border)));
+  border-radius: var(--radius, 0.625rem);
+  background: var(
+    --control-background,
+    var(--popover, var(--background, Canvas))
+  );
+  -webkit-backdrop-filter: blur(var(--surface-control-blur, 0px));
+  backdrop-filter: blur(var(--surface-control-blur, 0px));
+}
+:where(select, .ui-select, [data-slot="select-trigger"]):enabled:hover {
+  background: var(--control-select-hover-background, var(--muted, ButtonFace));
+}
+:where(option, optgroup) {
+  background: var(--background, Canvas);
+  color: var(--foreground, CanvasText);
+}
+:where(
+  input:not(
+    [type="hidden"],
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  select,
+  textarea,
+  :is([data-slot="select-trigger"], .ui-select)
+):disabled {
+  background: var(--control-disabled-background, var(--background, Canvas));
+}
+:where(
+  input:not(
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  textarea,
+  select,
+  [data-slot="select-trigger"],
+  .ui-select,
+  [data-slot="select-content"]
+) {
+  /* 弹层会移至 Portal，显式共享宿主字号，不从页面或 iframe 宽度重新推断。 */
+  font-size: var(--control-input-font-size, 0.875rem);
+  line-height: var(--control-input-line-height, 1.25rem);
+  /* 输入正文不因嵌套在较粗的 label 中而改变字重。 */
+  font-weight: 400;
+}
+:where(textarea) {
+  height: auto;
+  min-height: 5rem;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+}
+:where(input[type="file"])::file-selector-button {
+  margin-inline-end: 0.5rem;
+  padding: 0 0.25rem;
+  height: 1.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--foreground, CanvasText);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+}
+:where([data-starter-listbox]) {
+  --muted-foreground: var(--glass-muted-foreground, GrayText);
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 2147483647;
+  overflow: auto;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.625rem);
+  background: var(--surface-popover, var(--popover, var(--background, Canvas)));
+  -webkit-backdrop-filter: blur(var(--surface-popup-blur, 0px));
+  backdrop-filter: blur(var(--surface-popup-blur, 0px));
+  color: var(--popover-foreground, var(--foreground, CanvasText));
+  font: inherit;
+  font-size: var(--control-input-font-size, 0.875rem);
+  line-height: var(--control-input-line-height, 1.25rem);
+  box-shadow: 0 4px 12px #0002;
+  overscroll-behavior: contain;
+}
+:where([data-starter-option]) {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: calc(var(--radius, 0.625rem) * 0.6);
+  cursor: default;
+  white-space: nowrap;
+}
+:where([data-starter-option][data-active]) {
+  background: var(--surface-state-selected, var(--accent, Highlight));
+  color: var(--foreground, CanvasText);
+}
+:where([data-starter-option][aria-disabled="true"]) {
+  opacity: 0.5;
+}
+:where([data-starter-option][aria-selected="true"])::after {
+  content: "✓";
+  margin-inline-start: auto;
+  padding-inline-start: 1rem;
+}
+:where([data-starter-option-group]) {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground, GrayText);
+  font-weight: 500;
+}
+:where(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+  accent-color: var(--primary, Highlight);
+}
+:where(input[type="checkbox"], input[type="radio"]) {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--surface-control-border, var(--input, var(--border)));
+  border-radius: 4px;
+  background: var(--ui-check-background, transparent);
+}
+:where(input[type="radio"]) {
+  border-radius: 50%;
+}
+:where(input[type="checkbox"]):checked,
+:where(input[type="checkbox"]):indeterminate,
+:where(input[type="radio"]):checked {
+  border-color: var(--primary, Highlight);
+  background: var(--primary, Highlight);
+  color: var(--primary-foreground, HighlightText);
+}
+:where(input[type="checkbox"], input[type="radio"])::before {
+  content: "";
+  display: none;
+}
+:where(input[type="checkbox"]):checked::before {
+  display: block;
+  width: 0.25rem;
+  height: 0.5rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+:where(input[type="checkbox"]):indeterminate::before {
+  display: block;
+  width: 0.5rem;
+  height: 0;
+  border: 0;
+  border-bottom: 2px solid currentColor;
+  transform: none;
+}
+:where(input[type="radio"]):checked::before {
+  display: block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+:where(input[type="range"]) {
+  appearance: none;
+  width: 100%;
+  height: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+:where(input[type="range"])::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--muted, ButtonFace);
+}
+:where(input[type="range"])::-moz-range-track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--muted, ButtonFace);
+}
+:where(input[type="range"])::-moz-range-progress {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--primary, Highlight);
+}
+:where(input[type="range"])::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-top: -0.25rem;
+  border: 1px solid var(--primary, Highlight);
+  border-radius: 50%;
+  background: var(--background, Canvas);
+}
+:where(input[type="range"])::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid var(--primary, Highlight);
+  border-radius: 50%;
+  background: var(--background, Canvas);
+}
+:where(input[type="range"]):is(
+    :hover,
+    :focus-visible,
+    :active
+  )::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--ring, Highlight) 50%, transparent);
+}
+:where(input[type="range"]):is(
+    :hover,
+    :focus-visible,
+    :active
+  )::-moz-range-thumb {
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--ring, Highlight) 50%, transparent);
+}
+:where(input, textarea)::placeholder {
+  color: var(--glass-muted-foreground, var(--muted-foreground, GrayText));
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input:not(
+    [type="hidden"],
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  select,
+  textarea,
+  :is([data-slot="select-trigger"], .ui-select),
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  :is([data-slot="checkbox"], .ui-checkbox),
+  :is([data-slot="radio-group-item"], .ui-radio),
+  :is([data-slot="switch"], .ui-switch),
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="tabs-trigger"]
+):focus-visible {
+  border-color: var(--ring, Highlight);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--ring, Highlight) 50%, transparent);
+}
+:where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"]
+  ):where(
+    :is([data-variant="destructive"], .ui-button-destructive)
+  ):focus-visible {
+  border-color: color-mix(in oklab, var(--destructive, Mark) 40%, transparent);
+  box-shadow: 0 0 0 3px var(--ui-invalid-ring);
+}
+:where(input[type="range"]):focus-visible {
+  box-shadow: none;
+}
+:where(a, [tabindex]):not(
+    :where(
+      button:not([data-slot]):not([role]):not([data-surface]),
+      [data-slot="button"],
+      .ui-button,
+      input[type="button"],
+      input[type="submit"],
+      input[type="reset"],
+      input:not(
+        [type="hidden"],
+        [type="checkbox"],
+        [type="radio"],
+        [type="range"],
+        [type="button"],
+        [type="submit"],
+        [type="reset"]
+      ),
+      select,
+      textarea,
+      :is([data-slot="select-trigger"], .ui-select),
+      input[type="checkbox"],
+      input[type="radio"],
+      input[type="range"],
+      :is([data-slot="checkbox"], .ui-checkbox),
+      :is([data-slot="radio-group-item"], .ui-radio),
+      :is([data-slot="switch"], .ui-switch),
+      [data-slot="toggle"],
+      [data-slot="toggle-group-item"],
+      [data-slot="tabs-trigger"]
+    )
+  ):focus-visible {
+  outline: 2px solid var(--ring, Highlight);
+  outline-offset: 2px;
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input:not(
+    [type="hidden"],
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="button"],
+    [type="submit"],
+    [type="reset"]
+  ),
+  select,
+  textarea,
+  :is([data-slot="select-trigger"], .ui-select),
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  :is([data-slot="checkbox"], .ui-checkbox),
+  :is([data-slot="radio-group-item"], .ui-radio),
+  :is([data-slot="switch"], .ui-switch),
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="tabs-trigger"]
+):disabled,
+:where([aria-disabled="true"]) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input
+):disabled {
+  pointer-events: none;
+}
+[aria-invalid="true"] {
+  border-color: var(--ui-invalid-border, var(--destructive, Mark));
+  box-shadow: 0 0 0 3px
+    var(
+      --ui-invalid-ring,
+      color-mix(in oklab, var(--destructive, Mark) 20%, transparent)
+    );
+}
+:where(
+    input[type="checkbox"],
+    input[type="radio"]
+  ):checked[aria-invalid="true"] {
+  border-color: var(--primary, Highlight);
+}
+:where(label) {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+:where(
+  a:not(.ui-button):not([data-slot="button"]):not(.ui-badge):not(
+      [data-slot="badge"]
+    ):not([role="button"])
+) {
+  color: var(--surface-link-foreground, var(--primary, LinkText));
+  text-underline-offset: 0.2em;
+}
+:where(h1, h2, h3, p) {
+  overflow-wrap: anywhere;
+}
+:where(h1) {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+:where(h2) {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+:where(pre, code) {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+:where(img, canvas, svg, video) {
+  max-width: 100%;
+}
+:where(table) {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+:where(th, td) {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+}
+:where(th) {
+  color: var(--foreground, CanvasText);
+  font-weight: 500;
+}
+@supports not selector(::-webkit-scrollbar) {
+  :where(*) {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--foreground, CanvasText) 20%,
+        transparent
+      )
+      transparent;
+  }
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: color-mix(
+    in oklab,
+    var(--foreground, CanvasText) 20%,
+    transparent
+  );
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(
+    in oklab,
+    var(--foreground, CanvasText) 28%,
+    transparent
+  );
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+:where(html[data-active="false"]) *,
+:where(html[data-active="false"]) *::before,
+:where(html[data-active="false"]) *::after {
+  animation-play-state: paused !important;
+}
+:where(html[data-motion="reduced"]) *,
+:where(html[data-motion="reduced"]) *::before,
+:where(html[data-motion="reduced"]) *::after {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  :where(
+    input:not(
+      [type="hidden"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"]
+    ),
+    select,
+    textarea,
+    :is([data-slot="select-trigger"], .ui-select)
+  ) {
+    background: var(--popover, var(--background, Canvas));
+  }
+  :where(select, .ui-select, [data-slot="select-trigger"]):enabled:hover {
+    background: var(--muted, ButtonFace);
+  }
+  :where(
+    input:not(
+      [type="hidden"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"]
+    ),
+    select,
+    textarea,
+    :is([data-slot="select-trigger"], .ui-select)
+  ):disabled {
+    background: var(--popover, var(--background, Canvas));
+  }
+  :where([data-starter-listbox]) {
+    background: var(--popover, var(--background, Canvas));
+  }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+  :where(
+    input:not(
+      [type="hidden"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"]
+    ),
+    select,
+    textarea,
+    :is([data-slot="select-trigger"], .ui-select)
+  ) {
+    background: var(--popover, var(--background, Canvas));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :where(select, .ui-select, [data-slot="select-trigger"]):enabled:hover {
+    background: var(--muted, ButtonFace);
+  }
+  :where(
+    input:not(
+      [type="hidden"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"]
+    ),
+    select,
+    textarea,
+    :is([data-slot="select-trigger"], .ui-select)
+  ):disabled {
+    background: var(--popover, var(--background, Canvas));
+  }
+  :where([data-starter-listbox]) {
+    background: var(--popover, var(--background, Canvas));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
+  :where(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+    appearance: auto;
+    background: revert;
+    border: revert;
+    color: revert;
+    forced-color-adjust: auto;
+  }
+  :where(input[type="checkbox"], input[type="radio"])::before {
+    display: none;
+  }
+  :where(input[type="range"])::-webkit-slider-runnable-track {
+    all: revert;
+  }
+  :where(input[type="range"])::-webkit-slider-thumb {
+    all: revert;
+  }
+  :where(input[type="range"])::-moz-range-track {
+    all: revert;
+  }
+  :where(input[type="range"])::-moz-range-thumb {
+    all: revert;
+  }
+  :where(input[type="range"])::-moz-range-progress {
+    all: revert;
+  }
+  :where(
+    button:not([data-slot]):not([role]):not([data-surface]),
+    [data-slot="button"],
+    .ui-button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"],
+    input:not(
+      [type="hidden"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="button"],
+      [type="submit"],
+      [type="reset"]
+    ),
+    select,
+    textarea,
+    :is([data-slot="select-trigger"], .ui-select),
+    input[type="checkbox"],
+    input[type="radio"],
+    input[type="range"],
+    :is([data-slot="checkbox"], .ui-checkbox),
+    :is([data-slot="radio-group-item"], .ui-radio),
+    :is([data-slot="switch"], .ui-switch),
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"],
+    [data-slot="tabs-trigger"]
+  ):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* 语义角色独立于组件实现；作者样式和调用方 utility 仍可显式覆盖。 */
+:where([data-surface="panel"], .app-surface, [data-slot="card"]) {
+  background: var(--surface-card, var(--card));
+  color: var(--card-foreground, var(--foreground));
+}
+:where([data-slot="card-footer"], [data-slot="table-footer"]) {
+  background: var(--surface-card-muted, var(--muted));
+}
+:where([data-surface="control"], .app-control-surface) {
+  background: var(--control-background);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where(
+  [data-surface="popover"],
+  [popover]:not([data-surface]),
+  [role="menu"]:not([data-surface]),
+  [role="listbox"]:not([data-surface]),
+  .app-overlay-surface,
+  [data-slot="popover-content"]:not([data-surface]),
+  [data-slot="select-content"]:not([data-surface]),
+  [data-slot="dropdown-menu-content"]:not([data-surface]),
+  [data-slot="dropdown-menu-sub-content"]:not([data-surface]),
+  [data-slot="context-menu-content"]:not([data-surface]),
+  [data-slot="context-menu-sub-content"]:not([data-surface])
+) {
+  --muted-foreground: var(--glass-muted-foreground);
+  background: var(--surface-popover);
+  color: var(--popover-foreground, var(--foreground));
+  border: 1px solid var(--surface-frame-border);
+  border-radius: var(--radius, 0.625rem);
+  box-shadow: 0 4px 12px #0002;
+  -webkit-backdrop-filter: blur(var(--surface-popup-blur));
+  backdrop-filter: blur(var(--surface-popup-blur));
+}
+:where(
+  dialog:not([data-surface]),
+  [role="dialog"]:not([data-surface]):not([data-slot]),
+  [role="alertdialog"]:not([data-surface]):not([data-slot]),
+  [data-slot="dialog-content"]:not([data-surface])
+) {
+  --muted-foreground: var(--glass-muted-foreground);
+  background: var(--surface-dialog);
+  color: var(--popover-foreground, var(--foreground));
+  border: 1px solid var(--surface-frame-border);
+  border-radius: var(--radius-xl, 0.75rem);
+  -webkit-backdrop-filter: blur(var(--surface-popup-blur));
+  backdrop-filter: blur(var(--surface-popup-blur));
+}
+:where(
+  [data-surface="reading"],
+  .app-reading-surface,
+  output:not([data-surface]),
+  pre:not([data-surface]),
+  samp:not([data-surface]),
+  kbd:not([data-surface]),
+  thead:not([data-surface]),
+  [data-slot="table-header"]:not([data-surface])
+) {
+  --muted-foreground: var(--glass-muted-foreground);
+  background: var(--surface-reading);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-reading-blur));
+  backdrop-filter: blur(var(--surface-reading-blur));
+}
+:where([data-surface="solid"], .app-solid-surface) {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:where([data-surface="transparent"], [data-surface="artwork"]) {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:where(pre, output, samp) {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 1rem;
+  border-radius: var(--radius, 0.625rem);
+  overflow: auto;
+}
+:where(code, kbd, samp) {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+:where(code:not(pre code):not([data-surface])) {
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: 0.1em 0.3em;
+  background: var(--surface-reading);
+  color: var(--foreground);
+}
+:where(pre code:not([data-surface])) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:where(kbd) {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--input, var(--border));
+  border-radius: var(--radius-sm, 0.25rem);
+  padding: 0.15em 0.4em;
+  font-size: 0.8em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+:where(details) {
+  --disclosure-radius: var(--radius, 0.625rem);
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--disclosure-radius);
+}
+:where(details[data-disclosure-radius="md"]) {
+  --disclosure-radius: calc(var(--radius, 0.625rem) * 0.8);
+}
+:where(details[data-disclosure-radius="xl"]) {
+  --disclosure-radius: calc(var(--radius, 0.625rem) * 1.4);
+}
+:where(summary) {
+  cursor: pointer;
+  /* 原生 details 的匿名插槽可能令 inherit 取到 0，父子显式使用同一令牌。 */
+  border-radius: var(--disclosure-radius, var(--radius, 0.625rem));
+  padding: 0.75rem 1rem;
+}
+/* 只按父容器圆角绘制；展开后下角连接正文，不裁切内容或焦点环。 */
+:where(details[open] > summary) {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+:where(summary:not([data-surface])) {
+  background: var(--control-background);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where(fieldset) {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.625rem);
+  padding: 0.75rem;
+  padding-block-start: 0.5rem;
+}
+:where(legend) {
+  margin-block: 0;
+  padding-inline: 0.3rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+:where(
+  .ui-button,
+  [data-slot="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+) {
+  min-height: 0;
+  height: 2rem;
+}
+/* buttonVariants 生成这些稳定类，链接和 asChild 与普通按钮共用。 */
+:where(.ui-button-size-xs) {
+  height: 1.5rem;
+  padding-inline: 0.5rem;
+  font-size: 0.75rem;
+}
+:where(.ui-button-size-sm) {
+  height: 1.75rem;
+  font-size: 0.8rem;
+}
+:where(.ui-button-size-lg) {
+  height: 2.25rem;
+}
+:where(.ui-button-size-icon) {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+}
+:where(.ui-button-size-icon-xs) {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+}
+:where(.ui-button-size-icon-sm) {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+}
+:where(.ui-button-size-icon-lg) {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+}
+:where(
+  button:not([data-slot]):not([role]):not([data-surface]),
+  [data-slot="button"],
+  .ui-button,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]
+):where(
+  [data-variant="outline"],
+  [data-variant="secondary"],
+  .ui-button-outline,
+  .ui-button-secondary
+) {
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where(:is([data-slot="select-trigger"], .ui-select)) {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+:where(:is([data-slot="select-trigger"], .ui-select)[data-size="sm"]) {
+  height: 1.75rem;
+}
+:where(:is([data-slot="select-trigger"], .ui-select)[data-placeholder]) {
+  color: var(--glass-muted-foreground);
+}
+:where(
+  [data-slot="select-scroll-up-button"],
+  [data-slot="select-scroll-down-button"]
+) {
+  background: var(--surface-popover);
+}
+
+/* 可点击状态用阅读底色，实际值、勾选、进度与焦点保留语义实色。 */
+:where([data-slot="tabs-list"], [role="tablist"]) {
+  color: var(--glass-muted-foreground);
+  background: var(--control-background);
+  border-radius: var(--radius);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where([data-slot="tabs-trigger"], [role="tab"], .ui-toggle) {
+  background: transparent;
+  color: var(--glass-muted-foreground);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, var(--radius));
+  outline: none;
+  font-weight: 500;
+}
+:where([data-slot="tabs-trigger"], [role="tab"], .ui-toggle):where(
+  :hover,
+  :focus-visible
+) {
+  color: var(--foreground);
+  background: var(--surface-state-hover);
+}
+:where(
+  [data-slot="tabs-trigger"][data-state="active"],
+  [role="tab"][aria-selected="true"],
+  .ui-toggle[aria-pressed="true"],
+  .ui-toggle[data-state="on"]
+) {
+  color: var(--foreground);
+  background: var(--surface-state-selected);
+  border-color: var(--surface-control-border, var(--input));
+}
+:where([data-slot="tabs-list"][data-variant="line"]) {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:where([data-slot="tabs-trigger"])::after {
+  background: var(--foreground);
+}
+:where(
+  [data-surface="control"][data-selected="true"],
+  [data-surface="panel"][data-selected="true"]
+) {
+  background: var(--surface-state-selected);
+  color: var(--foreground);
+  border-color: var(--surface-control-border, var(--input));
+}
+:where(
+  [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"]
+) {
+  background: transparent;
+  border-color: transparent;
+}
+:where(.ui-toggle) {
+  display: inline-flex;
+  height: 2rem;
+  min-width: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.875rem;
+}
+:where(.ui-toggle-outline) {
+  border-color: var(--surface-control-border, var(--input));
+  background: var(--control-background);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where(.ui-toggle-size-sm) {
+  height: 1.75rem;
+  min-width: 1.75rem;
+  font-size: 0.8rem;
+}
+:where(.ui-toggle-size-lg) {
+  height: 2.25rem;
+  min-width: 2.25rem;
+}
+:where(
+  [data-slot="select-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="context-menu-item"]
+):where(:focus, [data-highlighted], [data-state="open"]) {
+  background: var(--surface-state-selected);
+  color: var(--foreground);
+}
+:where([data-slot="dropdown-menu-item"][data-variant="destructive"]) {
+  color: var(--destructive);
+}
+:where([data-slot="dropdown-menu-item"][data-variant="destructive"]):where(
+  :focus,
+  [data-highlighted]
+) {
+  background: var(--ui-destructive-menu-hover);
+}
+:where(tbody tr):where(
+  :hover,
+  [data-state="selected"],
+  [aria-selected="true"]
+) {
+  background: var(--surface-state-hover);
+}
+
+:where(
+  :is([data-slot="checkbox"], .ui-checkbox),
+  :is([data-slot="radio-group-item"], .ui-radio)
+) {
+  border: 1px solid var(--surface-control-border, var(--input));
+  background: var(--ui-check-background);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where(
+  :is([data-slot="checkbox"], .ui-checkbox),
+  :is([data-slot="radio-group-item"], .ui-radio)
+):where([data-state="checked"], [data-state="indeterminate"]) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+:where([data-slot="radio-group-indicator"] > span) {
+  background: var(--primary-foreground);
+}
+:where(
+  :is([data-slot="switch"], .ui-switch),
+  input[type="checkbox"][role="switch"]
+) {
+  width: 2rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface-reading);
+}
+:where(
+  :is([data-slot="switch"], .ui-switch),
+  input[type="checkbox"][role="switch"]
+):where([data-state="checked"], :checked) {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+:where([data-slot="switch-thumb"]) {
+  background: var(--foreground);
+}
+:where(
+  :is([data-slot="switch"], .ui-switch)[data-state="checked"]
+    [data-slot="switch-thumb"]
+) {
+  background: var(--primary-foreground);
+}
+:where(input[type="checkbox"][role="switch"])::before {
+  opacity: 1;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--foreground);
+  mask: none;
+  -webkit-mask: none;
+  transform: translateX(0);
+}
+:where(input[type="checkbox"][role="switch"]):checked::before {
+  background: var(--primary-foreground);
+  transform: translateX(0.85rem);
+}
+:where([data-slot="progress"], [data-slot="slider-track"], progress, meter) {
+  background: var(--surface-reading);
+  border-radius: 999px;
+  overflow: hidden;
+}
+:where([data-slot="progress-indicator"], [data-slot="slider-range"]) {
+  background: var(--primary);
+}
+:where([data-slot="slider-thumb"]) {
+  border-color: var(--primary);
+  background: var(--background);
+}
+:where(progress, meter) {
+  appearance: none;
+  width: 100%;
+  height: 0.5rem;
+  border: 0;
+  color: var(--primary);
+}
+:where(progress)::-webkit-progress-bar {
+  background: var(--surface-reading);
+}
+:where(progress)::-webkit-progress-value {
+  background: var(--primary);
+  border-radius: inherit;
+}
+:where(progress)::-moz-progress-bar {
+  background: var(--primary);
+  border-radius: inherit;
+}
+:where(meter)::-webkit-meter-bar {
+  background: var(--surface-reading);
+  border: 0;
+}
+:where(meter)::-webkit-meter-optimum-value {
+  background: var(--primary);
+}
+:where(meter)::-webkit-meter-suboptimum-value {
+  background: var(--primary);
+}
+:where(meter)::-webkit-meter-even-less-good-value {
+  background: var(--destructive);
+}
+:where(input[type="color"]) {
+  width: 3rem;
+  padding: 0.15rem;
+}
+:where(select[multiple], select[size]:not([size="0"]):not([size="1"])) {
+  height: auto;
+  min-height: 4rem;
+}
+:where(input[type="color"])::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+:where(input[type="color"])::-webkit-color-swatch {
+  border: 1px solid var(--surface-control-border, var(--input));
+  border-radius: var(--radius-sm);
+}
+
+:where([data-slot="badge"], .ui-badge) {
+  display: inline-flex;
+  width: fit-content;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+:where([data-slot="badge"][data-variant="secondary"], .ui-badge-secondary) {
+  background: var(--surface-state-selected);
+  color: var(--foreground);
+}
+:where([data-slot="badge"][data-variant="outline"], .ui-badge-outline) {
+  border-color: var(--surface-control-border, var(--input));
+  background: var(--control-background);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where([data-slot="badge"][data-variant="destructive"], .ui-badge-destructive) {
+  background: var(--ui-destructive-background);
+  color: var(--surface-destructive-foreground, var(--destructive));
+}
+:where([data-slot="badge"][data-variant="ghost"], .ui-badge-ghost) {
+  background: transparent;
+  color: var(--foreground);
+}
+:where([data-slot="badge"][data-variant="link"], .ui-badge-link) {
+  background: transparent;
+  color: var(--surface-link-foreground);
+  text-underline-offset: 0.25rem;
+}
+:where(a[data-slot="badge"], a.ui-badge):hover {
+  background: var(--surface-state-hover);
+  color: var(--foreground);
+}
+:where(a[data-slot="badge"][data-variant="link"], a.ui-badge-link):hover {
+  background: transparent;
+  color: var(--surface-link-foreground);
+  text-decoration: underline;
+}
+:where(
+  a[data-slot="badge"][data-variant="destructive"],
+  a.ui-badge-destructive
+):is(:hover, :focus-visible) {
+  background: var(--ui-destructive-hover);
+  color: var(--surface-destructive-foreground, var(--destructive));
+}
+:where([data-slot="tooltip-content"], [role="tooltip"]) {
+  --muted-foreground: var(--glass-muted-foreground);
+  background: var(--surface-reading);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-reading-blur));
+  backdrop-filter: blur(var(--surface-reading-blur));
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-md, calc(var(--radius, 0.625rem) * 0.8));
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+:where([data-slot="tooltip-arrow"]) {
+  background: var(--surface-reading);
+  fill: var(--surface-reading);
+}
+:where([data-slot="dialog-overlay"]),
+:where(dialog)::backdrop {
+  background: var(--surface-dialog-overlay);
+  -webkit-backdrop-filter: blur(var(--surface-dialog-overlay-blur));
+  backdrop-filter: blur(var(--surface-dialog-overlay-blur));
+}
+:where([data-slot="dialog-footer"]:not([data-surface])) {
+  background: transparent;
+}
+:where([data-slot="avatar-fallback"], [data-slot="avatar-group-count"]) {
+  background: var(--control-background);
+  color: var(--foreground);
+  -webkit-backdrop-filter: blur(var(--surface-control-blur));
+  backdrop-filter: blur(var(--surface-control-blur));
+}
+:where([data-slot="skeleton"]) {
+  background: var(--surface-reading);
+}
+:where(
+  [data-slot="separator"],
+  [data-slot="select-separator"],
+  [data-slot="dropdown-menu-separator"],
+  hr
+) {
+  background: var(--border);
+}
+:where([data-slot="scroll-area-scrollbar"]) {
+  background: transparent;
+}
+:where([data-slot="scroll-area-thumb"]) {
+  background: color-mix(in oklab, var(--foreground) 30%, transparent);
+}
+:where([data-slot="scroll-area-corner"]) {
+  background: var(--surface-reading);
+}
+:where([data-slot="accordion-trigger"]) {
+  font: inherit;
+  font-weight: 500;
+  color: var(--foreground);
+  background: transparent;
+}
+:where([data-slot="card"]) {
+  box-shadow: 0 0 0 1px var(--surface-frame-border);
+}
+:where([data-slot="avatar-badge"]) {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+/* ARIA 选择项也可能是整张卡片或分段按钮；不据 role 猜测小圆点几何。 */
+:where(
+  [role="radio"]:not(input):not(.ui-radio):not([data-slot="radio-group-item"]),
+  [role="checkbox"]:not(input):not(.ui-checkbox):not([data-slot="checkbox"]),
+  [role="switch"]:not(input):not(.ui-switch):not([data-slot="switch"])
+):where([aria-checked="true"], [aria-checked="mixed"]) {
+  background: var(--surface-state-selected);
+  color: var(--foreground);
+  border-color: var(--surface-control-border, var(--input));
+}
+:where(
+  button[data-surface]:not([data-surface="artwork"]):not(
+      [data-surface="transparent"]
+    ),
+  a[data-surface]:not([data-surface="artwork"]):not(
+      [data-surface="transparent"]
+    )
+):where(:hover, [aria-expanded="true"]) {
+  background: var(--surface-state-hover);
+  color: var(--foreground);
+}
+:where(
+  button[data-surface]:not([data-surface="artwork"]):not(
+      [data-surface="transparent"]
+    ),
+  a[data-surface]:not([data-surface="artwork"]):not(
+      [data-surface="transparent"]
+    )
+):where(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  [data-state="selected"]
+) {
+  background: var(--surface-state-selected);
+  color: var(--foreground);
+}
+:where(button[data-surface], a[data-surface]):focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+:where(button:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+:where([data-slot="progress"], progress, meter) {
+  width: 100%;
+  height: 0.375rem;
+  border: 0;
+}
+:where([data-slot="checkbox"], .ui-checkbox) {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 4px;
+}
+:where([data-slot="radio-group-item"], .ui-radio) {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+}
+:where([data-slot="radio-group-indicator"]) {
+  width: 100%;
+  height: 100%;
+}
+:where(
+  .ui-checkbox,
+  .ui-radio,
+  [data-slot="checkbox"],
+  [data-slot="radio-group-item"]
+):where([aria-checked="true"], [aria-checked="mixed"]) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+:where([data-slot="switch"][data-size="sm"]) {
+  width: 1.5rem;
+  height: 0.875rem;
+}
+:where([data-slot="switch-thumb"]) {
+  width: 1rem;
+  height: 1rem;
+  transform: translateX(0);
+}
+:where([data-slot="switch"][data-size="sm"] [data-slot="switch-thumb"]) {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+:where([data-slot="switch-thumb"][data-state="checked"]) {
+  transform: translateX(calc(100% - 2px));
+}
+:where(
+  .ui-switch[aria-checked="true"],
+  [data-slot="switch"][aria-checked="true"],
+  input[type="checkbox"][role="switch"]:checked
+) {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+:where(input[type="checkbox"][role="switch"]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+:where(input[type="checkbox"][role="switch"]):checked::before {
+  transform: translateX(0.875rem);
+}
+:where(
+  [role="checkbox"],
+  [role="radio"],
+  [role="switch"],
+  [role="combobox"],
+  [role="tab"],
+  .ui-toggle,
+  [data-slot="accordion-trigger"],
+  .ui-badge
+):focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+:where([data-slot="select-item"]) {
+  min-height: 2rem;
+  padding: 0.375rem 2rem 0.375rem 0.5rem;
+}
+:where(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="context-menu-item"]
+) {
+  min-height: 2rem;
+}
+:where(.cn-toast[data-styled="true"]) {
+  --muted-foreground: var(--glass-muted-foreground);
+  -webkit-backdrop-filter: blur(var(--surface-popup-blur));
+  backdrop-filter: blur(var(--surface-popup-blur));
+}
+
+/* 语法含义与配色变量分离，宿主与扩展使用同一组类别。 */
+:where(.code-token--property, [data-token="property"]) {
+  color: var(--code-property);
+}
+:where(.code-token--string, [data-token="string"]) {
+  color: var(--code-string);
+}
+:where(.code-token--number, [data-token="number"]) {
+  color: var(--code-number);
+}
+:where(.code-token--boolean, [data-token="boolean"]) {
+  color: var(--code-boolean);
+}
+:where(.code-token--null, [data-token="null"]) {
+  color: var(--code-null);
+}
+:where(.code-token--punctuation, [data-token="punctuation"]) {
+  color: var(--code-punctuation);
+}
+:where(.code-token--keyword, [data-token="keyword"]) {
+  color: var(--code-keyword);
+}
+:where(.code-token--lifetime, [data-token="lifetime"]) {
+  color: var(--code-lifetime);
+}
+:where(.code-token--type, [data-token="type"]) {
+  color: var(--code-type);
+}
+:where(.code-token--macro, [data-token="macro"]) {
+  color: var(--code-macro);
+}
+:where(.code-token--function, [data-token="function"]) {
+  color: var(--code-function);
+}
+:where(.code-token--comment, [data-token="comment"]) {
+  color: var(--code-comment);
+}
+:where(.code-token--operator, [data-token="operator"]) {
+  color: var(--code-operator);
+}
+
+@media (forced-colors: active) {
+  :where([class*="code-token--"], [data-token]) {
+    color: inherit;
+  }
+  :where(
+    input[type="checkbox"],
+    input[type="radio"],
+    input[type="range"],
+    progress,
+    meter
+  ) {
+    appearance: auto;
+    background: revert;
+    border: revert;
+    color: revert;
+    forced-color-adjust: auto;
+  }
+  :where(input[type="checkbox"], input[type="radio"])::before {
+    display: none;
+  }
+}

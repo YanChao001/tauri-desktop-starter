@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OrderForm } from "@/features/data-studio/order-form";
 import { RecordsTable } from "@/features/data-studio/records-table";
 import { useI18n } from "@/providers/i18n";
@@ -39,5 +41,3 @@ export default function DataStudio() {
     </div>
   );
 }
-import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

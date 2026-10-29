@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { zhMotion } from "@/i18n/zh-motion";
-import MotionLab from "@/pages/motion";
+import { MotionStudio } from "./motion-studio";
 
 const activity = vi.hoisted(() => ({ reduced: false, visible: true }));
 const controls = vi.hoisted(
@@ -50,7 +50,7 @@ describe("interactive motion laboratory", () => {
 
   it("changes physical controls and supports keyboard scene navigation", async () => {
     const user = userEvent.setup();
-    render(<MotionLab />);
+    render(<MotionStudio enabled />);
     const stiffness = screen.getByRole("slider", { name: /弹簧刚度/ });
     fireEvent.change(stiffness, { target: { value: "280" } });
     expect(stiffness).toHaveValue("280");
@@ -69,7 +69,7 @@ describe("interactive motion laboratory", () => {
 
   it("pauses all imperative animations, resumes, and stops them on navigation/unmount", async () => {
     const user = userEvent.setup();
-    const view = render(<MotionLab />);
+    const view = render(<MotionStudio enabled />);
     const springControls = [...controls];
     expect(springControls.length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "暂停" }));
@@ -83,7 +83,7 @@ describe("interactive motion laboratory", () => {
       expect(control.stop).toHaveBeenCalled();
     const paths = controls.slice(springControls.length);
     activity.visible = false;
-    view.rerender(<MotionLab />);
+    view.rerender(<MotionStudio enabled />);
     for (const control of paths) expect(control.pause).toHaveBeenCalled();
     view.unmount();
     for (const control of paths) expect(control.stop).toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe("interactive motion laboratory", () => {
   it("keeps reduced-motion interactions usable without starting imperative loops", async () => {
     activity.reduced = true;
     const user = userEvent.setup();
-    render(<MotionLab />);
+    render(<MotionStudio enabled />);
     expect(screen.getByRole("button", { name: "暂停" })).toBeDisabled();
     expect(screen.getByText(zhMotion["lab.reducedHint"])).toBeVisible();
     await user.click(screen.getByRole("button", { name: "送到另一侧" }));
@@ -115,17 +115,17 @@ describe("interactive motion laboratory", () => {
 
   it("keeps layout controls and focus stable when visibility or motion preferences change", async () => {
     const user = userEvent.setup();
-    const view = render(<MotionLab />);
+    const view = render(<MotionStudio enabled />);
     await user.click(screen.getByRole("tab", { name: "空间变换" }));
     const choice = screen.getAllByRole("button", { name: "记录" })[0]!;
     choice.focus();
     activity.visible = false;
-    view.rerender(<MotionLab />);
+    view.rerender(<MotionStudio enabled />);
     expect(choice).toBeInTheDocument();
     expect(choice).toHaveFocus();
     activity.visible = true;
     activity.reduced = true;
-    view.rerender(<MotionLab />);
+    view.rerender(<MotionStudio enabled />);
     expect(screen.getAllByRole("button", { name: "记录" })[0]).toBe(choice);
     expect(choice).toHaveFocus();
     await user.keyboard("{Enter}");
@@ -134,18 +134,18 @@ describe("interactive motion laboratory", () => {
 
   it("freezes and resumes an in-flight flip without replacing its playback controller", async () => {
     const user = userEvent.setup();
-    const view = render(<MotionLab />);
+    const view = render(<MotionStudio enabled />);
     await user.click(screen.getByRole("tab", { name: "光影触感" }));
     await user.click(screen.getByRole("button", { name: "翻转卡片" }));
     const flip = controls.at(-1)!;
     const count = controls.length;
     activity.visible = false;
-    view.rerender(<MotionLab />);
+    view.rerender(<MotionStudio enabled />);
     expect(flip.pause).toHaveBeenCalled();
     expect(flip.stop).not.toHaveBeenCalled();
     expect(controls).toHaveLength(count);
     activity.visible = true;
-    view.rerender(<MotionLab />);
+    view.rerender(<MotionStudio enabled />);
     expect(flip.play).toHaveBeenCalled();
     expect(controls).toHaveLength(count);
     view.unmount();

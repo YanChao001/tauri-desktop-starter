@@ -22,6 +22,7 @@ import {
 import { saveTextExport } from "@/lib/tauri";
 import { nativeErrorText } from "@/lib/native-error";
 import { useI18n } from "@/providers/i18n";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import type { DemoRecord } from "./model";
 import {
   CsvError,
@@ -44,6 +45,7 @@ export function CsvImport({
   disabled?: boolean;
 }) {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const [source, setSource] = useState("");
   const [table, setTable] = useState<CsvTable | null>(null);
   const [mapping, setMapping] = useState<FieldMapping>({
@@ -116,7 +118,8 @@ export function CsvImport({
     try {
       await saveTextExport(name, text);
     } catch (reason) {
-      if (token === generation.current) toast.error(nativeErrorText(reason, t));
+      if (token === generation.current)
+        toast.error(nativeErrorText(reason, latest));
     } finally {
       if (token === generation.current) setPending(false);
     }
@@ -128,9 +131,11 @@ export function CsvImport({
       : nativeErrorText(error, t)
     : null;
   return (
-    <details className="rounded-lg border bg-muted/20 p-4">
-      <summary className="cursor-pointer font-medium">{t("csv.title")}</summary>
-      <div className="mt-4 space-y-4">
+    <details className="app-surface border">
+      <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+        {t("csv.title")}
+      </summary>
+      <div className="space-y-4 p-4">
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -176,6 +181,8 @@ export function CsvImport({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
+                        data-surface="transparent"
+                        data-variant="ghost"
                         id="csv-source-error"
                         type="button"
                         className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -214,8 +221,8 @@ export function CsvImport({
         </div>
         {table ? (
           <>
-            <fieldset className="space-y-3">
-              <legend className="flex items-center gap-2 font-medium">
+            <fieldset className="space-y-3 p-3">
+              <legend className="flex items-center gap-2 text-sm font-medium">
                 {t("csv.mapping")}
                 <HelpTooltip label={`${t("csv.mapping")} · ${t("title.help")}`}>
                   {t("csv.defaults")}
@@ -359,7 +366,8 @@ export function CsvImport({
                       <th
                         key={header}
                         scope="col"
-                        className="whitespace-nowrap bg-muted p-2"
+                        data-surface="reading"
+                        className="whitespace-nowrap p-2"
                       >
                         {header}
                       </th>

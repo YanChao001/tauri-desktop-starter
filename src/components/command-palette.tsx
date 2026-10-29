@@ -2,7 +2,6 @@ import { Command } from "cmdk";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useContentSearch } from "@/features/content-search/use-content-search";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { SearchIcon } from "lucide-react";
 import {
   Dialog,
@@ -68,7 +67,7 @@ export function CommandPalette() {
           <DialogDescription>{t("commands.description")}</DialogDescription>
         </DialogHeader>
         <Command loop label={t("commands.title")} className="flex flex-col">
-          <div className="flex items-center gap-2 border-b px-4 pr-12">
+          <div className="flex items-center gap-2 border-b px-4 py-1.5 pr-12">
             <SearchIcon
               className="size-4 shrink-0 text-muted-foreground"
               aria-hidden="true"
@@ -76,15 +75,11 @@ export function CommandPalette() {
             <Command.Input
               value={query}
               onValueChange={setQuery}
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              data-surface="transparent"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-(--glass-muted-foreground)"
               placeholder={t("commands.placeholder")}
               aria-label={t("commands.title")}
             />
-            <HelpTooltip
-              label={t("common.helpFor", { name: t("commands.title") })}
-            >
-              {t(content.native ? "search.hint" : "search.browser")}
-            </HelpTooltip>
           </div>
           <p
             className="mx-4 h-5 overflow-auto text-xs text-muted-foreground"
@@ -97,7 +92,10 @@ export function CommandPalette() {
                 ? t("search.loading")
                 : ""}
           </p>
-          <Command.List className="h-[min(60vh,24rem)] overflow-y-auto p-2">
+          <Command.List
+            data-surface="transparent"
+            className="h-[min(60vh,24rem)] overflow-y-auto p-2"
+          >
             <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
               {t("commands.empty")}
             </Command.Empty>
@@ -125,7 +123,7 @@ export function CommandPalette() {
                         ...(command.keywords ?? []),
                         ...(command.keywordKeys?.map((key) => t(key)) ?? []),
                       ]}
-                      className="flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
+                      className="flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-[selected=true]:bg-(--surface-state-selected) data-[selected=true]:text-(--surface-selected-foreground)"
                       onSelect={() => {
                         setPaletteOpen(false);
                         setQuery("");

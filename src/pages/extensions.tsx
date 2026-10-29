@@ -439,7 +439,7 @@ export default function Extensions() {
         >
           <section
             aria-labelledby="extension-install-title"
-            className="@container/install flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border bg-card p-4"
+            className="@container/install flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border app-surface p-4"
           >
             <h3 className="flex items-center gap-2 font-semibold">
               <PackagePlusIcon className="size-5 shrink-0" aria-hidden="true" />
@@ -587,7 +587,7 @@ export default function Extensions() {
                 {t("ext.installConsent")}
               </p>
               {review.previous ? (
-                <p className="rounded-md bg-muted p-3 text-sm">
+                <p data-surface="control" className="rounded-md p-3 text-sm">
                   {t("ext.upgradeHint", { version: review.previous })}
                 </p>
               ) : null}

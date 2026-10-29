@@ -692,125 +692,120 @@ mod tests {
         assert!(ExtensionView::parse(&script.to_string()).is_err());
     }
 
-    fn step(
-        state: &str,
-        action: Option<&str>,
-        fields: serde_json::Value,
-        data: Option<serde_json::Value>,
-    ) -> ExtensionView {
-        let mut request = serde_json::json!({"version":2,"action":action,"state":state,"fields":fields,"locale":"zh-CN"});
-        if let Some(data) = data {
-            request["data"] = data;
-        }
+    fn wasm_request(request: serde_json::Value) -> NativeResult<ExtensionView> {
         let output = crate::extension_runtime::run(
             include_bytes!("../../resources/extensions/demo-apps.wasm"),
             "lab",
             &serde_json::to_vec(&request).unwrap(),
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-        .unwrap();
-        ExtensionView::parse(&output).unwrap()
+        )?;
+        ExtensionView::parse(&output)
     }
     #[test]
-    fn lab_analyzes_unicode_transforms_and_reports_host_data_in_real_wasm() {
-        let view = step("", None, serde_json::json!({}), None);
-        assert_eq!(view.tabs.len(), 5);
-        assert_eq!(view.display, "交互工作台");
-        let view = step(&view.state, Some("tab-text"), serde_json::json!({}), None);
-        assert_eq!(view.fields.len(), 2);
-        let view = step(
-            &view.state,
-            Some("analyze"),
-            serde_json::json!({"text":"Hello hello 中文","mode":"upper"}),
-            None,
-        );
-        assert!(
-            serde_json::to_string(&view.blocks)
-                .unwrap()
-                .contains("HELLO HELLO 中文")
-        );
-        assert!(
-            serde_json::to_string(&view.blocks)
-                .unwrap()
-                .contains("hello")
-        );
-        let view = step(
-            &view.state,
-            Some("host-data"),
-            serde_json::json!({}),
-            Some(
-                serde_json::json!({"inputText":"explicit text", "files":[{"name":"note.txt","content":"saved content","encoding":"utf8","mediaType":"text/plain"}], "network":[]}),
-            ),
-        );
-        assert_eq!(view.display, "文本工具");
-        assert_eq!(view.fields[0].value, "explicit text");
-        let connections = step(
-            &view.state,
-            Some("tab-connections"),
-            serde_json::json!({}),
-            None,
-        );
-        let blocks = serde_json::to_string(&connections.blocks).unwrap();
-        assert!(blocks.contains("note.txt") && blocks.contains("text/plain"));
-        // No data in a regular action: old response is retained, never fetched by the plugin.
-        let next = step(
-            &connections.state,
-            Some("tab-text"),
-            serde_json::json!({}),
-            None,
-        );
-        assert_eq!(next.display, "文本工具");
-        assert_eq!(next.fields[0].value, "explicit text");
-    }
-    #[test]
-    fn bundled_lab_renders_all_tabs_in_both_languages() {
-        let mut fixtures = serde_json::Map::new();
-        for locale in ["zh-CN", "en"] {
-            let mut state = String::new();
-            for action in [
-                None,
-                Some("tab-text"),
-                Some("analyze"),
-                Some("tab-data"),
-                Some("tab-todo"),
-                Some("tab-connections"),
-            ] {
-                let request = serde_json::json!({"version":2,"action":action,"state":state,"fields":{},"locale":locale});
-                let output = crate::extension_runtime::run(
-                    include_bytes!("../../resources/extensions/demo-apps.wasm"),
-                    "lab",
-                    &serde_json::to_vec(&request).unwrap(),
-                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                )
-                .unwrap();
-                let view = ExtensionView::parse(&output).unwrap();
-                assert_eq!(view.tabs.iter().filter(|tab| tab.active).count(), 1);
-                state = view.state.clone();
-                fixtures.insert(
-                    format!("{locale}:{}", action.unwrap_or("init")),
-                    serde_json::to_value(view).unwrap(),
+    fn bundled_workspace_exports_unicode_json_and_safe_csv_in_real_wasm() {
+        let workspace = serde_json::json!({
+            "schema": 1,
+            "name": "工作成果",
+            "columns": ["label", "value"],
+            "rows": [["Hello 世界, \"draft\"\nnext", "=1+1"]],
+        });
+        let source = workspace.to_string();
+        for format in ["json", "csv"] {
+            let view = wasm_request(serde_json::json!({
+                "version": 2, "state": "", "locale": "zh-CN",
+                "action": "workspace-export",
+                "fields": {"workspace": source, "workspace-format": format},
+            }))
+            .unwrap();
+            assert!(view.errors.is_empty());
+            assert!(view.effects.is_empty());
+            assert_eq!(view.artifacts.len(), 1);
+            let artifact = &view.artifacts[0];
+            assert_eq!(artifact.name, format!("workspace.{format}"));
+            let content = validate_artifact(artifact).unwrap();
+            if format == "json" {
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&content).unwrap(),
+                    workspace,
+                );
+            } else {
+                assert_eq!(
+                    String::from_utf8(content).unwrap(),
+                    "\"label\",\"value\"\r\n\"Hello 世界, \"\"draft\"\"\nnext\",\"'=1+1\"",
                 );
             }
+            assert_eq!(
+                view.fields
+                    .iter()
+                    .find(|field| field.id == "workspace")
+                    .unwrap()
+                    .value,
+                source,
+            );
         }
-        // Optional diagnostics consumed by the headless host preview, never by the app.
-        if let Ok(path) = std::env::var("STARTER_TEST_EXTENSION_VIEWS") {
-            std::fs::write(path, serde_json::to_vec_pretty(&fixtures).unwrap()).unwrap();
+    }
+    #[test]
+    fn bundled_workspace_renders_and_restores_in_both_languages() {
+        for locale in ["zh-CN", "en"] {
+            let initial = wasm_request(serde_json::json!({
+                "version": 2, "state": "", "action": null, "fields": {}, "locale": locale,
+            }))
+            .unwrap();
+            assert_eq!(
+                initial.display,
+                if locale == "en" {
+                    "Interactive studio"
+                } else {
+                    "交互工作台"
+                },
+            );
+            assert!(initial.tabs.is_empty());
+            assert!(initial.effects.is_empty());
+            assert!(initial.artifacts.is_empty());
+            assert_eq!(initial.fields.len(), 2);
+            assert_eq!(initial.groups[0].actions[0].id, "workspace-export");
+            let restored = wasm_request(serde_json::json!({
+                "version": 2, "state": initial.state, "action": null, "locale": locale,
+                "fields": {"workspace": "{ unfinished draft", "workspace-format": "csv"},
+            }))
+            .unwrap();
+            assert_eq!(restored.state, initial.state);
+            assert_eq!(restored.display, initial.display);
+            assert!(restored.effects.is_empty());
+            assert!(restored.artifacts.is_empty());
+            assert_eq!(restored.fields[0].value, "{ unfinished draft");
+            assert_eq!(restored.fields[1].value, "csv");
         }
     }
     #[test]
     fn rich_views_reject_invalid_tabs_tables_and_select_values() {
-        let view = step("", None, serde_json::json!({}), None);
-        let mut value = serde_json::to_value(view).unwrap();
-        value["tabs"][1]["active"] = serde_json::json!(true);
-        assert!(ExtensionView::parse(&value.to_string()).is_err());
-        value["tabs"][1]["active"] = serde_json::json!(false);
-        value["blocks"] =
-            serde_json::json!([{"kind":"table","columns":["a"],"rows":[["a","extra"]]}]);
-        assert!(ExtensionView::parse(&value.to_string()).is_err());
-        let view = step("", Some("tab-text"), serde_json::json!({}), None);
-        let mut value = serde_json::to_value(view).unwrap();
-        value["fields"][1]["value"] = serde_json::json!("missing option");
-        assert!(ExtensionView::parse(&value.to_string()).is_err());
+        // 宿主协议校验使用独立样本，不依赖内置工作台当前展示哪些控件。
+        let base = serde_json::json!({
+            "version": 2, "state": "", "display": "Protocol fixture", "description": "",
+            "groups": [],
+            "tabs": [
+                {"id": "details", "label": "Details", "active": true},
+                {"id": "chart", "label": "Chart", "active": false},
+            ],
+            "fields": [{"id": "format", "label": "Format", "kind": "select", "value": "json",
+                "options": [{"value": "json", "label": "JSON"}, {"value": "csv", "label": "CSV"}]}],
+            "blocks": [{"kind": "table", "columns": ["a"], "rows": [["value"]]}],
+        });
+        assert!(ExtensionView::parse(&base.to_string()).is_ok());
+        for (pointer, invalid) in [
+            ("/tabs/1/active", serde_json::json!(true)),
+            ("/tabs/0/active", serde_json::json!(false)),
+            ("/tabs/1/id", serde_json::json!("details")),
+            ("/blocks/0/rows/0", serde_json::json!(["value", "extra"])),
+            ("/fields/0/value", serde_json::json!("missing option")),
+        ] {
+            let mut value = base.clone();
+            *value.pointer_mut(pointer).unwrap() = invalid;
+            assert!(
+                ExtensionView::parse(&value.to_string()).is_err(),
+                "{pointer}"
+            );
+        }
     }
     #[test]
     fn view_requests_reject_future_versions_and_oversized_fields() {
@@ -896,110 +891,84 @@ mod tests {
             );
         }
     }
-    fn wasm_request(request: serde_json::Value) -> ExtensionView {
-        let output = crate::extension_runtime::run(
-            include_bytes!("../../resources/extensions/demo-apps.wasm"),
-            "lab",
-            &serde_json::to_vec(&request).unwrap(),
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
+    #[test]
+    fn bundled_workspace_preserves_invalid_export_input_for_repair() {
+        let initial = wasm_request(serde_json::json!({
+            "version": 2, "state": "", "fields": {}, "locale": "en", "action": null,
+        }))
         .unwrap();
-        ExtensionView::parse(&output).unwrap()
+        for source in [
+            "{ unfinished draft",
+            r#"{"schema":1,"name":"Draft","columns":["a"],"rows":[["keep","extra"]]}"#,
+        ] {
+            let rejected = wasm_request(serde_json::json!({
+                "version": 2, "state": initial.state, "locale": "en",
+                "action": "workspace-export", "fields": {"workspace": source, "workspace-format": "json"},
+            }))
+            .unwrap();
+            assert!(rejected.errors.contains_key("workspace"));
+            assert!(rejected.effects.is_empty());
+            assert!(rejected.artifacts.is_empty());
+            assert_eq!(rejected.state, initial.state);
+            assert_eq!(rejected.fields[0].value, source);
+        }
     }
     #[test]
-    fn lab_private_tasks_survive_a_new_session_and_roundtrip_host_effects() {
-        let host = serde_json::json!({"permissions":["storage"],"storage":{"revision":7,"values":{"todos":[]}}});
-        let initial = wasm_request(
-            serde_json::json!({"version":2,"state":"","fields":{},"locale":"en","action":"tab-todo","host":host}),
-        );
-        let invalid = wasm_request(
-            serde_json::json!({"version":2,"state":initial.state,"fields":{"todo":"   "},"locale":"en","action":"todo-add","host":host}),
-        );
-        assert!(invalid.errors.contains_key("todo"));
-        assert!(invalid.effects.is_empty());
-        let added = wasm_request(
-            serde_json::json!({"version":2,"state":invalid.state,"fields":{"todo":"Ship plugin","due":"2026-10-25"},"locale":"en","action":"todo-add","host":host}),
-        );
-        let effect = serde_json::to_value(&added.effects[0]).unwrap();
-        assert_eq!(effect["expectedRevision"], 7);
-        assert_eq!(effect["changes"]["todos"][0]["text"], "Ship plugin");
-        let host = serde_json::json!({"permissions":["storage"],"storage":{"revision":8,"values":{"todos":effect["changes"]["todos"]}}});
-        let saved = wasm_request(
-            serde_json::json!({"version":2,"state":added.state,"fields":{},"locale":"en","action":"host-result","host":host,"results":[{"id":"add-task","value":host["storage"],"error":null}]}),
-        );
-        assert!(saved.effects.is_empty());
-        assert!(
-            saved
-                .fields
-                .iter()
-                .find(|field| field.id == "todo")
-                .unwrap()
-                .value
-                .is_empty()
-        );
-        let reopened = wasm_request(
-            serde_json::json!({"version":2,"state":"","fields":{},"locale":"en","action":"tab-todo","host":host}),
-        );
-        assert!(
-            serde_json::to_string(&reopened.blocks)
-                .unwrap()
-                .contains("Ship plugin")
-        );
-        let toggled = wasm_request(
-            serde_json::json!({"version":2,"state":reopened.state,"fields":{},"locale":"en","action":"todo-toggle-0","host":host}),
-        );
-        assert_eq!(
-            serde_json::to_value(&toggled.effects[0]).unwrap()["changes"]["todos"][0]["completed"],
-            true
-        );
+    fn bundled_workspace_rejects_unknown_actions_fields_and_sessions() {
+        let base = serde_json::json!({
+            "version": 2, "state": "", "fields": {}, "locale": "en", "action": null,
+        });
+        for (key, value) in [
+            ("action", serde_json::json!("fetch-todo")),
+            ("fields", serde_json::json!({"todo": "retained input"})),
+            ("fields", serde_json::json!({"workspace-format": "exe"})),
+            ("state", serde_json::json!(r#"{"schema":99}"#)),
+            (
+                "state",
+                serde_json::json!(r#"{"schema":4,"unexpected":true}"#),
+            ),
+        ] {
+            let mut request = base.clone();
+            request[key] = value;
+            assert_eq!(
+                wasm_request(request).unwrap_err().code,
+                ErrorCode::ExtensionRunFailed,
+                "{key}",
+            );
+        }
     }
     #[test]
-    fn lab_http_and_artifacts_use_real_wasm_without_contacting_external_services() {
-        let denied = wasm_request(
-            serde_json::json!({"version":2,"state":"","fields":{},"locale":"en","action":"fetch-todo","host":{"permissions":[],"storage":null}}),
-        );
-        assert!(denied.effects.is_empty());
-        let requested = wasm_request(
-            serde_json::json!({"version":2,"state":denied.state,"fields":{},"locale":"en","action":"fetch-todo","host":{"permissions":["network:https"],"storage":null}}),
-        );
-        let effect = serde_json::to_value(&requested.effects[0]).unwrap();
-        assert_eq!(effect["request"]["method"], "GET");
-        assert_eq!(
-            effect["request"]["url"],
-            "https://jsonplaceholder.typicode.com/todos/1"
-        );
-        let response = wasm_request(
-            serde_json::json!({"version":2,"state":requested.state,"fields":{},"locale":"en","action":"host-result","results":[{"id":"fetch-todo","error":null,"value":{"status":200,"url":effect["request"]["url"],"headers":{},"body":"{\"title\":\"offline fixture\"}"}}]}),
-        );
-        assert!(response.effects.is_empty());
-        assert!(
-            serde_json::to_string(&response.blocks)
-                .unwrap()
-                .contains("offline fixture")
-        );
-        let analyzed = step("", Some("tab-text"), serde_json::json!({}), None);
-        let analyzed = step(
-            &analyzed.state,
-            Some("analyze"),
-            serde_json::json!({"text":"Hello 世界","mode":"upper"}),
-            None,
-        );
-        assert!(
-            analyzed
-                .blocks
-                .iter()
-                .any(|block| matches!(block, ExtensionViewBlock::Chart { .. }))
-        );
-        let exported = step(
-            &analyzed.state,
-            Some("export-text"),
-            serde_json::json!({}),
-            None,
-        );
-        assert_eq!(
-            validate_artifact(&exported.artifacts[0]).unwrap(),
-            "HELLO 世界".as_bytes()
-        );
+    fn view_effects_keep_independent_identity_and_batch_limits() {
+        let storage = serde_json::json!({"kind":"storage","id":"save","expectedRevision":7,"changes":{"note":"保留内容"}});
+        let http = serde_json::json!({"kind":"http","id":"fetch","request":{"url":"https://example.com/data","method":"GET","headers":{}}});
+        let base = serde_json::json!({
+            "version": 2, "state": "", "display": "Effect fixture", "description": "",
+            "fields": [], "groups": [], "effects": [storage, http],
+        });
+        let valid = ExtensionView::parse(&base.to_string()).unwrap();
+        assert_eq!(valid.effects.len(), 2);
+        let mut repeated = base.clone();
+        repeated["effects"][1]["id"] = serde_json::json!("save");
+        assert!(ExtensionView::parse(&repeated.to_string()).is_err());
+        let mut invalid = base.clone();
+        invalid["effects"][0]["id"] = serde_json::json!("invalid/id");
+        assert!(ExtensionView::parse(&invalid.to_string()).is_err());
+        for count in [16, 17] {
+            let mut value = base.clone();
+            value["effects"] = serde_json::json!(
+                (0..count)
+                    .map(|index| {
+                        let mut effect = storage.clone();
+                        effect["id"] = serde_json::json!(format!("save-{index}"));
+                        effect
+                    })
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                ExtensionView::parse(&value.to_string()).is_ok(),
+                count == 16
+            );
+        }
     }
     #[test]
     fn artifacts_reject_paths_executables_mismatched_encodings_and_oversized_images() {

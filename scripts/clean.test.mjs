@@ -224,11 +224,115 @@ test("temporary cleanup only recognizes portable backups in the exact version an
     assert.equal(readFileSync(join(root, path), "utf8"), path, path);
 });
 
-for (const mode of [[], ["--all"], ["--artifacts"], ["--temporary"]]) {
+test("outputs cleanup removes generated reports and packages while retaining compilation caches and source assets", (t) => {
+  const { root } = fixture(t);
+  const cargoTag =
+    "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n";
+  const removed = [
+    "artifacts/review/screenshots/failure.png",
+    "artifacts/nested/old-report.txt",
+    ".cache/old-fixture/input.json",
+    ".cache/nested/trace.zip",
+    "marketplace/dist/market-123/catalog.json",
+    "marketplace/artifacts/market-456/plugin.starter-extension.json",
+    "examples/extensions/dist/plugin.starter-extension.json",
+    "src-tauri/target/release/bundle/nsis/setup.exe",
+    "src-tauri/gen/schemas/desktop.json",
+  ];
+  const retained = [
+    "src-tauri/target/debug/deps/native.rlib",
+    "marketplace/target/calculator/release/plugin.wasm",
+    "marketplace/plugins/calculator/target/debug/cache.rlib",
+    "examples/extensions/apps/target/release/example.wasm",
+    "node_modules/.vite/deps/chunk.js",
+    "examples/extensions/node_modules/dependency/index.js",
+    ".pnpm-store/package/cache",
+    ".cache/extension-tools/extism-js.exe",
+    "docs/assets/preview-light.png",
+    "src/example.test.ts",
+    "marketplace/plugins/calculator/ui.test.mjs",
+    "src-tauri/gen/keep.txt",
+  ];
+  // 任意名称、任意深度的历史 Cargo 缓存也保留，目录名本身不是保留依据。
+  for (const path of [
+    "artifacts/nested/native-cache",
+    ".cache/nested/rust-cache",
+  ])
+    for (const [name, content] of [
+      [
+        "CACHEDIR.TAG",
+        path.startsWith(".cache")
+          ? cargoTag.replaceAll("\n", "\r\n")
+          : cargoTag,
+      ],
+      ["debug/deps/native.rlib", "compiled dependency"],
+    ]) {
+      put(root, `${path}/${name}`, content);
+      retained.push(`${path}/${name}`);
+    }
+  for (const path of [...removed, ...retained])
+    if (!path.endsWith("CACHEDIR.TAG")) put(root, path, path);
+  const retainedBefore = retained.map((path) =>
+    readFileSync(join(root, path), "base64"),
+  );
+  const result = runCleanup(root, "--outputs");
+  assert.equal(result.status, 0, result.stderr);
+  for (const path of [...removed, "dist", "dist-web", "coverage"])
+    assert.equal(existsSync(join(root, path)), false, path);
+  for (const path of retained)
+    assert.equal(existsSync(join(root, path)), true, path);
+  assert.deepEqual(
+    retained.map((path) => readFileSync(join(root, path), "base64")),
+    retainedBefore,
+  );
+  assert.equal(existsSync(join(root, "artifacts/artifact")), false);
+  assert.equal(existsSync(join(root, "src-tauri/target/artifact")), true);
+  assert.equal(existsSync(join(root, "node_modules/artifact")), true);
+  assert.equal(runCleanup(root, "--outputs").status, 0);
+});
+
+test("outputs cleanup does not treat a fake Cargo tag as compilation cache", (t) => {
+  const { root } = fixture(t);
+  put(root, "artifacts/fake-cache/CACHEDIR.TAG", "not a Cargo cache tag");
+  put(root, ".cache/fake-cache/CACHEDIR.TAG", "not a Cargo cache tag");
+  const result = runCleanup(root, "--outputs");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(root, "artifacts")), false);
+  assert.equal(existsSync(join(root, ".cache")), false);
+});
+
+test("outputs cleanup rejects linked output ancestors before removing anything", (t) => {
+  const { base, root } = fixture(t);
+  const outside = join(base, "outside");
+  put(outside, "artifacts/keep.txt", "outside data");
+  symlinkSync(
+    outside,
+    join(root, "marketplace"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const result = runCleanup(root, "--outputs");
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(
+    readFileSync(join(outside, "artifacts/keep.txt"), "utf8"),
+    "outside data",
+  );
+  assert.equal(existsSync(join(root, "dist/artifact")), true);
+  assert.equal(existsSync(join(root, "artifacts/artifact")), true);
+});
+
+for (const mode of [
+  [],
+  ["--all"],
+  ["--artifacts"],
+  ["--temporary"],
+  ["--outputs"],
+]) {
   test(`dry-run preserves every directory and file in ${mode[0] ?? "default"} mode`, (t) => {
     const { root } = fixture(t);
     put(root, "artifacts/e2e/screenshots/failure.png");
     put(root, "node_modules/.vite/deps/chunk.js");
+    put(root, ".cache/fixture/screenshot.png");
+    put(root, "marketplace/artifacts/market-123/catalog.json");
     put(
       root,
       "artifacts/1.2.3/x86_64-pc-windows-msvc/.portable-previous-12345678-1234-1234-1234-123456789abc/app.exe",
@@ -248,6 +352,9 @@ test("temporary mode conflicts and invalid arguments fail before deleting any fi
     ["--temporary", "--all"],
     ["--artifacts", "--temporary"],
     ["--temporary", "--dry-run", "--artifacts"],
+    ["--outputs", "--temporary"],
+    ["--outputs", "--artifacts"],
+    ["--outputs", "--all"],
     ["--temporary", "../outside"],
     ["--dry-run", "--typo"],
   ]) {
@@ -370,5 +477,12 @@ test("running program protection uses Windows case-insensitive directory boundar
       { ProcessId: 2, ExecutablePath: "C:\\fixture\\other\\app.exe" },
       { ProcessId: 3, ExecutablePath: "D:\\fixture\\dist\\app.exe" },
     ]),
+  );
+  assert.throws(
+    () =>
+      assertNoRunningPrograms("C:\\fixture\\artifacts\\tool.exe", [
+        { ProcessId: 4242, ExecutablePath: "c:\\FIXTURE\\artifacts\\tool.exe" },
+      ]),
+    /4242/,
   );
 });

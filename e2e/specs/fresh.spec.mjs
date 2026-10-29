@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $ } from "@wdio/globals";
+import { Key } from "webdriverio";
 import {
   appearance,
   invoke,
   language,
   lifecycleEvents,
   navigate,
+  openDeepLink,
   observeLifecycle,
   ready,
   placeNearWorkAreaCorner,
@@ -63,7 +65,7 @@ describe("Real Tauri desktop", () => {
     await navigate("/settings");
     // 初始化为 minimal 的项目也可在隔离测试偏好中开启演示页面。
     await $("#settings-appMode button").click();
-    await navigate("/bridge");
+    await openDeepLink("/bridge");
     await browser.waitUntil(
       async () => (await $("main h2").getText()) === "应用通信",
     );
@@ -162,7 +164,13 @@ describe("Real Tauri desktop", () => {
     );
     await $("//button[@role='tab'][contains(., 'Creative studio')]").click();
     assert.equal(await $("#studio-name").getValue(), "Native creative space");
-    await navigate("/motion");
+    const motionTab = await $(
+      "//button[@role='tab'][contains(., 'Motion lab')]",
+    );
+    await motionTab.click();
+    await browser.waitUntil(
+      async () => (await motionTab.getAttribute("aria-selected")) === "true",
+    );
     await $("[data-testid=spring-stage]").waitForDisplayed();
     await $("[data-testid=spring-stage]").scrollIntoView({
       block: "center",
@@ -337,7 +345,6 @@ describe("Real Tauri desktop", () => {
     const original = await browser.execute(async () => {
       const win = window.__TAURI__.window.getCurrentWindow();
       const maximized = await win.isMaximized();
-      if (maximized) await win.toggleMaximize();
       return {
         size: await win.innerSize(),
         position: await win.outerPosition(),
@@ -348,6 +355,7 @@ describe("Real Tauri desktop", () => {
       await browser.execute(async () => {
         const win = window.__TAURI__.window.getCurrentWindow();
         const { PhysicalSize, PhysicalPosition } = window.__TAURI__.dpi;
+        if (await win.isMaximized()) await win.toggleMaximize();
         await win.setSize(new PhysicalSize(5000, 3500));
         await win.setPosition(new PhysicalPosition(50000, 50000));
       });
@@ -392,6 +400,17 @@ describe("Real Tauri desktop", () => {
         if (saved.maximized && !(await win.isMaximized()))
           await win.toggleMaximize();
       }, original);
+      await browser.waitUntil(() =>
+        browser.execute(async (saved) => {
+          const win = window.__TAURI__.window.getCurrentWindow();
+          const size = await win.innerSize();
+          return (
+            size.width === saved.size.width &&
+            size.height === saved.size.height &&
+            (await win.isMaximized()) === saved.maximized
+          );
+        }, original),
+      );
     }
   });
 
@@ -812,75 +831,86 @@ describe("Real Tauri desktop", () => {
   it("reuses the secondary native window and synchronizes settings events both ways", async () => {
     const main = await browser.getWindowHandle();
     assert.equal((await browser.getWindowHandles()).length, 1);
-    assert.equal((await invoke("open_secondary_window")).ok, true);
-    await browser.waitUntil(
-      async () => (await browser.getWindowHandles()).length === 2,
-    );
-    const handles = await browser.getWindowHandles();
-    const secondary = handles.find((handle) => handle !== main);
-    assert.ok(secondary);
-    assert.equal((await invoke("open_secondary_window")).ok, true);
-    assert.deepEqual(
-      (await browser.getWindowHandles()).sort(),
-      [...handles].sort(),
-    );
-    await browser.switchToWindow(secondary);
-    await ready("secondary");
-    await language("zh");
-    await browser.switchToWindow(main);
-    await browser.waitUntil(
-      async () => (await appearance()).language === "zh-CN",
-    );
-    await language("en");
-    await browser.switchToWindow(secondary);
-    await browser.waitUntil(async () => (await appearance()).language === "en");
-    const secondaryBounds = (await invoke("get_window_geometry")).value;
-    assert.equal(
-      (
-        await invoke("set_window_size", {
-          width: Math.min(
-            secondaryBounds.maxWidth,
-            Math.max(secondaryBounds.minWidth, 980),
-          ),
-          height: Math.min(
-            secondaryBounds.maxHeight,
-            Math.max(secondaryBounds.minHeight, 650),
-          ),
-        })
-      ).ok,
-      true,
-    );
-    const secondaryPosition = await browser.execute(async () =>
-      window.__TAURI__.window.getCurrentWindow().outerPosition(),
-    );
-    await browser.switchToWindow(main);
-    assert.equal(
-      (await invoke("reset_window_geometry", { center: false })).ok,
-      true,
-    );
-    await browser.switchToWindow(secondary);
-    await browser.waitUntil(async () => {
-      const geometry = (await invoke("get_window_geometry")).value;
-      return (
-        geometry.width === Math.min(geometry.maxWidth, geometry.defaultWidth) &&
-        geometry.height === Math.min(geometry.maxHeight, geometry.defaultHeight)
+    let secondary;
+    try {
+      assert.equal((await invoke("open_secondary_window")).ok, true);
+      await browser.waitUntil(
+        async () => (await browser.getWindowHandles()).length === 2,
       );
-    });
-    const restoredPosition = await browser.execute(async () =>
-      window.__TAURI__.window.getCurrentWindow().outerPosition(),
-    );
-    assert.ok(
-      Math.abs(secondaryPosition.x - restoredPosition.x) <= 2 &&
-        Math.abs(secondaryPosition.y - restoredPosition.y) <= 2,
-    );
-    await browser.switchToWindow(main);
-    assert.equal(
-      (await invoke("plugin:window|close", { label: "secondary" })).ok,
-      true,
-    );
-    await browser.waitUntil(
-      async () => (await browser.getWindowHandles()).length === 1,
-    );
+      const handles = await browser.getWindowHandles();
+      secondary = handles.find((handle) => handle !== main);
+      assert.ok(secondary);
+      assert.equal((await invoke("open_secondary_window")).ok, true);
+      assert.deepEqual(
+        (await browser.getWindowHandles()).sort(),
+        [...handles].sort(),
+      );
+      await browser.switchToWindow(secondary);
+      await ready("secondary");
+      await language("zh");
+      await browser.switchToWindow(main);
+      await browser.waitUntil(
+        async () => (await appearance()).language === "zh-CN",
+      );
+      await language("en");
+      await browser.switchToWindow(secondary);
+      await browser.waitUntil(
+        async () => (await appearance()).language === "en",
+      );
+      const secondaryBounds = (await invoke("get_window_geometry")).value;
+      assert.equal(
+        (
+          await invoke("set_window_size", {
+            width: Math.min(
+              secondaryBounds.maxWidth,
+              Math.max(secondaryBounds.minWidth, 980),
+            ),
+            height: Math.min(
+              secondaryBounds.maxHeight,
+              Math.max(secondaryBounds.minHeight, 650),
+            ),
+          })
+        ).ok,
+        true,
+      );
+      const secondaryPosition = await browser.execute(async () =>
+        window.__TAURI__.window.getCurrentWindow().outerPosition(),
+      );
+      await browser.switchToWindow(main);
+      assert.equal(
+        (await invoke("reset_window_geometry", { center: false })).ok,
+        true,
+      );
+      await browser.switchToWindow(secondary);
+      await browser.waitUntil(async () => {
+        const geometry = (await invoke("get_window_geometry")).value;
+        return (
+          geometry.width ===
+            Math.min(geometry.maxWidth, geometry.defaultWidth) &&
+          geometry.height ===
+            Math.min(geometry.maxHeight, geometry.defaultHeight)
+        );
+      });
+      const restoredPosition = await browser.execute(async () =>
+        window.__TAURI__.window.getCurrentWindow().outerPosition(),
+      );
+      assert.ok(
+        Math.abs(secondaryPosition.x - restoredPosition.x) <= 2 &&
+          Math.abs(secondaryPosition.y - restoredPosition.y) <= 2,
+      );
+    } finally {
+      // 从主窗口关闭本轮次窗口，避免失败后把后续用例的窗口身份颠倒。
+      await browser.switchToWindow(main);
+      if (secondary && (await browser.getWindowHandles()).includes(secondary)) {
+        assert.equal(
+          (await invoke("plugin:window|close", { label: "secondary" })).ok,
+          true,
+        );
+        await browser.waitUntil(
+          async () => (await browser.getWindowHandles()).length === 1,
+        );
+      }
+    }
   });
 
   it("cancels a real two-window quit request without losing either persisted draft", async () => {
@@ -996,15 +1026,47 @@ describe("Real Tauri desktop", () => {
   it("persists language and illustration settings for a separate app process", async () => {
     await navigate("/settings");
     await $("label:has(input[name='background-skin'][value='sakura'])").click();
-    await $(
-      "label:has(input[name='background-intensity'][value='strong'])",
-    ).click();
+    const intensity = await $(
+      '[role="slider"][aria-labelledby="skin-intensity-heading"]',
+    );
+    await intensity.click();
+    // 原生驱动的指针点击不保证 Thumb 保持焦点；只聚焦真实控件，数值仍由键盘改变。
+    await browser.execute(
+      (thumb) => thumb.focus({ preventScroll: true }),
+      intensity,
+    );
+    const moveIntensity = async (key, expected) => {
+      assert.equal(
+        await intensity.isFocused(),
+        true,
+        "The slider thumb lost focus",
+      );
+      await browser.keys(key);
+      await browser.waitUntil(
+        async () =>
+          Number(await intensity.getAttribute("aria-valuenow")) === expected,
+        { timeoutMsg: `The focused slider did not reach ${expected}%` },
+      );
+    };
+    const initialIntensity = Number(
+      await intensity.getAttribute("aria-valuenow"),
+    );
+    assert.ok(
+      initialIntensity >= 0 &&
+        initialIntensity <= 100 &&
+        initialIntensity % 10 === 0,
+    );
+    // 十一档滑条最多十次左移到零，再逐档右移；每一步都验证真实控件值。
+    for (let value = initialIntensity; value > 0; value -= 10)
+      await moveIntensity(Key.ArrowLeft, value - 10);
+    for (let value = 10; value <= 70; value += 10)
+      await moveIntensity(Key.ArrowRight, value);
     await browser.waitUntil(async () => {
       const actual = await appearance();
       return (
         actual.language === "en" &&
         actual.background === "sakura" &&
-        actual.intensity === "strong"
+        actual.intensity === "70"
       );
     });
     // 等待异步原生偏好快照落盘，后续进程从同一隔离目录读取。
@@ -1014,18 +1076,20 @@ describe("Real Tauri desktop", () => {
         result.ok &&
         result.value.settings?.language === "en" &&
         result.value.settings?.background === "sakura" &&
-        result.value.settings?.backgroundIntensity === "strong"
+        result.value.settings?.backgroundIntensity === 70
       );
     });
     const snapshot = (await invoke("load_settings_snapshot")).value;
+    const backgroundFixturePath = join(
+      process.env.STARTER_E2E_DATA_ROOT,
+      "background-image-fixture.json",
+    );
+    assert.ok(
+      existsSync(backgroundFixturePath),
+      "The earlier native raster-import prerequisite did not produce the background fixture; check that test's failure first",
+    );
     const customBackground = JSON.parse(
-      readFileSync(
-        join(
-          process.env.STARTER_E2E_DATA_ROOT,
-          "background-image-fixture.json",
-        ),
-        "utf8",
-      ),
+      readFileSync(backgroundFixturePath, "utf8"),
     );
     assert.equal(
       (

@@ -8,6 +8,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import Network from "@/pages/network";
+import { en } from "@/i18n/en";
 
 const native = vi.hoisted(() => ({
   isTauri: vi.fn(() => false),
@@ -67,9 +68,7 @@ it("reads cached fixture data offline and never calls the native transport", asy
   fireEvent.click(
     screen.getByRole("button", { name: "View or refresh result" }),
   );
-  expect(toast.info).toHaveBeenCalledWith(
-    "Showing the last result offline. It may be out of date; no request was made.",
-  );
+  expect(toast.info).toHaveBeenCalledWith(en["labs.network.cacheOffline"]);
   expect(native.nativeHttpRequest).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Save securely" })).toBeDisabled();
 });

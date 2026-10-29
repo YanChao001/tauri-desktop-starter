@@ -1,4 +1,5 @@
 import type { Language } from "@/i18n/registry";
+import type { settingsDocument } from "./settings-model";
 import type {
   DesktopStatus,
   DiagnosticsReport,
@@ -31,6 +32,8 @@ import type {
   WindowGeometry,
   Wallpaper,
   WallpaperInput,
+  WallpaperVideo,
+  WallpaperVideoChoice,
 } from "./generated/bindings";
 
 export type {
@@ -79,6 +82,9 @@ export type {
   WindowGeometry,
   Wallpaper,
   WallpaperInput,
+  WallpaperVideo,
+  WallpaperVideoChoice,
+  WallpaperVideoMime,
 } from "./generated/bindings";
 
 export function extensionSnapshot(): Promise<ExtensionSnapshot> {
@@ -368,6 +374,29 @@ export function listWallpapers(
 export function addWallpaper(input: WallpaperInput): Promise<Wallpaper> {
   return callNative((commands) => commands.addWallpaper(input));
 }
+export function chooseWallpaperVideo(): Promise<WallpaperVideoChoice | null> {
+  return callNative((commands) => commands.chooseWallpaperVideo());
+}
+export async function wallpaperVideoUrl(
+  video: WallpaperVideo,
+): Promise<string> {
+  requireDesktop();
+  if (
+    !/^[a-f0-9]{64}$/.test(video.id) ||
+    !["video/mp4", "video/webm"].includes(video.mime)
+  ) {
+    throw new NativeBridgeError({
+      code: "INVALID_ARGUMENT",
+      message: "Invalid wallpaper video reference",
+      retryable: false,
+    });
+  }
+  const { convertFileSrc } = await import("@tauri-apps/api/core");
+  return convertFileSrc(
+    `${video.id}.${video.mime === "video/mp4" ? "mp4" : "webm"}`,
+    "wallpaper-media",
+  );
+}
 export function renameWallpaper(id: string, name: string): Promise<Wallpaper> {
   return callNative((commands) => commands.renameWallpaper(id, name));
 }
@@ -613,12 +642,23 @@ export function loadSettingsSnapshot(): Promise<SettingsSnapshot> {
 }
 
 export function saveSettingsSnapshot(
-  settings: object,
+  settings: ReturnType<typeof settingsDocument>,
   expectedRevision: number,
 ): Promise<SettingsSnapshot> {
-  const document = JSON.parse(JSON.stringify(settings));
+  const document = structuredClone(settings);
   return callNative((commands) =>
     commands.saveSettingsSnapshot(document, expectedRevision),
+  );
+}
+
+/** 显式恢复默认值独立于普通保存，允许用户确认后替换未来版本存档。 */
+export function resetSettingsSnapshot(
+  settings: ReturnType<typeof settingsDocument>,
+  expectedRevision: number,
+): Promise<SettingsSnapshot> {
+  const document = structuredClone(settings);
+  return callNative((commands) =>
+    commands.resetSettingsSnapshot(document, expectedRevision),
   );
 }
 
@@ -1032,22 +1072,10 @@ export async function registerGlobalShortcut(
   shortcut: string,
 ): Promise<() => Promise<void>> {
   requireDesktop();
-  if (
-    ![
-      "CommandOrControl+Shift+Space",
-      "CommandOrControl+Shift+Y",
-      "Alt+Shift+Y",
-    ].includes(shortcut)
-  )
-    throw new Error("Unsupported demo shortcut");
-  const plugin = await import("@tauri-apps/plugin-global-shortcut");
-  if (await plugin.isRegistered(shortcut))
-    throw new Error("Shortcut is already registered");
-  await plugin.register(shortcut, (event) => {
-    if (event.state === "Pressed")
-      void callNative((c) => c.activateMain()).catch(console.error);
-  });
-  return () => plugin.unregister(shortcut);
+  await callNative((commands) => commands.registerDemoShortcut(shortcut));
+  return async () => {
+    await callNative((commands) => commands.unregisterDemoShortcut(shortcut));
+  };
 }
 
 export type HttpDemoRequest = import("./generated/bindings").HttpDemoRequest;

@@ -1,6 +1,11 @@
 import type { MessageKey } from "@/i18n/zh-CN";
 
-type JourneyStep = { path: string; title: MessageKey; description: MessageKey };
+type JourneyStep = {
+  path: string;
+  title: MessageKey;
+  description: MessageKey;
+  stage?: "motion";
+};
 type Journey = {
   id: string;
   title: MessageKey;
@@ -32,7 +37,8 @@ export const JOURNEYS = [
         description: "experience.interface.3Hint",
       },
       {
-        path: "/motion",
+        path: "/components",
+        stage: "motion",
         title: "experience.interface.4",
         description: "experience.interface.4Hint",
       },
@@ -154,7 +160,13 @@ export const JOURNEYS = [
 
 export function journeyLink(journey: Journey, index = 0) {
   const step = journey.steps[index];
-  return step ? `${step.path}?journey=${journey.id}&step=${index}` : "/catalog";
+  if (!step) return "/catalog";
+  const params = new URLSearchParams({
+    journey: journey.id,
+    step: String(index),
+  });
+  if ("stage" in step && step.stage) params.set("stage", step.stage);
+  return `${step.path}?${params.toString()}`;
 }
 
 /** 体验步骤只是 URL 导览；不执行命令，也不推断用户已完成操作。 */
@@ -174,5 +186,8 @@ export function currentJourney(
   )
     return null;
   const step = journey.steps[index];
-  return step?.path === pathname ? { journey, step, index } : null;
+  return step?.path === pathname &&
+    (!("stage" in step) || params.get("stage") === step.stage)
+    ? { journey, step, index }
+    : null;
 }

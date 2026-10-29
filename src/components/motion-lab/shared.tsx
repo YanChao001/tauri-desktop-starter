@@ -41,7 +41,11 @@ export function RangeControl({
     <label className="lab-range" htmlFor={id}>
       <span>
         {label}
-        <output htmlFor={id}>
+        <output
+          htmlFor={id}
+          data-surface="transparent"
+          className="inline overflow-visible p-0"
+        >
           {value}
           {suffix}
         </output>
