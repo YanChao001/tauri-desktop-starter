@@ -2,7 +2,7 @@
   "name": "tauri-desktop-starter",
   "private": true,
   "license": "MIT",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "packageManager": "pnpm@12.16.1",
   "engines": {
