@@ -100,9 +100,14 @@ pub async fn install_extension(
     expected_revision: i32,
     replace_existing: bool,
     expected_sha256: String,
-    consent: ExtensionConsent,
+    consent: Option<ExtensionConsent>,
 ) -> NativeResult<ExtensionSnapshot> {
-    let bundle = blocking::run(move || extensions::package(&content)).await?;
+    let (bundle, origin) = blocking::run(move || {
+        let bundle = extensions::package(&content)?;
+        let origin = extensions::verified_package_origin(&bundle)?;
+        Ok((bundle, origin))
+    })
+    .await?;
     let id = bundle.preview.manifest.id.clone();
     let services = app.state::<crate::extension_services::ExtensionServices>();
     let _service_gate = services.mutation(&id).await?;
@@ -111,16 +116,21 @@ pub async fn install_extension(
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
         let _maintenance = maintenance;
-        store.install_prepared_reviewed(
+        store.install_prepared(
             bundle,
             InstallCondition {
                 revision: expected_revision,
                 replace: replace_existing,
                 sha256: &expected_sha256,
             },
-            ExtensionOrigin::Local,
+            origin,
             consent,
-            |old, _| host.clear_credentials(&old.package.manifest),
+            |old, next| {
+                if !old.origin.same_trusted_source(next) {
+                    host.clear_credentials(&old.package.manifest)?;
+                }
+                Ok(())
+            },
         )
     })
     .await;
@@ -139,7 +149,7 @@ pub async fn install_market_extension(
     replace_existing: bool,
     expected_sha256: String,
     source: MarketSource,
-    consent: ExtensionConsent,
+    consent: Option<ExtensionConsent>,
 ) -> NativeResult<ExtensionSnapshot> {
     let verified = app
         .state::<ExtensionMarket>()
@@ -160,7 +170,7 @@ pub async fn install_market_extension(
     let host = app.state::<ExtensionHostStore>().inner().clone();
     let result = blocking::run(move || {
         let _maintenance = maintenance;
-        store.install_prepared_reviewed(
+        store.install_prepared(
             bundle,
             InstallCondition {
                 revision: expected_revision,

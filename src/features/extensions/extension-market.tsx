@@ -274,6 +274,7 @@ export function ExtensionMarket({
           return (
             <article
               key={manifest.id}
+              tabIndex={-1}
               className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border app-surface p-4"
             >
               <div className="flex items-start gap-3">

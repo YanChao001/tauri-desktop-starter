@@ -37,6 +37,8 @@ import type {
 } from "./generated/bindings";
 
 export type {
+  ExtensionConsent,
+  ExtensionOrigin,
   ExtensionArchivePreview,
   ExtensionArchiveResult,
   ExtensionArchiveStatus,
@@ -197,7 +199,7 @@ export function installExtension(
   expectedRevision: number,
   replaceExisting: boolean,
   expectedSha256: string,
-  consent: ExtensionConsent,
+  consent?: ExtensionConsent,
 ): Promise<ExtensionSnapshot> {
   return callNative((commands) =>
     commands.installExtension(
@@ -205,7 +207,7 @@ export function installExtension(
       expectedRevision,
       replaceExisting,
       expectedSha256,
-      consent,
+      consent ?? null,
     ),
   );
 }
@@ -232,7 +234,7 @@ export function installMarketExtension(
   replaceExisting: boolean,
   expectedSha256: string,
   source: MarketSource,
-  consent: ExtensionConsent,
+  consent?: ExtensionConsent,
 ): Promise<ExtensionSnapshot> {
   return callNative((commands) =>
     commands.installMarketExtension(
@@ -241,7 +243,7 @@ export function installMarketExtension(
       replaceExisting,
       expectedSha256,
       source,
-      consent,
+      consent ?? null,
     ),
   );
 }

@@ -73,7 +73,10 @@ export const commands = {
     expectedRevision: number,
     replaceExisting: boolean,
     expectedSha256: string,
-    consent: ExtensionConsent,
+    consent: {
+      trusted: boolean;
+      grantedPermissions: ExtensionPermission[];
+    } | null,
   ) =>
     typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("install_extension", {
@@ -90,7 +93,10 @@ export const commands = {
     replaceExisting: boolean,
     expectedSha256: string,
     source: MarketSource,
-    consent: ExtensionConsent,
+    consent: {
+      trusted: boolean;
+      grantedPermissions: ExtensionPermission[];
+    } | null,
   ) =>
     typedError<ExtensionSnapshot_Serialize, NativeError>(
       __TAURI_INVOKE("install_market_extension", {
