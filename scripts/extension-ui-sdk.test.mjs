@@ -597,6 +597,33 @@ function snapshot(overrides = {}) {
   };
 }
 
+test("checkpoint encoding errors reject the returned promise without sending or closing the bridge", async () => {
+  const { sdk, send, messages, close } = fixture();
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  const circular = {};
+  circular.self = circular;
+  for (const value of [circular, { count: 1n }]) {
+    let checkpoint;
+    assert.doesNotThrow(() => {
+      checkpoint = sdk.checkpoint(value, true);
+    });
+    await assert.rejects(checkpoint, { name: "TypeError" });
+  }
+  assert.equal(messages.length, 0);
+  const saved = sdk.checkpoint({ draft: "retained" }, true);
+  await Promise.resolve();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].method, "checkpoint");
+  assert.deepEqual(messages[0].params, {
+    value: JSON.stringify({ draft: "retained" }),
+    dirty: true,
+  });
+  send({ id: messages[0].id, result: null });
+  await saved;
+  close();
+});
+
 test("incremental state patches preserve complete isolated author snapshots", async () => {
   const { sdk, send, close } = fixture();
   const observed = [];
@@ -1275,6 +1302,34 @@ test("enhanced select retains its native node, form value and label while keyboa
   assert.equal(control.value, "date");
   assert.equal(changes, 3);
   close();
+});
+
+test("enhanced select options ignore secondary and auxiliary pointer buttons", () => {
+  const { window, control, pointer, popup, close } = selectFixture();
+  try {
+    let changes = 0;
+    control.addEventListener("change", () => changes++);
+    pointer(control);
+    const option = popup().querySelector('[data-starter-option="3"]');
+    for (const button of [1, 2]) {
+      option.dispatchEvent(
+        new window.MouseEvent("pointerdown", {
+          button,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      assert.equal(control.value, "apple");
+      assert.equal(changes, 0);
+      assert.ok(popup());
+    }
+    pointer(option);
+    assert.equal(control.value, "date");
+    assert.equal(changes, 1);
+    assert.equal(popup(), null);
+  } finally {
+    close();
+  }
 });
 
 test("select opt-outs, disabled fieldsets, reset and removed controls keep native semantics and clean popup resources", async () => {

@@ -117,6 +117,8 @@ export class ExtensionSessionCache {
     this.entries.set(session, entry);
     this.known.set(session, entry);
     this.measure(entry);
+    // 并发渲染可能在提交前被放弃，未取得租约的干净会话同样遵守预算。
+    this.scheduleTrim();
     return session;
   }
 

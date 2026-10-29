@@ -241,7 +241,9 @@ export function ExtensionApp({
         const fields = Object.fromEntries(
           next.fields.map((field) => [
             field.id,
-            draftFields?.[field.id] ?? field.value,
+            draftFields && Object.hasOwn(draftFields, field.id)
+              ? (draftFields[field.id] ?? field.value)
+              : field.value,
           ]),
         );
         session.update({

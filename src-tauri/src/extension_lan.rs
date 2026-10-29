@@ -1507,16 +1507,21 @@ impl Node {
             }
             times.push_back(tick);
         }
-        let writer = self
+        let (writer, connection_id) = self
             .runtime
             .lock()
             .map_err(|_| unavailable("LAN session is unavailable"))?
             .connections
             .get(peer_id)
-            .map(|v| v.stream.clone())
+            .map(|connection| (connection.stream.clone(), connection.id.clone()))
             .ok_or_else(|| unavailable("This LAN contact is not connected"))?;
         let id = token()?;
         self.mutate_permitted(permit, |data| {
+            let _runtime = self.current_connection(peer_id, &connection_id)?;
+            // 握手先发布连接再保存联系人；并发发送不能落盘悬空的 peer_id。
+            if !data.contacts.contains_key(peer_id) {
+                return Err(unavailable("The LAN contact is not ready"));
+            }
             data.messages.push_back(Message {
                 id: id.clone(),
                 peer_id: peer_id.into(),
@@ -1619,6 +1624,9 @@ impl Node {
                 return Err(attachment_io::interrupted(
                     "LAN connection was replaced or stopped",
                 ));
+            }
+            if !data.contacts.contains_key(peer_id) {
+                return Err(unavailable("The LAN contact is not ready"));
             }
             data.messages.push_back(Message {
                 id: id.clone(),
@@ -2881,6 +2889,80 @@ mod tests {
         let data = reopened.data.lock().unwrap();
         assert!(data.contacts.is_empty());
         assert!(data.messages.is_empty());
+    }
+    #[test]
+    fn outgoing_messages_wait_for_the_handshake_contact_before_persisting() {
+        let root = directory();
+        let node = Node::open(root.path(), ID).unwrap();
+        node.mutate(|_| Ok(())).unwrap();
+        let original = fs::read(&node.path).unwrap();
+        let peer_id = token().unwrap();
+        let connection_id = token().unwrap();
+        let receiver = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let stream = TcpStream::connect(receiver.local_addr().unwrap()).unwrap();
+        let (mut remote, _) = receiver.accept().unwrap();
+        stream.set_nonblocking(true).unwrap();
+        remote.set_nonblocking(true).unwrap();
+        {
+            let mut runtime = node.runtime.lock().unwrap();
+            runtime.stop = Arc::new(AtomicBool::new(false));
+            // 固定真实握手的中间态：连接已可查到，联系人还没完成持久化。
+            runtime.connections.insert(
+                peer_id.clone(),
+                Connection {
+                    id: connection_id.clone(),
+                    control: stream.try_clone().unwrap(),
+                    stream: Arc::new(Mutex::new(stream)),
+                    preferred: true,
+                },
+            );
+        }
+        for kind in ["text", "sticker"] {
+            assert_eq!(
+                node.send_content_permitted(&peer_id, "等待联系人", kind, None)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::ExtensionUnavailable,
+            );
+        }
+        let bytes = b"attachment".to_vec();
+        assert_eq!(
+            node.send_attachment_permitted(
+                &peer_id,
+                "file",
+                attachment("pending.bin", "file", &bytes),
+                bytes,
+                None,
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::ExtensionUnavailable,
+        );
+        assert_eq!(fs::read(&node.path).unwrap(), original);
+        assert!(node.data.lock().unwrap().messages.is_empty());
+        let mut sent = [0_u8; 1];
+        assert_eq!(
+            remote.read(&mut sent).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+        );
+        Node::open(root.path(), ID).unwrap();
+
+        node.remember_peer(
+            &peer_id,
+            &connection_id,
+            "已完成握手".into(),
+            Ipv4Addr::LOCALHOST.into(),
+            DEFAULT_PORT,
+        )
+        .unwrap();
+        node.send(&peer_id, "正常发送").unwrap();
+        assert!(matches!(
+            read_frame(&mut remote, &AtomicBool::new(false)).unwrap(),
+            Some(Frame::Message { text, .. }) if text == "正常发送",
+        ));
+        let reopened = Node::open(root.path(), ID).unwrap();
+        assert_eq!(reopened.data.lock().unwrap().messages.len(), 1);
+        node.stop();
     }
     #[test]
     fn future_corrupt_and_oversized_history_are_never_overwritten() {

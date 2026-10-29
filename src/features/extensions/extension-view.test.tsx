@@ -10,6 +10,43 @@ vi.mock("@/providers/i18n", () => ({
 }));
 afterEach(cleanup);
 
+it.each(["__proto__", "constructor", "toString"])(
+  "treats the valid field ID %s as a JSON member rather than an inherited error",
+  (fieldId) => {
+    const view: View = {
+      version: 2,
+      state: "",
+      display: "Tool",
+      description: "",
+      fields: [{ id: fieldId, label: "Draft", value: "Initial" }],
+      groups: [],
+      errors: {},
+    };
+    const props = {
+      view,
+      fields: Object.fromEntries([[fieldId, "Retained input"]]),
+      blocked: false,
+      invalidFields: new Set<string>(),
+      onField: vi.fn(),
+      onAction: vi.fn(),
+    };
+    const mounted = render(<ExtensionView {...props} />);
+    const input = screen.getByRole("textbox", { name: "Draft" });
+    expect(input).toHaveValue("Retained input");
+    expect(input).toHaveAttribute("aria-invalid", "false");
+    mounted.rerender(
+      <ExtensionView
+        {...props}
+        view={{
+          ...view,
+          errors: Object.fromEntries([[fieldId, "Please revise this value"]]),
+        }}
+      />,
+    );
+    expect(input).toHaveAccessibleDescription("Please revise this value");
+  },
+);
+
 it("keeps field feedback mounted and exposes complete validation text without expanding it", () => {
   const view: View = {
     version: 2,

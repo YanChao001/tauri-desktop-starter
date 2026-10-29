@@ -201,6 +201,54 @@ it("exports the actual final result when completion races with lifecycle cancell
   );
 });
 
+it("starts a clean session when navigation selects another command after export", async () => {
+  const secondCommand = {
+    ...tool,
+    package: {
+      ...tool.package,
+      manifest: {
+        ...tool.package.manifest,
+        commands: [
+          ...tool.package.manifest.commands,
+          ...tool.package.manifest.commands.map((command) => ({
+            ...command,
+            id: "second",
+            title: "Second",
+          })),
+        ],
+      },
+    },
+  };
+  const props = {
+    items: [secondCommand],
+    runs: [],
+    requestedExtension: tool.package.manifest.id,
+    onSettled: vi.fn().mockResolvedValue(undefined),
+  };
+  vi.mocked(native.runExtension).mockResolvedValueOnce("First command result");
+  const mounted = render(<ExtensionRunner {...props} requestedCommand="run" />);
+  fireEvent.change(screen.getByLabelText("Input text"), {
+    target: { value: "First command input" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  await screen.findByText("First command result");
+  await act(async () => lifecycle.work!.save());
+  mounted.rerender(<ExtensionRunner {...props} requestedCommand="second" />);
+  expect(screen.getByLabelText("Input text")).toHaveValue("");
+  expect(screen.queryByText("First command result")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Input text"), {
+    target: { value: "Second command input" },
+  });
+  await act(async () => lifecycle.work!.save());
+  expect(
+    JSON.parse(vi.mocked(native.saveExtensionSession).mock.calls.at(-1)![1]),
+  ).toMatchObject({
+    commandId: "second",
+    inputText: "Second command input",
+    result: null,
+  });
+});
+
 it("keeps input and previous output after failure and leaves a cancelled export dirty", async () => {
   vi.mocked(native.runExtension)
     .mockResolvedValueOnce("<script>plain text</script>")
@@ -283,6 +331,59 @@ it("does not clear or save anything for an already aborted lifecycle request", a
   expect(native.saveExtensionSession).not.toHaveBeenCalled();
   expect(native.runExtension).not.toHaveBeenCalled();
   expect(screen.getByLabelText("Input text")).toHaveValue("Retain");
+});
+
+it("keeps a pending file selection attached to its command when navigation requests another tool", async () => {
+  const selecting = deferred<native.ExtensionFileChoice[]>();
+  vi.mocked(native.pickExtensionFiles).mockReturnValueOnce(selecting.promise);
+  const other = {
+    ...tool,
+    package: {
+      ...tool.package,
+      manifest: {
+        ...tool.package.manifest,
+        id: "test.other",
+        name: "Other tool",
+      },
+    },
+  };
+  const filesTool: native.ExtensionInfo = {
+    ...tool,
+    grantedPermissions: ["files:read"],
+  };
+  const props = {
+    items: [filesTool, other],
+    runs: [],
+    requestedCommand: "run",
+    onSettled: vi.fn().mockResolvedValue(undefined),
+  };
+  const mounted = render(
+    <ExtensionRunner {...props} requestedExtension="test.tool" />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Choose files for this run" }),
+  );
+  mounted.rerender(
+    <ExtensionRunner {...props} requestedExtension="test.other" />,
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Select an extension command" }),
+  ).toHaveTextContent("Test tool · Run");
+  await act(async () => {
+    selecting.resolve([
+      {
+        id: "selected",
+        name: "retained.txt",
+        mediaType: "text/plain",
+        bytes: 10,
+      },
+    ]);
+  });
+  expect(screen.getByText("retained.txt")).toBeVisible();
+  await act(async () => lifecycle.work!.save());
+  expect(
+    JSON.parse(vi.mocked(native.saveExtensionSession).mock.calls.at(-1)![1]),
+  ).toMatchObject({ extensionId: "test.tool", files: ["retained.txt"] });
 });
 
 it("waits for an active file picker and exports the selection that actually completed", async () => {

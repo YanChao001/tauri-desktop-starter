@@ -1,7 +1,14 @@
 import { ExtensionOutput } from "./extension-output";
 import { toast } from "sonner";
 import { ExtensionHelp } from "./extension-help";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -147,8 +154,20 @@ export function ExtensionRunner({
     grants.includes("network:https") || grants.includes("network:local");
   const tooLong = new TextEncoder().encode(input).length > 1024 * 1024;
   const locked = busy || exporting || picking;
+  const selectCommand = useCallback((key: string) => {
+    lastOutput.current = null;
+    latestFiles.current = [];
+    setOutput(null);
+    setFiles([]);
+    setInput("");
+    setUrl("");
+    setError(null);
+    setDirty(false);
+    setSelected(key);
+    setNextSelected(null);
+  }, []);
   useEffect(() => {
-    // Navigation from the command palette does not overwrite an unsaved session.
+    // 命令面板的导航请求等待未保存工作和在途操作，切换时复用完整会话重置。
     const request = requestedExtension + ":" + requestedCommand;
     const requested = choices.find(
       (value) =>
@@ -158,13 +177,24 @@ export function ExtensionRunner({
     if (
       !requested ||
       dirty ||
+      locked ||
       current.current ||
+      selection.current ||
+      exportLock.current ||
       appliedRequest.current === request
     )
       return;
     appliedRequest.current = request;
-    setSelected(requested.key);
-  }, [requestedExtension, requestedCommand, dirty, choices]);
+    if (requested.key !== choice?.key) selectCommand(requested.key);
+  }, [
+    requestedExtension,
+    requestedCommand,
+    dirty,
+    locked,
+    choices,
+    choice?.key,
+    selectCommand,
+  ]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -176,18 +206,6 @@ export function ExtensionRunner({
         ).catch(() => {});
     };
   }, []);
-  function selectCommand(key: string) {
-    lastOutput.current = null;
-    latestFiles.current = [];
-    setOutput(null);
-    setFiles([]);
-    setInput("");
-    setUrl("");
-    setError(null);
-    setDirty(false);
-    setSelected(key);
-    setNextSelected(null);
-  }
   async function settle(signal?: AbortSignal) {
     signal?.throwIfAborted();
     await selection.current;

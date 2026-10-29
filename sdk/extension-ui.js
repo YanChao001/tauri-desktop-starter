@@ -593,6 +593,7 @@
     function pointer(event) {
       const option = event.target.closest?.("[data-starter-option]");
       if (open && option && open.popup.contains(option)) {
+        if (event.button !== 0) return;
         event.preventDefault();
         syncSelection();
         if (
@@ -898,7 +899,7 @@
       setFields(fields) {
         return request("fields", { fields });
       },
-      checkpoint(value, dirty) {
+      async checkpoint(value, dirty) {
         return request("checkpoint", { value: JSON.stringify(value), dirty });
       },
       saveArtifact(index) {

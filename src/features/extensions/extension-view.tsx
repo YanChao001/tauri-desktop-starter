@@ -234,7 +234,10 @@ export function ExtensionView({
             const fieldId = `${id}-${field.id}`;
             const value = fields[field.id] ?? "";
             const byteLimit = extensionFieldBytes(field);
-            const fieldError = view.errors?.[field.id];
+            const fieldError =
+              view.errors && Object.hasOwn(view.errors, field.id)
+                ? view.errors[field.id]
+                : undefined;
             const invalid = invalidFields.has(field.id) || Boolean(fieldError);
             const errorText = invalidFields.has(field.id)
               ? invalidFieldValues?.has(field.id)

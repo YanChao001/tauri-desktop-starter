@@ -2715,8 +2715,18 @@ mod tests {
     #[test]
     fn optional_grants_allow_offline_use_and_changes_cancel_old_calls() {
         let (_dir, store) = store();
-        store.initialize_bundled().unwrap();
-        let snapshot = enable(&store, &store.snapshot().unwrap());
+        // 可选授权属于宿主契约，不能依赖内置工作台是否仍提供私有存储功能。
+        let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        content["manifest"]["id"] = "tests.optional-grants".into();
+        content["manifest"]["permissions"] = serde_json::json!([]);
+        content["manifest"]["optionalPermissions"] = serde_json::json!(["storage"]);
+        for command in content["manifest"]["commands"].as_array_mut().unwrap() {
+            command["permissions"] = serde_json::json!([]);
+        }
+        let content = content.to_string();
+        let preview = preview_package(&content).unwrap();
+        let installed = store.install(&content, 0, false, &preview.sha256).unwrap();
+        let snapshot = enable(&store, &installed);
         let item = &snapshot.items[0];
         assert!(item.enabled);
         assert!(item.granted_permissions.is_empty());
