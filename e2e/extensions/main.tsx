@@ -10,6 +10,14 @@ import ExtensionPage from "../../src/pages/extension-app";
 import ExtensionWindow from "../../src/pages/extension-window";
 import Extensions from "../../src/pages/extensions";
 import { CustomBackgroundPicker } from "../../src/components/custom-background-picker";
+import { Button } from "../../src/components/ui/button";
+import { Input } from "../../src/components/ui/input";
+import { Textarea } from "../../src/components/ui/textarea";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+} from "../../src/components/ui/select";
 import "./fixture.css";
 
 const params = new URLSearchParams(location.search),
@@ -30,6 +38,40 @@ const initial =
   plugin === "center"
     ? "/extensions"
     : `/${standalone ? "extension-window" : "extensions/app"}/${id}/${command}`;
+
+function HostStyleReferences() {
+  return (
+    <aside
+      aria-hidden="true"
+      inert
+      style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}
+    >
+      {(
+        ["default", "outline", "secondary", "ghost", "destructive"] as const
+      ).flatMap((variant) =>
+        (["default", "sm", "icon", "icon-sm", "icon-xs"] as const).map(
+          (size) => (
+            <Button
+              key={`${variant}:${size}`}
+              data-host-style-reference={`button:${variant}:${size}`}
+              variant={variant}
+              size={size}
+            >
+              Reference
+            </Button>
+          ),
+        ),
+      )}
+      <Input data-host-style-reference="input" />
+      <Textarea data-host-style-reference="textarea" />
+      <Select defaultValue="reference">
+        <SelectTrigger data-host-style-reference="select">
+          <SelectValue placeholder="Reference" />
+        </SelectTrigger>
+      </Select>
+    </aside>
+  );
+}
 document.documentElement.lang =
   params.get("language") === "en" ? "en" : "zh-CN";
 document.documentElement.style.fontSize = params.get("font") ?? "16px";
@@ -37,6 +79,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <FixtureTheme>
       <TooltipProvider>
+        <HostStyleReferences />
         <ExtensionsProvider>
           <MemoryRouter initialEntries={[initial]}>
             <Routes>

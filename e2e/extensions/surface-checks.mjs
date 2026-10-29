@@ -49,8 +49,11 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
           "background-color",
           "rgba(0, 0, 0, 0)",
         );
-    const surfaceSelector =
-      ".studio-console,.inspector,.side-panel,.scene-footer,.flow-results,button.result,.card";
+    // 阅读材质由工作台外框承担，内部侧栏/页脚继承它，避免重复叠加底色。
+    const surfaceSelector = ".studio-console,button.result,.card";
+    const inheritedPanels = frame.locator(
+      ".studio-console :is(.inspector,.side-panel,.scene-footer,.flow-results)",
+    );
     const surfaceAlpha = () =>
       frame.locator(surfaceSelector).evaluateAll((nodes) => {
         const canvas = document.createElement("canvas");
@@ -77,7 +80,10 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
         );
       }, intensity);
     if (inheritsSkin) {
-      expect(await frame.locator(surfaceSelector).count()).toBeGreaterThan(0);
+      // 壁纸首批卡片由实际 Wasm 异步返回，文档 ready 不代表结果节点已挂载。
+      await expect
+        .poll(() => frame.locator(surfaceSelector).count(), { timeout: 60000 })
+        .toBeGreaterThan(0);
       for (const intensity of [0, 50, 100]) {
         await page.evaluate(
           (backgroundIntensity) =>
@@ -92,6 +98,8 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
             ),
           )
           .toBe(true);
+        for (const panel of await inheritedPanels.all())
+          await expect(panel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
         expect(await backgrounds()).toEqual(before);
       }
       await page.evaluate(() =>
@@ -248,7 +256,93 @@ export async function checkChrome(page, profile, manifest) {
   };
 }
 
-export async function checkNormalControls(frame, name, fontSize) {
+// 使用真实宿主组件作为期望值，捕获插件作者 CSS 重新覆盖默认样式造成的漂移。
+// 只比较视觉属性；宽度、排列、编辑区高度和内容专用绘制由各插件负责。
+export async function checkHostControlStyles(
+  page,
+  frame,
+  selectors,
+  { styleProperties, compareHeight = true } = {},
+) {
+  await page.mouse.move(0, 0);
+  const measurements = [];
+  const properties = styleProperties ?? [
+    "boxSizing",
+    "fontFamily",
+    "fontSize",
+    "fontWeight",
+    "lineHeight",
+    "borderTopLeftRadius",
+    "borderTopWidth",
+    "borderTopStyle",
+    "borderTopColor",
+    "backgroundColor",
+    "color",
+    "backdropFilter",
+  ];
+  for (const selector of selectors) {
+    const control = frame.locator(selector);
+    await expect(control, `Required shared control ${selector}`).toBeVisible();
+    const actual = await control.evaluate((node, properties) => {
+      const classes = [...node.classList];
+      const variant =
+        node.dataset.variant ??
+        classes
+          .find((name) =>
+            /^ui-button-(outline|secondary|ghost|destructive)$/.test(name),
+          )
+          ?.slice("ui-button-".length) ??
+        "default";
+      const size =
+        classes
+          .find((name) => name.startsWith("ui-button-size-"))
+          ?.slice("ui-button-size-".length) ?? "default";
+      const reference =
+        node.tagName === "BUTTON"
+          ? `button:${variant}:${size}`
+          : node.tagName.toLowerCase();
+      const styles = getComputedStyle(node);
+      return {
+        reference,
+        height: node.getBoundingClientRect().height,
+        styles: Object.fromEntries(
+          properties.map((property) => [property, styles[property]]),
+        ),
+      };
+    }, properties);
+    const expected = await page
+      .locator(`[data-host-style-reference="${actual.reference}"]`)
+      .evaluate((node, properties) => {
+        const styles = getComputedStyle(node);
+        return {
+          height: node.getBoundingClientRect().height,
+          styles: Object.fromEntries(
+            properties.map((property) => [property, styles[property]]),
+          ),
+        };
+      }, properties);
+    // Chromium 对原生单选框保留 normal；HTML 弹层行高由独立下拉检查验证。
+    if (
+      actual.reference === "select" &&
+      actual.styles.lineHeight === "normal"
+    ) {
+      delete actual.styles.lineHeight;
+      delete expected.styles.lineHeight;
+    }
+    expect(actual.styles, `Host style inheritance of ${selector}`).toEqual(
+      expected.styles,
+    );
+    if (compareHeight && actual.reference !== "textarea")
+      expect(actual.height, `Host control height of ${selector}`).toBeCloseTo(
+        expected.height,
+        0,
+      );
+    measurements.push({ selector, ...actual });
+  }
+  return measurements;
+}
+
+export async function checkNormalControls(page, frame, name, fontSize) {
   if (
     name === "scientific-calculator" &&
     (await frame.locator("main").getAttribute("data-mode")) !== "scientific"
@@ -297,7 +391,20 @@ export async function checkNormalControls(frame, name, fontSize) {
     }
   }
   expect(controls.length).toBeGreaterThan(0);
-  return controls;
+  const ordinary = {
+    "scientific-calculator": [], // 数学键盘/导航是明确专用设计；转换器另验普通下拉。
+    "lan-chat": [
+      "#settings-toggle",
+      "#refresh",
+      "#send-image",
+      "#send-file",
+      "#send",
+    ],
+    "wallpaper-browser": ["#refresh", "#import", "#settings"],
+    lab: ["#canvas-add", "#canvas-arrange", "#node-title", "#node-target"],
+  };
+  const styleParity = await checkHostControlStyles(page, frame, ordinary[name]);
+  return { controls, styleParity };
 }
 
 export async function checkSelectPopup(frame, selector) {

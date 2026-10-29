@@ -179,6 +179,18 @@ node e2e/extensions/navigation-cache.mjs
 
 `test:extensions:ui` 先运行 `pnpm test:extensions:styles`：独立构建真实宿主控件与 CSS，对照 SDK 默认控件的主题、变体、尺寸、焦点、禁用和校验状态，并验证显式 Shadow DOM 接入、键盘和强制颜色回退。该检查可单独运行，不启动 Rust 或原生窗口；期望值取自实际宿主组件，不复制同一份样式常量充当验证。
 
+浏览器 CI 在生产页面检查前运行同一共享样式对照，防止宿主组件与 SDK 默认规则重新分叉；实际插件业务与作者样式仍按下述 runner 单独验收。
+
+实际插件 runner 还在离屏、`inert` 容器中挂载真实宿主 Button / Input / Select / Textarea，由 [控件对照](../e2e/extensions/surface-checks.mjs) 比较 LAN、壁纸库和内置工作台中显式选定的普通控件的字体、尺寸、圆角、边框与背景，不比较业务布局宽度；计算器的 Windows 专用设计与 Snake 已声明的整套游戏视觉按各自边界验收，这项检查不自动遍历全部插件控件或替代设计例外审查。
+
+按前文准备本轮插件包与 CLI 后，可仅运行实际插件样式检查：
+
+```bash
+node e2e/extension-ui.mjs --styles-only
+```
+
+该模式加载真实打包 HTML 与 SDK，检查初始呈现、导航和背景，并在同一 iframe 内切换 `soft` / `sharp` / `round` 圆角，对照上述已选控件，保留计算器 Windows 风格与 Snake 整套游戏设计的例外。可沿用插件名与 `--profiles` 筛选，结果记录在 `styles-run.json`；它不运行完整业务流程，不能替代默认 runner 的业务和隔离验收。
+
 报告与截图写入 `artifacts/extensions/custom-ui/`，包含模块 / UI 哈希和实际动作；并行任务可设置 `STARTER_EXTENSION_UI_RUN_ID`（1–80 个 ASCII 字母、数字、下划线或连字符）使用独立子目录。定向运行只报告实际应用与 profile。
 
 该检查不验证真实 Tauri IPC、目标 WebView 注入、系统对话框、平台音频、多机 LAN / 防火墙或在线图片供应商；这些项目与正式安装版另行验收。隔离和呈现契约见 [自定义界面](./extensions.md#自定义界面)。

@@ -7,19 +7,9 @@
     <style>
       table {
         width: 100%;
-        border-collapse: collapse;
-        font-size: 0.85em;
-      }
-      caption {
-        text-align: left;
-        padding: 10px;
-        font-weight: 600;
       }
       th,
       td {
-        padding: 9px 10px;
-        border-bottom: 1px solid var(--border);
-        text-align: left;
         max-width: 260px;
         overflow-wrap: anywhere;
       }
@@ -56,23 +46,14 @@
         --art-rose: #f3a0c2;
         --art-orange: #e8ad76;
       }
-      .studio-app *,
-      .studio-app *::before,
-      .studio-app *::after {
-        box-sizing: border-box;
-      }
       .studio-app :is(h1, h2, h3, p) {
         margin: 0;
       }
-      .studio-app :is(button, input, textarea, select):focus-visible {
+      /* 场景导航和画布节点有自定义选中阴影，另留清晰的键盘焦点。 */
+      .studio-nav > button:focus-visible,
+      .canvas-node:focus-visible {
         outline: 2px solid var(--ring);
         outline-offset: 3px;
-      }
-      .studio-app button {
-        cursor: pointer;
-      }
-      .studio-app button:disabled {
-        cursor: default;
       }
       .studio-app svg {
         flex-shrink: 0;
@@ -249,7 +230,7 @@
         height: 100%;
       }
       .data-editor {
-        padding: 1rem 1.25rem;
+        padding: 0.75rem;
         border-top: 1px solid var(--border);
       }
       .data-editor .scene-actions {
@@ -277,10 +258,10 @@
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: 1rem;
-        padding: 1rem 1.25rem;
+        gap: 0.75rem;
+        padding: 0.75rem;
         margin-bottom: 0;
-        border-bottom: 1px solid var(--studio-line);
+        border-bottom: 1px solid var(--border);
       }
       .studio-heading #app-name {
         margin: 0;
@@ -289,7 +270,6 @@
         min-height: 5rem;
         height: 5rem;
         max-height: 9rem;
-        font-family: inherit;
       }
       .chart-toolbar {
         display: flex;
@@ -340,23 +320,10 @@
         align-items: center;
         gap: 0.5rem;
       }
-      .scene-actions button,
-      .scene-footer button,
-      .side-panel button,
-      .inspector > button {
-        min-height: 2rem;
-      }
-      .scene-actions button svg,
-      .scene-footer button svg,
-      .side-panel button svg {
-        width: 0.875rem;
-        height: 0.875rem;
-      }
       .studio-console {
-        border: 1px solid var(--studio-line);
-        border-radius: calc(var(--studio-radius) + 0.25rem);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl, var(--radius, 0.625rem));
         overflow: clip;
-        background: var(--surface-card, var(--card));
       }
       .canvas-grid,
       .lens-grid,
@@ -550,9 +517,8 @@
       .inspector,
       .side-panel {
         min-width: 0;
-        padding: 1rem;
-        border-left: 1px solid var(--studio-line);
-        background: var(--surface-card, var(--card));
+        padding: 0.75rem;
+        border-left: 1px solid var(--border);
       }
       .inspector h3,
       .side-panel h3 {
@@ -586,22 +552,15 @@
         justify-content: space-between;
         gap: 0.5rem;
         margin-bottom: 0.375rem;
-        color: var(--muted-foreground);
-        font-size: 0.75rem;
-        line-height: 1.5;
       }
       .control-field output {
+        display: inline;
+        padding: 0;
+        overflow: visible;
         color: var(--foreground);
         font:
           0.75rem/1.5 ui-monospace,
           monospace;
-      }
-      .control-field :is(input, select) {
-        font-size: 0.75rem;
-      }
-      .control-field input[type="range"] {
-        height: 1.5rem;
-        margin: 0;
       }
       .inspector-summary {
         margin-top: 1.25rem;
@@ -652,9 +611,8 @@
         justify-content: space-between;
         flex-wrap: wrap;
         gap: 0.65rem 1rem;
-        padding: 0.75rem 1rem;
-        border-top: 1px solid var(--studio-line);
-        background: var(--surface-card, var(--card));
+        padding: 0.75rem;
+        border-top: 1px solid var(--border);
       }
       .scene-footer > p,
       .scene-footer > span {
@@ -769,8 +727,8 @@
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.75rem;
-        padding: 1rem 1.25rem;
-        border-top: 1px solid var(--studio-line);
+        padding: 0.75rem;
+        border-top: 1px solid var(--border);
       }
       .data-summary .stat {
         border: 0;
@@ -787,35 +745,19 @@
       .data-table-wrapper {
         max-height: 240px;
         overflow: auto;
-        border-top: 1px solid var(--studio-line);
+        border-top: 1px solid var(--border);
       }
       .data-table-wrapper:focus-visible {
         outline: 2px solid var(--ring);
         outline-offset: -2px;
       }
-      .data-table-wrapper table {
-        width: 100%;
-        font-size: 0.75rem;
-        border-collapse: collapse;
-      }
-      .data-table-wrapper :is(th, td) {
-        padding: 0.7rem 1rem;
-        text-align: left;
-        border-bottom: 1px solid var(--border);
-      }
       .data-table-wrapper th {
         position: sticky;
         top: 0;
         z-index: 1;
-        font-size: 0.6875rem;
-        font-weight: 500;
-        color: var(--muted-foreground);
       }
       .data-table-wrapper tbody tr:last-child td {
         border-bottom: 0;
-      }
-      .data-table-wrapper tbody tr:hover {
-        background: var(--surface-state-hover);
       }
       .data-table-wrapper td {
         font-variant-numeric: tabular-nums;
@@ -928,10 +870,9 @@
       }
       .flow-results {
         margin-top: 1rem;
-        padding: 1rem;
-        border: 1px solid var(--studio-line);
+        padding: 0.75rem;
+        border: 1px solid var(--border);
         border-radius: var(--radius, 0.625rem);
-        background: var(--surface-card, var(--card));
       }
       .flow-results strong {
         display: block;
@@ -1003,7 +944,7 @@
         .inspector,
         .side-panel {
           border-left: 0;
-          border-top: 1px solid var(--studio-line);
+          border-top: 1px solid var(--border);
         }
         .inspector {
           display: grid;
@@ -1093,13 +1034,6 @@
           width: 1.4rem;
           height: 1.4rem;
         }
-        .scene-footer {
-          padding: 0.8rem 1rem;
-        }
-        .inspector,
-        .side-panel {
-          padding: 1rem;
-        }
         .chart-stage {
           padding-inline: 1.25rem;
           min-height: 300px;
@@ -1109,7 +1043,6 @@
           font-size: 0.5625rem;
         }
         .data-summary {
-          padding: 0.85rem 1rem;
           gap: 0.5rem;
         }
         .data-summary .stat strong {
@@ -1277,7 +1210,7 @@
         role="tabpanel"
         aria-labelledby="studio-tab-canvas"
       >
-        <div class="studio-console">
+        <div class="studio-console" data-surface="panel">
           <div class="scene-heading">
             <div>
               <span
@@ -1413,7 +1346,7 @@
         aria-labelledby="studio-tab-lens"
         hidden
       >
-        <div class="studio-console">
+        <div class="studio-console" data-surface="panel">
           <div class="scene-heading">
             <div>
               <span
@@ -1507,7 +1440,12 @@
               ><label class="control-field"
                 ><span
                   ><span data-zh="最低值" data-en="Minimum"></span>
-                  <output id="lens-min-value">0</output></span
+                  <output
+                    id="lens-min-value"
+                    for="lens-min"
+                    data-surface="transparent"
+                    >0</output
+                  ></span
                 ><input
                   id="lens-min"
                   type="range"
@@ -1590,7 +1528,7 @@
         aria-labelledby="studio-tab-flow"
         hidden
       >
-        <div class="studio-console">
+        <div class="studio-console" data-surface="panel">
           <div class="scene-heading">
             <div>
               <span

@@ -60,6 +60,7 @@ import {
   checkChrome,
   checkWindowSkin,
   checkNormalControls,
+  checkHostControlStyles,
   checkSelectPopup,
   checkToolsHelp,
   frameGeometry,
@@ -244,6 +245,7 @@ const selectedProfiles = process.argv
 const wallpaperLocalOnly = process.argv.includes("--wallpaper-local-only");
 const wallpaperPreviewOnly = process.argv.includes("--wallpaper-preview-only");
 const wallpaperUiOnly = wallpaperLocalOnly || wallpaperPreviewOnly;
+const stylesOnly = process.argv.includes("--styles-only");
 const calculatorHistoryLayoutOnly = process.argv.includes(
   "--calculator-history-layout-only",
 );
@@ -1130,6 +1132,88 @@ try {
         });
         console.log(
           `PASS ${name} ${profile.width}px navigation placement and window skin`,
+        );
+        await page.close();
+        continue;
+      }
+      if (stylesOnly) {
+        const styles = [];
+        // Snake 文档明确整个游戏界面采用独立视觉；不对它强加普通控件外观。
+        if (name !== "snake") {
+          if (name === "wallpaper-browser")
+            await frame.locator("#local-tab").click();
+          if (name === "scientific-calculator")
+            await openCalculatorWorkspace(frame);
+          for (const radius of ["soft", "sharp", "round"]) {
+            await page.evaluate(
+              (radius) => window.__extensionSettingsTest.update({ radius }),
+              radius,
+            );
+            // SDK 传入计算后的圆角 token，不复制宿主的偏好 data 属性。
+            const hostRadius = await page
+              .locator("html")
+              .evaluate((node) =>
+                getComputedStyle(node).getPropertyValue("--radius").trim(),
+              );
+            await expect(frame.locator("html")).toHaveCSS(
+              "--radius",
+              hostRadius,
+            );
+            await settled(frame);
+            const controls =
+              name === "scientific-calculator"
+                ? await checkHostControlStyles(
+                    page,
+                    frame,
+                    [
+                      '#settings-dialog [data-action="save"]',
+                      "#load",
+                      '#settings-dialog [data-action="export"]',
+                    ],
+                    {
+                      // Windows 字体与正文色是计算器的明确设计，形状和材质仍共用宿主。
+                      styleProperties: [
+                        "boxSizing",
+                        "fontSize",
+                        "fontWeight",
+                        "lineHeight",
+                        "borderTopLeftRadius",
+                        "borderTopWidth",
+                        "borderTopStyle",
+                        "borderTopColor",
+                        "backgroundColor",
+                        "backdropFilter",
+                      ],
+                    },
+                  )
+                : await checkNormalControls(page, frame, name, profile.font);
+            styles.push({ radius, controls });
+          }
+        }
+        await page.screenshot({
+          path: join(
+            output,
+            `${name}-${profile.language}-${profile.width}-styles.png`,
+          ),
+        });
+        expect(errors).toEqual([]);
+        expect(warnings).toEqual([]);
+        report.push({
+          plugin: name,
+          inputHashes: plugins.find((plugin) => plugin.name === name)
+            .inputHashes,
+          profile,
+          styles,
+          chrome,
+          skin,
+          nativeIpc: false,
+          scope:
+            name === "snake"
+              ? "Documented game visual exception; first paint and chrome only"
+              : "Actual plugin controls versus actual host components, including live radius changes; no full business flow",
+        });
+        console.log(
+          `PASS ${name} ${profile.width}px ${name === "snake" ? "documented game visual exception and chrome" : "actual host style inheritance"}`,
         );
         await page.close();
         continue;
@@ -2831,6 +2915,7 @@ try {
       defaults.hostDefaultControl = hostDefaultControl;
       if (name !== "snake")
         defaults.normalControls = await checkNormalControls(
+          page,
           frame,
           name,
           profile.font,
@@ -3138,6 +3223,7 @@ try {
     }
   }
   if (
+    !stylesOnly &&
     ![
       "--security-only",
       "--chrome-only",
@@ -3259,6 +3345,7 @@ try {
     }
   }
   if (
+    !stylesOnly &&
     !process.argv.includes("--security-only") &&
     !process.argv.includes("--chrome-only") &&
     !process.argv.includes("--capabilities-only") &&
@@ -3297,6 +3384,7 @@ try {
     }
   }
   if (
+    !stylesOnly &&
     !process.argv.includes("--security-only") &&
     !process.argv.includes("--capabilities-only") &&
     !wallpaperUiOnly &&
@@ -3432,6 +3520,7 @@ try {
     await context.close();
   }
   if (
+    !stylesOnly &&
     ![
       "--security-only",
       "--settings-only",
@@ -3604,23 +3693,25 @@ try {
   await writeFile(
     join(
       output,
-      wallpaperPreviewOnly
-        ? "wallpaper-preview-run.json"
-        : wallpaperLocalOnly
-          ? "wallpaper-local-run.json"
-          : process.argv.includes("--capabilities-only")
-            ? "capabilities-run.json"
-            : process.argv.includes("--wallpaper-surface-only")
-              ? "wallpaper-surface-run.json"
-              : process.argv.includes("--regressions-only")
-                ? "regressions-run.json"
-                : process.argv.includes("--chrome-only")
-                  ? "chrome-run.json"
-                  : process.argv.includes("--artifact-only")
-                    ? "artifact-run.json"
-                    : process.argv.includes("--security-only")
-                      ? "security-run.json"
-                      : "report.json",
+      stylesOnly
+        ? "styles-run.json"
+        : wallpaperPreviewOnly
+          ? "wallpaper-preview-run.json"
+          : wallpaperLocalOnly
+            ? "wallpaper-local-run.json"
+            : process.argv.includes("--capabilities-only")
+              ? "capabilities-run.json"
+              : process.argv.includes("--wallpaper-surface-only")
+                ? "wallpaper-surface-run.json"
+                : process.argv.includes("--regressions-only")
+                  ? "regressions-run.json"
+                  : process.argv.includes("--chrome-only")
+                    ? "chrome-run.json"
+                    : process.argv.includes("--artifact-only")
+                      ? "artifact-run.json"
+                      : process.argv.includes("--security-only")
+                        ? "security-run.json"
+                        : "report.json",
     ),
     JSON.stringify(
       {
