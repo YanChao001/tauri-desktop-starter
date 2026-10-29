@@ -10,6 +10,7 @@ import {
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
+import { SaveIcon } from "lucide-react";
 import type { AppCommand } from "@/commands/types";
 import { CommandPalette } from "@/components/command-palette";
 import { CommandMenuItem } from "@/components/command-menu-item";
@@ -292,7 +293,13 @@ describe("unified application commands", () => {
   it("dispatches registered commands from menus with the same availability", async () => {
     const run = vi.fn();
     const items: AppCommand[] = [
-      { id: "test", labelKey: "common.save", group: "tools", run },
+      {
+        id: "test",
+        labelKey: "common.save",
+        group: "tools",
+        icon: SaveIcon,
+        run,
+      },
     ];
     render(
       <Harness>
@@ -300,7 +307,10 @@ describe("unified application commands", () => {
       </Harness>,
     );
     fireEvent.keyDown(screen.getByText("Actions menu"), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "保存" }));
+    const item = await screen.findByRole("menuitem", { name: "保存" });
+    expect(item.querySelector("svg")).toHaveClass("lucide-save", "size-4");
+    expect(item.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    fireEvent.click(item);
     expect(run).toHaveBeenCalledOnce();
   });
 });

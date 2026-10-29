@@ -11,15 +11,28 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpenIcon,
+  AppWindowIcon,
+  CheckIcon,
+  Code2Icon,
   CommandIcon,
   CopyIcon,
+  DatabaseIcon,
+  DownloadIcon,
   ExpandIcon,
+  InfoIcon,
+  LogOutIcon,
+  Maximize2Icon,
   MinimizeIcon,
+  MinusIcon,
   MonitorIcon,
   MoonIcon,
   PanelLeftIcon,
+  PanelTopIcon,
+  RefreshCwIcon,
   SettingsIcon,
   SunIcon,
+  SunMoonIcon,
+  XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { APP_CONFIG } from "@/config/app";
@@ -131,6 +144,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "toggle-menu",
         labelKey: "title.toggleMenu",
         group: "appearance",
+        icon: PanelTopIcon,
         run: () => update({ menuBar: !settings.menuBar }),
       },
       {
@@ -155,6 +169,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "toggle-theme",
         labelKey: "title.toggleTheme",
         group: "appearance",
+        icon: SunMoonIcon,
         run: (invocation) => {
           if (invocation?.point) themeToggle.current(invocation.point);
           else setTheme(resolvedTheme === "dark" ? "light" : "dark");
@@ -176,6 +191,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "reload",
         labelKey: "title.reload",
         group: "window",
+        icon: RefreshCwIcon,
         shortcuts: [{ key: "r", primary: true }],
         run: () => window.location.reload(),
       },
@@ -183,6 +199,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "minimize-window",
         labelKey: "title.minimize",
         group: "window",
+        icon: MinusIcon,
         available: isTauri,
         run: minimizeWindow,
       },
@@ -190,6 +207,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "toggle-maximize",
         labelKey: "title.maximize",
         group: "window",
+        icon: Maximize2Icon,
         available: isTauri,
         run: toggleMaximizeWindow,
       },
@@ -197,6 +215,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "close-window",
         labelKey: "title.close",
         group: "window",
+        icon: XIcon,
         available: isTauri,
         run: closeWindow,
       },
@@ -204,6 +223,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "quit",
         labelKey: "title.quit",
         group: "window",
+        icon: LogOutIcon,
         available: isTauri,
         run: quitApp,
       },
@@ -221,6 +241,7 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "select-all",
         labelKey: "title.selectAll",
         group: "help",
+        icon: CheckIcon,
         run: () => {
           const active = document.activeElement;
           if (
@@ -242,36 +263,42 @@ export function CommandsProvider({ children }: { children: ReactNode }) {
         id: "open-repo",
         labelKey: "title.repo",
         group: "help",
+        icon: Code2Icon,
         run: () => openExternal(APP_CONFIG.repositoryUrl),
       },
       {
         id: "about",
         labelKey: "title.about",
         group: "help",
+        icon: InfoIcon,
         run: () => setAboutOpen(true),
       },
       {
         id: "open-desktop",
         labelKey: "commands.openDesktop",
         group: "tools",
+        icon: MonitorIcon,
         run: () => navigate("/settings?section=desktop"),
       },
       {
         id: "open-window",
         labelKey: "commands.openWindow",
         group: "tools",
+        icon: AppWindowIcon,
         run: () => navigate("/settings?focus=windows"),
       },
       {
         id: "open-database",
         labelKey: "commands.openDatabase",
         group: "tools",
+        icon: DatabaseIcon,
         run: () => navigate("/database"),
       },
       {
         id: "check-updates",
         labelKey: "commands.checkUpdates",
         group: "tools",
+        icon: DownloadIcon,
         run: () => navigate("/settings?section=updates"),
       },
     ],

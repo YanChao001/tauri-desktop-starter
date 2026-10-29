@@ -70,6 +70,7 @@ import {
   checkWallpaperDiscoveryLayout,
   checkWallpaperCardActions,
   checkWallpaperLocalGallery,
+  checkWallpaperLocalSurfaces,
   checkWallpaperPreview,
   checkWallpaperMotion,
   checkWallpaperCapabilityBoundaries,
@@ -287,6 +288,9 @@ const sharedInputs = Object.fromEntries(
       "src/pages/extension-app.tsx",
       "src/pages/extension-window.tsx",
       "src/components/title-bar.tsx",
+      "src/components/custom-background-picker.tsx",
+      "src/components/wallpaper-thumbnail.tsx",
+      "src/lib/wallpaper-library.ts",
       "src/components/app-sidebar.tsx",
       "src/styles/app-navigation.css",
       "src/hooks/use-theme-switch.ts",
@@ -3053,12 +3057,21 @@ try {
       page.on("pageerror", (error) => errors.push(error.message));
       const beforeHttp = services.httpCalls.length;
       await page.goto(
-        `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: "wallpaper-browser", window: "true", language: "zh", wallpaperPermissions: "denied" })}`,
+        `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: "wallpaper-browser", window: "true", language: "zh", wallpaperPermissions: "denied", wallpaperSurfaceProbe: "true" })}`,
       );
       const frame = page.frameLocator("iframe");
       await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
       await observeSdk(frame);
       await idle(page, frame);
+      const surfaces = await checkWallpaperLocalSurfaces(
+        page,
+        frame,
+        join(output, `wallpaper-local-surfaces-${profile.width}`),
+      );
+      await writeFile(
+        join(output, `wallpaper-local-surfaces-${profile.width}.json`),
+        JSON.stringify(surfaces, null, 2),
+      );
       const local = await checkWallpaperLocalGallery(
         page,
         frame,
@@ -3072,6 +3085,7 @@ try {
         regression: "direct-local-actions",
         profile,
         ...local,
+        surfaces,
         nativeIpc: false,
       });
       console.log(

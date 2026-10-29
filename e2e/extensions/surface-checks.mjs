@@ -817,6 +817,142 @@ export async function checkWallpaperCardActions(frame, card, fontSize) {
   return { ...geometry, keyboardReachable: true, iconOnlyActions: true };
 }
 
+export async function checkWallpaperLocalSurfaces(page, frame, capturePrefix) {
+  const remote = frame.locator("#remote-tab");
+  const local = frame.locator("#local-tab");
+  await local.click();
+  const card = frame.locator("#gallery [data-wallpaper-id]").first();
+  await expect(card.locator("h2")).toHaveText("Fixture local image");
+  const settingsProbe = page.locator("[data-wallpaper-settings-probe]");
+  const settingsCard = settingsProbe.locator(".wallpaper-card").first();
+  await expect(settingsCard).toHaveCount(1);
+  const rootSize = await frame
+    .locator("html")
+    .evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+  const tabs = await frame.locator('.tabs [role="tab"]').evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        id: node.id,
+        height: node.getBoundingClientRect().height,
+        fontSize: parseFloat(style.fontSize),
+        lineHeight: parseFloat(style.lineHeight),
+      };
+    }),
+  );
+  for (const tab of tabs) {
+    expect(tab.height).toBeCloseTo(rootSize * 2, 1);
+    expect(tab.fontSize).toBeCloseTo(rootSize * 0.875, 1);
+    expect(tab.lineHeight).toBeCloseTo(rootSize * 1.25, 1);
+  }
+  for (const [key, target] of [
+    ["ArrowLeft", remote],
+    ["ArrowRight", local],
+    ["Home", remote],
+    ["End", local],
+  ]) {
+    await frame.locator('.tabs [aria-selected="true"]').focus();
+    await frame.locator('.tabs [aria-selected="true"]').press(key);
+    await expect(target).toBeFocused();
+    await expect(target).toHaveAttribute("aria-selected", "true");
+  }
+  const sample = (locator, captionSelector) =>
+    locator.evaluate((node, captionSelector) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      const read = (element) => {
+        const style = getComputedStyle(element);
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = style.backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return {
+          element: element.tagName.toLowerCase(),
+          class: element.className,
+          background: style.backgroundColor,
+          backgroundImage: style.backgroundImage,
+          rgba: [...context.getImageData(0, 0, 1, 1).data],
+          opacity: style.opacity,
+          backdropFilter: style.backdropFilter,
+          surfaceCard: style.getPropertyValue("--surface-card").trim(),
+          skinCardOpacity: style.getPropertyValue("--skin-card-opacity").trim(),
+        };
+      };
+      const ancestors = [];
+      for (
+        let parent = node.parentElement;
+        parent;
+        parent = parent.parentElement
+      )
+        ancestors.push(read(parent));
+      return {
+        card: read(node),
+        caption: read(node.querySelector(captionSelector)),
+        ancestors,
+      };
+    }, captionSelector);
+  const previous = await page.evaluate(() =>
+    window.__extensionSettingsTest.read(),
+  );
+  const samples = [];
+  try {
+    for (const theme of ["light", "dark"])
+      for (const backgroundIntensity of [0, 50, 100]) {
+        await page.evaluate(
+          (patch) => window.__extensionSettingsTest.update(patch),
+          {
+            theme,
+            background: "aurora",
+            backgroundIntensity,
+          },
+        );
+        await expect(page.locator("html")).toHaveClass(new RegExp(theme));
+        await expect(frame.locator("html")).toHaveClass(new RegExp(theme));
+        const configuredAlpha = await page
+          .locator("html")
+          .evaluate((node, intensity) => {
+            if (intensity === 0) return 255;
+            const property =
+              intensity === 50
+                ? "--ui-panel-opacity-at-half"
+                : "--ui-panel-opacity-at-full";
+            return (
+              (255 *
+                parseFloat(getComputedStyle(node).getPropertyValue(property))) /
+              100
+            );
+          }, backgroundIntensity);
+        await expect
+          .poll(async () => {
+            const host = await sample(settingsCard, ":scope > div:last-child");
+            const plugin = await sample(card, ".card-heading");
+            return (
+              JSON.stringify(plugin.card.rgba) ===
+                JSON.stringify(host.card.rgba) &&
+              plugin.card.surfaceCard === host.card.surfaceCard &&
+              plugin.card.skinCardOpacity === host.card.skinCardOpacity &&
+              Math.abs(plugin.card.rgba[3] - configuredAlpha) <= 1
+            );
+          })
+          .toBe(true);
+        const host = await sample(settingsCard, ":scope > div:last-child");
+        const plugin = await sample(card, ".card-heading");
+        expect(host.caption.rgba[3]).toBe(0);
+        expect(plugin.caption.rgba[3]).toBe(0);
+        expect(plugin.caption.backgroundImage).toBe("none");
+        const screenshot = `${capturePrefix}-${theme}-${backgroundIntensity}.png`;
+        await page.screenshot({ path: screenshot });
+        samples.push({ theme, backgroundIntensity, host, plugin, screenshot });
+      }
+  } finally {
+    await page.evaluate(
+      (settings) => window.__extensionSettingsTest.update(settings),
+      previous,
+    );
+  }
+  return { tabs, tabKeyboardNavigation: true, samples, nativeIpc: false };
+}
+
 export async function checkWallpaperLocalGallery(page, frame, capturePath) {
   await frame.locator("#local-tab").click();
   const card = frame.locator("#gallery [data-wallpaper-id]").first();

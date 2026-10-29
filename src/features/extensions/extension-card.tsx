@@ -1,6 +1,16 @@
 import { useCallback, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { EllipsisIcon } from "lucide-react";
+import {
+  DownloadIcon,
+  EllipsisIcon,
+  ExternalLinkIcon,
+  PlayIcon,
+  PowerIcon,
+  RotateCcwIcon,
+  Settings2Icon,
+  ShieldCheckIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,6 +124,7 @@ export function ExtensionCard({
                   selectAction(item.enabled ? () => onOpen() : onEnable)
                 }
               >
+                {item.enabled ? <PlayIcon /> : <PowerIcon />}
                 {t(item.enabled ? "ext.open" : "ext.enable")}
               </DropdownMenuItem>
               {windowCommand ? (
@@ -123,6 +134,7 @@ export function ExtensionCard({
                     selectAction(() => onWindow(windowCommand.id))
                   }
                 >
+                  <ExternalLinkIcon />
                   {t("ext.openWindow")}
                 </DropdownMenuItem>
               ) : null}
@@ -136,6 +148,7 @@ export function ExtensionCard({
                     })
                   }
                 >
+                  <Settings2Icon />
                   {t("ext.advancedSettings")}
                 </DropdownMenuItem>
               ) : null}
@@ -143,6 +156,7 @@ export function ExtensionCard({
                 disabled={busy}
                 onSelect={() => selectAction(onPermissions)}
               >
+                <ShieldCheckIcon />
                 {t(
                   item.enabled
                     ? "ext.managePermissions"
@@ -154,6 +168,7 @@ export function ExtensionCard({
                   disabled={busy}
                   onSelect={() => selectAction(onDisable)}
                 >
+                  <PowerIcon />
                   {t("ext.disable")}
                 </DropdownMenuItem>
               ) : null}
@@ -162,6 +177,7 @@ export function ExtensionCard({
                   disabled={busy}
                   onSelect={() => selectAction(onUpdate)}
                 >
+                  <DownloadIcon />
                   {t("ext.market.updateTo", {
                     version: update.package.manifest.version,
                   })}
@@ -172,6 +188,7 @@ export function ExtensionCard({
                   disabled={busy}
                   onSelect={() => selectAction(onRollback)}
                 >
+                  <RotateCcwIcon />
                   {t("ext.rollback", {
                     version: item.previousPackage.manifest.version,
                   })}
@@ -194,6 +211,7 @@ export function ExtensionCard({
                       }
                       onSelect={() => selectAction(() => onOpen(command.id))}
                     >
+                      <PlayIcon />
                       <span className="min-w-0 flex-1 break-words">
                         {command.title}
                       </span>
@@ -212,6 +230,7 @@ export function ExtensionCard({
                 disabled={busy}
                 onSelect={() => selectAction(onUninstall)}
               >
+                <Trash2Icon />
                 {t("ext.uninstall")}
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -7,6 +7,7 @@ import {
   type ExtensionView,
   type ExtensionArtifact,
   type ExtensionService,
+  type Wallpaper,
 } from "../../src/lib/tauri";
 import type { NativeError } from "../../src/lib/generated/bindings";
 import type { UnsavedWork } from "../../src/providers/unsaved-work";
@@ -90,6 +91,23 @@ const snapshotDelayUntil =
     ),
   );
 export const isTauri = () => true;
+// 材质回归挂载真实设置图库，但只读取与插件相同的显式图库边界替身。
+export const listWallpapers = async (): Promise<Wallpaper[]> => {
+  const item = configuration.snapshot.items.find(
+    (entry) => entry.package.manifest.id === "market.wallpaper-browser",
+  );
+  if (!item) throw new Error("Wallpaper surface fixture requires its package");
+  const library = await request<{ items: Wallpaper[] }>("service", {
+    id: item.package.manifest.id,
+    expectedSha256: item.package.sha256,
+    expectedGeneration: item.generation,
+    service: "wallpaper",
+    request: { action: "list" },
+    boundaryMock: true,
+  });
+  return library.items;
+};
+export const onWallpapersChanged = async () => () => {};
 export const extensionSnapshot = async () => {
   const latency = snapshotDelayUntil - performance.now();
   if (latency > 0)

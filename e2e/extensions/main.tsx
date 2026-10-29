@@ -9,6 +9,7 @@ import { AppShell } from "../../src/layouts/app-shell";
 import ExtensionPage from "../../src/pages/extension-app";
 import ExtensionWindow from "../../src/pages/extension-window";
 import Extensions from "../../src/pages/extensions";
+import { CustomBackgroundPicker } from "../../src/components/custom-background-picker";
 import "./fixture.css";
 
 const params = new URLSearchParams(location.search),
@@ -54,6 +55,11 @@ createRoot(document.getElementById("root")!).render(
             </Routes>
           </MemoryRouter>
         </ExtensionsProvider>
+        {params.get("wallpaperSurfaceProbe") === "true" ? (
+          <aside data-wallpaper-settings-probe hidden>
+            <CustomBackgroundPicker />
+          </aside>
+        ) : null}
         <Toaster position="bottom-right" />
       </TooltipProvider>
     </FixtureTheme>

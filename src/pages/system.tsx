@@ -105,7 +105,7 @@ export default function System() {
       <div className="space-y-4">
         <section className="divide-y rounded-xl border app-surface px-4">
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <h2 className="flex items-center gap-2 font-semibold">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
               {t("system.notification")}
               <HelpTooltip
                 label={`${t("system.notification")} · ${t("title.help")}`}
@@ -131,7 +131,7 @@ export default function System() {
             </Button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <h2 className="flex items-center gap-2 font-semibold">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
               {t("system.shortcut")}
               <HelpTooltip
                 label={`${t("system.shortcut")} · ${t("title.help")}`}
@@ -217,7 +217,7 @@ export default function System() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <h2 className="font-semibold">{t("system.workspace")}</h2>
+            <h2 className="text-sm font-medium">{t("system.workspace")}</h2>
             <div className="flex flex-wrap items-center gap-2">
               <Button disabled={busy} onClick={() => void run(openNotesWindow)}>
                 {t("system.window")}
@@ -233,7 +233,7 @@ export default function System() {
           </div>
         </section>
         <section className="space-y-3 rounded-xl border app-surface p-4">
-          <h2 className="flex items-center gap-2 font-semibold">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
             {t("system.deepLink")}
             <HelpTooltip label={`${t("system.deepLink")} · ${t("title.help")}`}>
               {t("system.deepLinkHelp", {

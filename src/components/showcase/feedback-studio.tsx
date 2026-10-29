@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import {
   BellRingIcon,
+  EyeIcon,
   MoreHorizontalIcon,
+  PencilIcon,
   PlusIcon,
   Settings2Icon,
   Trash2Icon,
@@ -172,6 +174,11 @@ export function FeedbackStudio() {
                             )
                           }
                         >
+                          {item.value === "editor" ? (
+                            <PencilIcon />
+                          ) : (
+                            <EyeIcon />
+                          )}
                           {t(item.label)}
                         </DropdownMenuItem>
                       ))}

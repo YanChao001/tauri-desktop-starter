@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  CheckIcon,
-  Code2Icon,
-  CopyIcon,
-  InfoIcon,
   Maximize2Icon,
   MinimizeIcon,
   MinusIcon,
   MonitorIcon,
   MoonIcon,
-  RefreshCwIcon,
-  SettingsIcon,
   SunIcon,
   SearchIcon,
   XIcon,
@@ -188,10 +182,10 @@ export function TitleBar({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-44">
-                <CommandMenuItem id="open-settings" icon={SettingsIcon} />
+                <CommandMenuItem id="open-settings" />
                 <DropdownMenuSeparator />
-                <CommandMenuItem id="reload" icon={RefreshCwIcon} />
-                <CommandMenuItem id="quit" icon={XIcon} />
+                <CommandMenuItem id="reload" />
+                <CommandMenuItem id="quit" />
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -207,8 +201,8 @@ export function TitleBar({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <CommandMenuItem id="copy-link" icon={CopyIcon} />
-                <CommandMenuItem id="select-all" icon={CheckIcon} />
+                <CommandMenuItem id="copy-link" />
+                <CommandMenuItem id="select-all" />
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -251,7 +245,7 @@ export function TitleBar({
                 </DropdownMenuCheckboxItem>
                 <CommandMenuItem id="toggle-sidebar" />
                 <CommandMenuItem id="toggle-fullscreen" />
-                <CommandMenuItem id="command-palette" icon={SearchIcon} />
+                <CommandMenuItem id="command-palette" />
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -267,8 +261,8 @@ export function TitleBar({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <CommandMenuItem id="open-docs" icon={InfoIcon} />
-                <CommandMenuItem id="open-repo" icon={Code2Icon} />
+                <CommandMenuItem id="open-docs" />
+                <CommandMenuItem id="open-repo" />
                 <DropdownMenuSeparator />
                 <CommandMenuItem id="check-updates" />
                 <CommandMenuItem id="copy-diagnostics" />
