@@ -87,8 +87,7 @@ describe("Real Tauri desktop", () => {
     const errorToast = await $('[data-sonner-toast][data-type="error"]');
     await errorToast.waitForDisplayed();
     const rejected = await errorToast.getText();
-    assert.match(rejected, /Call failed:/);
-    assert.match(rejected, /check the input|Name cannot be empty/);
+    assert.equal(rejected, "Invalid input. Check and retry.");
     assert.doesNotMatch(rejected, /\[object Object\]/);
     assert.equal(await $("main [role=status]").getText(), previousResult);
   });
@@ -524,7 +523,7 @@ describe("Real Tauri desktop", () => {
 
   it("renders diagnostic JSON as highlighted inert text", async () => {
     await navigate("/diagnostics");
-    await $("summary=View detailed report and logs").click();
+    await $("details:has([data-testid=diagnostics-report]) > summary").click();
     await browser.waitUntil(async () =>
       (await $("[data-testid=diagnostics-report]").getText()).includes(
         "appVersion",
