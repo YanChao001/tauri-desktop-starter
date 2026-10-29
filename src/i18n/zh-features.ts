@@ -11,7 +11,6 @@ export const zhFeatures = {
   "nav.updates": "应用更新",
   "commands.title": "快速操作",
   "commands.description": "搜索页面和应用操作，使用方向键选择、回车执行",
-  "commands.placeholder": "搜索操作…",
   "commands.empty": "没有匹配的操作",
   "commands.open": "打开快速操作",
   "commands.groupNavigation": "页面",

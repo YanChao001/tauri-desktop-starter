@@ -123,6 +123,8 @@ async function renderedTextContrast(
   });
   const text = await locator.evaluateHandle((element, usePlaceholder) => {
     if (usePlaceholder) return element as HTMLElement;
+    if (element instanceof HTMLInputElement && element.value.trim())
+      return element;
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     for (let child = walker.nextNode(); child; child = walker.nextNode())
       if (child.textContent?.trim()) return child.parentElement!;
@@ -136,7 +138,21 @@ async function renderedTextContrast(
     const bounds = element.getBoundingClientRect();
     let x = bounds.right - 24;
     let y = bounds.top + bounds.height / 2;
-    if (!usePlaceholder) {
+    if (!usePlaceholder && element instanceof HTMLInputElement) {
+      const left =
+        parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+      const right =
+        parseFloat(style.borderRightWidth) + parseFloat(style.paddingRight);
+      const context = document.createElement("canvas").getContext("2d")!;
+      context.font = style.font;
+      x =
+        bounds.left +
+        left +
+        Math.min(
+          context.measureText(element.value).width / 2,
+          (bounds.width - left - right) / 2,
+        );
+    } else if (!usePlaceholder) {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
       for (let child = walker.nextNode(); child; child = walker.nextNode()) {
         if (!child.textContent?.trim()) continue;
@@ -597,15 +613,16 @@ for (const theme of ["light", "dark"]) {
               name: "Quick actions",
               exact: true,
             });
-      const contrast = await renderedTextContrast(
-        page,
-        title,
-        kind === "command",
-      );
-      expect(
-        contrast.contrast,
-        `${kind} ${theme} ${wallpaper} ${intensity}% heading/input ${JSON.stringify(contrast)}`,
-      ).toBeGreaterThanOrEqual(4.5);
+      if (kind === "command") await title.fill("settings");
+      try {
+        const contrast = await renderedTextContrast(page, title);
+        expect(
+          contrast.contrast,
+          `${kind} ${theme} ${wallpaper} ${intensity}% heading/input ${JSON.stringify(contrast)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      } finally {
+        if (kind === "command") await title.fill("");
+      }
       if (kind === "reset") {
         const description = await renderedTextContrast(
           page,
