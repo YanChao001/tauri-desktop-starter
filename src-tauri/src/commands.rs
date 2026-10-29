@@ -71,6 +71,27 @@ pub async fn save_settings_snapshot(
     settings: JsonValue,
     expected_revision: i32,
 ) -> NativeResult<SettingsSnapshot> {
+    persist_settings_snapshot(app, settings, expected_revision, false).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reset_settings_snapshot(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    settings: JsonValue,
+    expected_revision: i32,
+) -> NativeResult<SettingsSnapshot> {
+    require_host_window(window.label())?;
+    persist_settings_snapshot(app, settings, expected_revision, true).await
+}
+
+async fn persist_settings_snapshot(
+    app: tauri::AppHandle,
+    settings: JsonValue,
+    expected_revision: i32,
+    reset: bool,
+) -> NativeResult<SettingsSnapshot> {
     let settings = serde_json::to_value(settings).map_err(|e| {
         NativeError::operation(ErrorCode::InvalidArgument, "Settings JSON is invalid", e)
     })?;
@@ -84,8 +105,12 @@ pub async fn save_settings_snapshot(
         let snapshot = app
             .state::<crate::wallpaper_video::WallpaperVideoStore>()
             .with_video(video.as_ref(), || {
-                app.state::<SettingsStore>()
-                    .save(settings, expected_revision)
+                let store = app.state::<SettingsStore>();
+                if reset {
+                    store.reset(settings, expected_revision)
+                } else {
+                    store.save(settings, expected_revision)
+                }
             })?;
         if let Err(error) = desktop::refresh_tray(&app) {
             log::warn!("{error}");

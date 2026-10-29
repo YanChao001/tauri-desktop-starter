@@ -38,14 +38,16 @@ function setup(initial = DEFAULT_SETTINGS, remote = snapshot(1)) {
   }> = [];
   let listener: ((state: SettingsSnapshot) => void) | undefined;
   const stop = vi.fn();
+  const persist: SettingsBackend["save"] = async (settings, revision) => {
+    if (revision !== remote.revision) throw { code: "SETTINGS_CONFLICT" };
+    remote = { revision: revision + 1, settings };
+    listener?.(remote);
+    return remote;
+  };
   const backend = {
     load: vi.fn<SettingsBackend["load"]>(async () => remote),
-    save: vi.fn<SettingsBackend["save"]>(async (settings, revision) => {
-      if (revision !== remote.revision) throw { code: "SETTINGS_CONFLICT" };
-      remote = { revision: revision + 1, settings };
-      listener?.(remote);
-      return remote;
-    }),
+    save: vi.fn<SettingsBackend["save"]>(persist),
+    reset: vi.fn<SettingsBackend["reset"]>(persist),
     subscribe: vi.fn<SettingsBackend["subscribe"]>(async (handler) => {
       listener = handler;
       return stop;
@@ -225,9 +227,10 @@ describe("settings synchronization", () => {
       settings: { language: "en", theme: "dark" },
     });
     expect(env.backend.save).not.toHaveBeenCalled();
-    env.sync.reset({ ...DEFAULT_SETTINGS, language: "en" });
+    await env.sync.reset({ ...DEFAULT_SETTINGS, language: "en" });
     await vi.waitFor(() => expect(env.latest().status).toBe("saved"));
-    expect(env.backend.save).toHaveBeenCalledExactlyOnceWith(
+    expect(env.backend.save).not.toHaveBeenCalled();
+    expect(env.backend.reset).toHaveBeenCalledExactlyOnceWith(
       settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
       8,
     );
@@ -445,14 +448,14 @@ describe("settings synchronization", () => {
     await env.sync.start();
     const earlier = deferred<SettingsSnapshot>();
     const defaults = deferred<SettingsSnapshot>();
-    env.backend.save
-      .mockImplementationOnce(() => earlier.promise)
-      .mockImplementationOnce(() => defaults.promise);
+    env.backend.save.mockImplementationOnce(() => earlier.promise);
+    env.backend.reset.mockImplementationOnce(() => defaults.promise);
     env.sync.update({ accent: "rose" });
     const completed = vi.fn();
     const reset = env.sync.reset(DEFAULT_SETTINGS).then(completed);
     earlier.resolve(snapshot(2, { accent: "rose" }));
-    await vi.waitFor(() => expect(env.backend.save).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(env.backend.reset).toHaveBeenCalledOnce());
+    expect(env.backend.save).toHaveBeenCalledOnce();
     expect(completed).not.toHaveBeenCalled();
     defaults.resolve(snapshot(3));
     await reset;
@@ -464,13 +467,40 @@ describe("settings synchronization", () => {
   it("重置写盘失败返回错误并保留默认值的待保存变更", async () => {
     const env = setup();
     await env.sync.start();
-    env.backend.save.mockRejectedValueOnce({ code: "STORAGE_IO" });
+    env.backend.reset.mockRejectedValueOnce({ code: "STORAGE_IO" });
     await expect(env.sync.reset(DEFAULT_SETTINGS)).rejects.toEqual({
       code: "STORAGE_IO",
     });
     expect(env.latest().status).toBe("error");
     await env.sync.retry();
     expect(env.latest().status).toBe("saved");
+    expect(env.backend.reset).toHaveBeenCalledTimes(2);
+    expect(env.backend.save).not.toHaveBeenCalled();
+    env.sync.stop();
+  });
+
+  it("重置遇到版本冲突后沿用显式入口，成功后的普通编辑恢复常规保存", async () => {
+    const env = setup(DEFAULT_SETTINGS, snapshot(1, { accent: "rose" }));
+    await env.sync.start();
+    env.backend.reset.mockImplementationOnce(async () => {
+      env.send(snapshot(2, { font: "mono" }));
+      throw { code: "SETTINGS_CONFLICT" };
+    });
+    await env.sync.reset(DEFAULT_SETTINGS);
+    expect(env.backend.reset).toHaveBeenCalledTimes(2);
+    expect(env.backend.reset).toHaveBeenLastCalledWith(
+      settingsDocument(DEFAULT_SETTINGS),
+      2,
+    );
+    expect(env.latest().settings).toEqual(DEFAULT_SETTINGS);
+    expect(env.backend.save).not.toHaveBeenCalled();
+    env.sync.update({ accent: "blue" });
+    await vi.waitFor(() => expect(env.latest().status).toBe("saved"));
+    expect(env.backend.save).toHaveBeenCalledExactlyOnceWith(
+      settingsDocument({ ...DEFAULT_SETTINGS, accent: "blue" }),
+      3,
+    );
+    expect(env.backend.reset).toHaveBeenCalledTimes(2);
     env.sync.stop();
   });
 });

@@ -316,6 +316,10 @@ export const commands = {
     typedError<SettingsSnapshot, NativeError>(
       __TAURI_INVOKE("save_settings_snapshot", { settings, expectedRevision }),
     ),
+  resetSettingsSnapshot: (settings: JsonValue, expectedRevision: number) =>
+    typedError<SettingsSnapshot, NativeError>(
+      __TAURI_INVOKE("reset_settings_snapshot", { settings, expectedRevision }),
+    ),
   createNote: (input: NoteInput) =>
     typedError<Note, NativeError>(__TAURI_INVOKE("create_note", { input })),
   updateNote: (input: NoteUpdate) =>

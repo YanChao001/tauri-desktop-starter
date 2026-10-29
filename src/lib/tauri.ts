@@ -651,6 +651,17 @@ export function saveSettingsSnapshot(
   );
 }
 
+/** 显式恢复默认值独立于普通保存，允许用户确认后替换未来版本存档。 */
+export function resetSettingsSnapshot(
+  settings: ReturnType<typeof settingsDocument>,
+  expectedRevision: number,
+): Promise<SettingsSnapshot> {
+  const document = structuredClone(settings);
+  return callNative((commands) =>
+    commands.resetSettingsSnapshot(document, expectedRevision),
+  );
+}
+
 async function onNativeEvent<T>(
   event: string,
   handler: (payload: T) => void,

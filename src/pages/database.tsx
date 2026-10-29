@@ -156,6 +156,22 @@ export default function Database() {
     [search, offset, sort, trash],
   );
   const { data: page, error, loading, reload } = useNativeResource(load);
+  useEffect(() => {
+    if (
+      loading ||
+      error ||
+      !page ||
+      page.offset !== offset ||
+      offset === 0 ||
+      offset < page.total
+    )
+      return;
+    // 删除或其他窗口的变更可能使末页消失；只根据当前页的已完成查询纠正位置。
+    setOffset(
+      Math.max(0, Math.floor((page.total - 1) / page.limit) * page.limit),
+    );
+    setSelected(new Set());
+  }, [page, loading, error, offset]);
   const latestReload = useRef(reload);
   useLayoutEffect(() => {
     latestReload.current = reload;

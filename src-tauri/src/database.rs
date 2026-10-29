@@ -647,8 +647,12 @@ impl Database {
             .map_err(database_error)?;
         contents
             .map(|contents| {
-                serde_json::from_str(&contents)
-                    .map_err(|error| corrupt_json("Cannot read saved draft", error))
+                let draft = serde_json::from_str(&contents)
+                    .map_err(|error| corrupt_json("Cannot read saved draft", error))?;
+                validate_draft(&draft).map_err(|_| {
+                    NativeError::new(ErrorCode::StorageCorrupt, "Invalid saved draft")
+                })?;
+                Ok(draft)
             })
             .transpose()
     }
@@ -1286,6 +1290,61 @@ mod tests {
             db.load_draft("main").unwrap().unwrap().body,
             "not saved yet"
         );
+    }
+
+    #[test]
+    fn invalid_saved_drafts_are_rejected_without_rewriting_the_original() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = Database::open(&temp.path().join("notes.db")).unwrap();
+        let valid = NoteDraft {
+            note_id: None,
+            title: "Draft".into(),
+            body: "keep my work".into(),
+            expected_version: None,
+            original_title: String::new(),
+            original_body: String::new(),
+        };
+        db.save_draft("secondary", Some(valid.clone())).unwrap();
+        for draft in [
+            NoteDraft {
+                note_id: Some(1),
+                ..valid.clone()
+            },
+            NoteDraft {
+                note_id: Some(-1),
+                expected_version: Some(1),
+                ..valid.clone()
+            },
+            NoteDraft {
+                body: "x".repeat(64 * 1024 + 1),
+                ..valid.clone()
+            },
+        ] {
+            let contents = serde_json::to_string(&draft).unwrap();
+            db.lock()
+                .unwrap()
+                .execute(
+                    "INSERT OR REPLACE INTO note_drafts(window_label,document) VALUES(?1,?2)",
+                    params!["main", contents],
+                )
+                .unwrap();
+
+            assert_eq!(
+                db.load_draft("main").unwrap_err().code,
+                ErrorCode::StorageCorrupt,
+            );
+            let retained: String = db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT document FROM note_drafts WHERE window_label='main'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(retained, contents);
+            assert_eq!(db.load_draft("secondary").unwrap(), Some(valid.clone()));
+        }
     }
 
     #[test]

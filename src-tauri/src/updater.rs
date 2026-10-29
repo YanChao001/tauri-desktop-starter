@@ -304,12 +304,9 @@ impl UpdateManager {
                 )
             })?;
         let paths = app.state::<DataPaths>().inner().clone();
-        if blocking::run(move || load_policy(&paths)).await?.as_ref() != Some(&policy) {
-            return Err(NativeError::new(
-                ErrorCode::UpdateNotConfigured,
-                "Update deployment configuration changed; check again",
-            ));
-        }
+        let expected_policy = policy.clone();
+        blocking::run(move || require_unchanged_policy(load_policy(&paths)?, &expected_policy))
+            .await?;
         // 检查结果会缓存更新句柄；下载按此刻已提交的宿主偏好重新选择传输。
         // configure_client 只限制 HTTPS，不捕获检查时的代理模式。
         update.no_proxy = app.state::<SettingsStore>().network_mode()? == NetworkMode::Direct;
@@ -360,11 +357,14 @@ impl UpdateManager {
         .await?;
         self.event(app, operation_id, UpdateStage::Installing, None, None);
         let extensions = app.state::<crate::extensions::ExtensionStore>().pause();
+        let paths = app.state::<DataPaths>().inner().clone();
         blocking::run(move || {
             // 停止等待不会取消阻塞安装；占用必须随真实安装任务完成后再释放。
             let _authorization = authorization;
             extensions.wait_stopped();
             let _extensions = extensions;
+            // 下载与退出协商可能耗时数分钟；提交安装前重新确认部署仍允许此次更新。
+            require_unchanged_policy(load_policy(&paths)?, &policy)?;
             update.install(bytes).map_err(|e| {
                 NativeError::operation(
                     ErrorCode::UpdateInstallFailed,
@@ -376,6 +376,19 @@ impl UpdateManager {
         .await?;
         Ok(())
     }
+}
+
+fn require_unchanged_policy(
+    current: Option<UpdatePolicy>,
+    expected: &UpdatePolicy,
+) -> NativeResult<()> {
+    if current.as_ref() != Some(expected) {
+        return Err(NativeError::new(
+            ErrorCode::UpdateNotConfigured,
+            "Update deployment configuration changed; check again",
+        ));
+    }
+    Ok(())
 }
 
 fn check_error(error: tauri_plugin_updater::Error) -> NativeError {
@@ -676,5 +689,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load().unwrap_err().code, ErrorCode::InputTooLong);
+    }
+
+    #[test]
+    fn installation_rechecks_deployment_changes_after_an_earlier_successful_check() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("deployment.json");
+        let checked = policy("https://built-in.example/update");
+        let recheck =
+            || require_unchanged_policy(load_deployment_policy(checked.clone(), &path)?, &checked);
+        assert!(recheck().is_ok());
+        for endpoint in ["https://changed.example/update", ""] {
+            fs::write(
+                &path,
+                serde_json::json!({"updates": {"endpoint": endpoint}}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(recheck().unwrap_err().code, ErrorCode::UpdateNotConfigured);
+        }
+        fs::write(
+            &path,
+            serde_json::json!({"updates": {"endpoint": checked.endpoint}}).to_string(),
+        )
+        .unwrap();
+        assert!(recheck().is_ok());
     }
 }

@@ -38,6 +38,7 @@ vi.mock("@/lib/tauri", () => ({
   onWindowMoved: vi.fn(),
   loadSettingsSnapshot: vi.fn(),
   saveSettingsSnapshot: vi.fn(),
+  resetSettingsSnapshot: vi.fn(),
   onSettingsChanged: vi.fn(),
   getDesktopStatus: vi.fn(),
   getAutostartEnabled: vi.fn(),
@@ -104,6 +105,9 @@ describe("设置页", () => {
         revision: revision + 1,
         settings: settings as desktop.SettingsSnapshot["settings"],
       }),
+    );
+    vi.mocked(desktop.resetSettingsSnapshot).mockImplementation(
+      async (settings, revision) => ({ revision: revision + 1, settings }),
     );
     window.localStorage.clear();
     window.localStorage.setItem(
@@ -671,7 +675,7 @@ describe("设置页", () => {
       }),
     });
     let finishSave!: (snapshot: desktop.SettingsSnapshot) => void;
-    vi.mocked(desktop.saveSettingsSnapshot).mockImplementation(
+    vi.mocked(desktop.resetSettingsSnapshot).mockImplementation(
       () =>
         new Promise((resolve) => {
           finishSave = resolve;
@@ -686,13 +690,13 @@ describe("设置页", () => {
     expect(dialog.queryByRole("checkbox")).not.toBeInTheDocument();
     fireEvent.click(dialog.getByRole("button", { name: "重置偏好" }));
     await waitFor(() =>
-      expect(desktop.saveSettingsSnapshot).toHaveBeenCalledOnce(),
+      expect(desktop.resetSettingsSnapshot).toHaveBeenCalledOnce(),
     );
     expect(desktop.resetWindowGeometry).toHaveBeenCalledExactlyOnceWith(false);
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(toast.success).not.toHaveBeenCalled();
     expect(
-      vi.mocked(desktop.saveSettingsSnapshot).mock.calls[0]?.[0],
+      vi.mocked(desktop.resetSettingsSnapshot).mock.calls[0]?.[0],
     ).toMatchObject({
       windowPosition: "remember",
     });
@@ -725,6 +729,7 @@ describe("设置页", () => {
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(desktop.resetWindowGeometry).toHaveBeenCalledExactlyOnceWith(false);
     expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
+    expect(desktop.resetSettingsSnapshot).not.toHaveBeenCalled();
     expect(screen.getByText("当前尺寸 1280 × 800")).toBeInTheDocument();
     expect(toast.success).not.toHaveBeenCalled();
   });
@@ -736,7 +741,7 @@ describe("设置页", () => {
       width: 1280,
       height: 800,
     });
-    vi.mocked(desktop.saveSettingsSnapshot).mockRejectedValue({
+    vi.mocked(desktop.resetSettingsSnapshot).mockRejectedValue({
       code: "STORAGE_IO",
     });
     render(<SettingsView />);

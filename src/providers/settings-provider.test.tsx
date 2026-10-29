@@ -15,6 +15,7 @@ vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => false),
   loadSettingsSnapshot: vi.fn(),
   saveSettingsSnapshot: vi.fn(),
+  resetSettingsSnapshot: vi.fn(),
   onSettingsChanged: vi.fn(),
 }));
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -36,6 +37,7 @@ describe("settings provider persistence", () => {
     vi.mocked(desktop.onSettingsChanged).mockReset();
     vi.mocked(desktop.loadSettingsSnapshot).mockReset();
     vi.mocked(desktop.saveSettingsSnapshot).mockReset();
+    vi.mocked(desktop.resetSettingsSnapshot).mockReset();
   });
   afterEach(() => {
     cleanup();
@@ -130,6 +132,27 @@ describe("settings provider persistence", () => {
       settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
     );
   });
+
+  it.each(["", "null", "[]", '"preferences"', "true", "123"])(
+    "保留结构损坏的浏览器存档 %j，直到显式重置",
+    async (raw) => {
+      localStorage.setItem(STORAGE_KEY, raw);
+      const { result } = renderHook(useSettings, { wrapper });
+      act(() => result.current.update({ language: "en", accent: "rose" }));
+      act(() => result.current.retrySave());
+      expect(localStorage.getItem(STORAGE_KEY)).toBe(raw);
+      expect(result.current).toMatchObject({
+        persistence: "error",
+        persistenceError: "STORAGE_UNAVAILABLE",
+        settings: { language: "en", accent: "rose" },
+      });
+      await act(async () => result.current.reset());
+      expect(result.current.persistence).toBe("saved");
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual(
+        settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
+      );
+    },
+  );
 
   it("reloads after a browser read failure and merges only edits made while unavailable", () => {
     localStorage.setItem(
@@ -237,7 +260,7 @@ describe("settings provider persistence", () => {
       revision: 5,
       settings: { schemaVersion: 99 },
     });
-    vi.mocked(desktop.saveSettingsSnapshot).mockImplementation(
+    vi.mocked(desktop.resetSettingsSnapshot).mockImplementation(
       async (settings) => ({
         revision: 6,
         settings: settings as desktop.SettingsSnapshot["settings"],
@@ -265,6 +288,11 @@ describe("settings provider persistence", () => {
     expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
     await act(async () => result.current.reset());
     await waitFor(() => expect(result.current.persistence).toBe("saved"));
+    expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
+    expect(desktop.resetSettingsSnapshot).toHaveBeenCalledExactlyOnceWith(
+      settingsDocument({ ...DEFAULT_SETTINGS, language: "en" }),
+      5,
+    );
     expect(result.current.settings).toEqual({
       ...DEFAULT_SETTINGS,
       language: "en",
@@ -283,7 +311,7 @@ describe("settings provider persistence", () => {
       revision: 5,
       settings: { schemaVersion: 99 },
     });
-    vi.mocked(desktop.saveSettingsSnapshot)
+    vi.mocked(desktop.resetSettingsSnapshot)
       .mockRejectedValueOnce({ code: "STORAGE_IO" })
       .mockImplementation(async (settings) => ({ revision: 6, settings }));
     const { result } = renderHook(useSettings, { wrapper });
@@ -298,7 +326,7 @@ describe("settings provider persistence", () => {
     act(() => result.current.update({ language: "en" }));
     expect(result.current.persistence).toBe("error");
     expect(localStorage.getItem(STORAGE_KEY)).toBe(futureCache);
-    expect(desktop.saveSettingsSnapshot).toHaveBeenCalledOnce();
+    expect(desktop.resetSettingsSnapshot).toHaveBeenCalledOnce();
     await act(async () => result.current.reset());
     await waitFor(() => expect(result.current.persistence).toBe("saved"));
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({

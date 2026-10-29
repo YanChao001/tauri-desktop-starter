@@ -31,6 +31,16 @@ describe("native error presentation", () => {
       en["errors.INTERNAL"],
     );
   });
+  it.each(["constructor", "__proto__", "toString", "hasOwnProperty"])(
+    "未知错误码 %s 不会读取对象原型成员或使翻译崩溃",
+    (code) => {
+      const t = createTranslator(en);
+      expect(nativeErrorText({ code, message: "offline" }, t)).toBe(
+        "Operation failed: offline",
+      );
+      expect(nativeErrorText({ code }, t)).toBe(en["errors.INTERNAL"]);
+    },
+  );
   it("presents retry guidance for native HTTP timeouts in both languages", () => {
     const error = {
       code: "HTTP_TIMEOUT",

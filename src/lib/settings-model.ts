@@ -221,9 +221,11 @@ export function readInitialSettings(): {
 } {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    const document: unknown = raw ? JSON.parse(raw) : {};
+    const document: unknown = raw === null ? {} : JSON.parse(raw);
+    // 缺少存档可以初始化；损坏的根结构须保留原件，不能被默认值覆盖。
+    if (!isRecord(document)) throw new Error("Invalid settings document");
     const settings = migrateSettings(document);
-    if (isRecord(document) && !Object.hasOwn(settingsSource(document), "theme"))
+    if (!Object.hasOwn(settingsSource(document), "theme"))
       settings.theme = pick(
         THEMES,
         window.localStorage.getItem(THEME_STORAGE_KEY) ??

@@ -50,6 +50,7 @@ pub fn builder() -> Builder<tauri::Wry> {
             wallpaper_commands::remove_wallpaper,
             commands::load_settings_snapshot,
             commands::save_settings_snapshot,
+            commands::reset_settings_snapshot,
             commands::create_note,
             commands::update_note,
             commands::open_secondary_window,

@@ -593,6 +593,53 @@ describe("native note editor", () => {
     ).toBeChecked();
   });
 
+  it("returns to the last available page after another window removes the final page, preserving edits", async () => {
+    notes = Array.from({ length: 51 }, (_, index) => ({
+      ...first,
+      id: index + 1,
+      title: `Note ${index + 1}`,
+    }));
+    await open();
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    fireEvent.click(await screen.findByText("Note 51"));
+    fireEvent.change(body(), { target: { value: "Keep my unsaved draft" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Note 51" }));
+
+    notes = notes.slice(0, 50);
+    await act(async () => events.forEach((handler) => handler()));
+
+    expect(await screen.findByText("Note 1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByText("0 selected")).toBeVisible();
+    expect(title()).toHaveValue("Note 51");
+    expect(body()).toHaveValue("Keep my unsaved draft");
+    expect(lifecycle.current?.dirty).toBe(true);
+  });
+
+  it("returns to the first page when the last remaining notes are removed", async () => {
+    notes = Array.from({ length: 51 }, (_, index) => ({
+      ...first,
+      id: index + 1,
+      title: `Note ${index + 1}`,
+    }));
+    await open();
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await screen.findByText("Note 51");
+
+    notes = [];
+    await act(async () => events.forEach((handler) => handler()));
+
+    await waitFor(() =>
+      expect(native.queryNotes).toHaveBeenLastCalledWith(
+        expect.objectContaining({ offset: 0 }),
+      ),
+    );
+    expect(
+      await screen.findByText("No notes yet. Create your first note."),
+    ).toBeVisible();
+  });
+
   it("shows remote content after conflict and keeps local text with the reviewed remote version", async () => {
     await open();
     fireEvent.click(await screen.findByText("First note"));

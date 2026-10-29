@@ -242,17 +242,18 @@ pub(crate) fn validate_settings(settings: &Value) -> NativeResult<()> {
             "Settings exceed the supported size",
         ));
     }
-    if object
-        .get("runInBackground")
-        .is_some_and(|value| !value.is_boolean())
+    // 未来结构可能改变原生偏好的类型；保留原值供前端执行只读保护。
+    let future_schema = future_settings_schema(settings);
+    if !future_schema
+        && object
+            .get("runInBackground")
+            .is_some_and(|value| !value.is_boolean())
     {
         return Err(NativeError::new(
             ErrorCode::InvalidArgument,
             "runInBackground must be a boolean",
         ));
     }
-    // 未来结构可能扩展位置策略；保留原值供前端执行未来版本只读保护。
-    let future_schema = future_settings_schema(settings);
     if !future_schema && let Some(image) = object.get("customBackground") {
         validate_custom_background(image)?;
     }
@@ -303,13 +304,23 @@ impl SettingsStore {
                         "Settings file exceeds the supported size",
                     ));
                 }
-                let decoded = serde_json::from_slice::<SettingsSnapshot>(&bytes)
-                    .ok()
+                let document = serde_json::from_slice::<Value>(&bytes).ok();
+                let future_schema = document
+                    .as_ref()
+                    .and_then(|value| value.get("settings"))
+                    .is_some_and(future_settings_schema);
+                let decoded = document
+                    .and_then(|value| serde_json::from_value::<SettingsSnapshot>(value).ok())
                     .filter(|snapshot| {
                         snapshot.revision >= 0 && validate_settings(&snapshot.settings).is_ok()
                     });
                 if let Some(snapshot) = decoded {
                     snapshot
+                } else if future_schema {
+                    return Err(NativeError::new(
+                        ErrorCode::StorageCorrupt,
+                        "Unsupported future settings must not be replaced",
+                    ));
                 } else {
                     let parent = path.parent().ok_or_else(|| {
                         NativeError::new(ErrorCode::StorageIo, "Invalid settings directory")
@@ -461,12 +472,28 @@ impl SettingsStore {
             .map(|(snapshot, ())| snapshot)
     }
 
+    /// 仅供用户明确重置使用；允许替换未来结构，仍保留版本冲突与原子写入。
+    pub fn reset(&self, settings: Value, expected_revision: i32) -> NativeResult<SettingsSnapshot> {
+        self.write_and(settings, expected_revision, true, || ())
+            .map(|(snapshot, ())| snapshot)
+    }
+
     /// 成功保存后仍持写锁执行后续存储操作；回调可读上次完成的快照，但不得重入保存。
     /// 回调结果单独返回，失败不能隐藏已经提交、需要广播的新设置快照。
     pub(crate) fn save_and<T>(
         &self,
         settings: Value,
         expected_revision: i32,
+        after_save: impl FnOnce() -> T,
+    ) -> NativeResult<(SettingsSnapshot, T)> {
+        self.write_and(settings, expected_revision, false, after_save)
+    }
+
+    fn write_and<T>(
+        &self,
+        settings: Value,
+        expected_revision: i32,
+        reset: bool,
         after_save: impl FnOnce() -> T,
     ) -> NativeResult<(SettingsSnapshot, T)> {
         validate_settings(&settings)?;
@@ -480,6 +507,13 @@ impl SettingsStore {
             let state = self.inner.lock().map_err(|_| {
                 NativeError::new(ErrorCode::Internal, "Settings lock is unavailable")
             })?;
+            // 原生提交也须保留未来存档，不能只依赖前端的只读状态。
+            if !reset && future_settings_schema(&state.settings) {
+                return Err(NativeError::new(
+                    ErrorCode::StorageCorrupt,
+                    "Settings from a newer application must not be overwritten",
+                ));
+            }
             if state.revision != expected_revision {
                 return Err(NativeError {
                     code: ErrorCode::SettingsConflict,
@@ -668,6 +702,103 @@ mod tests {
             "future-proxy"
         );
         assert_eq!(fs::read(path).unwrap(), original);
+    }
+
+    #[test]
+    fn future_settings_reject_native_writes_and_follow_up_effects() {
+        for version in [
+            f64::from(SETTINGS_SCHEMA_VERSION) + 0.5,
+            f64::from(SETTINGS_SCHEMA_VERSION + 1),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("settings.json");
+            let original = serde_json::to_vec_pretty(&json!({
+                "revision": 7,
+                "settings": {"schemaVersion": version, "future": {"keep": true}},
+            }))
+            .unwrap();
+            fs::write(&path, &original).unwrap();
+            let store = SettingsStore::open(path.clone()).unwrap();
+            let snapshot = store.snapshot().unwrap();
+            let followed_up = std::cell::Cell::new(false);
+
+            let result = store.save_and(
+                json!({"schemaVersion": SETTINGS_SCHEMA_VERSION, "language": "en"}),
+                snapshot.revision,
+                || followed_up.set(true),
+            );
+
+            assert_eq!(result.unwrap_err().code, ErrorCode::StorageCorrupt);
+            assert!(!followed_up.get());
+            assert_eq!(store.snapshot().unwrap(), snapshot);
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn explicit_reset_replaces_future_settings_only_at_the_expected_revision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let original = serde_json::to_vec(&json!({
+            "revision": 7,
+            "settings": {
+                "schemaVersion": SETTINGS_SCHEMA_VERSION + 1,
+                "runInBackground": {"mode": "future"},
+                "future": {"keep": true},
+            },
+        }))
+        .unwrap();
+        fs::write(&path, &original).unwrap();
+        let store = SettingsStore::open(path.clone()).unwrap();
+        let defaults = json!({"schemaVersion": SETTINGS_SCHEMA_VERSION, "language": "en"});
+        assert!(!store.run_in_background());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(
+            store.reset(defaults.clone(), 6).unwrap_err().code,
+            ErrorCode::SettingsConflict,
+        );
+        assert_eq!(
+            store
+                .reset(json!({"runInBackground": "invalid"}), 7)
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidArgument,
+        );
+        assert_eq!(fs::read(&path).unwrap(), original);
+
+        let reset = store.reset(defaults.clone(), 7).unwrap();
+        assert_eq!(reset.revision, 8);
+        assert_eq!(reset.settings, defaults);
+        assert_eq!(
+            SettingsStore::open(path).unwrap().snapshot().unwrap(),
+            reset
+        );
+        assert!(store.save(json!({"language": "zh"}), 8).is_ok());
+    }
+
+    #[test]
+    fn unrecognized_future_snapshots_are_preserved_without_recovery_writes() {
+        for revision in [json!(-1), json!(i64::MAX), json!("future-revision")] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("settings.json");
+            let original = serde_json::to_vec(&json!({
+                "revision": revision,
+                "settings": {"schemaVersion": SETTINGS_SCHEMA_VERSION + 1},
+            }))
+            .unwrap();
+            fs::write(&path, &original).unwrap();
+
+            assert!(matches!(
+                SettingsStore::open(path.clone()),
+                Err(NativeError {
+                    code: ErrorCode::StorageCorrupt,
+                    ..
+                })
+            ));
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+        }
     }
 
     #[test]
@@ -887,16 +1018,24 @@ mod tests {
     }
 
     #[test]
-    fn future_window_positions_do_not_relax_other_storage_limits() {
+    fn future_preference_types_do_not_relax_storage_limits() {
         assert_eq!(
             validate_settings(&json!({
-                "schemaVersion": 99,
-                "windowPosition": "cursor",
+                "schemaVersion": SETTINGS_SCHEMA_VERSION,
+                "windowPosition": "remember",
                 "runInBackground": "yes",
             }))
             .unwrap_err()
             .code,
             ErrorCode::InvalidArgument
+        );
+        assert!(
+            validate_settings(&json!({
+                "schemaVersion": SETTINGS_SCHEMA_VERSION + 1,
+                "windowPosition": "cursor",
+                "runInBackground": {"mode": "future"},
+            }))
+            .is_ok()
         );
         assert_eq!(
             validate_settings(&json!({

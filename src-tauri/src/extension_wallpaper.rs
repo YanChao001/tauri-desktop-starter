@@ -1135,9 +1135,8 @@ mod tests {
         );
         assert!(!library_path.exists());
         assert_eq!(std::fs::read(&settings_path).unwrap(), persisted);
-        let current = settings
-            .save(json!({"schemaVersion":3}), original.revision)
-            .unwrap();
+        let settings = SettingsStore::open(directory.path().join("current-settings.json")).unwrap();
+        let current = settings.save(json!({"schemaVersion":3}), 0).unwrap();
         std::fs::write(&library_path, b"{broken").unwrap();
         assert_eq!(
             remove_image(&settings, &library, &"a".repeat(64), current.revision)

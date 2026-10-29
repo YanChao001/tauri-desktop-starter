@@ -42,6 +42,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       {
         load: desktop.loadSettingsSnapshot,
         save: desktop.saveSettingsSnapshot,
+        reset: desktop.resetSettingsSnapshot,
         subscribe: desktop.onSettingsChanged,
       },
       (state) => {

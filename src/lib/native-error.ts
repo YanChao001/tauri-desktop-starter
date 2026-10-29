@@ -61,7 +61,9 @@ export function errorMessage(error: unknown): string {
 }
 export function nativeErrorText(error: unknown, t: Translate): string {
   const key =
-    isRecord(error) && typeof error.code === "string"
+    isRecord(error) &&
+    typeof error.code === "string" &&
+    Object.hasOwn(ERROR_KEYS, error.code)
       ? ERROR_KEYS[error.code]
       : undefined;
   if (key) return t(key);

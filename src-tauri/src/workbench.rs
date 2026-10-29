@@ -892,12 +892,16 @@ fn atomic_save(path: &Path, bytes: &[u8], expected: Option<&str>) -> NativeResul
     let canonical_parent = fs::canonicalize(parent).map_err(io_error)?;
     let mut temporary = tempfile::NamedTempFile::new_in(&canonical_parent).map_err(io_error)?;
     temporary.write_all(bytes).map_err(io_error)?;
-    if path.exists() {
-        checked_resource(path, false)?;
-        temporary
-            .as_file()
-            .set_permissions(fs::metadata(path).map_err(io_error)?.permissions())
-            .map_err(io_error)?;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            checked_resource(path, false)?;
+            temporary
+                .as_file()
+                .set_permissions(metadata.permissions())
+                .map_err(io_error)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io_error(error)),
     }
     temporary.as_file().sync_all().map_err(io_error)?;
     if fs::canonicalize(parent).map_err(io_error)? != canonical_parent {
@@ -911,7 +915,12 @@ fn atomic_save(path: &Path, bytes: &[u8], expected: Option<&str>) -> NativeResul
             "The file changed outside the editor; reload or save a copy",
         ));
     }
-    temporary.persist(path).map_err(io_error)?;
+    // Windows 的 persist 直接调用 Win32；最终目标也沿用已核验目录的扩展路径。
+    let destination = canonical_parent.join(
+        path.file_name()
+            .ok_or_else(|| invalid("Invalid save destination"))?,
+    );
+    temporary.persist(destination).map_err(io_error)?;
     Ok(())
 }
 
@@ -1290,6 +1299,61 @@ fn run_directory_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_save_rejects_existing_and_dangling_symbolic_links() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("target.txt");
+        let link = directory.path().join("link.txt");
+        fs::write(&target, b"original").unwrap();
+        symlink(&target, &link).unwrap();
+        assert_eq!(
+            atomic_save(&link, b"replacement", None).unwrap_err().code,
+            ErrorCode::InvalidArgument,
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+        fs::remove_file(&target).unwrap();
+        assert_eq!(
+            atomic_save(&link, b"replacement", None).unwrap_err().code,
+            ErrorCode::InvalidArgument,
+        );
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert!(!target.exists());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_save_supports_long_windows_paths_and_preserves_revision_conflicts() {
+        use std::os::windows::ffi::OsStrExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let raw = directory.path().to_string_lossy();
+        let mut parent = PathBuf::from(raw.trim_start_matches(r"\\?\"));
+        while parent.as_os_str().encode_wide().count() < 230 {
+            parent.push("nested-export-directory");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let path = parent.join(format!("{}.txt", "report".repeat(12)));
+        assert!(!path.to_string_lossy().starts_with(r"\\?\"));
+        assert!(path.as_os_str().encode_wide().count() > 260);
+
+        atomic_save(&path, b"original", None).unwrap();
+        let revision = hash(b"original");
+        atomic_save(&path, b"replacement", Some(&revision)).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(
+            atomic_save(&path, b"stale", Some(&revision))
+                .unwrap_err()
+                .code,
+            ErrorCode::Conflict,
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    }
 
     #[test]
     fn larger_export_limits_do_not_expand_text_imports_and_cancel_without_writes() {
