@@ -633,7 +633,7 @@ async function checkTerminalReturn({ page, frame, profile, output, settled }) {
   const old = await page.locator("iframe").elementHandle();
   await page
     .getByRole("menuitem", {
-      name: profile.language === "zh" ? "重新加载界面" : "Reload interface",
+      name: profile.language === "zh" ? "重载界面" : "Reload interface",
       exact: true,
     })
     .click();

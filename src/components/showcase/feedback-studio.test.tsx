@@ -28,14 +28,14 @@ it("keeps one accessible validation slot through invalid, duplicate and successf
       <FeedbackStudio />
     </TooltipProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Add a collaborator" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add collaborator" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog).toHaveAccessibleDescription(
-    "Simulated invitations stay on this page. No email is sent.",
+    "Demo invitations stay on this page; no email is sent.",
   );
   const input = within(dialog).getByLabelText("Email address");
   const submit = within(dialog).getByRole("button", {
-    name: "Add to the demo",
+    name: "Add",
   });
   const slot = dialog.querySelector("#playground-email-error");
   expect(slot).toBeEmptyDOMElement();
@@ -46,9 +46,7 @@ it("keeps one accessible validation slot through invalid, duplicate and successf
   expect(slot).toBeEmptyDOMElement();
   fireEvent.click(submit);
   expect(within(dialog).getByRole("alert")).toBe(slot);
-  expect(input).toHaveAccessibleDescription(
-    "This collaborator is already on the list.",
-  );
+  expect(input).toHaveAccessibleDescription("This email is already listed.");
   fireEvent.change(input, { target: { value: " new@example.com " } });
   fireEvent.click(submit);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

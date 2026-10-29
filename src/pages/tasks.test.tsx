@@ -181,9 +181,7 @@ describe("background task center", () => {
       screen.queryByText(/3 entries could not be read/),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看结果" }));
-    expect(
-      screen.getByText("文件或路径超出本次任务的处理限制，已跳过。"),
-    ).toBeVisible();
+    expect(screen.getByText("文件或路径超出任务限制，已跳过。")).toBeVisible();
     const original = screen.getByText(diagnostic);
     expect(original.closest("details")).not.toHaveAttribute("open");
     fireEvent.click(original.closest("details")!.querySelector("summary")!);

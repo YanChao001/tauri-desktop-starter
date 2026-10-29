@@ -12,10 +12,10 @@ export const enRecovery: RecoveryMessages = {
   "recovery.archive": "Original files from the last recovery: {id}",
   "recovery.diagnostics": "Copy problem report",
   "recovery.copied":
-    "Diagnostics copied. Check for sensitive information before sharing.",
+    "Report copied. Check for sensitive information before sharing.",
   "recovery.choose": "1. Choose and inspect a backup",
   "recovery.chooseHint":
-    "Choose a local backup or import a previously exported JSON file. Invalid, oversized backups and backups from newer versions are rejected while originals are preserved.",
+    "Choose a local backup or import an exported JSON file; invalid, oversized or newer-version backups are rejected without changing originals.",
   "recovery.import": "Import backup file",
   "recovery.backups": "Local recovery backups",
   "recovery.backupsLoading": "Loading local backups…",
@@ -30,7 +30,7 @@ export const enRecovery: RecoveryMessages = {
     "The app checks the recovered data for completeness. On the next launch, original data and related files are archived before replacement. Interrupted or failed replacement restores originals. Data from newer versions is never overwritten by an older version.",
   "recovery.recordCount": "{count} records recovered in the trial restore",
   "recovery.resetSettings":
-    "Also restore default preferences (archive originals; never overwrite settings from a newer version)",
+    "Also restore default preferences (archive originals; never overwrite newer-version settings)",
   "recovery.pending":
     "Recovery is queued. Originals remain unchanged until validation and replacement on the next launch.",
   "recovery.restart": "Restart and apply recovery",

@@ -84,7 +84,7 @@ function open(tab: "installed" | "discover" = "discover") {
       <Extensions />
     </MemoryRouter>,
   );
-  return screen.getByLabelText<HTMLInputElement>("Choose extension package");
+  return screen.getByLabelText<HTMLInputElement>("Choose package");
 }
 
 function packageFile(name: string, content: string) {
@@ -109,10 +109,10 @@ it("shows the local installation tools only in the discovery tab", async () => {
   const user = userEvent.setup();
   open("installed");
   expect(
-    screen.queryByRole("region", { name: "Install a local extension" }),
+    screen.queryByRole("region", { name: "Local installation" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Open file" }),
+    screen.queryByRole("button", { name: "Choose file" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Restore bundled workbench" }),
@@ -123,11 +123,11 @@ it("shows the local installation tools only in the discovery tab", async () => {
 
   await user.click(screen.getByRole("tab", { name: "Discover plugins" }));
   const tools = screen.getByRole("region", {
-    name: "Install a local extension",
+    name: "Local installation",
   });
   expect(tools).toBeVisible();
   expect(
-    within(tools).getByRole("button", { name: "Open file" }),
+    within(tools).getByRole("button", { name: "Choose file" }),
   ).toBeEnabled();
   expect(
     within(tools).getByRole("button", { name: "Restore bundled workbench" }),
@@ -136,7 +136,7 @@ it("shows the local installation tools only in the discovery tab", async () => {
     within(tools).getByRole("link", { name: "Developer docs" }),
   ).toBeVisible();
 
-  await user.click(screen.getByRole("tab", { name: "Installed extensions" }));
+  await user.click(screen.getByRole("tab", { name: "Installed" }));
   expect(tools).not.toBeVisible();
   expect(native.previewExtension).not.toHaveBeenCalled();
   expect(native.installExtension).not.toHaveBeenCalled();
@@ -147,8 +147,8 @@ it("opens the hidden file input from a keyboard-operable custom trigger", async 
   const input = open();
   expect(input).not.toBeVisible();
   expect(input).toHaveAttribute("accept", ".json,application/json");
-  expect(screen.getByText("Install a local extension")).toBeVisible();
-  const trigger = screen.getByRole("button", { name: "Open file" });
+  expect(screen.getByText("Local installation")).toBeVisible();
+  const trigger = screen.getByRole("button", { name: "Choose file" });
   const pick = vi.spyOn(input, "click");
   trigger.focus();
   await user.keyboard("{Enter}");
@@ -200,9 +200,7 @@ it("keeps the selected filename on cancellation, exposes the full name, and revi
   });
   const review = await screen.findByRole("dialog");
   expect(native.installExtension).not.toHaveBeenCalled();
-  await user.click(
-    within(review).getByRole("button", { name: "Install and enable" }),
-  );
+  await user.click(within(review).getByRole("button", { name: "Install" }));
   await waitFor(() =>
     expect(native.installExtension).toHaveBeenCalledExactlyOnceWith(
       "replacement package",

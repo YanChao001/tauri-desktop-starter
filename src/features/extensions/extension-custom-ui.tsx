@@ -21,6 +21,16 @@ import {
 import { ExtensionLoading } from "./extension-loading";
 import { useExtensionActivity } from "./extension-activity";
 
+type UiFailure =
+  | {
+      kind: "lifecycle";
+      message:
+        | "ext.uiInitializationFailed"
+        | "ext.uiInitializationTimeout"
+        | "ext.uiConnectionTimeout";
+    }
+  | { kind: "diagnostic"; reason: unknown };
+
 function readTheme(motion: Motion) {
   const styles = getComputedStyle(document.documentElement);
   const tokens = readUiTokens(styles);
@@ -63,7 +73,7 @@ export function ExtensionCustomUi({
   const [lease, setLease] = useState<{ url: string; token: string } | null>(
     null,
   );
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<UiFailure | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [connected, setConnected] = useState(false);
   const [handshakeReady, setHandshakeReady] = useState(false);
@@ -204,7 +214,7 @@ export function ExtensionCustomUi({
           setLease(next);
         })
         .catch((reason: unknown) => {
-          if (!disposed) setError(reason);
+          if (!disposed) setError({ kind: "diagnostic", reason });
         });
     });
     return () => {
@@ -243,7 +253,7 @@ export function ExtensionCustomUi({
         return;
       if (data.type === "starter:failed") {
         bridge.current?.close();
-        setError(new Error("Extension UI could not initialize"));
+        setError({ kind: "lifecycle", message: "ext.uiInitializationFailed" });
         return;
       }
       if (data.type === "starter:painted") {
@@ -258,7 +268,7 @@ export function ExtensionCustomUi({
         channel.port1,
         (request) => run.current(request),
         (reason) => {
-          if (!disposed) setError(reason);
+          if (!disposed) setError({ kind: "diagnostic", reason });
         },
       );
       frame.current?.contentWindow?.postMessage(
@@ -309,13 +319,12 @@ export function ExtensionCustomUi({
             timer = undefined;
             if (visible()) {
               bridge.current?.close();
-              setError(
-                new Error(
-                  handshakeReady
-                    ? "Extension UI did not finish initializing"
-                    : "Extension UI did not connect",
-                ),
-              );
+              setError({
+                kind: "lifecycle",
+                message: handshakeReady
+                  ? "ext.uiInitializationTimeout"
+                  : "ext.uiConnectionTimeout",
+              });
             }
           },
           handshakeReady ? 15000 : 10000,
@@ -394,10 +403,16 @@ export function ExtensionCustomUi({
           data-surface="solid"
           className="space-y-3 rounded-lg border p-4"
         >
-          <p>{t("ext.uiUnavailable")}</p>
-          <p className="text-sm text-muted-foreground">
-            {nativeErrorText(error, t)}
+          <p>
+            {t(
+              error.kind === "lifecycle" ? error.message : "ext.uiUnavailable",
+            )}
           </p>
+          {error.kind === "diagnostic" ? (
+            <p className="text-sm text-muted-foreground">
+              {nativeErrorText(error.reason, t)}
+            </p>
+          ) : null}
           <Button
             variant="outline"
             disabled={busy}

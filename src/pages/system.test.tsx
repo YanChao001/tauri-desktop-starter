@@ -75,7 +75,7 @@ describe("system integration lifecycle", () => {
       }),
     );
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      /The installed app can open through .* links or \.migrate files/,
+      /The installed app opens .* links and \.migrate files/,
     );
     await waitFor(() =>
       expect(native.getActivationSnapshot).toHaveBeenCalledOnce(),

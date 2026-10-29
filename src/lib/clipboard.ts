@@ -49,7 +49,9 @@ export async function copyText(text: string): Promise<void> {
     textarea.focus({ preventScroll: true });
     textarea.select();
     if (!document.execCommand("copy")) {
-      throw new Error("当前环境不支持复制");
+      throw Object.assign(new Error("Clipboard write failed"), {
+        code: "CLIPBOARD_WRITE_FAILED",
+      });
     }
   } finally {
     textarea.remove();

@@ -43,7 +43,7 @@ afterEach(() => {
 it("expires a local session on time and returns to guest on sign-out", async () => {
   vi.useFakeTimers();
   render(<SessionPanel />);
-  fireEvent.click(screen.getByRole("button", { name: "Try signing in" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(screen.getByRole("status")).toHaveTextContent("Ada");
   await act(() => vi.advanceTimersByTimeAsync(30000));
   expect(screen.getByRole("status")).toHaveTextContent("expired");
@@ -58,7 +58,7 @@ it("keeps the full display name accessible and announces session changes without
   fireEvent.change(screen.getByLabelText("Demo display name"), {
     target: { value: name },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Try signing in" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   const status = screen.getByRole("status");
   expect(status).toHaveTextContent(`Signed in as ${name}.`);
   expect(screen.getByText(name, { exact: true })).toHaveAttribute(
@@ -91,7 +91,7 @@ it("clears a saved input and reports credential presence without rendering the s
   fireEvent.click(screen.getByRole("button", { name: "Check saved content" }));
   await waitFor(() =>
     expect(toast.success).toHaveBeenCalledWith(
-      "Saved content was found. Its text is not displayed.",
+      "Saved content exists; its text is not displayed.",
     ),
   );
   expect(

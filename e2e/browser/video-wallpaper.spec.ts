@@ -158,7 +158,7 @@ test("video wallpapers keep a local cover and reference across reload and pause 
     .poll(() => video.evaluate((node) => !(node as HTMLVideoElement).paused))
     .toBe(true);
   await page
-    .getByRole("button", { name: "Clear image background", exact: true })
+    .getByRole("button", { name: "Clear background", exact: true })
     .click();
   await expect(page.locator("[data-custom-background-video]")).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute(

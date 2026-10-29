@@ -163,7 +163,7 @@ describe("updater controls", () => {
       await user.click(screen.getByRole("button", { name: "Release notes" }));
       expect(
         within(screen.getByRole("dialog")).getByText(
-          "No release notes were provided for this version.",
+          "No notes for this version.",
         ),
       ).toBeVisible();
     },
@@ -205,7 +205,7 @@ describe("updater controls", () => {
     render(<UpdateSettings />);
     await user.click(screen.getByRole("button", { name: "版本说明" }));
     const dialog = screen.getByRole("dialog", { name: "版本说明 · 2.0.0" });
-    expect(within(dialog).getByText("此版本未提供更新说明。")).toBeVisible();
+    expect(within(dialog).getByText("此版本暂无说明。")).toBeVisible();
     expect(within(dialog).getByRole("button", { name: "关闭" })).toBeVisible();
   });
   it("persists the startup preference and shows the effective source and last successful check on demand", async () => {
@@ -221,7 +221,7 @@ describe("updater controls", () => {
     expect(
       screen.queryByText("Update verification configured"),
     ).not.toBeInTheDocument();
-    const history = screen.getByText("View version history");
+    const history = screen.getByText("Version history");
     expect(history).not.toBeVisible();
     expect(
       screen.getByText("Update source").closest("details"),
@@ -235,7 +235,7 @@ describe("updater controls", () => {
     ).toBeVisible();
     expect(screen.getByText(/Last successful check:/)).toBeVisible();
     expect(
-      screen.getByRole("link", { name: "View version history" }),
+      screen.getByRole("link", { name: "Version history" }),
     ).toHaveAttribute(
       "href",
       "https://github.com/example/migrated-app/releases",
@@ -250,14 +250,14 @@ describe("updater controls", () => {
       screen.getByRole("region", { name: "Application updates" }),
     );
     expect(toast.error).toHaveBeenCalledWith(
-      expect.stringMatching(/Update information is not available yet/),
+      expect.stringMatching(/No update information yet/),
       expect.objectContaining({
         action: expect.objectContaining({ label: "Retry" }),
       }),
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Update information is not available yet",
+      "No update information yet",
     );
     expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
@@ -363,7 +363,7 @@ describe("updater controls", () => {
     ui.status = { ...available, configured: false, available: false };
     render(<UpdateSettings />);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "In-app updates are unavailable",
+      "In-app updates unavailable",
     );
     expect(
       screen.getByText("Update verification not configured"),
@@ -383,11 +383,9 @@ describe("updater controls", () => {
     ).toBeVisible();
     expect(checkUpdates).not.toHaveBeenCalled();
     expect(installUpdate).not.toHaveBeenCalled();
-    expect(screen.getByText("View version history")).not.toBeVisible();
+    expect(screen.getByText("Version history")).not.toBeVisible();
     fireEvent.click(screen.getByText("Update source"));
-    expect(
-      screen.getByRole("link", { name: "View version history" }),
-    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Version history" })).toBeVisible();
     expect(
       screen.queryByText(/Last successful check:/),
     ).not.toBeInTheDocument();
@@ -404,29 +402,23 @@ describe("updater controls", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Release notes")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Update source"));
-    expect(
-      screen.getByRole("link", { name: "View version history" }),
-    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Version history" })).toBeVisible();
   });
   it("requires restart confirmation, deduplicates relaunch and makes a failed restart retryable", async () => {
     ui.phase = "installed";
     const restart = deferred<void>();
     vi.mocked(relaunchApp).mockReturnValueOnce(restart.promise);
     render(<UpdateSettings />);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Restart application" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Restart app" }));
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel",
       }),
     );
     expect(relaunchApp).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Restart application" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Restart app" }));
     const confirm = within(screen.getByRole("dialog")).getByRole("button", {
-      name: "Restart application",
+      name: "Restart app",
     });
     act(() => {
       fireEvent.click(confirm);
@@ -445,7 +437,7 @@ describe("updater controls", () => {
     ui.error = { code: "UPDATE_FEED_UNAVAILABLE" };
     view.rerender(<UpdateSettings />);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Update information is not available yet",
+      "No update information yet",
     );
     expect(toast.error).not.toHaveBeenCalled();
     expect(checkUpdates).not.toHaveBeenCalled();
@@ -471,9 +463,7 @@ describe("updater controls", () => {
       screen.queryByRole("button", { name: "Download and install" }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Update source"));
-    expect(
-      screen.getByRole("link", { name: "View version history" }),
-    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Version history" })).toBeVisible();
     fireEvent.click(check);
     fireEvent.click(automatic);
     expect(checkUpdates).not.toHaveBeenCalled();

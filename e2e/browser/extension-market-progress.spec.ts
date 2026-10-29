@@ -440,12 +440,12 @@ function installedItem(item: MarketEntry): ExtensionInfo {
 function extensionCard(page: Page, name: string, installed = false) {
   const panel = installed
     ? page.getByRole("tabpanel", {
-        name: "Installed extensions",
+        name: "Installed",
         exact: true,
         includeHidden: true,
       })
     : page.getByRole("region", {
-        name: "Official plugin market",
+        name: "Plugin market",
         exact: true,
         includeHidden: true,
       });
@@ -642,7 +642,7 @@ for (const width of [880, 1440]) {
       await seedNativeFixture(page, theme);
       await page.goto("./#/extensions?tab=discover");
       const marketSection = page.getByRole("region", {
-        name: "Official plugin market",
+        name: "Plugin market",
         exact: true,
         includeHidden: true,
       });
@@ -658,7 +658,7 @@ for (const width of [880, 1440]) {
           includeHidden: true,
         }),
       });
-      const button = card.getByRole("button", { name: "Download and review" });
+      const button = card.getByRole("button", { name: "Install" });
       await expect(button).toBeEnabled();
       await button.scrollIntoViewIfNeeded();
       await page.evaluate(() => document.fonts.ready);
@@ -712,7 +712,7 @@ for (const width of [880, 1440]) {
         sameBounds(await bounds(adjacent), originalNeighbor);
       }
       const scan = await new AxeBuilder({ page })
-        .include('section[aria-label="Official plugin market"]')
+        .include('section[aria-label="Plugin market"]')
         .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
         .analyze();
       expect(scan.violations).toEqual([]);
@@ -730,11 +730,11 @@ for (const width of [880, 1440]) {
       sameBounds(await bounds(adjacent), originalNeighbor);
       await page.evaluate(() => window.marketProgressFixture.finishDownload());
       const review = page.getByRole("dialog", {
-        name: "Review extension package",
+        name: "Install extension",
       });
       await expect(review).toBeVisible();
       await review
-        .getByRole("button", { name: "Install and enable", exact: true })
+        .getByRole("button", { name: "Install", exact: true })
         .click();
       await expect(stableButton).toHaveAttribute("aria-busy", "true");
       await expect(
@@ -756,9 +756,7 @@ for (const width of [880, 1440]) {
       sameBounds(await bounds(adjacent), originalNeighbor);
       await page.evaluate(() => window.marketProgressFixture.finishInstall());
       await expect(review).toBeHidden();
-      await expect(stableButton).toHaveAccessibleName(
-        "This version is installed",
-      );
+      await expect(stableButton).toHaveAccessibleName("Installed");
       await expect(
         stableButton.locator('[data-slot="market-download-progress"]'),
       ).toHaveCount(0);
@@ -800,7 +798,7 @@ for (const theme of ["light", "dark"] as const) {
         .toBe(theme === "dark");
       const card = extensionCard(page, reviewedEntry.package.manifest.name);
       const download = card.getByRole("button", {
-        name: "Download and review",
+        name: "Install",
         exact: true,
       });
       await download.scrollIntoViewIfNeeded();
@@ -815,7 +813,7 @@ for (const theme of ["light", "dark"] as const) {
       );
       await page.evaluate(() => window.marketProgressFixture.finishDownload());
       const review = page.getByRole("dialog", {
-        name: "Review extension package",
+        name: "Install extension",
       });
       await expect(review).toBeVisible();
       expect(
@@ -823,7 +821,7 @@ for (const theme of ["light", "dark"] as const) {
       ).toEqual([]);
       await checkReviewLayout(page, review, testInfo);
       await review
-        .getByRole("button", { name: "Install and enable", exact: true })
+        .getByRole("button", { name: "Install", exact: true })
         .click();
       await expect
         .poll(() =>
@@ -853,7 +851,7 @@ for (const theme of ["light", "dark"] as const) {
       await finishReload(page);
       await expect(review).toBeHidden();
       const installed = card.getByRole("button", {
-        name: "This version is installed",
+        name: "Installed",
         exact: true,
       });
       await expect(installed).toBeDisabled();
@@ -905,7 +903,7 @@ for (const changedPermissions of [false, true]) {
     await page.goto("./#/extensions");
     const card = extensionCard(page, reviewedEntry.package.manifest.name, true);
     const more = card.getByRole("button", {
-      name: `More actions for ${reviewedEntry.package.manifest.name}`,
+      name: `Actions for ${reviewedEntry.package.manifest.name}`,
       exact: true,
     });
     await more.scrollIntoViewIfNeeded();
@@ -923,7 +921,7 @@ for (const changedPermissions of [false, true]) {
     };
     await downloadUpdate();
     const review = page.getByRole("dialog", {
-      name: "Review extension package",
+      name: "Install extension",
     });
     if (changedPermissions) {
       await expect(review).toBeVisible();
@@ -950,9 +948,7 @@ for (const changedPermissions of [false, true]) {
       await expect(
         optional.getByRole("checkbox", { name: "Open web pages", exact: true }),
       ).not.toBeChecked();
-      await review
-        .getByRole("button", { name: "Update and enable", exact: true })
-        .click();
+      await review.getByRole("button", { name: "Update", exact: true }).click();
     }
     await expect
       .poll(() =>
@@ -1032,15 +1028,13 @@ test("Chinese wallpaper review keeps all four optional permissions readable at 3
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page.locator("html")).toHaveAttribute("data-font-size", "lg");
   await expect(page.locator("html")).toHaveClass(/dark/);
-  const card = page
-    .locator("article")
-    .filter({
-      has: page.getByRole("heading", { name: "壁纸库", exact: true }),
-    });
+  const card = page.locator("article").filter({
+    has: page.getByRole("heading", { name: "壁纸库", exact: true }),
+  });
   await card.getByRole("button").click();
   await expect(card.locator("button")).toHaveAttribute("aria-busy", "true");
   await page.evaluate(() => window.marketProgressFixture.finishDownload());
-  const review = page.getByRole("dialog", { name: "审阅扩展包", exact: true });
+  const review = page.getByRole("dialog", { name: "安装扩展", exact: true });
   await expect(review).toBeVisible();
   const optional = review.getByRole("group", { name: "可选权限", exact: true });
   for (const name of [
@@ -1074,7 +1068,7 @@ test("Chinese wallpaper review keeps all four optional permissions readable at 3
     choiceCount: 4,
   });
   const install = review.getByRole("button", {
-    name: "安装并启用",
+    name: "安装",
     exact: true,
   });
   const cancel = review.getByRole("button", { name: "取消", exact: true });

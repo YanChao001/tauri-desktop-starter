@@ -65,9 +65,7 @@ it("reads cached fixture data offline and never calls the native transport", asy
   );
   fireEvent.click(screen.getByLabelText("Simulate offline"));
   expect(screen.getByRole("button", { name: "Get content" })).toBeDisabled();
-  fireEvent.click(
-    screen.getByRole("button", { name: "View or refresh result" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Load result" }));
   expect(toast.info).toHaveBeenCalledWith(en["labs.network.cacheOffline"]);
   expect(native.nativeHttpRequest).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Save securely" })).toBeDisabled();
@@ -152,4 +150,35 @@ it("POST 失败只弹消息并保留输入和已有响应", async () => {
   );
   expect(response).toHaveTextContent('"method": "GET"');
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it.each([
+  {
+    name: "native TimeoutError",
+    error: new DOMException("Native transport diagnostic", "TimeoutError"),
+    expected: en["labs.network.error.timeout"],
+  },
+  {
+    name: "ordinary Error with timeout-like text",
+    error: new Error("Request timed out"),
+    expected: en["common.operationFailed"].replace(
+      "{error}",
+      "Request timed out",
+    ),
+  },
+])("reports $name without parsing its message", async ({ error, expected }) => {
+  native.isTauri.mockReturnValue(true);
+  native.nativeHttpRequest.mockRejectedValueOnce(error);
+  render(<Network />);
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "Online test" }));
+  fireEvent.change(screen.getByLabelText("Content to send"), {
+    target: { value: "keep this input" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send content" }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
+  expect(native.nativeHttpRequest).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText("Content to send")).toHaveValue(
+    "keep this input",
+  );
 });

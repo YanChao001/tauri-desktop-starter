@@ -481,7 +481,7 @@ it("keeps the last verified catalog after refresh fails and identifies it until 
     .mockResolvedValueOnce(emptySnapshot);
   render(<LiveMarket />);
   await screen.findByRole("heading", { name: "Word Lab" });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh market" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(
       en["ext.market.incompatible"],
@@ -499,7 +499,7 @@ it("keeps the last verified catalog after refresh fails and identifies it until 
   });
   expect(screen.getByText(en["ext.market.noMatches"])).toBeVisible();
   expect(screen.getByText(en["ext.market.stale"])).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh market" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   expect(await screen.findByText(en["ext.market.empty"])).toBeVisible();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText(en["ext.market.stale"])).not.toBeInTheDocument();

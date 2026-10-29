@@ -144,7 +144,7 @@ it("identifies late completion by its original promise so an owner can retain a 
     onError: vi.fn(),
   };
   const old = render(<ExtensionSessionImport {...props} />);
-  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+  fireEvent.change(screen.getByLabelText("Import session"), {
     target: { files: [file()] },
   });
   await waitFor(() =>
@@ -154,7 +154,7 @@ it("identifies late completion by its original promise so an owner can retain a 
   expect(oldPending).toBeInstanceOf(Promise);
   old.unmount();
   render(<ExtensionSessionImport {...props} />);
-  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+  fireEvent.change(screen.getByLabelText("Import session"), {
     target: { files: [file()] },
   });
   await waitFor(() =>
@@ -178,7 +178,7 @@ it("identifies late completion by its original promise so an owner can retain a 
   expect(onRestore).not.toHaveBeenCalled();
 });
 
-it.each(["Cancel", "Replace current session"])(
+it.each(["Cancel", "Replace session"])(
   "keeps a hidden import mounted after its menu item closes and returns %s to the menu trigger",
   async (action) => {
     let finish!: (value: native.ExtensionView) => void;
@@ -201,9 +201,7 @@ it.each(["Cancel", "Replace current session"])(
         onPending={onPending}
       />,
     );
-    const input = screen.getByLabelText<HTMLInputElement>(
-      "Import session JSON",
-    );
+    const input = screen.getByLabelText<HTMLInputElement>("Import session");
     expect(input).toHaveAttribute("type", "file");
     expect(input).toHaveAttribute("accept", ".json,application/json");
     expect(input).not.toBeVisible();
@@ -212,7 +210,7 @@ it.each(["Cancel", "Replace current session"])(
     fireEvent.click(screen.getByRole("menuitem", { name: "Import session" }));
     expect(chooseFile).toHaveBeenCalledOnce();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Import session JSON")).toBe(input);
+    expect(screen.getByLabelText("Import session")).toBe(input);
     fireEvent.change(input, { target: { files: [file()] } });
     await waitFor(() =>
       expect(native.validateExtensionView).toHaveBeenCalledOnce(),
@@ -252,7 +250,7 @@ it("keeps the default import field visible and restores its focus after review",
       returnFocusRef={returnFocusRef}
     />,
   );
-  const input = screen.getByLabelText("Import session JSON");
+  const input = screen.getByLabelText("Import session");
   expect(input).toBeVisible();
   fireEvent.change(input, { target: { files: [file()] } });
   await screen.findByRole("dialog");
@@ -276,9 +274,9 @@ it("keeps hidden file imports disabled while the session is blocked", () => {
       onPending={onPending}
     />,
   );
-  expect(inputRef.current).toBe(screen.getByLabelText("Import session JSON"));
+  expect(inputRef.current).toBe(screen.getByLabelText("Import session"));
   expect(inputRef.current).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+  fireEvent.change(screen.getByLabelText("Import session"), {
     target: { files: [file()] },
   });
   expect(onPending).not.toHaveBeenCalled();

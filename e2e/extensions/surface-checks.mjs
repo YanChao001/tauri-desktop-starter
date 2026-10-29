@@ -656,15 +656,15 @@ export async function checkPermissionConsent(
   const labels =
     language === "zh"
       ? {
-          manage: "管理权限",
-          moreActions: `${manifest.name}的更多操作`,
+          manage: "权限",
+          moreActions: `${manifest.name}的操作`,
           group: "可选权限",
           all: "全选",
           cancel: "取消",
         }
       : {
-          manage: "Manage permissions",
-          moreActions: `More actions for ${manifest.name}`,
+          manage: "Permissions",
+          moreActions: `Actions for ${manifest.name}`,
           group: "Optional permissions",
           all: "Select all",
           cancel: "Cancel",
@@ -1296,7 +1296,7 @@ export async function checkWallpaperPreview(
   const labels =
     language === "en"
       ? ["Add to gallery", "Save original", "Source"]
-      : ["加入图库", "下载原图", "来源"];
+      : ["加入图库", "保存原图", "来源"];
   const actionIds = ["add-to-gallery", "download-original", "open-source"];
   for (let index = 0; index < actionIds.length; index++)
     await expect(

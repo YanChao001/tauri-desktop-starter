@@ -22,7 +22,7 @@ it("选择其他版本仅放入编辑器，源内容变化后不沿用旧选择"
   const group = screen.getByRole("radiogroup");
   fireEvent.click(within(group).getByRole("radio", { name: "Other version" }));
   fireEvent.click(
-    screen.getByRole("button", { name: "Apply merged result to editor" }),
+    screen.getByRole("button", { name: "Apply merge to editor" }),
   );
   expect(apply).toHaveBeenLastCalledWith("a\nother\nz");
   view.rerender(
@@ -33,7 +33,7 @@ it("选择其他版本仅放入编辑器，源内容变化后不沿用旧选择"
     />,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Apply merged result to editor" }),
+    screen.getByRole("button", { name: "Apply merge to editor" }),
   );
   expect(apply).toHaveBeenLastCalledWith("a\nnew local\nz");
 });
@@ -45,7 +45,7 @@ it("长文本预览有界，但采用其他版本不会截断真实内容", () =
   expect(document.body.textContent?.length).toBeLessThan(10000);
   fireEvent.click(screen.getByRole("radio", { name: "Other version" }));
   fireEvent.click(
-    screen.getByRole("button", { name: "Apply merged result to editor" }),
+    screen.getByRole("button", { name: "Apply merge to editor" }),
   );
   expect(apply).toHaveBeenCalledWith(remote);
 });

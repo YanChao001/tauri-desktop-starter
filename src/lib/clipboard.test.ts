@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { en } from "@/i18n/en";
+import { zhCN } from "@/i18n/zh-CN";
+import { createTranslator } from "@/i18n/translate";
 
 import { copyText } from "./clipboard";
+import { nativeErrorText } from "./native-error";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
   writeText: vi.fn(async () => {}),
@@ -86,13 +90,21 @@ describe("copyText", () => {
     expect(execCommand).toHaveBeenCalledWith("copy");
   });
 
-  it("降级也失败时抛错，且不留残留的 textarea", async () => {
-    stubClipboard(undefined);
-    document.execCommand = vi.fn().mockReturnValue(false);
+  it.each([
+    ["en", en, "Could not copy. Try again."],
+    ["zh", zhCN, "复制失败，请重试。"],
+  ] as const)(
+    "降级也失败时返回可翻译错误码，%s 提示使用当前语言且不留 textarea",
+    async (_language, messages, expected) => {
+      stubClipboard(undefined);
+      document.execCommand = vi.fn().mockReturnValue(false);
 
-    await expect(copyText("hello")).rejects.toThrow("不支持复制");
-    expect(document.querySelector("textarea")).toBeNull();
-  });
+      const error = await copyText("hello").catch((error: unknown) => error);
+      expect(error).toMatchObject({ code: "CLIPBOARD_WRITE_FAILED" });
+      expect(nativeErrorText(error, createTranslator(messages))).toBe(expected);
+      expect(document.querySelector("textarea")).toBeNull();
+    },
+  );
 
   it.each([true, false])(
     "降级复制成功状态 %s 后恢复输入框焦点和选择范围",
@@ -106,7 +118,10 @@ describe("copyText", () => {
       input.setSelectionRange(2, 8, "backward");
 
       if (copied) await copyText("hello");
-      else await expect(copyText("hello")).rejects.toThrow("不支持复制");
+      else
+        await expect(copyText("hello")).rejects.toMatchObject({
+          code: "CLIPBOARD_WRITE_FAILED",
+        });
 
       expect(document.activeElement).toBe(input);
       expect(input.selectionStart).toBe(2);
