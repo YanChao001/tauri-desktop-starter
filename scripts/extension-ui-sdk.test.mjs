@@ -1304,6 +1304,29 @@ test("enhanced select retains its native node, form value and label while keyboa
   close();
 });
 
+test("enhanced select restores host line height after native font copying and keeps explicit author line height", () => {
+  const { control, pointer, key, popup, close } = selectFixture();
+  try {
+    for (const { lineHeight, hostLineHeight, expected } of [
+      { lineHeight: "normal", hostLineHeight: "20px", expected: "20px" },
+      { lineHeight: "normal", hostLineHeight: "24px", expected: "24px" },
+      { lineHeight: "27px", hostLineHeight: "20px", expected: "27px" },
+    ]) {
+      control.style.font = `italic 600 14px/${lineHeight} monospace`;
+      control.style.setProperty("--control-input-line-height", hostLineHeight);
+      pointer(control);
+      assert.equal(popup().style.lineHeight, expected);
+      assert.equal(popup().style.fontFamily, "monospace");
+      assert.equal(popup().style.fontSize, "14px");
+      assert.equal(popup().style.fontStyle, "italic");
+      assert.equal(popup().style.fontWeight, "600");
+      key("Escape");
+    }
+  } finally {
+    close();
+  }
+});
+
 test("enhanced select options ignore secondary and auxiliary pointer buttons", () => {
   const { window, control, pointer, popup, close } = selectFixture();
   try {

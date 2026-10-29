@@ -431,7 +431,13 @@
       if (!open) return;
       const { select, popup } = open;
       if (!select.isConnected || !enabled(select)) return close();
-      popup.style.font = getComputedStyle(select).font;
+      const typography = getComputedStyle(select);
+      popup.style.font = typography.font;
+      // 原生单选框的 normal 不能覆盖 HTML 弹层的共享行高；作者显式行高仍保留。
+      if (typography.lineHeight === "normal")
+        popup.style.lineHeight = typography.getPropertyValue(
+          "--control-input-line-height",
+        );
       const rectangle = select.getBoundingClientRect();
       const gap = 4,
         edge = 4;

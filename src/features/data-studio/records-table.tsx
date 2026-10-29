@@ -177,7 +177,7 @@ export function RecordsTable() {
           ),
           cell: ({ row }) => (
             <Button
-              size="icon-sm"
+              size="icon"
               variant="ghost"
               aria-label={t("experience.table.details", {
                 id: row.original.id,
@@ -208,9 +208,11 @@ export function RecordsTable() {
     ? table.getSortedRowModel().rows
     : table.getRowModel().rows;
   const virtualizer = useVirtualizer({
+    enabled: virtual,
     count: virtual ? rows.length : 0,
     getScrollElement: () => scroll.current,
-    estimateSize: () => 48,
+    // 默认字号按约 40px 估算，实际测量涵盖字号变化与表格边框。
+    estimateSize: () => 40,
     overscan: 6,
   });
   const items = virtualizer.getVirtualItems();
@@ -470,7 +472,7 @@ export function RecordsTable() {
                       <th
                         key={header.id}
                         scope="col"
-                        className="relative h-11 border-b px-3 text-xs font-medium"
+                        className="relative h-10 border-b px-3 py-1 text-xs font-medium"
                         aria-sort={
                           header.column.getCanSort()
                             ? header.column.getIsSorted() === "asc"
@@ -486,7 +488,7 @@ export function RecordsTable() {
                             data-surface="transparent"
                             data-variant="ghost"
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="inline-flex min-h-8 items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={header.column.getToggleSortingHandler()}
                           >
                             <table.FlexRender header={header} />
@@ -529,6 +531,7 @@ export function RecordsTable() {
                 <tr aria-hidden="true">
                   <td
                     colSpan={columns.length - hidden.size}
+                    className="border-0 p-0"
                     style={{ height: first.start }}
                   />
                 </tr>
@@ -536,6 +539,8 @@ export function RecordsTable() {
               {visible.map(({ row, index }) => (
                 <tr
                   key={row.id}
+                  ref={virtual ? virtualizer.measureElement : undefined}
+                  data-index={virtual ? index : undefined}
                   aria-rowindex={
                     virtual
                       ? index + 2
@@ -544,15 +549,14 @@ export function RecordsTable() {
                         index +
                         2
                   }
-                  className="border-b last:border-0 hover:bg-(--surface-state-hover)"
-                  style={{ height: 48 }}
+                  className="h-10 border-b last:border-0 hover:bg-(--surface-state-hover)"
                   data-state={row.getIsSelected() ? "selected" : undefined}
                 >
                   {row
                     .getAllCells()
                     .filter((cell) => !hidden.has(cell.column.id))
                     .map((cell) => (
-                      <td key={cell.id} className="truncate px-3 py-2">
+                      <td key={cell.id} className="truncate px-3 py-1">
                         <table.FlexRender cell={cell} />
                       </td>
                     ))}
@@ -562,6 +566,7 @@ export function RecordsTable() {
                 <tr aria-hidden="true">
                   <td
                     colSpan={columns.length - hidden.size}
+                    className="border-0 p-0"
                     style={{ height: virtualizer.getTotalSize() - last.end }}
                   />
                 </tr>

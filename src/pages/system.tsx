@@ -242,12 +242,12 @@ export default function System() {
               })}
             </HelpTooltip>
           </h2>
-          <code
+          <pre
             data-surface="reading"
-            className="block select-text break-all rounded p-3 text-xs"
+            className="select-text whitespace-pre-wrap break-all p-3 text-xs"
           >
-            {deepLink}
-          </code>
+            <code>{deepLink}</code>
+          </pre>
           <h3 className="text-sm font-medium">{t("system.events")}</h3>
           <ul
             className="h-24 space-y-2 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

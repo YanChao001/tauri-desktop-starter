@@ -67,7 +67,7 @@ export function CommandPalette() {
           <DialogDescription>{t("commands.description")}</DialogDescription>
         </DialogHeader>
         <Command loop label={t("commands.title")} className="flex flex-col">
-          <div className="flex items-center gap-2 border-b px-4 pr-12">
+          <div className="flex items-center gap-2 border-b px-4 py-1.5 pr-12">
             <SearchIcon
               className="size-4 shrink-0 text-muted-foreground"
               aria-hidden="true"
@@ -76,7 +76,7 @@ export function CommandPalette() {
               value={query}
               onValueChange={setQuery}
               data-surface="transparent"
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-(--glass-muted-foreground)"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-(--glass-muted-foreground)"
               placeholder={t("commands.placeholder")}
               aria-label={t("commands.title")}
             />

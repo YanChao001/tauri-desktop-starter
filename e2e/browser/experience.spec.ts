@@ -199,6 +199,125 @@ test("data tabs retain input; columns resize, hide and reveal a real record deta
   ).toHaveValue("Keep this input");
 });
 
+test("record measurements remain aligned through virtual scrolling, large text and pagination", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 880, height: 900 });
+  await seed(page, "dark", "reduced", { sidebarWidth: 360 });
+  const measurementWarnings: string[] = [];
+  const collectWarning = (message: string) => {
+    if (/Missing attribute name.*data-index|ResizeObserver/i.test(message))
+      measurementWarnings.push(message);
+  };
+  page.on("console", (message) => {
+    if (["warning", "error"].includes(message.type()))
+      collectWarning(message.text());
+  });
+  page.on("pageerror", (error) => collectWarning(error.message));
+  await page.goto("./#/data-studio");
+  const region = page.getByRole("region", { name: "Demo records" });
+  const rows = region.locator("tbody tr[aria-rowindex]");
+  const continuous = page.getByRole("checkbox", {
+    name: "Continuous scrolling",
+  });
+  await expect(rows).toHaveCount(20);
+  await page
+    .getByRole("checkbox", { name: "Select record 7", exact: true })
+    .check();
+  await continuous.check();
+  await expect(region.getByRole("table")).toHaveAttribute(
+    "aria-rowcount",
+    "10001",
+  );
+  const last = region.getByRole("cell", { name: "Demo 10000", exact: true });
+  const scrollToLast = async () => {
+    await region.scrollIntoViewIfNeeded();
+    await region.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(last).toBeVisible();
+    // 末段挂载后的真实行测量会修正总高度，再滚动到已稳定的末行以验证可达性。
+    await frames(page, 2);
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+    await expect
+      .poll(() =>
+        last.evaluate((cell) => {
+          const row = cell.closest("tr")!.getBoundingClientRect();
+          const container = cell
+            .closest('[role="region"]')!
+            .getBoundingClientRect();
+          return (
+            row.top >= container.top - 1 && row.bottom <= container.bottom + 1
+          );
+        }),
+      )
+      .toBe(true);
+    expect(await rows.count()).toBeLessThan(100);
+  };
+  await scrollToLast();
+
+  // 应用偏好对应的根属性，使同一个表格保持挂载，覆盖实际行测量和观察器启停。
+  await page.evaluate(() => {
+    document.documentElement.dataset.fontSize = "lg";
+  });
+  await frames(page, 2);
+  await scrollToLast();
+  const geometry = await rows.evaluateAll((elements) => {
+    const boxes = elements.map((element) => element.getBoundingClientRect());
+    return {
+      count: boxes.length,
+      maxGap: Math.max(
+        ...boxes
+          .slice(1)
+          .map((box, index) => Math.abs(box.top - boxes[index]!.bottom)),
+      ),
+      controlsFit: elements.every((element) => {
+        const row = element.getBoundingClientRect();
+        return [...element.querySelectorAll("button")].every((button) => {
+          const control = button.getBoundingClientRect();
+          return control.top >= row.top - 1 && control.bottom <= row.bottom + 1;
+        });
+      }),
+    };
+  });
+  expect(geometry.count).toBeGreaterThan(1);
+  expect(geometry.maxGap).toBeLessThanOrEqual(1);
+  expect(geometry.controlsFit).toBe(true);
+
+  await continuous.uncheck();
+  await expect(rows).toHaveCount(20);
+  await expect(rows.first()).toContainText("Demo 00001");
+  await page.evaluate(() => {
+    document.documentElement.dataset.fontSize = "md";
+    document.documentElement.dataset.font = "mono";
+  });
+  await frames(page, 2);
+  const filter = page.getByRole("searchbox", {
+    name: "Filter by name, email or team",
+  });
+  await filter.fill("Demo 00007");
+  await expect(rows).toHaveCount(1);
+  await expect(
+    page.getByRole("checkbox", { name: "Select record 7", exact: true }),
+  ).toBeChecked();
+  const detail = page.getByRole("button", {
+    name: "View record 7",
+    exact: true,
+  });
+  await detail.click();
+  await expect(page.getByRole("dialog")).toContainText("Demo 00007");
+  await page.keyboard.press("Escape");
+  await expect(detail).toBeFocused();
+  await filter.fill("");
+  await expect(rows).toHaveCount(20);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(rows.first()).toContainText("Demo 00021");
+  await expect(rows).toHaveCount(20);
+  await frames(page, 3);
+  expect(measurementWarnings).toEqual([]);
+});
+
 test("media sections load charts on demand and keep the local Markdown edit", async ({
   page,
 }) => {

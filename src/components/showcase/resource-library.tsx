@@ -212,7 +212,6 @@ export function ResourceLibrary({ active }: { active: boolean }) {
           onValueChange={(value) => {
             if (value) setLayout(value);
           }}
-          size="sm"
           variant="outline"
           aria-label={t("playground.layout")}
         >

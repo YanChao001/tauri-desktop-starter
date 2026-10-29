@@ -82,7 +82,7 @@ try {
     import { Badge } from ${sourcePath("src/components/ui/badge.tsx")};
     import { Input } from ${sourcePath("src/components/ui/input.tsx")};
     import { Textarea } from ${sourcePath("src/components/ui/textarea.tsx")};
-    import { Select, SelectTrigger, SelectValue } from ${sourcePath("src/components/ui/select.tsx")};
+    import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ${sourcePath("src/components/ui/select.tsx")};
     import { Checkbox } from ${sourcePath("src/components/ui/checkbox.tsx")};
     import { Switch } from ${sourcePath("src/components/ui/switch.tsx")};
     import { RadioGroup, RadioGroupItem } from ${sourcePath("src/components/ui/radio-group.tsx")};
@@ -120,7 +120,8 @@ try {
         <Switch id="host-switch" />
         <Checkbox id="host-indeterminate" checked="indeterminate" />
         <RadioGroup defaultValue="one"><RadioGroupItem id="host-radio" value="one" /></RadioGroup>
-        <Select defaultValue="one"><SelectTrigger id="host-select"><SelectValue>Select</SelectValue></SelectTrigger></Select>
+        <Select defaultValue="one"><SelectTrigger id="host-select"><SelectValue>Select</SelectValue></SelectTrigger><SelectContent><SelectItem value="one">Select</SelectItem><SelectItem value="two">Alternate</SelectItem></SelectContent></Select>
+        <Select defaultValue="geist"><SelectTrigger id="host-select-small" size="sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="geist">Geist</SelectItem><SelectItem value="system">System</SelectItem></SelectContent></Select>
         <Input id="host-input-disabled" disabled value="Disabled input" />
         <Textarea id="host-textarea-disabled" disabled value="Disabled textarea" />
         <Select defaultValue="one" disabled><SelectTrigger id="host-select-disabled"><SelectValue>Disabled select</SelectValue></SelectTrigger></Select>
@@ -882,6 +883,48 @@ try {
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
+  const checkSelectTypography = async (fontSize, lineHeight) => {
+    const trigger = page.locator("#host-select");
+    const sdkSelect = frame.locator("#sdk-select");
+    const typography = ["fontSize", "lineHeight", "fontFamily"];
+    await expect(trigger).toHaveCSS("font-size", fontSize);
+    await expect(trigger).toHaveCSS("line-height", lineHeight);
+    const expected = await measure(trigger, typography);
+    // 原生单选框保留平台 appearance；Chromium 将其计算行高报告为 normal。
+    // 原生框比较字体与实际高度，真实 HTML 弹层仍完整检查字号与行高。
+    const nativeTypography = ["fontSize", "fontFamily"];
+    const nativeExpected = await measure(trigger, nativeTypography);
+    await expect
+      .poll(() => measure(sdkSelect, nativeTypography))
+      .toEqual(nativeExpected);
+    await expect(sdkSelect).toHaveCSS("height", "32px");
+    for (const id of ["host-select", "host-input", "host-button"])
+      await expect(page.locator(`#${id}`)).toHaveCSS("height", "32px");
+    await expect(page.locator("#host-select-small")).toHaveCSS(
+      "height",
+      "28px",
+    );
+    for (const id of ["host-select", "host-select-small"]) {
+      const control = page.locator(`#${id}`);
+      await expect.poll(() => measure(control, typography)).toEqual(expected);
+      await control.focus();
+      await control.press("ArrowDown");
+      const hostOption = page.locator('[data-slot="select-item"]').first();
+      await expect(hostOption).toHaveCount(1);
+      await expect
+        .poll(() => measure(hostOption, typography))
+        .toEqual(expected);
+      await page.keyboard.press("Escape");
+      await expect(page.locator('[data-slot="select-content"]')).toHaveCount(0);
+    }
+    await sdkSelect.focus();
+    await sdkSelect.press("ArrowDown");
+    const sdkOption = frame.locator("[data-starter-option]").first();
+    await expect(sdkOption).toHaveCount(1);
+    await expect.poll(() => measure(sdkOption, typography)).toEqual(expected);
+    await sdkSelect.press("Escape");
+    await expect(frame.locator("[data-starter-listbox]")).toHaveCount(0);
+  };
   await flushFrames();
   const wideMessages = await themeMessages();
   await page.setViewportSize({ width: 900, height: 800 });
@@ -898,6 +941,7 @@ try {
     wideMessages,
     "resizing within the host breakpoint must not resend theme/font data",
   );
+  await checkSelectTypography("14px", "20px");
   await page.setViewportSize({ width: 360, height: 800 });
   await page.locator("#sdk-region").evaluate((node) => {
     node.style.width = "300px";
@@ -905,14 +949,16 @@ try {
   await expect(frame.locator("#sdk-input")).toHaveCSS("font-size", "16px");
   await compare("input", "input", fieldProperties);
   await compare("textarea", "textarea", fieldProperties);
-  await expect(frame.locator("#sdk-select")).toHaveCSS("font-size", "14px");
+  await expect(frame.locator("#sdk-select")).toHaveCSS("font-size", "16px");
   await expect(frame.locator("#sdk-button")).toHaveCSS("font-size", "14px");
   await expect.poll(themeMessages).toBe(wideMessages + 1);
+  await checkSelectTypography("16px", "24px");
   await page.setViewportSize({ width: 900, height: 800 });
   await expect(frame.locator("#sdk-input")).toHaveCSS("font-size", "14px");
   await compare("input", "input", fieldProperties);
   await compare("textarea", "textarea", fieldProperties);
   await expect.poll(themeMessages).toBe(wideMessages + 2);
+  await checkSelectTypography("14px", "20px");
   assert.equal(await originalFrame.evaluate((node) => node.isConnected), true);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator("#sdk-region").evaluate((node) => {

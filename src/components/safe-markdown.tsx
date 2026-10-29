@@ -9,7 +9,7 @@ import { useI18n } from "@/providers/i18n";
 export function SafeMarkdown({ content }: { content: string }) {
   const { t } = useI18n();
   return (
-    <div className="min-w-0 space-y-3 break-words text-sm [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_a]:text-(--surface-link-foreground) [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:p-3 [&_table]:w-full [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2">
+    <div className="min-w-0 space-y-3 break-words text-sm [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_a]:text-(--surface-link-foreground) [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:p-3">
       <Markdown
         remarkPlugins={[remarkGfm]}
         skipHtml
@@ -20,9 +20,11 @@ export function SafeMarkdown({ content }: { content: string }) {
               role="region"
               aria-label={t("labs.media.table")}
               tabIndex={0}
-              className="max-w-full overflow-x-auto rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-w-0 max-w-full overflow-auto rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <table>{children}</table>
+              <table className="w-full border-collapse [&_td]:border-0 [&_td]:border-t [&_td]:p-2 [&_td+td]:border-l [&_th]:border-0 [&_th]:p-2 [&_th+th]:border-l">
+                {children}
+              </table>
             </div>
           ),
           pre: ({ node }) => {

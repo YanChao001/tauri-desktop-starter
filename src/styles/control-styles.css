@@ -345,8 +345,13 @@
     [type="submit"],
     [type="reset"]
   ),
-  textarea
+  textarea,
+  select,
+  [data-slot="select-trigger"],
+  .ui-select,
+  [data-slot="select-content"]
 ) {
+  /* 弹层会移至 Portal，显式共享宿主字号，不从页面或 iframe 宽度重新推断。 */
   font-size: var(--control-input-font-size, 0.875rem);
   line-height: var(--control-input-line-height, 1.25rem);
 }
@@ -383,8 +388,8 @@
   backdrop-filter: blur(var(--surface-popup-blur, 0px));
   color: var(--popover-foreground, var(--foreground, CanvasText));
   font: inherit;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: var(--control-input-font-size, 0.875rem);
+  line-height: var(--control-input-line-height, 1.25rem);
   box-shadow: 0 4px 12px #0002;
   overscroll-behavior: contain;
 }

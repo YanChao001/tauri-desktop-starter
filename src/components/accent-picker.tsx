@@ -87,7 +87,6 @@ export function AccentPicker() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
               aria-pressed={settings.accent === "custom"}
               className={cn(
                 "ml-auto",
@@ -131,7 +130,7 @@ export function AccentPicker() {
                   data-color-picker-preview
                   data-surface="artwork"
                   aria-hidden="true"
-                  className="size-9 shrink-0 rounded-md border"
+                  className="size-8 shrink-0 rounded-md border"
                   style={{
                     backgroundColor: normalized ?? hslToHex(draft.color),
                   }}
@@ -158,7 +157,7 @@ export function AccentPicker() {
                     spellCheck={false}
                     aria-invalid={invalid}
                     aria-describedby={invalid ? `${id}-error` : undefined}
-                    className="h-9 font-mono"
+                    className="font-mono"
                   />
                 </div>
               </div>
