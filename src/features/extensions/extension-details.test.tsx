@@ -74,6 +74,9 @@ it("keeps optional grants explicit and supports selecting, partially selecting a
   const storage = within(group).getByRole("checkbox", {
     name: en["ext.permission.storage"],
   });
+  expect(storage).toHaveAccessibleDescription(
+    en["ext.permissionDescription.storage"],
+  );
   expect(changed).not.toHaveBeenCalled();
   for (const checkbox of within(group).getAllByRole("checkbox"))
     expect(checkbox).not.toBeChecked();
@@ -131,6 +134,7 @@ it("also offers select all for one optional capability without granting it by de
 });
 
 it("reflects existing partial grants and disables the group while an operation is pending", async () => {
+  const user = userEvent.setup();
   const changed = renderConsent({
     initial: ["text:read", "storage"],
     disabled: true,
@@ -141,6 +145,8 @@ it("reflects existing partial grants and disables the group while an operation i
   expect(all).toBePartiallyChecked();
   for (const checkbox of screen.getAllByRole("checkbox"))
     expect(checkbox).toBeDisabled();
+  await user.click(all);
+  await user.click(screen.getByText(en["ext.permission.storage"]));
   expect(changed).not.toHaveBeenCalled();
 });
 
@@ -163,7 +169,7 @@ it("keeps required capabilities separate and omits consent controls in read-only
   ).not.toBeInTheDocument();
 });
 
-it("keeps source limitations and permissions visible while technical identifiers stay collapsed", async () => {
+it("keeps source and permissions visible, with useful technical fields collapsed and no hashes or fingerprints", async () => {
   const user = userEvent.setup();
   const fingerprint = "b".repeat(64);
   render(
@@ -199,11 +205,8 @@ it("keeps source limitations and permissions visible while technical identifiers
   expect(screen.getByText(en["ext.source.market"])).toBeVisible();
   expect(screen.getByText(en["ext.source.marketHint"])).toBeVisible();
   expect(screen.getByText(en["ext.permission.text:read"])).toBeVisible();
-  expect(screen.getByText("Open workspace")).toBeVisible();
   for (const technical of [
     value.manifest.id,
-    value.sha256,
-    fingerprint,
     "example/extensions",
     "https://service.example",
     "Open workspace (json → view)",
@@ -216,11 +219,51 @@ it("keeps source limitations and permissions visible while technical identifiers
       }),
     ).not.toBeVisible();
   }
+  expect(screen.queryByText(value.sha256)).not.toBeInTheDocument();
+  expect(screen.queryByText(fingerprint)).not.toBeInTheDocument();
   await user.click(screen.getByText(en["ext.technicalInfo"]));
   expect(screen.getByText(value.manifest.id)).toBeVisible();
-  expect(screen.getByText(value.sha256)).toBeVisible();
-  expect(screen.getByText(fingerprint)).toBeVisible();
+  expect(screen.getByText(value.manifest.minHostVersion)).toBeVisible();
+  expect(screen.getByText("example/extensions")).toBeVisible();
+  expect(screen.getByText("https://service.example · GET")).toBeVisible();
   expect(screen.getByText("Open workspace (json → view)")).toBeVisible();
+  expect(screen.queryByText(value.sha256)).not.toBeInTheDocument();
+  expect(screen.queryByText(fingerprint)).not.toBeInTheDocument();
+});
+
+it("names each optional control separately from its description and retains extension-wide networking scope", () => {
+  renderConsent({
+    preview: {
+      ...value,
+      manifest: {
+        ...value.manifest,
+        optionalPermissions: [
+          "network:images",
+          "network:system-proxy",
+          "messaging:lan",
+        ],
+      },
+    },
+  });
+  for (const permission of [
+    "network:images",
+    "network:system-proxy",
+    "messaging:lan",
+  ] as const) {
+    const checkbox = screen.getByRole("checkbox", {
+      name: en[`ext.permission.${permission}`],
+    });
+    expect(checkbox).toHaveAccessibleDescription(
+      en[`ext.permissionDescription.${permission}`],
+    );
+    expect(checkbox).not.toBeChecked();
+  }
+  expect(screen.getByText(en["ext.permissionScopeHint"])).toBeVisible();
+  expect(
+    screen.getByRole("group", { name: en["ext.requiredPermissions"] }),
+  ).not.toContainElement(
+    screen.getByRole("group", { name: en["ext.optionalPermissions"] }),
+  );
 });
 
 it("omits repeated identity in installed details and shows which optional permissions are allowed", () => {

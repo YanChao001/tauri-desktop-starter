@@ -108,11 +108,11 @@ export const zhExtensions = {
     "需要时再调整此扩展保存的本机数据或网络服务连接。",
   "ext.technicalInfo": "技术信息",
   "ext.identifier": "扩展标识",
-  "ext.technicalCommands": "功能调用格式",
+  "ext.technicalCommands": "功能接口",
   "ext.features": "提供的功能",
   "ext.appSessionHint":
     "同一窗口切换导航会保留进度；导出会话后，可在相同包版本中导入恢复。插件私有存储在重启后保留；结束会话仅清空本次输入、进度和结果。",
-  "ext.noPermissions": "没有必需权限，可自行决定是否允许可选项目。",
+  "ext.noPermissions": "无需额外权限。",
   "ext.appLoad": "加载应用",
   "ext.appWorking": "正在处理…",
   "ext.appStatus": "运行状态",
@@ -145,18 +145,15 @@ export const zhExtensions = {
   "ext.host": "运行框架",
   "ext.empty": "还没有安装扩展。可以恢复内置工作台，或从文件安装你信任的扩展。",
   "ext.review": "审阅扩展包",
-  "ext.author": "作者（自行声明）",
+  "ext.author": "作者",
   "ext.version": "版本",
   "ext.permissions": "声明用途与宿主数据访问",
-  "ext.hash": "Wasm 模块 SHA-256",
-  "ext.hashHint": "内容哈希用于识别文件与发现修改，不证明作者身份或程序可信。",
-  "ext.bytes": "Wasm 模块：{bytes} 字节",
   "ext.install": "安装并启用",
   "ext.installConsent":
-    "确认后即启用扩展，并授予上方列出的必需权限及你勾选的可选权限。你可以随时修改授权或停用。",
+    "确认后启用扩展，并授予必需权限和所选可选权限；可随时调整或停用。",
   "ext.upgrade": "升级并启用",
   "ext.upgradeHint":
-    "当前版本 {version}。请审阅新版本来源及权限；确认后原子地更新并启用，旧版本保留用于回退。",
+    "当前版本 {version}。确认后更新并启用，保留上一版本供恢复。",
   "ext.enable": "启用",
   "ext.disable": "禁用",
   "ext.enabled": "已启用",
@@ -164,12 +161,9 @@ export const zhExtensions = {
   "ext.enableTitle": "确认信任与用途",
   "ext.trust":
     "我信任此扩展的来源，并同意向它提供已授权的内容。我了解作者身份尚未经过核实。",
-  "ext.grantHint":
-    "查看扩展需要哪些权限，再选择你愿意允许的项目。以后可以在更多操作中更改权限。",
-  "ext.permission.files:read":
-    "读取你分享的文件：仅接收你主动选择并确认发送的文件内容。",
-  "ext.permission.network:https":
-    "访问指定网络服务：与扩展声明的互联网服务获取或发送数据。",
+  "ext.grantHint": "查看必需权限，并按需选择可选权限。",
+  "ext.permission.files:read": "读取所选文件",
+  "ext.permission.network:https": "访问指定网络服务",
   "ext.allowedHosts": "声明的网络来源与方法",
   "ext.uninstall": "卸载",
   "ext.uninstallTitle": "卸载此扩展？",
@@ -211,7 +205,7 @@ export const zhExtensions = {
     "审阅包 → 授权启用 → 执行 Wasm 命令 → 停止与卸载。",
   "experience.extensions.1": "检查内置工作台",
   "experience.extensions.1Hint":
-    "在已安装扩展中查看工作台的命令、权限和哈希；也可导入第三方 Wasm 包，安装不会执行插件。",
+    "查看工作台的功能与权限，或导入第三方 Wasm 包。安装不会执行插件。",
   "experience.extensions.2": "确认信任并启用",
   "experience.extensions.2Hint":
     "审阅后点击“安装并启用”完成授权。内置工作台首次预置时需单独启用；命令随后出现在命令面板中。",
@@ -227,8 +221,7 @@ export const zhExtensions = {
   "ext.inputFormat": "输入格式",
   "ext.resultFormat": "结果格式",
   "ext.commands": "扩展命令",
-  "ext.permission.text:read":
-    "读取你发送的文字：接收你为本次操作输入并发送的文字。",
+  "ext.permission.text:read": "读取提交的文字",
   "ext.bundledHint":
     "应用自带的本地工作台已安装，启用后可从侧栏打开，也可使用独立窗口。卸载后不会自动重装。",
   "ext.hostData": "宿主数据 · 显式发送",
@@ -244,22 +237,19 @@ export const zhExtensions = {
     "扩展未启用、已卸载，或这个应用命令已失效。请在扩展中心检查状态。",
   "ext.restoreLab": "恢复内置工作台",
   "ext.minHostVersion": "最低宿主版本",
-  "ext.requiredPermissions": "使用时需要的权限",
-  "ext.optionalPermissions": "你可以选择允许",
-  "ext.optionalPermissionsHint":
-    "按需开启；未允许的相关功能将不可用，以后可以更改。",
-  "ext.selectAllOptionalPermissions": "允许所有可选权限",
+  "ext.requiredPermissions": "必需权限",
+  "ext.optionalPermissions": "可选权限",
+  "ext.optionalPermissionsHint": "未授权的相关功能不可用，可稍后更改。",
+  "ext.selectAllOptionalPermissions": "全选",
   "ext.permissionAllowed": "已允许",
   "ext.permissionNotAllowed": "未允许",
   "ext.permissionScopeHint":
-    "权限适用于整个扩展。允许联网后，扩展可以将你交给它的内容发送到获准访问的服务。",
+    "权限适用于整个扩展。获准联网后，可向允许的服务发送你提供的内容。",
   "ext.managePermissions": "管理权限",
   "ext.savePermissions": "保存权限",
   "ext.limitedCommands": "当前可使用 {total} 项功能中的 {available} 项。",
-  "ext.permission.network:local":
-    "连接本机服务：仅连接在这台电脑上运行的指定服务，不访问其他局域网设备。",
-  "ext.permission.storage":
-    "保存扩展数据：在这台电脑上保存，重启后仍保留。数据不加密，卸载时不会自动删除。",
+  "ext.permission.network:local": "连接本机服务",
+  "ext.permission.storage": "保存扩展数据",
   "ext.queueSummary": "共 {count} 项操作正在排队或运行",
   "ext.queued": "正在排队，等待运行名额…",
   "ext.storage": "插件私有存储",
@@ -300,25 +290,38 @@ export const zhExtensions = {
   "ext.switchCommandHint":
     "放弃当前命令尚未导出的输入和结果？如需保留，请先导出会话。",
   "ext.source": "安装来源",
-  "ext.source.market": "来自扩展市场",
+  "ext.source.market": "扩展市场",
   "ext.source.bundled": "随应用提供",
-  "ext.source.local": "从本机文件安装",
+  "ext.source.local": "本地文件",
   "ext.source.marketHint":
-    "已核对与市场发布的扩展包一致。作者信息由发布者填写，来源核对不代表安全保证。",
-  "ext.source.bundledHint":
-    "此扩展随应用提供。作者信息为扩展自行声明，请只授予需要的权限。",
-  "ext.source.localHint": "文件来源和作者身份未经核实，请仅使用你信任的扩展。",
-  "ext.source.key": "市场签名公钥指纹：",
-  "ext.permission.messaging:lan":
-    "内网通信：由你主动开启或连接，与本地网络设备收发文字、图片和文件并保存记录；文件由你选择发送或另存。通信不加密，也不验证对方身份。",
-  "ext.permission.wallpapers:manage":
-    "管理图库和应用背景：导入、改名或删除本机图库图片，更换本应用背景；不更改电脑桌面壁纸，也不包含联网。",
-  "ext.permission.network:images":
-    "下载互联网图片：从任意公开的 HTTPS 地址下载、预览或另存图片。图片网址本身也可能向网站发送信息。",
-  "ext.permission.network:system-proxy":
-    "使用电脑的代理设置：让已允许的网络请求通过代理中转。代理可能在本机或内网，应用无法核实它最终连接的地址。",
-  "ext.permission.links:open":
-    "在浏览器打开网页：允许扩展在默认浏览器打开公开的 HTTPS 网页。",
-  "ext.permission.window:control":
-    "插件窗口置顶：读取或更改此插件自身独立窗口的置顶状态。",
+    "已核对与市场发布的扩展包一致；作者信息由发布者提供，不代表安全保证。",
+  "ext.source.bundledHint": "作者信息由扩展提供。",
+  "ext.source.localHint": "本地文件的来源及作者身份未经核实。",
+  "ext.permission.messaging:lan": "内网通信",
+  "ext.permission.wallpapers:manage": "管理图库与应用背景",
+  "ext.permission.network:images": "下载网络图片",
+  "ext.permission.network:system-proxy": "使用系统代理",
+  "ext.permission.links:open": "打开网页",
+  "ext.permission.window:control": "窗口置顶",
+  "ext.reviewDescription": "确认来源并选择可选权限。",
+  "ext.updated": "已将 {name} 更新至 {version}。",
+  "ext.permissionDescription.text:read": "仅接收你为操作输入并提交的文字。",
+  "ext.permissionDescription.files:read":
+    "仅接收你主动选择并确认共享的文件内容。",
+  "ext.permissionDescription.network:https": "与扩展声明的互联网服务收发数据。",
+  "ext.permissionDescription.network:local":
+    "连接这台电脑上的指定服务，不访问其他局域网设备。",
+  "ext.permissionDescription.storage":
+    "在本机保存未加密数据，重启和卸载后仍保留。",
+  "ext.permissionDescription.messaging:lan":
+    "由你开启或连接，收发文字、图片和文件并保存记录；文件由你选择发送或另存。通信不加密，不验证对方身份。",
+  "ext.permissionDescription.wallpapers:manage":
+    "导入、改名或删除图库图片，更换本应用背景；不更改桌面壁纸，不包含联网。",
+  "ext.permissionDescription.network:images":
+    "从任意公开 HTTPS 地址下载、预览或另存图片；图片网址也可能向网站发送信息。",
+  "ext.permissionDescription.network:system-proxy":
+    "让获准请求通过系统代理中转。代理可能在本机或内网，最终连接地址无法核实。",
+  "ext.permissionDescription.links:open": "在默认浏览器打开公开的 HTTPS 网页。",
+  "ext.permissionDescription.window:control":
+    "读取或更改此插件自身独立窗口的置顶状态。",
 } as const;

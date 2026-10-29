@@ -658,15 +658,15 @@ export async function checkPermissionConsent(
       ? {
           manage: "管理权限",
           moreActions: `${manifest.name}的更多操作`,
-          group: "你可以选择允许",
-          all: "允许所有可选权限",
+          group: "可选权限",
+          all: "全选",
           cancel: "取消",
         }
       : {
           manage: "Manage permissions",
           moreActions: `More actions for ${manifest.name}`,
-          group: "You can choose to allow",
-          all: "Allow all optional permissions",
+          group: "Optional permissions",
+          all: "Select all",
           cancel: "Cancel",
         };
   const card = page.locator("article").filter({
@@ -688,12 +688,17 @@ export async function checkPermissionConsent(
   const individual = group.locator("li").getByRole("checkbox");
   await expect(individual).toHaveCount(manifest.optionalPermissions.length);
   await expect(all).toBeVisible();
-  const alignment = await group.locator("label").evaluateAll((nodes) =>
+  const alignment = await group.locator("li").evaluateAll((nodes) =>
     nodes.map((node) => {
       const checkbox = node.querySelector('[role="checkbox"]');
-      const text = node.querySelector(":scope > span");
+      const text = node.querySelector("label");
+      const description = document.getElementById(
+        checkbox.getAttribute("aria-describedby"),
+      );
       const box = checkbox.getBoundingClientRect();
       const span = text.getBoundingClientRect();
+      const detail = description.getBoundingClientRect();
+      const row = node.getBoundingClientRect();
       const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
       return {
         checkboxTop: box.top,
@@ -705,20 +710,20 @@ export async function checkPermissionConsent(
         alignmentError: Math.abs(
           box.top - span.top - (lineHeight - box.height) / 2,
         ),
+        textWithinRow: span.left >= row.left && span.right <= row.right + 1,
+        descriptionWithinRow:
+          detail.left >= span.left - 1 && detail.right <= row.right + 1,
+        overflow: Math.max(0, node.scrollWidth - node.clientWidth),
       };
     }),
   );
   for (const row of alignment) {
     expect(row.alignmentError).toBeLessThanOrEqual(1);
     expect(row.gap).toBeGreaterThan(0);
+    expect(row.textWithinRow).toBe(true);
+    expect(row.descriptionWithinRow).toBe(true);
+    expect(row.overflow).toBeLessThanOrEqual(1);
   }
-  if (
-    page.viewportSize().width <= 400 &&
-    manifest.optionalPermissions.length > 1
-  )
-    expect(alignment.some((row) => row.textHeight > row.lineHeight + 1)).toBe(
-      true,
-    );
   if ((await all.getAttribute("aria-checked")) === "true") await all.click();
   await all.click();
   await expect(all).toBeChecked();

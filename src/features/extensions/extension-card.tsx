@@ -79,11 +79,14 @@ export function ExtensionCard({
     );
   function selectAction(action: () => void) {
     // 确认框记录持久存在的菜单按钮，关闭后可以准确恢复焦点。
-    menuTrigger.current?.focus();
+    menuTrigger.current?.focus({ preventScroll: true });
     action();
   }
   return (
-    <article className="row-span-3 grid min-w-0 grid-cols-1 grid-rows-subgrid gap-4 rounded-xl border app-surface p-4">
+    <article
+      tabIndex={-1}
+      className="row-span-3 grid min-w-0 grid-cols-1 grid-rows-subgrid gap-4 rounded-xl border app-surface p-4"
+    >
       <div className="flex items-start gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <span className="shrink-0 rounded-2xl bg-primary/10 p-4 text-primary">
@@ -255,7 +258,7 @@ export function ExtensionCard({
           <summary className="cursor-pointer text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
             {t("ext.details")}
           </summary>
-          <div className="space-y-3 pt-3">
+          <div className="border-t p-3">
             <ExtensionDetails
               value={item.package}
               origin={item.origin}
