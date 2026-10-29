@@ -185,7 +185,7 @@ const base = import.meta.env.VITE_API_BASE;
 
 仓库已包含 [launch.json](../.vscode/launch.json) 与 [tasks.json](../.vscode/tasks.json)。安装推荐的 CodeLLDB，按 F5 选择：
 
-- `Desktop: Rust + WebView`：先启动 Vite 后用 Cargo 构建并在 LLDB 下运行原生主程序，可在 Rust 文件设断点；二进制由 Cargo 元数据选择，不硬编码品牌文件名。
+- `Desktop: Rust + WebView`：先启动 Vite 后用 Cargo 构建并在 LLDB 下运行原生主程序，可在 Rust 文件设断点；`--bin` 选定应用目标，实际二进制路径由 Cargo 返回。项目初始化同步目标包名，避免误选扩展开发工具。
 - `Frontend: Chrome`：先启动 Vite，再启动浏览器调试会话，支持 TS / TSX 断点；此模式无原生能力。
 
 后台任务等待 Vite 的 1420 就绪提示后才启动调试；已有服务占用端口时先确认归属并停止自己的开发任务。Cargo 调试绕过 Tauri CLI 的专属构建流程，依赖平台配置或安装器行为时仍使用 `pnpm app:dev` / 正式构建验证。F5 不会自动重启正在调试的 Rust 进程，改 Rust 后重新开始调试。

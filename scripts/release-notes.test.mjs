@@ -165,6 +165,20 @@ test("long updater notes retain summary, breaking changes and limitations", () =
   assert.equal(updaterReleaseNotes("原有说明", options), "原有说明");
 });
 
+test("unstructured updater notes reserve space for the complete release URL", () => {
+  const repository = `${"o".repeat(39)}/${"r".repeat(100)}`;
+  const notes = updaterReleaseNotes("a".repeat(9000), {
+    version: "1.2.3",
+    repository,
+  });
+  assert.ok(notes.length <= 8000);
+  assert.ok(
+    notes.endsWith(
+      `完整说明：https://github.com/${repository}/releases/tag/v1.2.3`,
+    ),
+  );
+});
+
 test("all Conventional Commit types and breaking footers remain visible and escaped", () => {
   const messages = [
     "feat(api)!: 修改接口\n\nBREAKING CHANGE: 先导出原始数据\n  再手动导入\nRefs: #42",

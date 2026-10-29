@@ -25,7 +25,12 @@ jobs:
 
       # 只读锁文件，不需要安装依赖。发现漏洞时退出码非零
       - name: 审计 npm 依赖
-        run: pnpm audit
+        run: |
+          status=0
+          for directory in . examples/extensions; do
+            pnpm --dir "$directory" audit || status=1
+          done
+          exit "$status"
 
   cargo-audit:
     name: Rust 依赖审计
@@ -42,4 +47,9 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: 审计 Rust 依赖
-        run: cargo audit --file src-tauri/Cargo.lock
+        run: |
+          status=0
+          for lockfile in src-tauri/Cargo.lock examples/extensions/apps/Cargo.lock examples/extensions/rust/Cargo.lock; do
+            cargo audit --file "$lockfile" || status=1
+          done
+          exit "$status"

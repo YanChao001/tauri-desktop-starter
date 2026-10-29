@@ -222,5 +222,5 @@ export function updaterReleaseNotes(body, { version, repository }) {
       return `${concise}\n\n${link}`;
     return `发布说明较长，请先阅读完整变更与升级限制。\n\n${link}`;
   }
-  return `${notes.slice(0, 7900)}…\n\n${link}`;
+  return `${notes.slice(0, Math.max(0, 8000 - link.length - 3))}…\n\n${link}`;
 }
