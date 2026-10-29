@@ -112,14 +112,18 @@ export function ExtensionCustomUi({
     };
   }, [active]);
   const [theme, setTheme] = useState(() => readTheme(settings.motion));
-  // Synchronize external root attributes once per palette change, rather than on each field edit.
+  // 外部根属性按外观变化同步，普通字段编辑不重新读取整份主题。
   useLayoutEffect(() => {
     if (!active) return;
     const next = readTheme(settings.motion);
-    // 回到缓存页面时重新读取外观；值未变则沿用引用，避免重新复制字体与主题。
+    // 回到缓存页面时重读外观；仅完整快照不变才复用，删除变量与共享规则更新也须发送。
     setTheme((current) =>
       current.mode === next.mode &&
       current.motion === next.motion &&
+      current.styles === next.styles &&
+      current.font.family === next.font.family &&
+      current.font.dataUrl === next.font.dataUrl &&
+      Object.keys(current.tokens).length === Object.keys(next.tokens).length &&
       Object.entries(next.tokens).every(
         ([name, value]) => current.tokens[name] === value,
       )

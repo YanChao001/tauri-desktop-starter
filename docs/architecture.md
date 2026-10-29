@@ -66,7 +66,7 @@ DemoMotion / useDemoMotion 协调用户偏好、系统减少动效、文档可�
 
 AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留最近使用的最多 3 个插件页面；容器按稳定 DOM 顺序挂载，非当前页面使用 `hidden` / `inert`，避免重排 iframe 导致重建。活动状态控制隐藏页面的请求、轮询、语言刷新、尺寸观察和首屏计时；LRU 移出只释放界面与端口，会话缓存仍保护未保存草稿和在途操作。包身份失效、禁用或必需授权撤销立即释放旧界面，可选授权变化同步最新快照。限额、兼容与取舍见 [ADR 0016](./adr/0016-retain-extension-surfaces.md)，具体契约见 [自定义界面](./extensions.md#自定义界面)。
 
-会话缓存只回收非活动的干净工作，凭据系统调用按插件协调，不持全局注册表锁等待外部服务。宿主与隔离 HTML 共用原生 CSS 的材质配置和完整控件规则，`ExtensionCustomUi` 将相同样式文本与自动收集的主题变量经现有主题快照发送；SDK 不维护另一份控件 CSS，不按当前 DOM 裁剪。Shadow DOM 由作者显式接入，不共享宿主组件实例。SDK 公共 DTO 从 Rust 生成绑定提取闭合依赖，独立插件开发无需引用宿主源码树；公开入口与一致性边界见 [界面 SDK](../sdk/README.md)，取舍见 [ADR 0022](./adr/0022-shared-control-materials.md)。
+会话缓存只回收非活动的干净工作，凭据系统调用按插件协调，不持全局注册表锁等待外部服务。宿主与隔离 HTML 共用原生 CSS 的材质配置和完整控件规则；[ui-theme.ts](../src/lib/ui-theme.ts) 装配同一原文，`ExtensionCustomUi` 在嵌入页与独立窗口中将样式及自动收集的主题变量经现有主题快照发送。SDK 不维护另一份控件 CSS，不按当前 DOM 裁剪；Shadow DOM 由作者显式接入，不共享宿主组件实例。内置和市场插件的普通 UI 一致性、布局职责与明确设计例外由 [共同外观规范](./conventions/ui-guidelines.md#宿主与插件的共同外观) 维护，运行时同步及注入边界见 [界面 SDK](../sdk/README.md#默认外观与动效)，取舍见 [ADR 0022](./adr/0022-shared-control-materials.md)。SDK 公共 DTO 从 Rust 生成绑定提取闭合依赖，独立插件开发无需引用宿主源码树。
 
 命令清单可选择标准或计算预算；原生执行、效果往返、离线 CLI 与预编译均使用已校验清单的档位，编译缓存按预算区分。选择只改变有界 Wasm fuel，不新增权限或延长墙钟；版本与限额见[扩展指南](./extensions.md#执行存储与生命周期)，取舍见 [ADR 0019](./adr/0019-bounded-extension-compute.md)。
 

@@ -56,8 +56,12 @@ try {
       <button id="sdk-link" type="button" data-variant="link">Link</button>
       <button id="sdk-disabled" disabled>Disabled</button>
       <input id="sdk-input" placeholder="Input"><input id="sdk-invalid" aria-invalid="true">
+      <label id="sdk-nested-label">Nested input<input id="sdk-nested-input" placeholder="Nested input"></label>
       <textarea id="sdk-textarea" placeholder="Textarea"></textarea>
       <select id="sdk-select"><option>Select</option></select>
+      <div role="tablist"><button id="sdk-tab" role="tab" aria-selected="true">Selected tab</button></div>
+      <button id="sdk-toggle" class="ui-toggle" data-surface="transparent" aria-pressed="true">Selected toggle</button>
+      <div id="sdk-tooltip" role="tooltip">Shared tooltip</div>
       <input id="sdk-input-disabled" disabled value="Disabled input">
       <textarea id="sdk-textarea-disabled" disabled>Disabled textarea</textarea>
       <select id="sdk-select-disabled" disabled><option>Disabled select</option></select>
@@ -81,12 +85,15 @@ try {
     import { Button } from ${sourcePath("src/components/ui/button.tsx")};
     import { Badge } from ${sourcePath("src/components/ui/badge.tsx")};
     import { Input } from ${sourcePath("src/components/ui/input.tsx")};
+    import { Label } from ${sourcePath("src/components/ui/label.tsx")};
     import { Textarea } from ${sourcePath("src/components/ui/textarea.tsx")};
     import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ${sourcePath("src/components/ui/select.tsx")};
     import { Checkbox } from ${sourcePath("src/components/ui/checkbox.tsx")};
     import { Switch } from ${sourcePath("src/components/ui/switch.tsx")};
     import { RadioGroup, RadioGroupItem } from ${sourcePath("src/components/ui/radio-group.tsx")};
     import { Tabs, TabsList, TabsTrigger } from ${sourcePath("src/components/ui/tabs.tsx")};
+    import { Toggle } from ${sourcePath("src/components/ui/toggle.tsx")};
+    import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from ${sourcePath("src/components/ui/tooltip.tsx")};
     import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from ${sourcePath("src/components/ui/dialog.tsx")};
     import { ExtensionCustomUi } from ${sourcePath("src/features/extensions/extension-custom-ui.tsx")};
     import { applySettings, DEFAULT_SETTINGS, type Accent } from ${sourcePath("src/lib/settings-model.ts")};
@@ -101,6 +108,12 @@ try {
         </DialogContent>
       </Dialog>;
     }
+    function HostTooltipProbe() {
+      return <TooltipProvider delayDuration={0}><Tooltip>
+        <TooltipTrigger asChild><Button id="host-tooltip-open">Show tooltip</Button></TooltipTrigger>
+        <TooltipContent id="host-tooltip">Shared tooltip</TooltipContent>
+      </Tooltip></TooltipProvider>;
+    }
     createRoot(document.getElementById("root")!).render(
       <><main className="app-main" style={{inset:"16px auto auto 16px",width:320,display:"grid",gap:12}}>
         <Button id="host-button">Button</Button>
@@ -113,6 +126,7 @@ try {
         <Button id="host-link" variant="link">Link</Button>
         <Button id="host-disabled" disabled>Disabled</Button>
         <Input id="host-input" placeholder="Input" />
+        <Label id="host-nested-label">Nested input<Input id="host-nested-input" placeholder="Nested input" /></Label>
         <Input id="host-invalid" aria-invalid="true" />
         <Textarea id="host-textarea" placeholder="Textarea" />
         <Checkbox id="host-checkbox" defaultChecked />
@@ -122,6 +136,8 @@ try {
         <RadioGroup defaultValue="one"><RadioGroupItem id="host-radio" value="one" /></RadioGroup>
         <Select defaultValue="one"><SelectTrigger id="host-select"><SelectValue>Select</SelectValue></SelectTrigger><SelectContent><SelectItem value="one">Select</SelectItem><SelectItem value="two">Alternate</SelectItem></SelectContent></Select>
         <Select defaultValue="geist"><SelectTrigger id="host-select-small" size="sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="geist">Geist</SelectItem><SelectItem value="system">System</SelectItem></SelectContent></Select>
+        <Tabs defaultValue="one"><TabsList><TabsTrigger id="host-tab" value="one">Selected tab</TabsTrigger></TabsList></Tabs>
+        <Toggle id="host-toggle" defaultPressed>Selected toggle</Toggle>
         <Input id="host-input-disabled" disabled value="Disabled input" />
         <Textarea id="host-textarea-disabled" disabled value="Disabled textarea" />
         <Select defaultValue="one" disabled><SelectTrigger id="host-select-disabled"><SelectValue>Disabled select</SelectValue></SelectTrigger></Select>
@@ -130,6 +146,7 @@ try {
       </main>
       {createPortal(<aside style={{position:"fixed",left:1080,top:16,width:180}}>
         <HostDialogProbe />
+        <HostTooltipProbe />
         <Input id="portal-input" placeholder="Portal input" />
         <Textarea id="portal-textarea" placeholder="Portal textarea" />
         <Card id="host-card">Card</Card>
@@ -385,6 +402,7 @@ try {
     "borderColor",
     "backgroundColor",
     "fontSize",
+    "fontWeight",
     "lineHeight",
     "paddingLeft",
     "paddingTop",
@@ -695,6 +713,20 @@ try {
     }
     await page.mouse.move(1200, 780);
     await compare("input", "input", fieldProperties);
+    await compare("input", "nested-input", fieldProperties);
+    assert.deepEqual(
+      await measure(page.locator("#host-nested-input"), fieldProperties),
+      await measure(page.locator("#host-input"), fieldProperties),
+      "nested labels must not change ordinary input typography or geometry",
+    );
+    await expect(page.locator("#host-nested-label")).toHaveCSS(
+      "font-weight",
+      "500",
+    );
+    await expect(frame.locator("#sdk-nested-label")).toHaveCSS(
+      "font-weight",
+      "500",
+    );
     await compare("textarea", "textarea", fieldProperties);
     for (const field of ["input", "textarea", "select"])
       await compare(`${field}-disabled`, `${field}-disabled`, [
@@ -868,6 +900,33 @@ try {
       marker.foreground,
       "line marker uses the shared foreground paint",
     );
+    for (const control of ["tab", "toggle"])
+      await compare(control, control, [
+        "fontSize",
+        "fontFamily",
+        "fontWeight",
+        "lineHeight",
+        "color",
+        "backgroundColor",
+        "borderColor",
+      ]);
+    await page.locator("#host-tooltip-open").focus();
+    await expect(page.locator("#host-tooltip")).toBeVisible();
+    await compare("tooltip", "tooltip", [
+      "fontSize",
+      "fontFamily",
+      "lineHeight",
+      "borderRadius",
+      "paddingTop",
+      "paddingRight",
+      "paddingBottom",
+      "paddingLeft",
+      "color",
+      "backgroundColor",
+      "backdropFilter",
+    ]);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#host-tooltip")).toHaveCount(0);
     console.log(
       `PASS real host / SDK default controls: ${dark ? "dark, small font, round radius" : "light"}`,
     );

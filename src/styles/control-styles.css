@@ -80,7 +80,9 @@
   :is([data-slot="switch"], .ui-switch),
   [data-slot="toggle"],
   [data-slot="toggle-group-item"],
-  [data-slot="tabs-trigger"]
+  [data-slot="tabs-trigger"],
+  [role="tab"],
+  .ui-toggle
 ) {
   font: inherit;
   font-size: 0.875rem;
@@ -354,6 +356,8 @@
   /* 弹层会移至 Portal，显式共享宿主字号，不从页面或 iframe 宽度重新推断。 */
   font-size: var(--control-input-font-size, 0.875rem);
   line-height: var(--control-input-line-height, 1.25rem);
+  /* 输入正文不因嵌套在较粗的 label 中而改变字重。 */
+  font-weight: 400;
 }
 :where(textarea) {
   height: auto;
@@ -1192,6 +1196,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius-md, var(--radius));
   outline: none;
+  font-weight: 500;
 }
 :where([data-slot="tabs-trigger"], [role="tab"], .ui-toggle):where(
   :hover,
@@ -1241,7 +1246,6 @@
   gap: 0.25rem;
   padding: 0.25rem 0.625rem;
   font-size: 0.875rem;
-  font-weight: 500;
 }
 :where(.ui-toggle-outline) {
   border-color: var(--surface-control-border, var(--input));
@@ -1470,6 +1474,10 @@
   color: var(--foreground);
   -webkit-backdrop-filter: blur(var(--surface-reading-blur));
   backdrop-filter: blur(var(--surface-reading-blur));
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-md, calc(var(--radius, 0.625rem) * 0.8));
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 :where([data-slot="tooltip-arrow"]) {
   background: var(--surface-reading);

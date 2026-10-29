@@ -16,7 +16,17 @@ const environment = vi.hoisted(() => ({
   language: "en" as "en" | "zh",
   inputWide: true,
   inputListeners: new Set<() => void>(),
+  sharedStyles: null as string | null,
 }));
+vi.mock("@/lib/ui-theme", async (original) => {
+  const source = await original<typeof import("@/lib/ui-theme")>();
+  return {
+    ...source,
+    get UI_STYLES() {
+      return environment.sharedStyles ?? source.UI_STYLES;
+    },
+  };
+});
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key, language: environment.language }),
 }));
@@ -55,6 +65,7 @@ afterEach(() => {
   environment.language = "en";
   environment.inputWide = true;
   environment.inputListeners.clear();
+  environment.sharedStyles = null;
 });
 
 it("limits missing paint acknowledgements only after a visible first view, resetting for background and offscreen pauses", async () => {
@@ -658,6 +669,20 @@ it("updates environment and drafts without rereading the palette or reloading th
   expect(state().theme.tokens).toMatchObject(glassTokens);
   expect(state().theme.tokens).not.toHaveProperty("--tw-internal-fixture");
   expect(state().theme.styles).toBe(UI_STYLES);
+  delete glassTokens["--future-widget-surface"];
+  act(() =>
+    document.documentElement.style.removeProperty("--future-widget-surface"),
+  );
+  await waitFor(() =>
+    expect(state().theme.tokens).not.toHaveProperty("--future-widget-surface"),
+  );
+  const updatedStyles = `${UI_STYLES}\n@layer starter-defaults { meter { border-style: dashed; } }`;
+  environment.sharedStyles = updatedStyles;
+  act(() =>
+    document.documentElement.setAttribute("data-background-intensity", "90"),
+  );
+  await waitFor(() => expect(state().theme.styles).toBe(updatedStyles));
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
   glassTokens["--control-background"] = "rgba(24, 24, 24, 0.35)";
   document.documentElement.setAttribute("data-background-intensity", "100");
   await waitFor(() =>
