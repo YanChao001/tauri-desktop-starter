@@ -636,15 +636,6 @@ impl Node {
         node.cleanup_partial_attachments()?;
         Ok(node)
     }
-    fn encoded(&self, data: &Document) -> NativeResult<Vec<u8>> {
-        checked_root(&self.root)?;
-        checked_file(&self.path)?;
-        let bytes = serde_json::to_vec(data).map_err(|_| io_error("Cannot encode LAN history"))?;
-        if bytes.len() > MAX_DISK {
-            return Err(invalid("LAN history exceeds its storage limit"));
-        }
-        Ok(bytes)
-    }
     fn mutate<T>(&self, edit: impl FnOnce(&mut Document) -> NativeResult<T>) -> NativeResult<T> {
         self.mutate_permitted(None, edit)
     }
@@ -664,9 +655,9 @@ impl Node {
         while next.messages.len() > MAX_HISTORY {
             next.messages.pop_front();
         }
-        let mut encoded_size = serde_json::to_vec(&next)
-            .map_err(|_| io_error("Cannot encode LAN history"))?
-            .len();
+        let mut bytes =
+            serde_json::to_vec(&next).map_err(|_| io_error("Cannot encode LAN history"))?;
+        let mut encoded_size = bytes.len();
         while encoded_size > MAX_DISK {
             if let Some(message) = next.messages.pop_front() {
                 let bytes = serde_json::to_vec(&message)
@@ -678,7 +669,15 @@ impl Node {
                 return Err(invalid("LAN history exceeds its storage limit"));
             }
         }
-        let bytes = self.encoded(&next)?;
+        // 常规写入复用首次编码；只有淘汰旧消息后才重新编码最终快照。
+        if encoded_size != bytes.len() {
+            bytes = serde_json::to_vec(&next).map_err(|_| io_error("Cannot encode LAN history"))?;
+        }
+        if bytes.len() > MAX_DISK {
+            return Err(invalid("LAN history exceeds its storage limit"));
+        }
+        checked_root(&self.root)?;
+        checked_file(&self.path)?;
         commit_permit(permit, || {
             atomic_write(&self.path, &bytes)?;
             *data = next;
@@ -1508,16 +1507,21 @@ impl Node {
             }
             times.push_back(tick);
         }
-        let writer = self
+        let (writer, connection_id) = self
             .runtime
             .lock()
             .map_err(|_| unavailable("LAN session is unavailable"))?
             .connections
             .get(peer_id)
-            .map(|v| v.stream.clone())
+            .map(|connection| (connection.stream.clone(), connection.id.clone()))
             .ok_or_else(|| unavailable("This LAN contact is not connected"))?;
         let id = token()?;
         self.mutate_permitted(permit, |data| {
+            let _runtime = self.current_connection(peer_id, &connection_id)?;
+            // 握手先发布连接再保存联系人；并发发送不能落盘悬空的 peer_id。
+            if !data.contacts.contains_key(peer_id) {
+                return Err(unavailable("The LAN contact is not ready"));
+            }
             data.messages.push_back(Message {
                 id: id.clone(),
                 peer_id: peer_id.into(),
@@ -1620,6 +1624,9 @@ impl Node {
                 return Err(attachment_io::interrupted(
                     "LAN connection was replaced or stopped",
                 ));
+            }
+            if !data.contacts.contains_key(peer_id) {
+                return Err(unavailable("The LAN contact is not ready"));
             }
             data.messages.push_back(Message {
                 id: id.clone(),
@@ -2884,6 +2891,89 @@ mod tests {
         assert!(data.messages.is_empty());
     }
     #[test]
+    fn outgoing_messages_wait_for_the_handshake_contact_before_persisting() {
+        let root = directory();
+        let node = Node::open(root.path(), ID).unwrap();
+        node.mutate(|_| Ok(())).unwrap();
+        let original = fs::read(&node.path).unwrap();
+        let peer_id = token().unwrap();
+        let connection_id = token().unwrap();
+        let receiver = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let stream = TcpStream::connect(receiver.local_addr().unwrap()).unwrap();
+        let (mut remote, _) = receiver.accept().unwrap();
+        stream.set_nonblocking(true).unwrap();
+        remote.set_nonblocking(true).unwrap();
+        {
+            let mut runtime = node.runtime.lock().unwrap();
+            runtime.stop = Arc::new(AtomicBool::new(false));
+            // 固定真实握手的中间态：连接已可查到，联系人还没完成持久化。
+            runtime.connections.insert(
+                peer_id.clone(),
+                Connection {
+                    id: connection_id.clone(),
+                    control: stream.try_clone().unwrap(),
+                    stream: Arc::new(Mutex::new(stream)),
+                    preferred: true,
+                },
+            );
+        }
+        for kind in ["text", "sticker"] {
+            assert_eq!(
+                node.send_content_permitted(&peer_id, "等待联系人", kind, None)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::ExtensionUnavailable,
+            );
+        }
+        let bytes = b"attachment".to_vec();
+        assert_eq!(
+            node.send_attachment_permitted(
+                &peer_id,
+                "file",
+                attachment("pending.bin", "file", &bytes),
+                bytes,
+                None,
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::ExtensionUnavailable,
+        );
+        assert_eq!(fs::read(&node.path).unwrap(), original);
+        assert!(node.data.lock().unwrap().messages.is_empty());
+        let mut sent = [0_u8; 1];
+        assert_eq!(
+            remote.read(&mut sent).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock,
+        );
+        Node::open(root.path(), ID).unwrap();
+
+        node.remember_peer(
+            &peer_id,
+            &connection_id,
+            "已完成握手".into(),
+            Ipv4Addr::LOCALHOST.into(),
+            DEFAULT_PORT,
+        )
+        .unwrap();
+        node.send(&peer_id, "正常发送").unwrap();
+        // 非阻塞接收允许短暂空闲；发送完成不代表对端已经收到 TCP 帧。
+        let receiving = AtomicBool::new(false);
+        let deadline = Instant::now() + FRAME_TIMEOUT;
+        let received = loop {
+            if let Some(frame) = read_frame(&mut remote, &receiving).unwrap() {
+                break frame;
+            }
+            assert!(Instant::now() < deadline, "The message did not arrive");
+        };
+        assert!(matches!(
+            received,
+            Frame::Message { text, .. } if text == "正常发送",
+        ));
+        let reopened = Node::open(root.path(), ID).unwrap();
+        assert_eq!(reopened.data.lock().unwrap().messages.len(), 1);
+        node.stop();
+    }
+    #[test]
     fn future_corrupt_and_oversized_history_are_never_overwritten() {
         let root = directory();
         let path = root
@@ -2905,43 +2995,59 @@ mod tests {
     }
     #[test]
     fn stored_history_is_bounded_by_both_message_count_and_encoded_bytes() {
-        let root = directory();
-        let node = Node::open(root.path(), ID).unwrap();
-        let peer_id = token().unwrap();
-        node.mutate(|data| {
-            data.contacts.insert(
-                peer_id.clone(),
-                Contact {
-                    id: peer_id.clone(),
-                    nickname: "朋友".into(),
-                    address: "192.168.1.2".into(),
-                    port: DEFAULT_PORT,
-                    last_seen: now(),
-                    unread: 0,
-                },
-            );
-            for _ in 0..600 {
-                data.messages.push_back(Message {
-                    id: token()?,
-                    peer_id: peer_id.clone(),
-                    sender: data.node_id.clone(),
-                    nickname: data.nickname.clone(),
-                    text: "x\t".repeat(MAX_TEXT / 2),
-                    at: now(),
-                    outgoing: true,
-                    delivery: "sent".into(),
-                    kind: "text".into(),
-                    attachment: None,
-                });
+        for (count, text) in [
+            (1, "普通消息".into()),
+            (MAX_HISTORY + 1, "短消息".into()),
+            (600, "x\t".repeat(MAX_TEXT / 2)),
+        ] {
+            let root = directory();
+            let node = Node::open(root.path(), ID).unwrap();
+            let peer_id = token().unwrap();
+            node.mutate(|data| {
+                data.contacts.insert(
+                    peer_id.clone(),
+                    Contact {
+                        id: peer_id.clone(),
+                        nickname: "朋友".into(),
+                        address: "192.168.1.2".into(),
+                        port: DEFAULT_PORT,
+                        last_seen: now(),
+                        unread: 0,
+                    },
+                );
+                for _ in 0..count {
+                    data.messages.push_back(Message {
+                        id: token()?,
+                        peer_id: peer_id.clone(),
+                        sender: data.node_id.clone(),
+                        nickname: data.nickname.clone(),
+                        text: text.clone(),
+                        at: now(),
+                        outgoing: true,
+                        delivery: "sent".into(),
+                        kind: "text".into(),
+                        attachment: None,
+                    });
+                }
+                Ok(())
+            })
+            .unwrap();
+            let data = node.data.lock().unwrap();
+            if text.len() == MAX_TEXT {
+                assert!(data.messages.len() < MAX_HISTORY);
+            } else {
+                assert_eq!(data.messages.len(), count.min(MAX_HISTORY));
             }
-            Ok(())
-        })
-        .unwrap();
-        let data = node.data.lock().unwrap();
-        assert!(data.messages.len() < MAX_HISTORY);
-        assert!(!data.messages.is_empty());
-        assert!(fs::metadata(&node.path).unwrap().len() <= MAX_DISK as u64);
-        data.validate(ID).unwrap();
+            assert!(!data.messages.is_empty());
+            let bytes = fs::read(&node.path).unwrap();
+            assert!(bytes.len() <= MAX_DISK);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&bytes).unwrap(),
+                serde_json::to_value(&*data).unwrap(),
+                "持久化内容必须与淘汰旧消息后的内存快照一致"
+            );
+            Node::open(root.path(), ID).unwrap();
+        }
     }
     #[test]
     fn malformed_frames_and_cancellation_release_real_tcp_connections() {

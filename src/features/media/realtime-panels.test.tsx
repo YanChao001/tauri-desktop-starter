@@ -233,6 +233,34 @@ it("translates a send failure and retains the unsent message", async () => {
   expect(input).toHaveValue("保留待重试内容");
 });
 
+it("发送回执不会清空等待期间输入的下一条消息", async () => {
+  let finishSend!: () => void;
+  const send = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishSend = resolve;
+      }),
+  );
+  native.websocketConnect.mockResolvedValueOnce({
+    send,
+    close: vi.fn().mockResolvedValue(undefined),
+  });
+  render(<WebSocketPanel />);
+  fireEvent.keyDown(screen.getByLabelText("Request source"), { key: "Enter" });
+  fireEvent.click(screen.getByRole("option", { name: "Online test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  await screen.findByText("Connected", { exact: true });
+  const input = screen.getByLabelText("Message content");
+  fireEvent.change(input, { target: { value: "first message" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(send).toHaveBeenCalledExactlyOnceWith("first message");
+  fireEvent.change(input, { target: { value: "next message" } });
+  await act(async () => finishSend());
+  expect(screen.getByText("Sent: first message")).toBeVisible();
+  expect(input).toHaveValue("next message");
+  expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+});
+
 it("WebSocket 等待连接期间切换语言后用当前语言报告错误", async () => {
   let fail!: (reason: unknown) => void;
   native.websocketConnect.mockReturnValueOnce(

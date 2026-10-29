@@ -10,6 +10,7 @@ const source = await readFile(
   new URL("../sdk/extension-ui.js", import.meta.url),
   "utf8",
 );
+const sharedStyles = `@layer starter-defaults {\n${await readFile(new URL("../src/styles/surface-tokens.css", import.meta.url), "utf8")}\n${await readFile(new URL("../src/styles/control-styles.css", import.meta.url), "utf8")}\n}`;
 function fixture({
   reduced = false,
   schedule = setTimeout,
@@ -30,7 +31,10 @@ function fixture({
   };
   const root = {
     dataset: {},
-    style: { setProperty: (key, value) => tokens.set(key, value) },
+    style: {
+      setProperty: (key, value) => tokens.set(key, value),
+      removeProperty: (key) => tokens.delete(key),
+    },
     classList: {
       toggle: (name, enabled) =>
         enabled ? classes.add(name) : classes.delete(name),
@@ -582,14 +586,43 @@ function snapshot(overrides = {}) {
     dirty: false,
     locale: "en",
     grantedPermissions: [],
+    ...overrides,
     theme: {
       mode: "light",
       motion: "full",
       tokens: { "--host-font-size": "17px", "--primary": "blue" },
+      styles: sharedStyles,
+      ...overrides.theme,
     },
-    ...overrides,
   };
 }
+
+test("checkpoint encoding errors reject the returned promise without sending or closing the bridge", async () => {
+  const { sdk, send, messages, close } = fixture();
+  send({ type: "state", value: snapshot() });
+  await sdk.ready;
+  const circular = {};
+  circular.self = circular;
+  for (const value of [circular, { count: 1n }]) {
+    let checkpoint;
+    assert.doesNotThrow(() => {
+      checkpoint = sdk.checkpoint(value, true);
+    });
+    await assert.rejects(checkpoint, { name: "TypeError" });
+  }
+  assert.equal(messages.length, 0);
+  const saved = sdk.checkpoint({ draft: "retained" }, true);
+  await Promise.resolve();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].method, "checkpoint");
+  assert.deepEqual(messages[0].params, {
+    value: JSON.stringify({ draft: "retained" }),
+    dirty: true,
+  });
+  send({ id: messages[0].id, result: null });
+  await saved;
+  close();
+});
 
 test("incremental state patches preserve complete isolated author snapshots", async () => {
   const { sdk, send, close } = fixture();
@@ -1271,6 +1304,57 @@ test("enhanced select retains its native node, form value and label while keyboa
   close();
 });
 
+test("enhanced select restores host line height after native font copying and keeps explicit author line height", () => {
+  const { control, pointer, key, popup, close } = selectFixture();
+  try {
+    for (const { lineHeight, hostLineHeight, expected } of [
+      { lineHeight: "normal", hostLineHeight: "20px", expected: "20px" },
+      { lineHeight: "normal", hostLineHeight: "24px", expected: "24px" },
+      { lineHeight: "27px", hostLineHeight: "20px", expected: "27px" },
+    ]) {
+      control.style.font = `italic 600 14px/${lineHeight} monospace`;
+      control.style.setProperty("--control-input-line-height", hostLineHeight);
+      pointer(control);
+      assert.equal(popup().style.lineHeight, expected);
+      assert.equal(popup().style.fontFamily, "monospace");
+      assert.equal(popup().style.fontSize, "14px");
+      assert.equal(popup().style.fontStyle, "italic");
+      assert.equal(popup().style.fontWeight, "600");
+      key("Escape");
+    }
+  } finally {
+    close();
+  }
+});
+
+test("enhanced select options ignore secondary and auxiliary pointer buttons", () => {
+  const { window, control, pointer, popup, close } = selectFixture();
+  try {
+    let changes = 0;
+    control.addEventListener("change", () => changes++);
+    pointer(control);
+    const option = popup().querySelector('[data-starter-option="3"]');
+    for (const button of [1, 2]) {
+      option.dispatchEvent(
+        new window.MouseEvent("pointerdown", {
+          button,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      assert.equal(control.value, "apple");
+      assert.equal(changes, 0);
+      assert.ok(popup());
+    }
+    pointer(option);
+    assert.equal(control.value, "date");
+    assert.equal(changes, 1);
+    assert.equal(popup(), null);
+  } finally {
+    close();
+  }
+});
+
 test("select opt-outs, disabled fieldsets, reset and removed controls keep native semantics and clean popup resources", async () => {
   const { window, control, pointer, key, popup, disconnect, close } =
     selectFixture();
@@ -1365,6 +1449,61 @@ test("explicit shadow styles retain native select semantics, share one picker an
     assert.equal(select.hasAttribute("aria-expanded"), false);
     pointer(select);
     assert.equal(shadowPopup(), null);
+  } finally {
+    close();
+  }
+});
+
+test("one complete host stylesheet reaches current and future controls and registered shadow trees", () => {
+  const { window, send, close } = selectFixture();
+  try {
+    const before = window.document.createElement("section");
+    window.document.body.append(before);
+    const shadow = before.attachShadow({ mode: "open" });
+    const dispose = window.starter.applyStyles(shadow);
+    const author = window.document.createElement("style");
+    author.textContent = "button { background: rebeccapurple; }";
+    window.document.head.append(author);
+    send({
+      type: "state",
+      value: snapshot({ theme: { tokens: { "--retired-material": "red" } } }),
+    });
+    const documentStyle = window.document.querySelector(
+      "[data-starter-defaults]",
+    );
+    const shadowStyle = shadow.querySelector("[data-starter-defaults]");
+    assert.equal(documentStyle.textContent, sharedStyles);
+    assert.equal(shadowStyle.textContent, sharedStyles);
+    // 首帧未使用的少见控件以后插入时，已有的完整样式无需再做 DOM 检测或请求。
+    const rare = window.document.createElement("meter");
+    rare.value = 0.5;
+    window.document.body.append(rare);
+    assert.match(documentStyle.textContent, /meter/);
+    const later = window.document.createElement("section");
+    window.document.body.append(later);
+    const laterRoot = later.attachShadow({ mode: "closed" });
+    const disposeLater = window.starter.applyStyles(laterRoot);
+    assert.equal(
+      laterRoot.querySelector("[data-starter-defaults]").textContent,
+      sharedStyles,
+    );
+    const updated = `${sharedStyles}\n@layer starter-defaults { output { border-style: dashed; } }`;
+    send({ type: "state", value: snapshot({ theme: { styles: updated } }) });
+    assert.equal(documentStyle.textContent, updated);
+    assert.equal(shadowStyle.textContent, updated);
+    assert.equal(
+      laterRoot.querySelector("[data-starter-defaults]").textContent,
+      updated,
+    );
+    assert.equal(
+      window.document.documentElement.style.getPropertyValue(
+        "--retired-material",
+      ),
+      "",
+    );
+    assert.equal(author.textContent, "button { background: rebeccapurple; }");
+    dispose();
+    disposeLater();
   } finally {
     close();
   }

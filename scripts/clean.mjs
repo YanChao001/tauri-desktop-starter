@@ -2,7 +2,7 @@
 /**
  * 清理构建产物。
  *
- * 仅清理预定义目录，不接受任意路径，避免参数错误导致误删。
+ * 仅清理预定义范围，不接受任意路径，避免参数错误导致误删。
  */
 import { resolve } from "node:path";
 import { removeProjectPath } from "./fs-utils.mjs";
@@ -27,13 +27,15 @@ const HINTS = {
 let options;
 let targets;
 let processes = [];
+let validation;
 try {
   options = parseCleanupArgs(process.argv.slice(2));
+  validation = { allowFile: options.mode === "outputs" };
   // 全部目标在删除前解析并核对；预览复用同一份计划与保护。
   targets = cleanupTargets(ROOT, options.mode).map(([path, label]) => ({
     path,
     label,
-    absolute: validateCleanupTarget(ROOT, path),
+    absolute: validateCleanupTarget(ROOT, path, validation),
   }));
   if (process.platform === "win32" && targets.some((target) => target.absolute))
     processes = getWindowsProcesses();
@@ -59,7 +61,7 @@ for (const { path, label, absolute } of targets) {
       continue;
     }
     // 删除前再次核对，再由共用 helper 执行受控递归删除。
-    validateCleanupTarget(ROOT, path);
+    validateCleanupTarget(ROOT, path, validation);
     if (removeProjectPath(ROOT, path)) {
       console.log(`已删除 ${path.padEnd(20)} ${label}`);
       removed += 1;
@@ -74,7 +76,7 @@ for (const { path, label, absolute } of targets) {
 }
 
 if (failed.length > 0) {
-  console.error(`\n${failed.length} 个目录没能删除：${failed.join("、")}`);
+  console.error(`\n${failed.length} 个清理目标没能删除：${failed.join("、")}`);
   process.exitCode = 1;
 } else if (options.dryRun) {
   console.log("\n预览完成。移除 --dry-run 后执行相同模式。");
@@ -86,6 +88,10 @@ if (failed.length > 0) {
   console.log("\n完成。分发产物已清理，编译缓存与依赖已保留。");
 } else if (options.mode === "temporary") {
   console.log("\n完成。正式版本分发与实际依赖已保留。");
+} else if (options.mode === "outputs") {
+  console.log(
+    "\nDone. Compilation caches, build tools and dependencies have been retained.",
+  );
 } else {
   console.log("\n完成。下次构建会自动重建。");
 }

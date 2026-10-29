@@ -1,5 +1,138 @@
 import { expect } from "@playwright/test";
 
+export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
+  const previous = await page.evaluate(() => {
+    const { background, backgroundIntensity } =
+      window.__extensionSettingsTest.read();
+    return { background, backgroundIntensity };
+  });
+  const backgrounds = () =>
+    frame.locator("html").evaluate((root) =>
+      [root, root.ownerDocument.body].map((node) => {
+        const style = getComputedStyle(node);
+        return [style.backgroundColor, style.backgroundImage];
+      }),
+    );
+  const before = await backgrounds();
+  try {
+    await page.evaluate(() =>
+      window.__extensionSettingsTest.update({
+        background: "aurora",
+        backgroundIntensity: 50,
+      }),
+    );
+    await expect(
+      page.locator(
+        '[data-window-background] [data-pattern="aurora"] .skin-scene',
+      ),
+    ).toBeVisible();
+    const muted = await page
+      .locator("html")
+      .evaluate((node) =>
+        getComputedStyle(node).getPropertyValue("--muted-foreground").trim(),
+      );
+    await expect
+      .poll(() =>
+        frame
+          .locator("html")
+          .evaluate((node) =>
+            getComputedStyle(node)
+              .getPropertyValue("--muted-foreground")
+              .trim(),
+          ),
+      )
+      .toBe(muted);
+    expect(await backgrounds()).toEqual(before);
+    if (inheritsSkin)
+      for (const selector of ["html", "body"])
+        await expect(frame.locator(selector)).toHaveCSS(
+          "background-color",
+          "rgba(0, 0, 0, 0)",
+        );
+    // 阅读材质由工作台外框承担，内部侧栏/页脚继承它，避免重复叠加底色。
+    const surfaceSelector = ".studio-console,button.result,.card";
+    const inheritedPanels = frame.locator(
+      ".studio-console :is(.inspector,.side-panel,.scene-footer,.flow-results)",
+    );
+    const surfaceAlpha = () =>
+      frame.locator(surfaceSelector).evaluateAll((nodes) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        return nodes.map((node) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = getComputedStyle(node).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3];
+        });
+      });
+    const configuredAlpha = (intensity) =>
+      page.locator("html").evaluate((node, intensity) => {
+        if (intensity === 0) return 255;
+        const property =
+          intensity === 50
+            ? "--ui-panel-opacity-at-half"
+            : "--ui-panel-opacity-at-full";
+        return (
+          (255 *
+            parseFloat(getComputedStyle(node).getPropertyValue(property))) /
+          100
+        );
+      }, intensity);
+    if (inheritsSkin) {
+      // 壁纸首批卡片由实际 Wasm 异步返回，文档 ready 不代表结果节点已挂载。
+      await expect
+        .poll(() => frame.locator(surfaceSelector).count(), { timeout: 60000 })
+        .toBeGreaterThan(0);
+      for (const intensity of [0, 50, 100]) {
+        await page.evaluate(
+          (backgroundIntensity) =>
+            window.__extensionSettingsTest.update({ backgroundIntensity }),
+          intensity,
+        );
+        const alpha = await configuredAlpha(intensity);
+        await expect
+          .poll(async () =>
+            (await surfaceAlpha()).every(
+              (value) => Math.abs(value - alpha) <= 1,
+            ),
+          )
+          .toBe(true);
+        for (const panel of await inheritedPanels.all())
+          await expect(panel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        expect(await backgrounds()).toEqual(before);
+      }
+      await page.evaluate(() =>
+        window.__extensionSettingsTest.update({ backgroundIntensity: 50 }),
+      );
+      const halfAlpha = await configuredAlpha(50);
+      await expect
+        .poll(async () =>
+          (await surfaceAlpha()).every(
+            (value) => Math.abs(value - halfAlpha) <= 1,
+          ),
+        )
+        .toBe(true);
+    }
+    await page.screenshot({ path: screenshot });
+    return {
+      background: "aurora",
+      inheritsSkin,
+      authorBackgroundPreserved: true,
+      sharedSurfaceEndpoints: inheritsSkin,
+    };
+  } finally {
+    await page.evaluate(
+      (settings) => window.__extensionSettingsTest.update(settings),
+      previous,
+    );
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-background",
+      previous.background,
+    );
+  }
+}
+
 export async function checkChrome(page, profile, manifest) {
   const tools = page.getByRole("button", {
     name: profile.language === "zh" ? "扩展工具" : "Extension tools",
@@ -123,7 +256,93 @@ export async function checkChrome(page, profile, manifest) {
   };
 }
 
-export async function checkNormalControls(frame, name, fontSize) {
+// 使用真实宿主组件作为期望值，捕获插件作者 CSS 重新覆盖默认样式造成的漂移。
+// 只比较视觉属性；宽度、排列、编辑区高度和内容专用绘制由各插件负责。
+export async function checkHostControlStyles(
+  page,
+  frame,
+  selectors,
+  { styleProperties, compareHeight = true } = {},
+) {
+  await page.mouse.move(0, 0);
+  const measurements = [];
+  const properties = styleProperties ?? [
+    "boxSizing",
+    "fontFamily",
+    "fontSize",
+    "fontWeight",
+    "lineHeight",
+    "borderTopLeftRadius",
+    "borderTopWidth",
+    "borderTopStyle",
+    "borderTopColor",
+    "backgroundColor",
+    "color",
+    "backdropFilter",
+  ];
+  for (const selector of selectors) {
+    const control = frame.locator(selector);
+    await expect(control, `Required shared control ${selector}`).toBeVisible();
+    const actual = await control.evaluate((node, properties) => {
+      const classes = [...node.classList];
+      const variant =
+        node.dataset.variant ??
+        classes
+          .find((name) =>
+            /^ui-button-(outline|secondary|ghost|destructive)$/.test(name),
+          )
+          ?.slice("ui-button-".length) ??
+        "default";
+      const size =
+        classes
+          .find((name) => name.startsWith("ui-button-size-"))
+          ?.slice("ui-button-size-".length) ?? "default";
+      const reference =
+        node.tagName === "BUTTON"
+          ? `button:${variant}:${size}`
+          : node.tagName.toLowerCase();
+      const styles = getComputedStyle(node);
+      return {
+        reference,
+        height: node.getBoundingClientRect().height,
+        styles: Object.fromEntries(
+          properties.map((property) => [property, styles[property]]),
+        ),
+      };
+    }, properties);
+    const expected = await page
+      .locator(`[data-host-style-reference="${actual.reference}"]`)
+      .evaluate((node, properties) => {
+        const styles = getComputedStyle(node);
+        return {
+          height: node.getBoundingClientRect().height,
+          styles: Object.fromEntries(
+            properties.map((property) => [property, styles[property]]),
+          ),
+        };
+      }, properties);
+    // Chromium 对原生单选框保留 normal；HTML 弹层行高由独立下拉检查验证。
+    if (
+      actual.reference === "select" &&
+      actual.styles.lineHeight === "normal"
+    ) {
+      delete actual.styles.lineHeight;
+      delete expected.styles.lineHeight;
+    }
+    expect(actual.styles, `Host style inheritance of ${selector}`).toEqual(
+      expected.styles,
+    );
+    if (compareHeight && actual.reference !== "textarea")
+      expect(actual.height, `Host control height of ${selector}`).toBeCloseTo(
+        expected.height,
+        0,
+      );
+    measurements.push({ selector, ...actual });
+  }
+  return measurements;
+}
+
+export async function checkNormalControls(page, frame, name, fontSize) {
   if (
     name === "scientific-calculator" &&
     (await frame.locator("main").getAttribute("data-mode")) !== "scientific"
@@ -138,7 +357,7 @@ export async function checkNormalControls(frame, name, fontSize) {
     "lan-chat":
       "#settings-toggle,#refresh,#emoji-toggle,#send-image,#send-file,#send",
     "wallpaper-browser": "#refresh,#import,#settings",
-    lab: '[data-action="todo-add"]',
+    lab: "#canvas-add",
   };
   const controls = [];
   for (const selector of selectors[name].split(",")) {
@@ -172,7 +391,20 @@ export async function checkNormalControls(frame, name, fontSize) {
     }
   }
   expect(controls.length).toBeGreaterThan(0);
-  return controls;
+  const ordinary = {
+    "scientific-calculator": [], // 数学键盘/导航是明确专用设计；转换器另验普通下拉。
+    "lan-chat": [
+      "#settings-toggle",
+      "#refresh",
+      "#send-image",
+      "#send-file",
+      "#send",
+    ],
+    "wallpaper-browser": ["#refresh", "#import", "#settings"],
+    lab: ["#canvas-add", "#canvas-arrange", "#node-title", "#node-target"],
+  };
+  const styleParity = await checkHostControlStyles(page, frame, ordinary[name]);
+  return { controls, styleParity };
 }
 
 export async function checkSelectPopup(frame, selector) {
@@ -690,6 +922,142 @@ export async function checkWallpaperCardActions(frame, card, fontSize) {
   await remove.press("Shift+Tab");
   await expect(rename).toBeFocused();
   return { ...geometry, keyboardReachable: true, iconOnlyActions: true };
+}
+
+export async function checkWallpaperLocalSurfaces(page, frame, capturePrefix) {
+  const remote = frame.locator("#remote-tab");
+  const local = frame.locator("#local-tab");
+  await local.click();
+  const card = frame.locator("#gallery [data-wallpaper-id]").first();
+  await expect(card.locator("h2")).toHaveText("Fixture local image");
+  const settingsProbe = page.locator("[data-wallpaper-settings-probe]");
+  const settingsCard = settingsProbe.locator(".wallpaper-card").first();
+  await expect(settingsCard).toHaveCount(1);
+  const rootSize = await frame
+    .locator("html")
+    .evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+  const tabs = await frame.locator('.tabs [role="tab"]').evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        id: node.id,
+        height: node.getBoundingClientRect().height,
+        fontSize: parseFloat(style.fontSize),
+        lineHeight: parseFloat(style.lineHeight),
+      };
+    }),
+  );
+  for (const tab of tabs) {
+    expect(tab.height).toBeCloseTo(rootSize * 2, 1);
+    expect(tab.fontSize).toBeCloseTo(rootSize * 0.875, 1);
+    expect(tab.lineHeight).toBeCloseTo(rootSize * 1.25, 1);
+  }
+  for (const [key, target] of [
+    ["ArrowLeft", remote],
+    ["ArrowRight", local],
+    ["Home", remote],
+    ["End", local],
+  ]) {
+    await frame.locator('.tabs [aria-selected="true"]').focus();
+    await frame.locator('.tabs [aria-selected="true"]').press(key);
+    await expect(target).toBeFocused();
+    await expect(target).toHaveAttribute("aria-selected", "true");
+  }
+  const sample = (locator, captionSelector) =>
+    locator.evaluate((node, captionSelector) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      const read = (element) => {
+        const style = getComputedStyle(element);
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = style.backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return {
+          element: element.tagName.toLowerCase(),
+          class: element.className,
+          background: style.backgroundColor,
+          backgroundImage: style.backgroundImage,
+          rgba: [...context.getImageData(0, 0, 1, 1).data],
+          opacity: style.opacity,
+          backdropFilter: style.backdropFilter,
+          surfaceCard: style.getPropertyValue("--surface-card").trim(),
+          skinCardOpacity: style.getPropertyValue("--skin-card-opacity").trim(),
+        };
+      };
+      const ancestors = [];
+      for (
+        let parent = node.parentElement;
+        parent;
+        parent = parent.parentElement
+      )
+        ancestors.push(read(parent));
+      return {
+        card: read(node),
+        caption: read(node.querySelector(captionSelector)),
+        ancestors,
+      };
+    }, captionSelector);
+  const previous = await page.evaluate(() =>
+    window.__extensionSettingsTest.read(),
+  );
+  const samples = [];
+  try {
+    for (const theme of ["light", "dark"])
+      for (const backgroundIntensity of [0, 50, 100]) {
+        await page.evaluate(
+          (patch) => window.__extensionSettingsTest.update(patch),
+          {
+            theme,
+            background: "aurora",
+            backgroundIntensity,
+          },
+        );
+        await expect(page.locator("html")).toHaveClass(new RegExp(theme));
+        await expect(frame.locator("html")).toHaveClass(new RegExp(theme));
+        const configuredAlpha = await page
+          .locator("html")
+          .evaluate((node, intensity) => {
+            if (intensity === 0) return 255;
+            const property =
+              intensity === 50
+                ? "--ui-panel-opacity-at-half"
+                : "--ui-panel-opacity-at-full";
+            return (
+              (255 *
+                parseFloat(getComputedStyle(node).getPropertyValue(property))) /
+              100
+            );
+          }, backgroundIntensity);
+        await expect
+          .poll(async () => {
+            const host = await sample(settingsCard, ":scope > div:last-child");
+            const plugin = await sample(card, ".card-heading");
+            return (
+              JSON.stringify(plugin.card.rgba) ===
+                JSON.stringify(host.card.rgba) &&
+              plugin.card.surfaceCard === host.card.surfaceCard &&
+              plugin.card.skinCardOpacity === host.card.skinCardOpacity &&
+              Math.abs(plugin.card.rgba[3] - configuredAlpha) <= 1
+            );
+          })
+          .toBe(true);
+        const host = await sample(settingsCard, ":scope > div:last-child");
+        const plugin = await sample(card, ".card-heading");
+        expect(host.caption.rgba[3]).toBe(0);
+        expect(plugin.caption.rgba[3]).toBe(0);
+        expect(plugin.caption.backgroundImage).toBe("none");
+        const screenshot = `${capturePrefix}-${theme}-${backgroundIntensity}.png`;
+        await page.screenshot({ path: screenshot });
+        samples.push({ theme, backgroundIntensity, host, plugin, screenshot });
+      }
+  } finally {
+    await page.evaluate(
+      (settings) => window.__extensionSettingsTest.update(settings),
+      previous,
+    );
+  }
+  return { tabs, tabKeyboardNavigation: true, samples, nativeIpc: false };
 }
 
 export async function checkWallpaperLocalGallery(page, frame, capturePath) {

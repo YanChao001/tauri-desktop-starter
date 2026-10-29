@@ -1,19 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { Script } from "node:vm";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 
 const html = await readFile(new URL("./ui/main.html", import.meta.url), "utf8");
 const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];
-const tabs = ["text", "data", "todo", "connections"].map((id) => ({
-  id: `tab-${id}`,
-  label: id,
-  active: id === "text",
-}));
-const action = (id, label) => ({ id, label, disabled: false, primary: false });
-const field = (id, kind, value = "") => ({ id, label: id, kind, value });
-
 function mount(t, view, run, options = {}) {
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
@@ -111,10 +102,6 @@ function mount(t, view, run, options = {}) {
   };
   dom.window.eval(script);
   notify(snapshot);
-  if (!options.studio) {
-    dom.window.document.querySelector("#studio-tab-tools").click();
-    animations.length = 0;
-  }
   return {
     window: dom.window,
     document: dom.window.document,
@@ -147,379 +134,16 @@ function mount(t, view, run, options = {}) {
   };
 }
 
-test("自包含 HTML 脚本可解析，四个页签支持方向键与首尾导航", (t) => {
-  new Script(script);
-  const { window, document } = mount(t, {
-    display: "Text tools",
-    description: "",
-    tabs,
-    fields: [],
-    groups: [],
-    blocks: [],
-  });
-  const buttons = [...document.querySelectorAll("#tabs [role=tab]")];
-  assert.equal(document.querySelectorAll("h1").length, 1);
-  assert.equal(document.querySelector("h1").id, "app-name");
-  assert.equal(document.querySelector("#heading").tagName, "H2");
-  assert.equal(buttons.length, 4);
-  buttons[0].focus();
-  buttons[0].dispatchEvent(
-    new window.KeyboardEvent("keydown", { key: "End", bubbles: true }),
-  );
-  assert.equal(document.activeElement, buttons[3]);
-  buttons[3].dispatchEvent(
-    new window.KeyboardEvent("keydown", { key: "Home", bubbles: true }),
-  );
-  assert.equal(document.activeElement, buttons[0]);
-});
-
-test("忙碌与主题快照不重建导航、输入或未变化的结果", (t) => {
-  const view = {
-    display: "Text tools",
-    description: "",
-    tabs,
-    fields: [field("text", "textarea", "Original")],
-    groups: [{ actions: [action("analyze", "Apply")] }],
-    blocks: [{ kind: "markdown", text: "### Result\n\n    Last result" }],
-  };
-  const { document, publish, animations } = mount(t, view);
-  const navigation = [...document.querySelectorAll("#tabs [role=tab]")],
-    input = document.querySelector("#fields textarea"),
-    result = document.querySelector("#results").firstChild,
-    apply = document.querySelector('[data-action="analyze"]');
-  input.focus();
-  input.setSelectionRange(2, 5);
-  input.scrollTop = 80;
-  publish({ busy: true, theme: { motion: "reduced" } });
-  publish({ busy: false, theme: { motion: "full" } });
-  assert.deepEqual(
-    [...document.querySelectorAll("#tabs [role=tab]")],
-    navigation,
-  );
-  assert.equal(document.querySelector("#fields textarea"), input);
-  assert.equal(document.querySelector("#results").firstChild, result);
-  assert.equal(document.querySelector('[data-action="analyze"]'), apply);
-  assert.equal(document.activeElement, input);
-  assert.equal(input.selectionStart, 2);
-  assert.equal(input.selectionEnd, 5);
-  assert.equal(input.scrollTop, 80);
-  assert.equal(animations.length, 0);
-});
-
-test("输入检查点回执晚到时切工具仍保留未保存标记", async (t) => {
-  const view = {
-    display: "Text tools",
-    description: "",
-    tabs,
-    fields: [field("text", "textarea", "")],
-    groups: [],
-    blocks: [],
-  };
-  const { window, document, calls } = mount(t, view, async () => ({
-    ...view,
-    tabs: tabs.map((tab) => ({ ...tab, active: tab.id === "tab-data" })),
-    fields: [field("data-source", "textarea", "")],
-  }));
-  document.querySelector("#studio-tab-tools").click();
-  const input = document.querySelector('[data-field="text"]');
-  input.value = "Retain this unacknowledged edit";
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
-  document.querySelector('[data-action="tab-data"]').click();
-  await new Promise(setImmediate);
-  assert.equal(calls.filter((call) => call.id === "tab-data").length, 1);
-  assert.equal(calls.filter((call) => call.checkpoint).at(-1).dirty, true);
-});
-
-test("结果更新保留编辑器节点、选区和滚动，结果按内容更新", async (t) => {
-  const view = {
-    display: "Text tools",
-    description: "",
-    tabs,
-    fields: [field("text", "textarea", "Original")],
-    groups: [{ actions: [action("analyze", "Apply")] }],
-    blocks: [{ kind: "markdown", text: "### Result\n\n    Last result" }],
-  };
-  const { window, document, calls } = mount(t, view, async (_, submitted) => ({
-    ...view,
-    fields: [field("text", "textarea", submitted.text)],
-    blocks: [{ kind: "markdown", text: "### Result\n\n    Updated result" }],
-  }));
-  const input = document.querySelector("#fields textarea"),
-    previous = document.querySelector("#results").firstChild;
-  input.value = "Keep this draft";
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
-  input.focus();
-  input.setSelectionRange(3, 7);
-  input.scrollTop = 65;
-  input.dispatchEvent(
-    new window.KeyboardEvent("keydown", {
-      key: "Enter",
-      ctrlKey: true,
-      bubbles: true,
-    }),
-  );
-  await new Promise(setImmediate);
-  assert.equal(calls.find((call) => call.id)?.id, "analyze");
-  assert.equal(document.querySelector("#fields textarea"), input);
-  assert.equal(document.activeElement, input);
-  assert.equal(input.value, "Keep this draft");
-  assert.equal(input.selectionStart, 3);
-  assert.equal(input.selectionEnd, 7);
-  assert.equal(input.scrollTop, 65);
-  assert.notEqual(document.querySelector("#results").firstChild, previous);
-  assert.match(
-    document.querySelector("#results").textContent,
-    /Updated result/,
-  );
-});
-
-test("快速切换只提交一个工具请求，旧内容保持可见并恢复各工具输入滚动", async (t) => {
-  const text = {
-      display: "Text tools",
-      description: "",
-      tabs,
-      fields: [field("text", "textarea", "Original")],
-      groups: [],
-      blocks: [],
-    },
-    data = {
-      ...text,
-      display: "CSV / JSON",
-      tabs: tabs.map((tab) => ({ ...tab, active: tab.id === "tab-data" })),
-      fields: [field("data-source", "textarea", "CSV draft")],
-    };
-  let finish, retained;
-  const { window, document, calls, animations, publish } = mount(
-    t,
-    text,
-    async (id, fields) => {
-      if (id === "tab-data") {
-        retained = fields.text;
-        return new Promise((resolve) => {
-          finish = resolve;
-        });
-      }
-      return { ...text, fields: [field("text", "textarea", retained)] };
-    },
-  );
-  const navigation = [...document.querySelectorAll("#tabs [role=tab]")],
-    panel = document.querySelector("#panel"),
-    input = document.querySelector("#fields textarea");
-  input.value = "Independent text draft";
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
-  input.setSelectionRange(2, 5);
-  input.scrollTop = 55;
-  navigation[1].focus();
-  navigation[1].click();
-  navigation[2].click();
-  assert.equal(document.querySelector("#fields textarea"), input);
-  assert.equal(document.querySelector("#operation-status").textContent, "");
-  assert.equal(navigation[1].getAttribute("aria-busy"), "true");
-  assert.equal(
-    document.querySelector("#scene-tools").dataset.switching,
-    "true",
-  );
-  assert.equal(input.getAttribute("aria-disabled"), "true");
-  assert.equal(calls.filter((call) => call.id).length, 1);
-  // 宿主空闲快照可能晚于 run 与检查点回执，切换保护应持续到双方都结束。
-  publish({ busy: true });
-  finish(data);
-  await new Promise(setImmediate);
-  assert.deepEqual(
-    [...document.querySelectorAll("#tabs [role=tab]")],
-    navigation,
-  );
-  assert.equal(document.activeElement, navigation[1]);
-  assert.equal(document.querySelector("#panel"), panel);
-  assert.equal(document.querySelector("#fields textarea").value, "CSV draft");
-  assert.equal(
-    document.querySelector("#scene-tools").dataset.switching,
-    "true",
-  );
-  assert.equal(navigation[1].getAttribute("aria-busy"), "true");
-  publish({ busy: false });
-  assert.equal(
-    document.querySelector("#scene-tools").dataset.switching,
-    "false",
-  );
-  assert.equal(navigation[1].getAttribute("aria-busy"), "false");
-  navigation[0].focus();
-  navigation[0].click();
-  await new Promise(setImmediate);
-  assert.equal(
-    document.querySelector("#fields textarea").value,
-    "Independent text draft",
-  );
-  assert.equal(document.querySelector("#fields textarea").scrollTop, 55);
-  assert.equal(document.querySelector("#fields textarea").selectionStart, 2);
-  assert.equal(document.querySelector("#fields textarea").selectionEnd, 5);
-  assert.equal(document.activeElement, navigation[0]);
-  assert.equal(
-    document.querySelector("#scene-tools").dataset.switching,
-    "false",
-  );
-  assert.equal(animations.length, 0);
-});
-
-test("切工具失败恢复交互、保留面板和焦点，真正禁用的操作始终不可执行", async (t) => {
-  const text = {
-    display: "Text tools",
-    description: "",
-    tabs,
-    fields: [field("text", "textarea", "Keep this input")],
-    groups: [
-      {
-        actions: [
-          action("analyze", "Apply"),
-          { ...action("text-export", "Export"), disabled: true },
-        ],
-      },
-    ],
-    blocks: [{ kind: "markdown", text: "Last result" }],
-  };
-  let reject;
-  const ui = mount(t, text, () => new Promise((_, fail) => (reject = fail)));
-  const input = ui.document.querySelector("#fields textarea"),
-    result = ui.document.querySelector("#results").firstChild,
-    unavailable = ui.document.querySelector('[data-action="text-export"]'),
-    tab = ui.document.querySelector('[data-action="tab-data"]');
-  assert.equal(unavailable.getAttribute("aria-disabled"), "true");
-  unavailable.click();
-  assert.equal(ui.calls.filter((call) => call.id).length, 0);
-  tab.focus();
-  tab.click();
-  assert.equal(
-    ui.document.querySelector("#scene-tools").dataset.switching,
-    "true",
-  );
-  assert.equal(unavailable.dataset.disabled, "true");
-  ui.document.querySelector('[data-action="analyze"]').click();
-  unavailable.click();
-  assert.equal(ui.calls.filter((call) => call.id).length, 1);
-  reject(new Error("Host unavailable"));
-  await new Promise(setImmediate);
-  assert.equal(
-    ui.document.querySelector("#scene-tools").dataset.switching,
-    "false",
-  );
-  assert.equal(ui.document.querySelector("#fields textarea"), input);
-  assert.equal(input.value, "Keep this input");
-  assert.equal(input.disabled, false);
-  assert.equal(ui.document.querySelector("#results").firstChild, result);
-  assert.equal(ui.document.activeElement, tab);
-  assert.equal(tab.getAttribute("aria-busy"), "false");
-  assert.equal(unavailable.getAttribute("aria-disabled"), "true");
-  assert.equal(ui.animations.length, 0);
-  assert.match(
-    ui.document.querySelector("#error").textContent,
-    /did not finish/,
-  );
-});
-
-test("减少动效、隐藏和离屏禁止场景过渡并取消动画，卸载清理观察器", (t) => {
-  const ui = localStudio(t, { motion: "reduced" });
-  const select = (scene) => click(ui, `studio-tab-${scene}`);
-  select("lens");
-  assert.equal(ui.animations.length, 0);
-  ui.publish({ theme: { motion: "full" } });
-  select("canvas");
-  assert.equal(ui.animations.length, 1);
-  ui.reduced(true);
-  assert.equal(ui.animations[0].cancelled, true);
-  select("lens");
-  assert.equal(ui.animations.length, 1);
-  ui.reduced(false);
-  ui.visibility(false);
-  select("canvas");
-  assert.equal(ui.animations.length, 2);
-  ui.visibility(false);
-  assert.equal(ui.animations[1].cancelled, true);
-  ui.hidden(true);
-  select("lens");
-  assert.equal(ui.animations.length, 2);
-  ui.window.dispatchEvent(new ui.window.Event("pagehide"));
-  assert.equal(ui.disconnected(), true);
-});
-
-test("待办直接显示逐行操作，外部任务文本不会变成 HTML", async (t) => {
-  const title = '<img src=x onerror="alert(1)">';
-  const view = {
-    display: "Tasks",
-    description: "",
-    tabs: tabs.map((tab) => ({ ...tab, active: tab.id === "tab-todo" })),
-    fields: [field("todo", "text"), field("due", "date")],
-    groups: [
-      {
-        actions: [
-          action("todo-add", "Add & save"),
-          action("todo-toggle-0", `Complete: ${title}`),
-          action("todo-remove-0", `Remove: ${title}`),
-        ],
-      },
-    ],
-    blocks: [
-      {
-        kind: "table",
-        columns: ["Task", "Due", "Status"],
-        rows: [[title, "", "Pending"]],
-      },
-    ],
-  };
-  const { document, calls } = mount(t, view);
-  assert.equal(document.querySelectorAll(".task-row").length, 1);
-  assert.equal(document.querySelector(".task-row p").textContent, title);
-  assert.equal(document.querySelector("img"), null);
-  assert.equal(
-    document.querySelectorAll('#actions [data-action="todo-toggle-0"]').length,
-    0,
-  );
-  document.querySelector('.task-row [data-action="todo-toggle-0"]').click();
-  await new Promise(setImmediate);
-  assert.equal(calls.find((call) => call.id)?.id, "todo-toggle-0");
-});
-
-test("处理失败保留输入和上次结果，不清除草稿检查点", async (t) => {
-  const view = {
-    display: "Text tools",
-    description: "",
-    tabs,
-    fields: [field("text", "textarea", "Original")],
-    groups: [{ actions: [action("analyze", "Apply")] }],
-    blocks: [{ kind: "markdown", text: "### Result\n\n    Last result" }],
-  };
-  const { window, document, calls } = mount(t, view, async () => {
-    throw new Error("Host unavailable");
-  });
-  const input = document.querySelector("#fields textarea");
-  input.value = "Keep this draft";
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
-  document.querySelector('[data-action="analyze"]').click();
-  await new Promise(setImmediate);
-  assert.equal(
-    document.querySelector("#fields textarea").value,
-    "Keep this draft",
-  );
-  assert.match(document.querySelector("#results").textContent, /Last result/);
-  assert.match(document.querySelector("#error").textContent, /did not finish/);
-  assert.equal(
-    calls.some((call) => call.checkpoint === null),
-    false,
-  );
-});
-
 const studioView = () => ({
   display: "Studio",
   description: "",
-  tabs: [
-    { id: "tab-studio", label: "Studio", active: true },
-    ...tabs.map((tab) => ({ ...tab, active: false })),
-  ],
+  tabs: [],
   fields: [],
   groups: [],
   blocks: [],
 });
 const localStudio = (t, options = {}, run) =>
-  mount(t, studioView(), run, { studio: true, ...options });
+  mount(t, studioView(), run, options);
 const click = (ui, id) => ui.document.getElementById(id).click();
 const edit = (ui, id, value, type = "input") => {
   const node = ui.document.getElementById(id);
@@ -545,7 +169,10 @@ test("创意场景即时切换且复用节点，主导航支持方向键且无�
     ...ui.document.querySelectorAll("#studio-nav [role=tab]"),
   ];
   const canvasNode = ui.document.querySelector("[data-node=n2]");
-  assert.equal(ui.document.querySelectorAll("[role=tab]").length, 8);
+  assert.deepEqual(
+    navigation.map((node) => node.dataset.scene),
+    ["canvas", "lens", "flow"],
+  );
   assert.equal(ui.document.getElementById("scene-canvas").hidden, false);
   navigation[0].focus();
   navigation[0].dispatchEvent(
@@ -711,7 +338,6 @@ test("检查点重建恢复画布、数据与场景，非法未来草稿保持�
   click(rejected, "studio-tab-lens");
   click(rejected, "studio-tab-flow");
   assert.equal(rejected.document.getElementById("flow-run").disabled, true);
-  click(rejected, "studio-tab-tools");
   assert.equal(
     rejected.calls.some((call) => Object.hasOwn(call, "checkpoint")),
     false,
@@ -1074,8 +700,7 @@ test("流程切页、隐藏、失活或卸载后取消定时器，减少动效�
 
 test("导出执行期间锁定内容防止晚到结果覆盖，失败后恢复编辑与原草稿", async (t) => {
   let rejectExport;
-  const ui = localStudio(t, {}, async (id) => {
-    if (id === "tab-studio") return studioView();
+  const ui = localStudio(t, {}, async () => {
     return new Promise((_, reject) => {
       rejectExport = reject;
     });
@@ -1117,7 +742,7 @@ test("导出取消保留完整检查点且没有成功通知，保存后才提�
     await new Promise(setImmediate);
     assert.deepEqual(
       ui.calls.filter((call) => call.id).map((call) => call.id),
-      ["tab-studio", "workspace-export"],
+      ["workspace-export"],
     );
     const payload = JSON.parse(
       ui.calls.find((call) => call.id === "workspace-export").fields.workspace,

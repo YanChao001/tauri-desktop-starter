@@ -4,12 +4,14 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import type { UpdateStatus, UpdateProgress } from "@/lib/tauri";
-import { relaunchApp } from "@/lib/tauri";
+import { openExternal, relaunchApp } from "@/lib/tauri";
 import { checkUpdates, installUpdate } from "@/lib/updates-store";
 import { UpdateSettings } from "./update-settings";
 const ui = vi.hoisted(() => ({
@@ -28,6 +30,7 @@ const ui = vi.hoisted(() => ({
   autoCheckUpdates: true,
   updatePreferences: vi.fn(),
   native: true,
+  language: "en" as "en" | "zh",
 }));
 vi.mock("@/providers/settings", () => ({
   useSettings: () => ({
@@ -38,6 +41,7 @@ vi.mock("@/providers/settings", () => ({
 vi.mock("@/lib/tauri", () => ({
   isTauri: () => ui.native,
   relaunchApp: vi.fn(),
+  openExternal: vi.fn(),
 }));
 vi.mock("@/lib/updates-store", () => ({
   useUpdates: () => ui,
@@ -57,7 +61,13 @@ vi.mock("@/config/app", async (importOriginal) => {
 vi.mock("@/providers/i18n", async () => {
   const { createTranslator } = await import("@/i18n/translate");
   const { en } = await import("@/i18n/en");
-  return { useI18n: () => ({ language: "en", t: createTranslator(en) }) };
+  const { zhCN } = await import("@/i18n/zh-CN");
+  return {
+    useI18n: () => ({
+      language: ui.language,
+      t: createTranslator(ui.language === "en" ? en : zhCN),
+    }),
+  };
 });
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 function deferred<T>() {
@@ -89,9 +99,115 @@ describe("updater controls", () => {
       error: null,
       autoCheckUpdates: true,
       native: true,
+      language: "en",
     });
+    vi.mocked(openExternal).mockResolvedValue(undefined);
   });
   afterEach(cleanup);
+  it("opens release notes as safe Markdown and returns focus after closing", async () => {
+    const user = userEvent.setup();
+    ui.phase = "ready";
+    ui.status = {
+      ...available,
+      body: [
+        "## Added",
+        "",
+        "- **Faster startup**",
+        "- [Full change log](https://github.com/example/app/compare/v1...v2)",
+        "- [Unsafe link](javascript:alert(1))",
+        "",
+        '<script>alert("untrusted")</script>',
+        "",
+        "![Remote image](https://example.com/tracking.png)",
+      ].join("\n"),
+    };
+    render(<UpdateSettings />);
+    const opener = screen.getByRole("button", { name: "Release notes" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Faster startup")).not.toBeInTheDocument();
+    await user.click(opener);
+    const dialog = screen.getByRole("dialog", {
+      name: "Release notes · 2.0.0",
+    });
+    expect(
+      await within(dialog).findByRole("heading", { name: "Added", level: 2 }),
+    ).toBeVisible();
+    expect(within(dialog).getByRole("list")).toBeVisible();
+    expect(within(dialog).getByText("Faster startup").tagName).toBe("STRONG");
+    expect(
+      within(dialog).queryByRole("link", { name: "Unsafe link" }),
+    ).not.toBeInTheDocument();
+    expect(dialog.querySelector("script, img")).toBeNull();
+    await user.click(
+      within(dialog).getByRole("link", { name: "Full change log" }),
+    );
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith(
+      "https://github.com/example/app/compare/v1...v2",
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(opener);
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(checkUpdates).not.toHaveBeenCalled();
+    expect(installUpdate).not.toHaveBeenCalled();
+  });
+  it.each([null, "", " \n\t "])(
+    "shows a useful release-notes empty state for body %j",
+    async (body) => {
+      const user = userEvent.setup();
+      ui.phase = "ready";
+      ui.status = { ...available, body };
+      render(<UpdateSettings />);
+      await user.click(screen.getByRole("button", { name: "Release notes" }));
+      expect(
+        within(screen.getByRole("dialog")).getByText(
+          "No release notes were provided for this version.",
+        ),
+      ).toBeVisible();
+    },
+  );
+  it("keeps the selected release readable while another check replaces the available version", async () => {
+    const user = userEvent.setup();
+    ui.phase = "ready";
+    ui.status = { ...available, body: "## Selected release" };
+    const view = render(<UpdateSettings />);
+    await user.click(screen.getByRole("button", { name: "Release notes" }));
+    await screen.findByRole("heading", { name: "Selected release" });
+    ui.phase = "checking";
+    ui.status = null;
+    view.rerender(<UpdateSettings />);
+    expect(
+      screen.getByRole("dialog", { name: "Release notes · 2.0.0" }),
+    ).toBeVisible();
+    ui.phase = "ready";
+    ui.status = { ...available, version: "3.0.0", body: "## Newer release" };
+    view.rerender(<UpdateSettings />);
+    expect(
+      screen.getByRole("heading", { name: "Selected release" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Newer release")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Release notes" }));
+    expect(
+      screen.getByRole("dialog", { name: "Release notes · 3.0.0" }),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Newer release" }),
+    ).toBeVisible();
+  });
+  it("localizes the release-notes dialog and empty state in Chinese", async () => {
+    const user = userEvent.setup();
+    ui.language = "zh";
+    ui.phase = "ready";
+    ui.status = { ...available, body: null };
+    render(<UpdateSettings />);
+    await user.click(screen.getByRole("button", { name: "版本说明" }));
+    const dialog = screen.getByRole("dialog", { name: "版本说明 · 2.0.0" });
+    expect(within(dialog).getByText("此版本未提供更新说明。")).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "关闭" })).toBeVisible();
+  });
   it("persists the startup preference and shows the effective source and last successful check on demand", async () => {
     ui.phase = "ready";
     ui.status = available;
@@ -103,8 +219,13 @@ describe("updater controls", () => {
       autoCheckUpdates: false,
     });
     expect(
-      screen.getByText("Update verification configured"),
-    ).not.toBeVisible();
+      screen.queryByText("Update verification configured"),
+    ).not.toBeInTheDocument();
+    const history = screen.getByText("View version history");
+    expect(history).not.toBeVisible();
+    expect(
+      screen.getByText("Update source").closest("details"),
+    ).toContainElement(history);
     expect(
       screen.getByText("https://updates.example.com/latest.json"),
     ).not.toBeVisible();
@@ -262,6 +383,15 @@ describe("updater controls", () => {
     ).toBeVisible();
     expect(checkUpdates).not.toHaveBeenCalled();
     expect(installUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText("View version history")).not.toBeVisible();
+    fireEvent.click(screen.getByText("Update source"));
+    expect(
+      screen.getByRole("link", { name: "View version history" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Last successful check:/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Update source"));
     ui.phase = "ready";
     ui.status = { ...available, available: false, version: null, body: null };
     view.rerender(<UpdateSettings />);
@@ -273,6 +403,7 @@ describe("updater controls", () => {
       screen.queryByRole("button", { name: "Download and install" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Release notes")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Update source"));
     expect(
       screen.getByRole("link", { name: "View version history" }),
     ).toBeVisible();
@@ -339,6 +470,7 @@ describe("updater controls", () => {
     expect(
       screen.queryByRole("button", { name: "Download and install" }),
     ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Update source"));
     expect(
       screen.getByRole("link", { name: "View version history" }),
     ).toBeVisible();

@@ -1,5 +1,12 @@
 import { APP_CONFIG } from "@/config/app";
 import {
+  ACCENTS,
+  DEFAULT_CUSTOM_ACCENT,
+  customAccentPalette,
+  normalizeAccentColor,
+  type Accent,
+} from "@/lib/accent-colors";
+import {
   normalizeBackgroundImage,
   type CustomBackground,
 } from "@/lib/background-image";
@@ -12,26 +19,19 @@ import {
 } from "@/i18n/registry";
 import {
   BACKGROUNDS,
-  BACKGROUND_INTENSITIES,
+  DEFAULT_BACKGROUND_INTENSITY,
+  normalizeBackgroundIntensity,
   type Background,
   type BackgroundIntensity,
 } from "@/lib/backgrounds";
 export { LANGUAGES, type Language } from "@/i18n/registry";
+export { ACCENTS, type Accent } from "@/lib/accent-colors";
 export {
   BACKGROUNDS,
   BACKGROUND_INTENSITIES,
   type Background,
   type BackgroundIntensity,
 } from "@/lib/backgrounds";
-export const ACCENTS = [
-  "neutral",
-  "indigo",
-  "blue",
-  "emerald",
-  "amber",
-  "rose",
-  "violet",
-] as const;
 export const RADII = ["sharp", "soft", "round"] as const;
 export const FONTS = ["geist", "system", "serif", "mono"] as const;
 export const FONT_SIZES = ["sm", "md", "lg"] as const;
@@ -43,10 +43,9 @@ export const NETWORK_MODES = ["system", "direct"] as const;
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 360;
 export const SIDEBAR_DEFAULT_WIDTH = 224;
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 6;
 export const STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:settings`;
 export const THEME_STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:theme`;
-export type Accent = (typeof ACCENTS)[number];
 export type Radius = (typeof RADII)[number];
 export type Font = (typeof FONTS)[number];
 export type FontSize = (typeof FONT_SIZES)[number];
@@ -57,6 +56,7 @@ export type NetworkMode = (typeof NETWORK_MODES)[number];
 export type AppSettings = {
   language: Language;
   accent: Accent;
+  customAccent: string;
   radius: Radius;
   font: Font;
   fontSize: FontSize;
@@ -77,11 +77,12 @@ export type AppSettings = {
 export const DEFAULT_SETTINGS: AppSettings = {
   language: DEFAULT_LANGUAGE,
   accent: "neutral",
+  customAccent: DEFAULT_CUSTOM_ACCENT,
   radius: "soft",
   font: "geist",
   fontSize: "md",
   background: "plain",
-  backgroundIntensity: "balanced",
+  backgroundIntensity: DEFAULT_BACKGROUND_INTENSITY,
   customBackground: null,
   motion: "full",
   menuBar: true,
@@ -125,7 +126,7 @@ function settingsSource(document: Record<string, unknown>) {
     ? document.settings
     : document;
 }
-/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机背景图片。 */
+/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机图片；v4 使用百分比强度；v5 支持视频；v6 扩展预设与自定义主题色。 */
 export function migrateSettings(raw: unknown): AppSettings {
   const document = isRecord(raw) ? raw : {};
   if (
@@ -154,16 +155,16 @@ export function migrateSettings(raw: unknown): AppSettings {
   return {
     language: pick(LANGUAGES, source.language, detectLanguage()),
     accent: pick(ACCENTS, source.accent, DEFAULT_SETTINGS.accent),
+    customAccent:
+      normalizeAccentColor(source.customAccent) ?? DEFAULT_CUSTOM_ACCENT,
     radius: pick(RADII, source.radius, DEFAULT_SETTINGS.radius),
     font: pick(FONTS, source.font, DEFAULT_SETTINGS.font),
     fontSize: pick(FONT_SIZES, source.fontSize, DEFAULT_SETTINGS.fontSize),
     background:
       background === "custom" && !customBackground ? "plain" : background,
     customBackground,
-    backgroundIntensity: pick(
-      BACKGROUND_INTENSITIES,
+    backgroundIntensity: normalizeBackgroundIntensity(
       source.backgroundIntensity,
-      DEFAULT_SETTINGS.backgroundIntensity,
     ),
     motion: pick(MOTIONS, source.motion, DEFAULT_SETTINGS.motion),
     menuBar: flag("menuBar"),
@@ -222,9 +223,11 @@ export function readInitialSettings(): {
 } {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    const document: unknown = raw ? JSON.parse(raw) : {};
+    const document: unknown = raw === null ? {} : JSON.parse(raw);
+    // 缺少存档可以初始化；损坏的根结构须保留原件，不能被默认值覆盖。
+    if (!isRecord(document)) throw new Error("Invalid settings document");
     const settings = migrateSettings(document);
-    if (isRecord(document) && !Object.hasOwn(settingsSource(document), "theme"))
+    if (!Object.hasOwn(settingsSource(document), "theme"))
       settings.theme = pick(
         THEMES,
         window.localStorage.getItem(THEME_STORAGE_KEY) ??
@@ -272,6 +275,13 @@ export function applySettings(
     motion: settings.motion,
     language: settings.language,
   }))
-    root.dataset[name] = value;
+    root.dataset[name] = String(value);
+  const customAccent = customAccentPalette(settings.customAccent);
+  root.style.setProperty("--custom-accent-light", customAccent.light);
+  root.style.setProperty("--custom-accent-dark", customAccent.dark);
+  root.style.setProperty(
+    "--skin-exposure",
+    String(settings.backgroundIntensity / 100),
+  );
   root.lang = getLocale(settings.language).documentLang;
 }

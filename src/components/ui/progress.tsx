@@ -20,14 +20,14 @@ function Progress({
       value={current}
       max={maximum}
       className={cn(
-        "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
+        "relative flex w-full items-center overflow-x-hidden rounded-full",
         className
       )}
       {...props}
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className="size-full flex-1 bg-primary transition-all"
+        className="size-full flex-1 transition-all"
         style={{ transform: `translateX(-${100 - ((current ?? 0) / maximum) * 100}%)` }}
       />
     </ProgressPrimitive.Root>

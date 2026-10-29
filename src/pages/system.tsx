@@ -103,9 +103,9 @@ export default function System() {
   return (
     <NativePage title={t("system.title")} description={t("system.description")}>
       <div className="space-y-4">
-        <section className="divide-y rounded-xl border bg-card px-4">
+        <section className="divide-y rounded-xl border app-surface px-4">
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <h2 className="flex items-center gap-2 font-semibold">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
               {t("system.notification")}
               <HelpTooltip
                 label={`${t("system.notification")} · ${t("title.help")}`}
@@ -131,7 +131,7 @@ export default function System() {
             </Button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <h2 className="flex items-center gap-2 font-semibold">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
               {t("system.shortcut")}
               <HelpTooltip
                 label={`${t("system.shortcut")} · ${t("title.help")}`}
@@ -217,7 +217,7 @@ export default function System() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <h2 className="font-semibold">{t("system.workspace")}</h2>
+            <h2 className="text-sm font-medium">{t("system.workspace")}</h2>
             <div className="flex flex-wrap items-center gap-2">
               <Button disabled={busy} onClick={() => void run(openNotesWindow)}>
                 {t("system.window")}
@@ -232,8 +232,8 @@ export default function System() {
             </div>
           </div>
         </section>
-        <section className="space-y-3 rounded-xl border bg-card p-4">
-          <h2 className="flex items-center gap-2 font-semibold">
+        <section className="space-y-3 rounded-xl border app-surface p-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
             {t("system.deepLink")}
             <HelpTooltip label={`${t("system.deepLink")} · ${t("title.help")}`}>
               {t("system.deepLinkHelp", {
@@ -242,9 +242,12 @@ export default function System() {
               })}
             </HelpTooltip>
           </h2>
-          <code className="block select-text break-all rounded bg-muted p-3 text-xs">
-            {deepLink}
-          </code>
+          <pre
+            data-surface="reading"
+            className="select-text whitespace-pre-wrap break-all p-3 text-xs"
+          >
+            <code>{deepLink}</code>
+          </pre>
           <h3 className="text-sm font-medium">{t("system.events")}</h3>
           <ul
             className="h-24 space-y-2 overflow-auto text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

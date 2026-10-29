@@ -137,11 +137,13 @@ pnpm test:extensions:ui
 
 内置工作台源码变化后先执行 `pnpm extension:demos:build`；完整重建比对用 `pnpm extension:demos:check --rebuild`。市场 `check` 编译收录模块并运行真实 Wasm fixture，不签发生产目录。已有与本轮源码匹配的产物时，可直接运行界面检查；`STARTER_EXTENSION_TOOL` 可指定 CLI 绝对路径。构建规则见 [内置应用资源](./extensions.md#内置应用资源) 和 [市场开发指南](../marketplace/docs/development.md)。
 
-[runner](../e2e/extension-ui.mjs) 使用生产 React 外壳、包内 HTML / SDK 和真实离线 Wasm；服务 fixture 替换原生传输、窗口、桌面服务及系统对话框，不访问用户数据、真实 LAN 或图库。默认覆盖内置工作台、计算器、贪吃蛇、LAN 聊天及壁纸库；中英、明暗、窄屏大字号独立窗口和大屏嵌入的精确 profile 由 runner 维护。可定向执行，例如：
+[runner](../e2e/extension-ui.mjs) 使用生产 React 外壳、包内 HTML / SDK 和真实离线 Wasm；服务 fixture 替换原生传输、窗口、桌面服务及系统对话框，不访问用户数据、真实 LAN 或图库。默认透明文档的 axe 对比度扫描会临时补入宿主纯色底，以弥补工具无法跨隔离源解析底层画布的限制，扫描后恢复；真实透明合成与作者背景覆盖另由样式像素检查验证。默认覆盖内置工作台、计算器、贪吃蛇、LAN 聊天及壁纸库；中英、明暗、窄屏大字号独立窗口和大屏嵌入的精确 profile 由 runner 维护。可定向执行，例如：
 
 ```bash
 pnpm test:extensions:ui scientific-calculator --profiles=1,2
 ```
+
+透明度回归按用途检查：浏览器路由矩阵验证普通 `Card`、手写面板及其页脚在 0 / 50 / 100 档共用面板曲线，输入字段沿用独立的控件材质曲线与局部磨砂；纯色背景、0% 和高对比度恢复实体底色。样式一致性检查验证页面与 Portal 中的字段、SDK 普通 / 禁用 / 只读 / 悬停状态，以及高对比度切换后 token 同步。扩展 runner 检查本地工作台与壁纸库的普通面板端点，同时保留其他插件的作者背景。绘图对象、状态色和半透明按钮不按普通面板断言。
 
 单独选择 `wallpaper-browser` 时只准备壁纸包，正常业务、授权确认和安全检查也限定于壁纸；例如 `node e2e/extension-ui.mjs wallpaper-browser --profiles=0,1,2` 会运行这三个界面 profile，并保留动效、可选权限与 iframe 隔离检查。
 
@@ -163,7 +165,7 @@ node e2e/extension-ui.mjs wallpaper-browser --wallpaper-local-only
 node e2e/extensions/workbench-studio.mjs
 ```
 
-该 [定向检查](../e2e/extensions/workbench-studio.mjs) 加载真实工作台 HTML 和 SDK，以 fixture 消息传输验证画布、图表、流程、工具箱、检查点、语言、活动状态与布局；明暗及窗口尺寸 profile 以脚本为准，截图和报告写入 `artifacts/browser/workbench-studio/`。它不运行真实 Wasm、Tauri IPC 或系统对话框，不等同于上面的生产外壳加真实离线 Wasm runner，也不证明安装版或目标 WebView 通过验收。
+该 [定向检查](../e2e/extensions/workbench-studio.mjs) 加载真实工作台 HTML 和 SDK，以 fixture 消息传输验证画布、图表、流程、检查点、语言、活动状态与布局；明暗及窗口尺寸 profile 以脚本为准，截图和报告写入 `artifacts/browser/workbench-studio/`。它不运行真实 Wasm、Tauri IPC 或系统对话框，不等同于上面的生产外壳加真实离线 Wasm runner，也不证明安装版或目标 WebView 通过验收。
 
 宿主页面保留的回归还须验证：动态入口预载不执行 IPC；反复切换保留同一 iframe 且不重排 DOM；隐藏页面不进入布局 / 焦点顺序、不发新 SDK 请求并暂停观察、语言刷新和首屏计时；在途回执继续完成；LRU 移出后草稿可恢复；身份变化或必需授权撤销立即移除旧界面。SDK 验证缺省 `active` 兼容、CSS 动画暂停与隐藏请求拒绝，宿主桥另验证绕过 SDK 的隐藏请求同样失败。浏览器测量只能说明对应构建和 fixture 的行为，冷 / 热启动与正式安装版性能仍按 [安装版与启动验收](#安装版与启动验收) 采样。
 
@@ -176,6 +178,18 @@ node e2e/extensions/navigation-cache.mjs
 该无头检查使用独立临时 Vite 构建与 IPC fixture，不启动 Rust；核对动态导航悬停不读取视图或申请租约、HTML 首屏不请求 Markdown / 图表解析依赖、往返普通页面与两个插件时的文档身份和局部草稿、稳定 DOM 顺序及隐藏请求拒绝。原生租约和身份撤销仍由对应 Rust 与真实桌面检查验证。
 
 `test:extensions:ui` 先运行 `pnpm test:extensions:styles`：独立构建真实宿主控件与 CSS，对照 SDK 默认控件的主题、变体、尺寸、焦点、禁用和校验状态，并验证显式 Shadow DOM 接入、键盘和强制颜色回退。该检查可单独运行，不启动 Rust 或原生窗口；期望值取自实际宿主组件，不复制同一份样式常量充当验证。
+
+浏览器 CI 在生产页面检查前运行同一共享样式对照，防止宿主组件与 SDK 默认规则重新分叉；实际插件业务与作者样式仍按下述 runner 单独验收。
+
+实际插件 runner 还在离屏、`inert` 容器中挂载真实宿主 Button / Input / Select / Textarea，由 [控件对照](../e2e/extensions/surface-checks.mjs) 比较 LAN、壁纸库和内置工作台中显式选定的普通控件的字体、尺寸、圆角、边框与背景，不比较业务布局宽度；计算器的 Windows 专用设计与 Snake 已声明的整套游戏视觉按各自边界验收，这项检查不自动遍历全部插件控件或替代设计例外审查。
+
+按前文准备本轮插件包与 CLI 后，可仅运行实际插件样式检查：
+
+```bash
+node e2e/extension-ui.mjs --styles-only
+```
+
+该模式加载真实打包 HTML 与 SDK，检查初始呈现、导航和背景，并在同一 iframe 内切换 `soft` / `sharp` / `round` 圆角，对照上述已选控件，保留计算器 Windows 风格与 Snake 整套游戏设计的例外。可沿用插件名与 `--profiles` 筛选，结果记录在 `styles-run.json`；它不运行完整业务流程，不能替代默认 runner 的业务和隔离验收。
 
 报告与截图写入 `artifacts/extensions/custom-ui/`，包含模块 / UI 哈希和实际动作；并行任务可设置 `STARTER_EXTENSION_UI_RUN_ID`（1–80 个 ASCII 字母、数字、下划线或连字符）使用独立子目录。定向运行只报告实际应用与 profile。
 
@@ -194,6 +208,8 @@ pnpm bindings:check
 ```
 
 局部修改可筛选对应模块；新增 feature 也要单独编译检查。服务测试注入临时路径和数据，覆盖入参、稳定错误码、事务迁移、未来版本保护与并发冲突，避免为纯逻辑启动图形界面。正式构建与 E2E feature 分别验证。
+
+[Wasmtime 缓存依赖补丁](../src-tauri/vendor/wasmtime-internal-cache/README.md)另用 `pnpm test:wasmtime-cache` 运行保留的上游单元和集成测试。该 crate 是宿主的依赖，不能直接从宿主 workspace 用 `cargo test -p` 测试其开发依赖；脚本复制源码和宿主锁文件到独立临时目录，以仓库根目录的工具链运行，并复用 `src-tauri/target`。Cargo 只在临时锁文件中补齐测试依赖，退出后清理副本；不修改生产 workspace、宿主锁文件或 vendor 源码，也不在 vendor 下生成锁文件和构建目录。此检查不包含在 `pnpm verify` 中，修改补丁或压缩依赖时单独执行。
 
 IPC 改动后运行 `pnpm bindings:generate` 并提交生成文件；它也会更新独立 SDK 公共 DTO。`bindings:check` 重新导出比较，Windows Rust CI 会阻止漂移；前端 CI 另用 `pnpm extension:sdk:check` 检查公开类型依赖闭包，脚本测试将 SDK 复制到仓库外做严格编译。生成类型不提供 Rust 边界的运行时校验。
 

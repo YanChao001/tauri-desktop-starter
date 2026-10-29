@@ -17,6 +17,7 @@ import {
 } from "@/lib/background-image";
 import type { Background } from "@/lib/backgrounds";
 import type { Wallpaper } from "@/lib/wallpaper-library";
+import { BackgroundVideoError } from "@/lib/video-wallpaper";
 import { CustomBackgroundPicker } from "./custom-background-picker";
 
 const state = vi.hoisted(() => ({
@@ -33,6 +34,15 @@ const library = vi.hoisted(() => ({
   removeLibraryWallpaper: vi.fn(),
   renameLibraryWallpaper: vi.fn(),
   onWallpaperLibraryChanged: vi.fn(),
+}));
+const videoImport = vi.hoisted(() => ({
+  native: false,
+  importVideoWallpaper: vi.fn(),
+}));
+vi.mock("@/lib/tauri", () => ({ isTauri: () => videoImport.native }));
+vi.mock("@/lib/video-wallpaper", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/video-wallpaper")>()),
+  importVideoWallpaper: videoImport.importVideoWallpaper,
 }));
 vi.mock("@/providers/settings", () => ({ useSettings: () => state }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -78,6 +88,8 @@ beforeEach(() => {
   state.settings = { background: "plain", customBackground: null };
   state.persistence = "saved";
   vi.clearAllMocks();
+  videoImport.native = false;
+  videoImport.importVideoWallpaper.mockResolvedValue(null);
   library.listWallpaperLibrary.mockResolvedValue([]);
   library.onWallpaperLibraryChanged.mockResolvedValue(vi.fn());
   library.addLibraryWallpaper.mockResolvedValue(wallpaper);
@@ -91,6 +103,125 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("多图壁纸图库", () => {
+  it("浏览器混合导入图片与视频，保存封面和视频引用后再应用", async () => {
+    const video = { id: "c".repeat(64), mime: "video/webm" as const };
+    const imported = { ...image, name: "clouds.webm", video };
+    const saved = { ...wallpaper, id: "b".repeat(64), ...imported };
+    const selected = new File(["video fixture"], "clouds.webm", {
+      type: "video/webm",
+    });
+    videoImport.importVideoWallpaper.mockResolvedValue(imported);
+    library.addLibraryWallpaper
+      .mockResolvedValueOnce(wallpaper)
+      .mockResolvedValueOnce(saved);
+    render(<CustomBackgroundPicker />);
+    await loaded();
+    choose([file(), selected]);
+    const wallpapers = within(
+      screen.getByRole("group", { name: "settings.bgCustom" }),
+    );
+    await waitFor(() =>
+      expect(wallpapers.getAllByRole("radio")).toHaveLength(2),
+    );
+    expect(importBackgroundImage).toHaveBeenCalledOnce();
+    expect(videoImport.importVideoWallpaper).toHaveBeenCalledWith(selected);
+    expect(library.addLibraryWallpaper).toHaveBeenLastCalledWith(imported);
+    expect(state.update).toHaveBeenLastCalledWith({
+      background: "custom",
+      customBackground: imported,
+    });
+    expect(screen.getByText("settings.videoWallpaper")).toBeVisible();
+  });
+  it("桌面视频通过原生选择器导入，取消时保留图库与当前背景", async () => {
+    videoImport.native = true;
+    state.settings = { background: "custom", customBackground: image };
+    render(<CustomBackgroundPicker />);
+    await loaded();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "settings.importVideoBackground",
+      }),
+    );
+    await waitFor(() =>
+      expect(videoImport.importVideoWallpaper).toHaveBeenCalledOnce(),
+    );
+    expect(videoImport.importVideoWallpaper).toHaveBeenCalledWith(undefined);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "settings.importVideoBackground",
+        }),
+      ).toBeEnabled(),
+    );
+    expect(library.addLibraryWallpaper).not.toHaveBeenCalled();
+    expect(state.update).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+  it("同一封面的不同视频分别选择，删除其他视频不会取消当前视频", async () => {
+    const first = {
+      ...wallpaper,
+      video: { id: "c".repeat(64), mime: "video/mp4" as const },
+    };
+    const second = {
+      ...wallpaper,
+      id: "b".repeat(64),
+      name: "second.mp4",
+      video: { id: "d".repeat(64), mime: "video/mp4" as const },
+    };
+    state.settings = {
+      background: "custom",
+      customBackground: { ...image, name: second.name, video: second.video },
+    };
+    library.listWallpaperLibrary.mockResolvedValue([first, second]);
+    render(<CustomBackgroundPicker />);
+    await loaded();
+    expect(
+      screen.getByRole("radio", {
+        name: "settings.chooseWallpaper: sky.webp",
+      }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("radio", {
+        name: "settings.chooseWallpaper: second.mp4",
+      }),
+    ).toBeChecked();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "settings.deleteWallpaper: sky.webp",
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "settings.removeWallpaper",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(state.update).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("radio", {
+        name: "settings.chooseWallpaper: second.mp4",
+      }),
+    ).toBeChecked();
+  });
+  it("视频解码失败保留原背景并通过导入详情说明原因", async () => {
+    state.settings = { background: "custom", customBackground: image };
+    videoImport.importVideoWallpaper.mockRejectedValue(
+      new BackgroundVideoError("videoDecode"),
+    );
+    render(<CustomBackgroundPicker />);
+    await loaded();
+    choose([new File(["invalid"], "broken.mp4", { type: "video/mp4" })]);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    const details = vi.mocked(toast.error).mock.calls.at(-1)?.[1]?.action as
+      { onClick(): void } | undefined;
+    act(() => details?.onClick());
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "settings.videoDecodeError",
+    );
+    expect(state.update).not.toHaveBeenCalled();
+  });
   it("先持久化图库，再应用成功导入的图片；旧图片传给图库作首次纳入", async () => {
     state.settings.customBackground = image;
     render(<CustomBackgroundPicker />);

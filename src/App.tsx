@@ -27,6 +27,7 @@ import { RecoveryGate } from "@/components/recovery-gate";
 import { THEME_STORAGE_KEY } from "@/lib/settings-model";
 import { SettingsPersistence } from "@/components/settings-persistence";
 import { ThemeEffects } from "@/components/theme-effects";
+import { PageLoading } from "@/components/page-loading";
 
 function AppEffects() {
   useExternalLinks();
@@ -81,7 +82,7 @@ export default function App() {
                             path={path}
                             element={
                               <RecoveryGate>
-                                <Suspense>
+                                <Suspense fallback={<PageLoading />}>
                                   <Page />
                                 </Suspense>
                               </RecoveryGate>

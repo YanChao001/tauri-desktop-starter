@@ -113,13 +113,18 @@ export function TiltScene({ active, reduced, replay, stageRef }: SceneProps) {
   };
   return (
     <>
-      <div className="lab-stage lab-tilt-stage" ref={stageRef}>
+      <div
+        data-surface="artwork"
+        className="lab-stage lab-tilt-stage"
+        ref={stageRef}
+      >
         <StageGuides label={t("lab.tilt")} />
         <div className="lab-tilt-halo" />
         <span className="sr-only" id={instructions}>
           {t("lab.tiltCard")}
         </span>
         <motion.button
+          data-surface="artwork"
           type="button"
           className="lab-tilt-card"
           aria-describedby={instructions}

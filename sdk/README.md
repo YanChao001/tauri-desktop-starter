@@ -67,9 +67,17 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 
 ## 默认外观与动效
 
-SDK 注入 `starter-defaults` CSS layer，提供宿主字体、字号、语义色、圆角、焦点、禁用反馈、基础表格 / 图片 / 文本样式和 8px 滚动条；按钮 / 文本输入默认高 2rem，页面 padding 为 1rem。`button` 与 `input[type="button"/"submit"/"reset"]` 使用相同按钮规则；`data-variant` 支持宿主的 default、outline、secondary、ghost、destructive 和 link 基础变体。复选与单选保留原生 input 的值、键盘和无障碍语义，通过 CSS 对齐宿主形态；强制颜色模式保留系统可辨识反馈。普通作者 CSS 优先于该 layer，可直接覆盖，无需 `!important` 或复制宿主组件库。
+内置与市场插件的通用界面保持宿主风格，适用范围和业务专用例外以 [共同外观规范](../docs/conventions/ui-guidelines.md#宿主与插件的共同外观) 为准。作者维护布局与业务内容，不把宿主通用控件样式复制进插件包。
 
-默认样式直接覆盖普通文档 DOM，不会穿透 Web Components 的 Shadow DOM。当前宿主提供 `starter.applyStyles(root)`，组件可在创建 shadow root 后显式接入，并在卸载时调用返回的清理函数；重复接入按引用计数释放，不改写 `attachShadow`、不扫描其他组件，也不增加原生能力。使用当前 SDK 的插件声明 `minHostVersion: "0.1.7"`，并随当前开发宿主一起验证；开发快照不维护旧 SDK 的适配分支或历史宿主验证矩阵。
+宿主直接使用 [surface-tokens.css](../src/styles/surface-tokens.css) 和 [control-styles.css](../src/styles/control-styles.css)，[ui-theme.ts](../src/lib/ui-theme.ts) 将相同原文装配为 `theme.styles`，SDK 注入 `starter-defaults` layer。它不按插件当前控件裁剪，也不维护另一份默认 CSS；后续动态插入的标准元素同样匹配。宿主共享样式的源码修改须更新实际运行的宿主，插件无需为同步这些规则重新打包。普通作者 CSS 在层叠上优先于该 layer，无需 `!important`；这一能力服务布局与明确的业务专用设计，不把偶然覆盖造成的差异视为约定。
+
+标准单行按钮 / 输入使用同一尺寸规则，文档 padding 为 1rem，并提供基础表格 / 图片 / 文本样式和 8px 滚动条。`button` 与 `input[type="button"/"submit"/"reset"]` 使用共同按钮规则，`data-variant` 支持 default、outline、secondary、ghost、destructive、link。自定义多行卡片可声明材质角色并保留自身布局。复选与单选保留原生 input 的值、键盘和无障碍语义，通过共同 CSS 对齐宿主形态；强制颜色模式保留系统反馈。`kbd`、`pre/code`、`output`、`details/summary`、表头、日期 / 文件 / 颜色输入和进度类控件同样包含在完整规则中。
+
+相关设置或表单参数可用原生 `fieldset` / `legend`，与宿主共用嵌边组标题：顶部 8px、其余 12px 内边距，标题 14px 中等字重。legend 不占组内的额外垂直间距，也无需添加背景遮挡边线。控件组、普通正文、输出列表与画布的选择原则见[界面规范](../docs/conventions/ui-guidelines.md#组件选择顺序)。
+
+隔离文档沿用浏览器默认的按需滚动槽，不为无需整页滚动的内容预留空槽，避免自定义背景右侧露出宿主底色；实际溢出时仍由文档原生滚动条占位。宿主普通页面和侧栏的稳定滚动槽不受影响。
+
+默认样式直接覆盖普通文档 DOM，不会穿透 Web Components 的 Shadow DOM。当前宿主提供 `starter.applyStyles(root)`，组件可在创建 shadow root 后显式接入，并在卸载时调用返回的清理函数；重复接入按引用计数释放。注册的 root 使用相同完整规则并随主题样式更新，其后新增控件无需再次接入。不改写 `attachShadow`、不扫描其他组件，也不增加原生能力。使用当前 SDK 的插件声明 `minHostVersion: "0.1.7"`，并随当前开发宿主一起验证；开发快照不维护旧 SDK 的适配分支或历史宿主验证矩阵。
 
 ```javascript
 const root = element.attachShadow({ mode: "open" });
@@ -82,15 +90,19 @@ root.append(button);
 disposeStyles();
 ```
 
-一致性范围是语义 token 和基础控件状态，不是把宿主 React / Radix 组件复制进插件。多选列表、日期和文件选择等平台子控件仍有 WebView 差异；第三方组件库自己的 CSS、Canvas / SVG 绘图需主动消费主题 token。皮肤壁纸属于宿主窗口底层，插件正文默认使用不透明背景，不自动继承宿主卡片透明度。
+一致性范围是共同 CSS 中的标准元素、材质与语义状态，不复制宿主 React / Radix 组件。第三方组件库的自绘结构、Canvas / SVG 像素和平台日期 / 文件子弹窗不能仅靠 CSS 自动推断，作者须显式接入；确有业务专用设计的内容按上述规范保留专用配色。皮肤壁纸属于宿主窗口底层，扩展外壳、内容框和文档默认透明，背后沿用宿主的阅读保护；100% 是壁纸完整显现，前景控件仍保留可读底线。明确采用独立背景的业务区域负责该背景下的文字与控件对比。
+
+手写容器通过 `data-surface` 声明用途：`transparent` 用于布局和已受保护的内部区块，`panel` 用于含文卡片，`control` 用于一般控件 / 输出，`popover` 用于浮层，`reading` 用于代码 / 日志 / 吸顶表头，`solid` 用于关键错误，`artwork` 标识内容专用绘制。对应的 `.app-surface`、`.app-control-surface`、`.app-overlay-surface`、`.app-reading-surface` 类同样可用；完整分类见[界面规范](../docs/conventions/ui-guidelines.md#颜色只用语义-token)。不要给每个 div 加模糊，也不要用完全透明布局代替阅读面板。原生选项和语义状态图元保留明确配色，普通 hover / selected、placeholder 与弱说明由共同规则处理。纯色、0%、高对比度和不支持模糊时恢复实体降级。模糊只采样当前文档内背景，无法跨 iframe 模糊宿主壁纸。
 
 内容框占满侧栏右侧或独立窗口标题栏下的可用空间，宿主不叠加阅读宽度和外层 padding。以文档承担整页滚动，普通区块自然排版；需要居中时在内部容器设置 `max-width`、自动外边距和 padding，避免固定高度、嵌套滚动或视口最小高度叠加 padding 撑出第二条滚动条。
 
-游戏等需要独立视觉风格的界面可用作者 CSS 覆盖默认字体、颜色、控件和页面 padding，并继续处理宿主语言、活动状态与减少动效。独立窗口的默认逻辑尺寸可在清单声明 `ui.windowSize`，其范围、最低宿主和尺寸记忆规则见 [应用窗口](../docs/extensions.md#开发带界面的应用插件)；插件文档不能直接修改宿主 DOM 或调用原生窗口 API。
+游戏等已明确采用专用视觉设计的区域可以按需定制字体、颜色和布局，未纳入该设计范围的普通设置、菜单与外围控件仍遵循共同外观；整套游戏界面的例外范围见 [共同外观规范](../docs/conventions/ui-guidelines.md#宿主与插件的共同外观)。所有区域继续处理宿主语言、活动状态与减少动效。独立窗口的默认逻辑尺寸可在清单声明 `ui.windowSize`，其范围、最低宿主和尺寸记忆规则见 [应用窗口](../docs/extensions.md#开发带界面的应用插件)；插件文档不能直接修改宿主 DOM 或调用原生窗口 API。
 
 普通单选 `select` 默认增强为主题下拉弹层，原 DOM 仍提供值和表单状态，保留 `value`、`selectedIndex`、reset、`input` / `change`、fieldset 禁用和 optgroup 语义。`multiple`、`size > 1` 或 `data-starter-select="native"` 使用原生交互；增强不开放表单提交权限。
 
-`theme.tokens` 提供语义色、图表、圆角、`--host-font-family` / `--host-font-size`，以及宿主响应式文本输入规则 `--control-input-font-size` / `--control-input-line-height`；本地 Geist 通过 data 字体注入，系统字体沿用宿主栈。输入字号断点以宿主窗口为准，不以较窄 iframe 重算；跨断点时同步更新。正文与控件继承应用字体，代码和原始结构化输出按需用等宽字体。主题、字体和语言随宿主设置同步，不另存同一份偏好。
+`theme.tokens` 自动收集计算后的根元素主题变量并排除实现内部的 `--tw-*`，新增材质或语法色无需同步手写名字清单；同时提供 `--host-font-family` / `--host-font-size` 与响应式文本输入规则。根元素的自定义变量属于公开外观契约，业务数据留在组件或存储中。`theme.styles` 提供当前宿主的完整共享 CSS，仅在主题引用更新时随主题发送，普通字段编辑不重新复制样式或字体。本地 Geist 通过 data 字体注入，系统字体沿用宿主栈；输入字号断点以宿主窗口为准，不以较窄 iframe 重算。正文与控件继承应用字体，代码输出按需使用等宽字体。主题、字体和语言随宿主设置同步，不另存同一份偏好。
+
+嵌入页与独立插件窗口复用同一主题消息链。运行时外观设置变化后，活动界面接收最新变量与样式，SDK 更新文档及显式登记的 ShadowRoot；隐藏保留页暂停主题观察，恢复活动时重新读取最新外观。未登记的 Shadow DOM 不会自动注入，插件也不能要求宿主把样式扩散到任意第三方文档。验证须对照真实宿主组件与实际包内界面，入口和覆盖范围见 [样式一致性检查](../docs/testing.md#自定义扩展界面)。
 
 `theme.mode` 为 `light` / `dark`，对应根元素同名 class；`theme.motion` 为 `full` / `reduced`，对应 `data-motion`。SDK 同时遵循系统减少动效设置。作者持续动画须消费 [活动状态](#活动状态与页面保留)，并在离屏、文档隐藏、卸载和 reduced motion 时停止。宿主主题圆形过渡会同步到活动内容框；API 不可用、减少动效、页面不活动或窗口隐藏时直接应用主题。
 

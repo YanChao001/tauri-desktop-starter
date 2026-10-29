@@ -2,10 +2,7 @@
 #![cfg(any(target_arch = "wasm32", test))]
 
 mod app;
-mod data;
 mod studio;
-mod tasks;
-mod text;
 mod view;
 
 #[cfg(target_arch = "wasm32")]

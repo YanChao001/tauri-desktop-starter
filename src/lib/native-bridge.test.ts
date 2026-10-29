@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS, settingsDocument } from "@/lib/settings-model";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -10,6 +11,7 @@ import {
   onSettingsChanged,
   recordFrontendError,
   saveSettingsSnapshot,
+  resetSettingsSnapshot,
   updateNote,
 } from "./tauri";
 
@@ -66,22 +68,30 @@ describe("generated native bridge", () => {
     });
   });
 
-  it("persists a detached JSON settings document with the expected revision", async () => {
-    const document = {
-      schemaVersion: 2,
-      language: "en",
-      runInBackground: false,
-    };
-    const snapshot = { revision: 2, settings: document };
-    vi.mocked(invoke).mockResolvedValue(snapshot);
-    await expect(saveSettingsSnapshot(document, 1)).resolves.toEqual(snapshot);
-    expect(invoke).toHaveBeenLastCalledWith("save_settings_snapshot", {
-      settings: document,
-      expectedRevision: 1,
-    });
-    const sent = vi.mocked(invoke).mock.calls[0]?.[1] as { settings?: unknown };
-    expect(sent.settings).not.toBe(document);
-  });
+  it.each([
+    ["save", saveSettingsSnapshot, "save_settings_snapshot"],
+    ["reset", resetSettingsSnapshot, "reset_settings_snapshot"],
+  ] as const)(
+    "%s passes a detached settings document and expected revision",
+    async (_label, persist, command) => {
+      const document = settingsDocument({
+        ...DEFAULT_SETTINGS,
+        language: "en",
+        runInBackground: false,
+      });
+      const snapshot = { revision: 2, settings: document };
+      vi.mocked(invoke).mockResolvedValue(snapshot);
+      await expect(persist(document, 1)).resolves.toEqual(snapshot);
+      expect(invoke).toHaveBeenLastCalledWith(command, {
+        settings: document,
+        expectedRevision: 1,
+      });
+      const sent = vi.mocked(invoke).mock.calls[0]?.[1] as {
+        settings?: unknown;
+      };
+      expect(sent.settings).not.toBe(document);
+    },
+  );
 
   it("subscribes to shared settings and notes events and returns cleanup", async () => {
     const stop = vi.fn();

@@ -8,7 +8,7 @@ export const MAX_WALLPAPERS = 24;
 const DATABASE = `${APP_CONFIG.browserStorageNamespace}:wallpapers`;
 const STORE = "library";
 const CHANNEL = `${APP_CONFIG.browserStorageNamespace}:wallpapers-changed`;
-type Library = { version: 1; images: Wallpaper[] };
+type Library = { version: 2; images: Wallpaper[] };
 
 export class WallpaperLibraryError extends Error {
   constructor(readonly code: "full" | "invalid" | "storage") {
@@ -17,12 +17,12 @@ export class WallpaperLibraryError extends Error {
 }
 
 function readLibrary(raw: unknown): Library {
-  if (raw === undefined) return { version: 1, images: [] };
+  if (raw === undefined) return { version: 2, images: [] };
   if (typeof raw !== "object" || raw === null)
     throw new WallpaperLibraryError("invalid");
   const value = raw as Record<string, unknown>;
   if (
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     !Array.isArray(value.images) ||
     value.images.length > MAX_WALLPAPERS
   )
@@ -42,9 +42,14 @@ function readLibrary(raw: unknown): Library {
     )
       throw new WallpaperLibraryError("invalid");
     ids.add(id);
-    return { id, name: image.name, dataUrl: image.dataUrl };
+    return {
+      id,
+      name: image.name,
+      dataUrl: image.dataUrl,
+      ...(image.video ? { video: image.video } : {}),
+    };
   });
-  return { version: 1, images };
+  return { version: 2, images };
 }
 
 async function browserImage(input: WallpaperInput): Promise<Wallpaper> {
@@ -52,12 +57,21 @@ async function browserImage(input: WallpaperInput): Promise<Wallpaper> {
   if (!image) throw new WallpaperLibraryError("invalid");
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(image.dataUrl),
+    new TextEncoder().encode(
+      image.video
+        ? `video:${image.video.id}:${image.video.mime}`
+        : image.dataUrl,
+    ),
   );
   const id = [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-  return { id, name: image.name, dataUrl: image.dataUrl };
+  return {
+    id,
+    name: image.name,
+    dataUrl: image.dataUrl,
+    ...(image.video ? { video: image.video } : {}),
+  };
 }
 
 /** 一次事务内读取和修改，避免多个浏览器窗口覆盖彼此的图库。 */

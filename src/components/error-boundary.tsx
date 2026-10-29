@@ -51,7 +51,10 @@ export class ErrorBoundary extends Component<
     );
 
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background p-8 text-center text-foreground">
+      <div
+        data-surface="solid"
+        className="flex h-screen flex-col items-center justify-center gap-3 p-8 text-center text-foreground"
+      >
         <p className="text-sm font-medium">{t("common.renderError")}</p>
         <p className="max-w-md font-mono text-xs break-words text-muted-foreground">
           {error.message}

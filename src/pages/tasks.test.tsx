@@ -11,6 +11,8 @@ import * as native from "@/lib/tauri";
 import type { WorkbenchTask, WorkbenchTaskSnapshot } from "@/lib/tauri";
 import Tasks from "./tasks";
 import { toast } from "sonner";
+import { en } from "@/i18n/en";
+import { zhCN } from "@/i18n/zh-CN";
 
 const locale = vi.hoisted(() => ({ language: "keys" as "keys" | "en" | "zh" }));
 vi.mock("@/providers/i18n", async () => {
@@ -169,7 +171,7 @@ describe("background task center", () => {
       await screen.findByText(/3 entries could not be read/),
     ).toBeVisible();
     expect(
-      screen.getByText(/The complete report could not be saved/),
+      screen.getByText(en["tasks.reportUnavailable"], { exact: false }),
     ).toBeVisible();
     expect(screen.queryByText(diagnostic)).not.toBeInTheDocument();
     locale.language = "zh";
@@ -200,11 +202,7 @@ describe("background task center", () => {
       ],
     });
     render(<Tasks />);
-    expect(
-      await screen.findByText(
-        "此历史任务包含附加诊断，可展开结果查看原始记录。",
-      ),
-    ).toBeVisible();
+    expect(await screen.findByText(zhCN["tasks.legacyNotice"])).toBeVisible();
     expect(
       screen.queryByText("An unknown old task message"),
     ).not.toBeInTheDocument();
@@ -236,6 +234,35 @@ describe("background task center", () => {
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+  it("晚到的历史目录不会覆盖用户刚选择的目录", async () => {
+    let resolveRecent!: (
+      value: Awaited<ReturnType<typeof native.recentWorkbenchFiles>>,
+    ) => void;
+    vi.mocked(native.recentWorkbenchFiles).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRecent = resolve;
+      }),
+    );
+    render(<Tasks />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "tasks.pickDirectory" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("tasks.directory")).toHaveTextContent(
+        "Chosen",
+      ),
+    );
+    await act(async () => resolveRecent([]));
+    expect(screen.getByLabelText("tasks.directory")).toHaveTextContent(
+      "Chosen",
+    );
+    expect(screen.getByText("C:/chosen", { exact: true })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "tasks.start" }));
+    await waitFor(() =>
+      expect(native.startWorkbenchTask).toHaveBeenCalledWith("scan", "dir-1"),
+    );
+  });
+
   it("starts a real directory task, requests cancellation and does not cancel on page unmount", async () => {
     const view = render(<Tasks />);
     fireEvent.click(

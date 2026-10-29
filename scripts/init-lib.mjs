@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
 import { parse as parseToml } from "smol-toml";
+import ts from "typescript";
 import { checkVersionValues, checkVersions } from "./version.mjs";
 import { applyFileChanges, projectFile } from "./fs-utils.mjs";
 
@@ -391,11 +392,96 @@ function packageMetadata(pkg, next) {
   return pkg;
 }
 
+const isBinaryArgument = (arg) => arg === "--bin" || arg.startsWith("--bin=");
+
+/** 只同步仓库自带的主程序调试入口，保留用户额外的启动配置。 */
+function launchMetadata(config, next) {
+  const desktop = config.configurations?.find(
+    (entry) =>
+      entry.name === "Desktop: Rust + WebView" && entry.type === "lldb",
+  );
+  if (!desktop) return config;
+  const args = desktop.cargo?.args;
+  if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string"))
+    throw new Error("桌面调试配置需要 cargo.args 字符串数组");
+  const index = args.findIndex(isBinaryArgument);
+  if (index === -1) args.push("--bin", next.packageName);
+  else {
+    const inline = args[index].startsWith("--bin=");
+    const value = inline ? args[index].slice("--bin=".length) : args[index + 1];
+    if (
+      !value ||
+      value.startsWith("-") ||
+      args.findLastIndex(isBinaryArgument) !== index
+    )
+      throw new Error("桌面调试配置需要唯一且完整的 --bin 参数");
+    if (inline) args[index] = `--bin=${next.packageName}`;
+    else args[index + 1] = next.packageName;
+  }
+  return config;
+}
+
+function parseLaunch(content) {
+  const parsed = ts.parseConfigFileTextToJson(".vscode/launch.json", content);
+  if (parsed.error)
+    throw new Error(
+      ts.flattenDiagnosticMessageText(parsed.error.messageText, "\n"),
+    );
+  return parsed.config;
+}
+
+/** launch.json 使用 JSONC；仅修改目标参数的语法节点，保留本地注释和其他配置。 */
+function updateLaunch(content, next) {
+  const config = parseLaunch(content);
+  const updated = launchMetadata(structuredClone(config), next);
+  if (isDeepStrictEqual(config, updated)) return content;
+  const source = ts.parseJsonText(".vscode/launch.json", content);
+  const property = (node, name) =>
+    node.properties.findLast((entry) => entry.name?.text === name).initializer;
+  const configurations = property(
+    source.statements[0].expression,
+    "configurations",
+  );
+  const index = config.configurations.findIndex(
+    (entry) =>
+      entry.name === "Desktop: Rust + WebView" && entry.type === "lldb",
+  );
+  const args = property(
+    property(configurations.elements[index], "cargo"),
+    "args",
+  );
+  const originalArgs = config.configurations[index].cargo.args;
+  const binary = originalArgs.findIndex(isBinaryArgument);
+  if (binary !== -1) {
+    const inline = originalArgs[binary].startsWith("--bin=");
+    const name = args.elements[binary + (inline ? 0 : 1)];
+    return (
+      content.slice(0, name.getStart(source)) +
+      JSON.stringify(inline ? `--bin=${next.packageName}` : next.packageName) +
+      content.slice(name.end)
+    );
+  }
+  const separator =
+    args.elements.length && !args.elements.hasTrailingComma ? "," : "";
+  const addition = `${separator}${args.elements.length ? " " : ""}"--bin", ${JSON.stringify(next.packageName)}`;
+  return (
+    content.slice(0, args.elements.end) +
+    addition +
+    content.slice(args.elements.end)
+  );
+}
+
 const ENTRY_POINTS = [
-  ["src-tauri/src/main.rs", "run"],
-  ["src-tauri/src/bin/export-bindings.rs", "bindings::export"],
-  ["src-tauri/src/bin/verify-updater.rs", "update_signature::verify_manifest"],
+  ["src-tauri/src/main.rs", "run("],
+  ["src-tauri/src/bin/export-bindings.rs", "bindings::export("],
+  ["src-tauri/src/bin/verify-updater.rs", "update_signature::verify_manifest("],
+  ["src-tauri/src/bin/extension-tool.rs", "{"],
 ];
+const libraryReference = (library, suffix) =>
+  new RegExp(
+    `\\b${library}::${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+    "g",
+  );
 const nativeConfigs = (root) =>
   readdirSync(join(root, "src-tauri")).filter((name) =>
     /^tauri(?:\.[a-z0-9-]+)?\.conf\.json$/.test(name),
@@ -454,12 +540,17 @@ export function checkInitialization(root) {
       value,
       nativeMetadata(structuredClone(value), file, brand, brand),
     );
-  for (const [path, call] of ENTRY_POINTS) {
+  for (const [path, suffix] of ENTRY_POINTS) {
     if (path !== "src-tauri/src/main.rs" && !existsSync(join(root, path)))
       continue;
-    const reference = new RegExp(`\\b${nextLib}::${call}\\(`, "g");
+    const reference = libraryReference(nextLib, suffix);
     if ([...read(path).matchAll(reference)].length !== 1)
       differences.push(path);
+  }
+  const launchPath = ".vscode/launch.json";
+  if (existsSync(join(root, launchPath))) {
+    const launch = parseLaunch(read(launchPath));
+    compare(launchPath, launch, launchMetadata(structuredClone(launch), brand));
   }
   const index = read("index.html");
   const titles = [...index.matchAll(/<title>[\s\S]*?<\/title>/g)];
@@ -606,19 +697,23 @@ export function prepareInitialization(
     "src-tauri/Cargo.lock",
     lock.replace(own[0][0], replaceField(own[0][0], "name", next.packageName)),
   );
-  for (const [path, call] of ENTRY_POINTS) {
+  for (const [path, suffix] of ENTRY_POINTS) {
     if (path !== "src-tauri/src/main.rs" && !existsSync(join(root, path)))
       continue;
     const content = read(path);
-    const reference = new RegExp(`\\b${oldLib}::${call}\\(`, "g");
+    const reference = libraryReference(oldLib, suffix);
     if ([...content.matchAll(reference)].length !== 1)
-      throw new Error(`${path} 必须恰有一个当前库的 ${call}() 入口`);
-    outputs.set(path, content.replace(reference, `${nextLib}::${call}(`));
+      throw new Error(`${path} 必须恰有一个当前库的 ${suffix} 入口`);
+    outputs.set(path, content.replace(reference, `${nextLib}::${suffix}`));
   }
   for (const file of nativeConfigs(root)) {
     const path = `src-tauri/${file}`;
     const config = JSON.parse(read(path));
     outputs.set(path, json(nativeMetadata(config, file, current, next)));
+  }
+  const launchPath = ".vscode/launch.json";
+  if (existsSync(join(root, launchPath))) {
+    outputs.set(launchPath, updateLaunch(read(launchPath), next));
   }
   const index = read("index.html");
   if ([...index.matchAll(/<title>[\s\S]*?<\/title>/g)].length !== 1)
@@ -668,7 +763,8 @@ export function prepareInitialization(
   }
   // 提交前再次解析完整目标文件，尤其是 TOML 引号/转义后的语法。
   for (const [path, content] of outputs) {
-    if (path.endsWith(".json")) JSON.parse(content);
+    if (path === launchPath) parseLaunch(content);
+    else if (path.endsWith(".json")) JSON.parse(content);
     if (path.endsWith(".toml") || path.endsWith(".lock")) parseToml(content);
   }
   const changes = [...outputs]

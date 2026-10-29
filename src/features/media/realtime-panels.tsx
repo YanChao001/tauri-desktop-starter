@@ -3,7 +3,6 @@ import { toast } from "sonner";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { CodeBlock } from "@/components/code-block";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -139,7 +138,7 @@ export function WebSocketPanel() {
           ? [{ direction: "received" as const, text }]
           : []),
       ]);
-      setMessage("");
+      setMessage((draft) => (draft === text ? "" : draft));
     } catch (reason) {
       if (mounted.current && current === generation.current)
         toast.error(socketErrorText(reason, "labs.socket.error.send"));
@@ -149,92 +148,87 @@ export function WebSocketPanel() {
     }
   }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {t("labs.socket.title")}
-          <HelpTooltip label={`${t("labs.socket.title")} · ${t("title.help")}`}>
-            {t("labs.socket.hint")}
-          </HelpTooltip>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            disabled={state !== "disconnected"}
-            value={mode}
-            onValueChange={(value) => {
-              setMode(value === "wss" ? "wss" : "fixture");
-              setLog([]);
-            }}
-          >
-            <SelectTrigger aria-label={t("labs.network.mode")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              <SelectItem value="fixture">{t("labs.socket.local")}</SelectItem>
-              <SelectItem value="wss">{t("labs.socket.live")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            disabled={state !== "disconnected"}
-            onClick={() => void connect()}
-          >
-            {t("labs.socket.connect")}
-          </Button>
-          <Button
-            variant="outline"
-            disabled={state === "disconnected"}
-            onClick={() => void disconnect()}
-          >
-            {t("labs.socket.disconnect")}
-          </Button>
-          <span
-            role="status"
-            className="w-28 truncate text-xs text-muted-foreground"
-          >
-            {t(`labs.socket.${state}`)}
-          </span>
-        </div>
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
+    <fieldset data-surface="panel" className="space-y-3">
+      <legend className="flex items-center gap-2 text-sm font-medium">
+        {t("labs.socket.title")}
+        <HelpTooltip label={`${t("labs.socket.title")} · ${t("title.help")}`}>
+          {t("labs.socket.hint")}
+        </HelpTooltip>
+      </legend>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          disabled={state !== "disconnected"}
+          value={mode}
+          onValueChange={(value) => {
+            setMode(value === "wss" ? "wss" : "fixture");
+            setLog([]);
           }}
         >
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Label htmlFor="socket-message">{t("labs.socket.message")}</Label>
-            <Input
-              id="socket-message"
-              maxLength={1000}
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-            />
-          </div>
-          <Button
-            disabled={state !== "connected" || sending || !message.trim()}
-          >
-            {t("labs.socket.send")}
-          </Button>
-        </form>
-        <ol
-          aria-label={t("labs.socket.log")}
-          aria-live="polite"
-          className="h-52 space-y-1 overflow-auto rounded-md bg-muted p-3 font-mono text-xs"
+          <SelectTrigger aria-label={t("labs.network.mode")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper" align="start">
+            <SelectItem value="fixture">{t("labs.socket.local")}</SelectItem>
+            <SelectItem value="wss">{t("labs.socket.live")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          disabled={state !== "disconnected"}
+          onClick={() => void connect()}
         >
-          {log.length ? (
-            log.map((entry, index) => (
-              <li key={index} className="break-all">
-                {t(`labs.socket.${entry.direction}`, { text: entry.text })}
-              </li>
-            ))
-          ) : (
-            <li>{t("labs.idle")}</li>
-          )}
-        </ol>
-      </CardContent>
-    </Card>
+          {t("labs.socket.connect")}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={state === "disconnected"}
+          onClick={() => void disconnect()}
+        >
+          {t("labs.socket.disconnect")}
+        </Button>
+        <span
+          role="status"
+          className="w-28 truncate text-xs text-muted-foreground"
+        >
+          {t(`labs.socket.${state}`)}
+        </span>
+      </div>
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Label htmlFor="socket-message">{t("labs.socket.message")}</Label>
+          <Input
+            id="socket-message"
+            maxLength={1000}
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+          />
+        </div>
+        <Button disabled={state !== "connected" || sending || !message.trim()}>
+          {t("labs.socket.send")}
+        </Button>
+      </form>
+      <ol
+        aria-label={t("labs.socket.log")}
+        aria-live="polite"
+        data-surface="reading"
+        className="h-52 space-y-1 overflow-auto rounded-md p-3 font-mono text-xs"
+      >
+        {log.length ? (
+          log.map((entry, index) => (
+            <li key={index} className="break-all">
+              {t(`labs.socket.${entry.direction}`, { text: entry.text })}
+            </li>
+          ))
+        ) : (
+          <li>{t("labs.idle")}</li>
+        )}
+      </ol>
+    </fieldset>
   );
 }
 
@@ -271,163 +265,158 @@ export function SidecarPanel() {
     }
   }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {t("labs.sidecar.title")}
-          <HelpTooltip
-            label={`${t("labs.sidecar.title")} · ${t("title.help")}`}
-          >
-            {t("labs.sidecar.hint")}
-          </HelpTooltip>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3" aria-busy={pending}>
-        {!native ? (
-          <p className="text-sm text-muted-foreground">
-            {t("labs.desktopRequired")}
-          </p>
-        ) : null}
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void run();
-          }}
-        >
-          <div className="space-y-1.5">
-            <div className="flex h-6 min-w-0 items-center gap-2">
-              <Label htmlFor="sidecar-input" className="shrink-0">
-                {t("labs.sidecar.input")}
-              </Label>
-              {!validWorkerInput(input) ? (
-                <div role="alert" className="min-w-0 flex-1">
-                  <TooltipProvider delayDuration={650} skipDelayDuration={0}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          id="sidecar-error"
-                          type="button"
-                          className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {t("labs.sidecar.tooLong")}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="bottom"
-                        className="max-w-72 leading-relaxed"
+    <fieldset data-surface="panel" className="space-y-3" aria-busy={pending}>
+      <legend className="text-sm font-medium">{t("labs.sidecar.title")}</legend>
+      {!native ? (
+        <p className="text-sm text-muted-foreground">
+          {t("labs.desktopRequired")}
+        </p>
+      ) : null}
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run();
+        }}
+      >
+        <div className="space-y-1.5">
+          <div className="flex h-6 min-w-0 items-center gap-2">
+            <Label htmlFor="sidecar-input" className="shrink-0">
+              {t("labs.sidecar.input")}
+            </Label>
+            {!validWorkerInput(input) ? (
+              <div role="alert" className="min-w-0 flex-1">
+                <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        data-surface="transparent"
+                        data-variant="ghost"
+                        id="sidecar-error"
+                        type="button"
+                        className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {t("labs.sidecar.tooLong")}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              ) : null}
-            </div>
-            <Input
-              id="sidecar-input"
-              value={input}
-              disabled={!native || pending}
-              maxLength={1000}
-              onChange={(event) => setInput(event.target.value)}
-              aria-invalid={!validWorkerInput(input)}
-              aria-describedby={
-                !validWorkerInput(input) ? "sidecar-error" : undefined
-              }
-            />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-72 leading-relaxed"
+                    >
+                      {t("labs.sidecar.tooLong")}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            ) : null}
           </div>
-          <Button
-            className="min-w-44"
-            disabled={!native || pending || !validWorkerInput(input)}
-          >
-            {pending ? t("labs.loading") : t("labs.sidecar.run")}
-          </Button>
-        </form>
-        <section
-          aria-label={t("labs.sidecar.output")}
-          className="space-y-3 rounded-md bg-muted p-3 text-sm"
+          <Input
+            id="sidecar-input"
+            value={input}
+            disabled={!native || pending}
+            maxLength={1000}
+            onChange={(event) => setInput(event.target.value)}
+            aria-invalid={!validWorkerInput(input)}
+            aria-describedby={
+              !validWorkerInput(input) ? "sidecar-error" : undefined
+            }
+          />
+        </div>
+        <Button
+          className="min-w-44"
+          disabled={!native || pending || !validWorkerInput(input)}
         >
-          {output ? (
-            <>
-              <p
-                role={output.exitCode === 0 ? "status" : "alert"}
-                className={
-                  output.exitCode === 0 ? undefined : "text-destructive"
-                }
-              >
-                {output.exitCode === 0
-                  ? t("labs.sidecar.completed")
-                  : t("labs.sidecar.failed", { code: output.exitCode })}
-              </p>
-              {textResult ? (
-                <dl className="space-y-3">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      {t("labs.sidecar.transformed")}
-                    </dt>
-                    <dd
-                      tabIndex={0}
-                      className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {textResult.transformed}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      {t("labs.sidecar.original")}
-                    </dt>
-                    <dd
-                      tabIndex={0}
-                      className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {textResult.original}
-                    </dd>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <dt className="text-xs text-muted-foreground">
-                      {t("labs.sidecar.characterCount")}
-                    </dt>
-                    <dd className="tabular-nums">
-                      {textResult.characterCount}
-                    </dd>
-                  </div>
-                </dl>
-              ) : (
-                <pre
-                  tabIndex={0}
-                  className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {output.stdout || t("labs.sidecar.emptyOutput")}
-                </pre>
-              )}
-              {output.stderr ? (
-                <div className="space-y-1 text-destructive">
-                  <h4 className="font-medium">{t("labs.sidecar.errors")}</h4>
-                  <pre
+          {pending ? t("labs.loading") : t("labs.sidecar.run")}
+        </Button>
+      </form>
+      <section
+        aria-label={t("labs.sidecar.output")}
+        data-surface="reading"
+        className="space-y-3 rounded-md p-3 text-sm"
+      >
+        {output ? (
+          <>
+            <p
+              role={output.exitCode === 0 ? "status" : "alert"}
+              className={output.exitCode === 0 ? undefined : "text-destructive"}
+            >
+              {output.exitCode === 0
+                ? t("labs.sidecar.completed")
+                : t("labs.sidecar.failed", { code: output.exitCode })}
+            </p>
+            {textResult ? (
+              <dl className="space-y-3">
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    {t("labs.sidecar.transformed")}
+                  </dt>
+                  <dd
                     tabIndex={0}
-                    className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    {output.stderr}
-                  </pre>
+                    {textResult.transformed}
+                  </dd>
                 </div>
-              ) : null}
-              <details className="rounded-md border bg-background/50 p-3">
-                <summary className="cursor-pointer text-xs text-muted-foreground">
-                  {t("labs.sidecar.details")}
-                </summary>
-                <CodeBlock
-                  aria-label={t("labs.sidecar.details")}
-                  code={JSON.stringify(output, null, 2)}
-                  language="json"
-                  className="mt-3 max-h-56 bg-transparent p-0"
-                />
-              </details>
-            </>
-          ) : (
-            <p className="text-muted-foreground">{t("labs.idle")}</p>
-          )}
-        </section>
-      </CardContent>
-    </Card>
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    {t("labs.sidecar.original")}
+                  </dt>
+                  <dd
+                    tabIndex={0}
+                    className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {textResult.original}
+                  </dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt className="text-xs text-muted-foreground">
+                    {t("labs.sidecar.characterCount")}
+                  </dt>
+                  <dd className="tabular-nums">{textResult.characterCount}</dd>
+                </div>
+              </dl>
+            ) : (
+              <pre
+                data-surface="transparent"
+                tabIndex={0}
+                className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {output.stdout || t("labs.sidecar.emptyOutput")}
+              </pre>
+            )}
+            {output.stderr ? (
+              <div className="space-y-1 text-destructive">
+                <h4 className="font-medium">{t("labs.sidecar.errors")}</h4>
+                <pre
+                  data-surface="transparent"
+                  tabIndex={0}
+                  className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-sm font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {output.stderr}
+                </pre>
+              </div>
+            ) : null}
+            <details
+              data-disclosure-radius="md"
+              data-surface="transparent"
+              className="border"
+            >
+              <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
+                {t("labs.sidecar.details")}
+              </summary>
+              <CodeBlock
+                data-surface="transparent"
+                aria-label={t("labs.sidecar.details")}
+                code={JSON.stringify(output, null, 2)}
+                language="json"
+                className="m-3 max-h-56 p-0"
+              />
+            </details>
+          </>
+        ) : (
+          <p className="text-muted-foreground">{t("labs.idle")}</p>
+        )}
+      </section>
+    </fieldset>
   );
 }

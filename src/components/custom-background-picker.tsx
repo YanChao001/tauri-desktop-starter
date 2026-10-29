@@ -4,11 +4,14 @@ import {
   ImagePlusIcon,
   Loader2Icon,
   PencilIcon,
+  PlayIcon,
   Trash2Icon,
   UploadIcon,
+  VideoIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { WallpaperThumbnail } from "@/components/wallpaper-thumbnail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,8 +39,14 @@ import {
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import {
   BackgroundImageError,
+  backgroundMediaIdentity,
   importBackgroundImage,
 } from "@/lib/background-image";
+import {
+  BackgroundVideoError,
+  importVideoWallpaper,
+} from "@/lib/video-wallpaper";
+import { isTauri } from "@/lib/tauri";
 import {
   MAX_WALLPAPERS,
   WallpaperLibraryError,
@@ -57,10 +66,15 @@ const ERROR_KEYS = {
   decode: "settings.imageDecodeError",
   full: "settings.libraryFull",
   storage: "settings.libraryError",
+  videoType: "settings.videoTypeError",
+  videoSize: "settings.videoSizeError",
+  videoDecode: "settings.videoDecodeError",
+  videoStorage: "settings.videoStorageError",
 } as const;
 type Failure = { name: string; code: keyof typeof ERROR_KEYS };
 function failureCode(reason: unknown): Failure["code"] {
   if (reason instanceof BackgroundImageError) return reason.code;
+  if (reason instanceof BackgroundVideoError) return reason.code;
   if (reason instanceof WallpaperLibraryError && reason.code === "full")
     return "full";
   if (
@@ -96,6 +110,7 @@ export function CustomBackgroundPicker() {
   const [removing, setRemoving] = useState<Wallpaper | null>(null);
   const [name, setName] = useState("");
   const image = settings.customBackground;
+  const native = isTauri();
   const active = settings.background === "custom";
   const ready = persistence !== "loading";
   useLayoutEffect(() => {
@@ -169,10 +184,11 @@ export function CustomBackgroundPicker() {
         name: entry.name,
         dataUrl: entry.dataUrl,
         fit: latest.current.customBackground?.fit ?? "cover",
+        ...(entry.video ? { video: entry.video } : {}),
       },
     });
   }
-  async function importImages(files: File[]) {
+  async function importWallpapers(files: File[] | null) {
     if (busy.current || loading || loadFailed) return;
     busy.current = true;
     const attempt = ++generation.current;
@@ -182,19 +198,26 @@ export function CustomBackgroundPicker() {
     const errors: Failure[] = [];
     let importedCount = 0;
     let last: Wallpaper | undefined;
-    if (files.length > MAX_WALLPAPERS) errors.push({ name: "", code: "full" });
+    if (files && files.length > MAX_WALLPAPERS)
+      errors.push({ name: "", code: "full" });
     try {
-      for (const file of files.slice(0, MAX_WALLPAPERS)) {
+      for (const file of files?.slice(0, MAX_WALLPAPERS) ?? [undefined]) {
         try {
-          const imported = await importBackgroundImage(file);
+          const imported =
+            !file ||
+            file.type.startsWith("video/") ||
+            /\.(mp4|webm)$/i.test(file.name)
+              ? await importVideoWallpaper(file)
+              : await importBackgroundImage(file);
           if (attempt !== generation.current) return;
+          if (!imported) continue;
           const saved = await addLibraryWallpaper(imported);
           if (attempt !== generation.current) return;
           remember(saved);
           last = saved;
           importedCount++;
         } catch (reason) {
-          errors.push({ name: file.name, code: failureCode(reason) });
+          errors.push({ name: file?.name ?? "", code: failureCode(reason) });
         }
         if (attempt !== generation.current) return;
       }
@@ -202,8 +225,8 @@ export function CustomBackgroundPicker() {
       if (
         last &&
         current.background === before.background &&
-        current.customBackground?.dataUrl ===
-          before.customBackground?.dataUrl &&
+        backgroundMediaIdentity(current.customBackground) ===
+          backgroundMediaIdentity(before.customBackground) &&
         current.customBackground?.fit === before.customBackground?.fit
       )
         apply(last);
@@ -253,7 +276,10 @@ export function CustomBackgroundPicker() {
       readGeneration.current++;
       setImages((current) => current.filter((item) => item.id !== entry.id));
       const current = latest.current;
-      if (current.customBackground?.dataUrl === entry.dataUrl)
+      if (
+        backgroundMediaIdentity(current.customBackground) ===
+        backgroundMediaIdentity(entry)
+      )
         update({
           customBackground: null,
           ...(current.background === "custom" ? { background: "plain" } : {}),
@@ -280,7 +306,10 @@ export function CustomBackgroundPicker() {
       if (attempt !== generation.current) return;
       remember(saved);
       const current = latest.current.customBackground;
-      if (current?.dataUrl === saved.dataUrl)
+      if (
+        current &&
+        backgroundMediaIdentity(current) === backgroundMediaIdentity(saved)
+      )
         update({ customBackground: { ...current, name: saved.name } });
       setRenaming(null);
       toast.success(translateLatest("settings.wallpaperRenamed"));
@@ -294,36 +323,42 @@ export function CustomBackgroundPicker() {
   }
 
   return (
-    <section
-      className="wallpaper-library"
+    <fieldset
+      className="wallpaper-library min-w-0 space-y-3"
       aria-labelledby={id + "-heading"}
       aria-busy={pending || loading}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <h3 id={id + "-heading"} className="text-sm font-medium">
-            {t("settings.bgCustom")}
-          </h3>
+      <legend className="text-sm font-medium">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span id={id + "-heading"}>{t("settings.bgCustom")}</span>
           <HelpTooltip
             label={t("common.helpFor", { name: t("settings.bgCustom") })}
           >
             {t("settings.customImageHint")} {t("settings.imageFormats")}
           </HelpTooltip>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-20 text-right text-xs tabular-nums text-muted-foreground">
-            {t("settings.libraryCount", {
-              count: images.length,
-              max: MAX_WALLPAPERS,
-            })}
-          </span>
+        </span>
+      </legend>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {t("settings.libraryCount", {
+            count: images.length,
+            max: MAX_WALLPAPERS,
+          })}
+        </span>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button
             ref={importButton}
             type="button"
             variant="outline"
             size="sm"
             disabled={pending || loading || loadFailed}
-            onClick={() => fileInput.current?.click()}
+            onClick={() => {
+              if (!fileInput.current) return;
+              fileInput.current.accept = native
+                ? "image/png,image/jpeg,image/webp"
+                : "image/png,image/jpeg,image/webp,video/mp4,video/webm";
+              fileInput.current.click();
+            }}
           >
             {pending ? (
               <Loader2Icon
@@ -335,13 +370,33 @@ export function CustomBackgroundPicker() {
             )}
             {t("settings.importBackground")}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending || loading || loadFailed}
+            onClick={() => {
+              if (native) void importWallpapers(null);
+              else if (fileInput.current) {
+                fileInput.current.accept = "video/mp4,video/webm";
+                fileInput.current.click();
+              }
+            }}
+          >
+            <VideoIcon className="size-3.5" aria-hidden="true" />
+            {t("settings.importVideoBackground")}
+          </Button>
         </div>
       </div>
       <input
         ref={fileInput}
         type="file"
         multiple
-        accept="image/png,image/jpeg,image/webp"
+        accept={
+          native
+            ? "image/png,image/jpeg,image/webp"
+            : "image/png,image/jpeg,image/webp,video/mp4,video/webm"
+        }
         aria-label={t("settings.importBackground")}
         aria-describedby={id + "-formats"}
         disabled={pending || loading || loadFailed}
@@ -349,7 +404,7 @@ export function CustomBackgroundPicker() {
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
           event.currentTarget.value = "";
-          if (files.length) void importImages(files);
+          if (files.length) void importWallpapers(files);
         }}
       />
       <span id={id + "-formats"} className="sr-only">
@@ -373,7 +428,10 @@ export function CustomBackgroundPicker() {
         <TooltipProvider delayDuration={650} skipDelayDuration={0}>
           <div className="wallpaper-grid">
             {images.map((entry) => {
-              const selected = active && image?.dataUrl === entry.dataUrl;
+              const selected =
+                active &&
+                backgroundMediaIdentity(image) ===
+                  backgroundMediaIdentity(entry);
               return (
                 <Tooltip key={entry.id}>
                   <TooltipTrigger asChild>
@@ -382,7 +440,10 @@ export function CustomBackgroundPicker() {
                       data-wallpaper-id={entry.id}
                       data-selected={selected}
                     >
-                      <label className="wallpaper-thumbnail">
+                      <label
+                        data-surface="artwork"
+                        className="wallpaper-thumbnail"
+                      >
                         <input
                           type="radio"
                           name="background-skin"
@@ -394,13 +455,16 @@ export function CustomBackgroundPicker() {
                           })}
                           onChange={() => apply(entry)}
                         />
-                        <img
-                          src={entry.dataUrl}
-                          alt=""
-                          draggable={false}
-                          loading="lazy"
-                          decoding="async"
-                        />
+                        <WallpaperThumbnail dataUrl={entry.dataUrl} />
+                        {entry.video ? (
+                          <span
+                            data-surface="control"
+                            className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-foreground"
+                          >
+                            <PlayIcon className="size-3" aria-hidden="true" />
+                            {t("settings.videoWallpaper")}
+                          </span>
+                        ) : null}
                         {selected ? (
                           <span className="custom-skin-check">
                             <CheckIcon className="size-3" aria-hidden="true" />
@@ -632,6 +696,6 @@ export function CustomBackgroundPicker() {
           </form>
         </DialogContent>
       </Dialog>
-    </section>
+    </fieldset>
   );
 }

@@ -29,7 +29,7 @@ export const en = {
   ...enRecovery,
   ...enExperience,
   "nav.overview": "Showroom",
-  "nav.components": "Playground",
+  "nav.components": "Interaction",
   "nav.motion": "Motion lab",
   "nav.bridge": "App communication",
   "nav.settings": "Settings",
@@ -94,10 +94,27 @@ export const en = {
   "settings.color.neutral": "Neutral",
   "settings.color.indigo": "Indigo",
   "settings.color.blue": "Blue",
+  "settings.color.cyan": "Cyan",
+  "settings.color.teal": "Teal",
   "settings.color.emerald": "Emerald",
+  "settings.color.lime": "Lime",
   "settings.color.amber": "Amber",
+  "settings.color.orange": "Orange",
   "settings.color.rose": "Rose",
+  "settings.color.pink": "Pink",
   "settings.color.violet": "Violet",
+  "settings.color.slate": "Slate",
+  "settings.color.custom": "Custom",
+  "settings.customAccent": "Custom accent color",
+  "settings.customAccentPicker": "Pick a color",
+  "settings.customAccentHue": "Hue",
+  "settings.customAccentSaturation": "Saturation",
+  "settings.customAccentLightness": "Lightness",
+  "settings.customAccentHex": "HEX color",
+  "settings.customAccentApply": "Apply color",
+  "settings.customAccentInvalid": "Enter #RGB or #RRGGBB, for example #7C3AED.",
+  "settings.customAccentHint":
+    "Automatically adjusts brightness for light and dark themes.",
   "settings.accentHint": "Affects buttons, selections and highlights",
   "settings.radius": "Corner radius",
   "settings.radiusSharp": "Sharp",
@@ -187,17 +204,27 @@ export const en = {
   "settings.customImageHint":
     "Add several images, switch, rename or delete. Your collection stays on this device.",
   "settings.importBackground": "Add wallpapers",
+  "settings.importVideoBackground": "Add video",
+  "settings.videoWallpaper": "Video wallpaper",
+  "settings.videoTypeError": "Choose an MP4 or WebM video.",
+  "settings.videoSizeError": "The video is too large. Choose one under 128MB.",
+  "settings.videoDecodeError":
+    "This video cannot be played. Try another MP4 or WebM video.",
+  "settings.videoStorageError":
+    "The video could not be saved or read. Check available storage and try again.",
+  "settings.videoPlaybackError":
+    "The video wallpaper cannot play, so its cover is shown. Import the video again or choose another wallpaper.",
   "settings.replaceBackground": "Replace image",
   "settings.removeBackground": "Remove background image",
   "settings.backgroundFit": "Image fit",
   "settings.backgroundCover": "Fill window",
   "settings.backgroundContain": "Show full image",
   "settings.imageFormats":
-    "PNG, JPEG or WebP, up to 10MB. Images are automatically optimized.",
+    "PNG, JPEG and WebP. Large images are automatically optimized. Videos support MP4 and WebM.",
   "settings.imageProcessing": "Saving wallpapers…",
   "settings.imageTypeError": "Choose a PNG, JPEG or WebP image.",
   "settings.imageSizeError":
-    "The image is too large. Choose one under 10MB and 40 million pixels, or resize it and try again.",
+    "The image exceeds processing limits. Choose one under 64MB and 100 million pixels.",
   "settings.imageDecodeError":
     "This image could not be read. Check the file or try another image.",
   "settings.bgStarlightDescription":
@@ -214,12 +241,12 @@ export const en = {
   "settings.bgCloudscape": "Paper flights",
   "settings.bgCloudscapeDescription":
     "Paper planes, envelopes and dotted flight paths",
-  "settings.backgroundIntensity": "Skin intensity",
+  "settings.backgroundIntensity": "Background transparency",
   "settings.backgroundIntensityDescription":
-    "Adjust how prominent the decorations look while keeping text clear",
-  "settings.intensitySubtle": "Subtle",
-  "settings.intensityBalanced": "Balanced",
-  "settings.intensityStrong": "Strong",
+    "Higher values reveal more of your wallpaper.",
+  "settings.intensityCovered": "Opaque",
+  "settings.intensityTransparent": "Transparent",
+  "settings.intensityValue": "{value}% · Stop {level} of 11",
   "settings.skinGallery": "Window skins",
   "settings.skinGalleryDescription":
     "Eight airy line drawings that follow your theme and accent color",
@@ -253,6 +280,8 @@ export const en = {
   "settings.currentWallpaper": "Selected image: {name}",
   "settings.clearWallpaper": "Clear image background",
   "title.fullscreen": "Immersive fullscreen",
+  "title.showChrome": "Show menu and window controls",
+  "title.showNavigation": "Show navigation",
   "title.exitFullscreen": "Exit fullscreen",
   "title.fullscreenHint":
     "Press F11 or Esc to exit fullscreen and restore your layout",

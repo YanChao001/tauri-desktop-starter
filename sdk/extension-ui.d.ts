@@ -23,6 +23,8 @@ export interface ExtensionUiSnapshot {
     mode: "light" | "dark";
     motion: "full" | "reduced";
     tokens: Record<string, string>;
+    /** Full host-owned default stylesheet, shared with future controls and registered ShadowRoots. */
+    styles: string;
     font?: { family: string; dataUrl: string };
   };
 }

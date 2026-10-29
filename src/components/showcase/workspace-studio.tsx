@@ -303,7 +303,6 @@ export function WorkspaceStudio() {
         </Popover>
         <div className="flex flex-wrap items-center gap-1">
           <Button
-            size="sm"
             variant="ghost"
             disabled={!state.previous}
             onClick={() => dispatch({ type: "undo" })}
@@ -312,7 +311,7 @@ export function WorkspaceStudio() {
             {t("experience.workspace.undo")}
           </Button>
           <Button
-            size="icon-sm"
+            size="icon"
             variant="ghost"
             aria-label={t("experience.workspace.reset")}
             onClick={() => {
@@ -342,6 +341,8 @@ export function WorkspaceStudio() {
             {nodes.map((node) => {
               const button = (
                 <button
+                  data-surface="transparent"
+                  data-variant="ghost"
                   type="button"
                   role="treeitem"
                   key={node.id}

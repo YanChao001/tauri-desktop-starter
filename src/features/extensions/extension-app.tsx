@@ -1,5 +1,7 @@
+import { getLocale } from "@/i18n/registry";
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -131,7 +133,9 @@ export function ExtensionApp({
   const { t, language } = useI18n();
   const active = useExtensionActivity();
   const activity = useRef(active);
-  activity.current = active;
+  useLayoutEffect(() => {
+    activity.current = active;
+  }, [active]);
   const manifest = item.package.manifest;
   const documentId = manifest.commands.find(
     (command) => command.id === commandId,
@@ -214,7 +218,7 @@ export function ExtensionApp({
     )
       return;
     session.update({ error: null });
-    const locale = language === "zh" ? "zh-CN" : "en";
+    const locale = getLocale(language).documentLang;
     const draftFields = refreshLocale ? current.fields : null;
     const pending = viewExtension({
       id: manifest.id,
@@ -237,7 +241,9 @@ export function ExtensionApp({
         const fields = Object.fromEntries(
           next.fields.map((field) => [
             field.id,
-            draftFields?.[field.id] ?? field.value,
+            draftFields && Object.hasOwn(draftFields, field.id)
+              ? (draftFields[field.id] ?? field.value)
+              : field.value,
           ]),
         );
         session.update({
@@ -259,7 +265,9 @@ export function ExtensionApp({
     session.update({ pending });
     return pending;
   }
-  init.current = () => run(null);
+  useLayoutEffect(() => {
+    init.current = () => run(null);
+  });
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -292,7 +300,7 @@ export function ExtensionApp({
     };
   }, [active, closed, session]);
   useEffect(() => {
-    const locale = language === "zh" ? "zh-CN" : "en";
+    const locale = getLocale(language).documentLang;
     if (state.locale === locale) localeRefresh.current = null;
     if (
       !active ||
@@ -625,7 +633,7 @@ export function ExtensionApp({
           </>
         }
       >
-        <div className="min-w-0 space-y-5" aria-busy={busy}>
+        <div className="min-w-0 space-y-3" aria-busy={busy}>
           {documentId ? (
             <ExtensionCustomUi
               key={surfaceRevision}
@@ -745,7 +753,7 @@ export function ExtensionApp({
         onRestore={(imported: ExtensionSessionExport) => {
           session.update({
             view: imported.view,
-            locale: language === "zh" ? "zh-CN" : "en",
+            locale: getLocale(language).documentLang,
             uiState: imported.ui?.state ?? null,
             fields: imported.fields,
             draft: {

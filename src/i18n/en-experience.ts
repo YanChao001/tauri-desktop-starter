@@ -76,9 +76,9 @@ export const enExperience = {
   "experience.reliability.4": "Check what is backed up and restored",
   "experience.reliability.4Hint":
     "Export and preview a backup, checking notes, trash, and drafts. Restore only isolated test data.",
-  "experience.previewTitle": "What happens in the desktop app",
+  "experience.previewTitle": "Try it in the desktop app",
   "experience.previewHint":
-    "This is a walkthrough of this page. It does not act on your system or files.",
+    "This feature requires the desktop app. Preview the workflow below.",
   "experience.previewOpen": "Explore guided routes",
   "experience.preview.workbench.1": "Choose or drop a file",
   "experience.preview.workbench.2": "Preview, edit, handle conflicts",

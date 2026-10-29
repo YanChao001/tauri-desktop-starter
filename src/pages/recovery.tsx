@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
@@ -226,12 +227,13 @@ export function RecoveryContent({
                     {backups.map((backup) => (
                       <li
                         key={backup.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"
+                        data-surface="control"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3"
                       >
                         <div className="min-w-0 text-sm">
                           <p>
                             {new Date(backup.createdAt).toLocaleString(
-                              language === "zh" ? "zh-CN" : "en",
+                              getLocale(language).documentLang,
                             )}
                           </p>
                           <p className="text-xs break-all text-muted-foreground">
@@ -318,61 +320,63 @@ export function RecoveryContent({
               ) : null}
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="space-y-3">
-              <div className="flex min-h-6 min-w-0 items-center gap-3">
-                <h3 className="flex shrink-0 items-center gap-2 font-semibold">
-                  {t("recovery.schedule")}
-                  <HelpTooltip
-                    label={`${t("recovery.schedule")} · ${t("title.help")}`}
-                  >
-                    {t("recovery.scheduleHint")}
-                  </HelpTooltip>
-                </h3>
-                <p
-                  role="status"
-                  tabIndex={status.restored || status.pending ? 0 : undefined}
-                  className="h-5 min-w-0 flex-1 overflow-auto text-sm"
+          <fieldset
+            data-surface="panel"
+            className="min-w-0 space-y-3"
+            aria-label={t("recovery.schedule")}
+          >
+            <legend className="max-w-full text-sm font-medium">
+              <h3 className="inline-flex min-w-0 items-center gap-2 text-sm font-medium">
+                {t("recovery.schedule")}
+                <HelpTooltip
+                  label={`${t("recovery.schedule")} · ${t("title.help")}`}
                 >
-                  {[
-                    status.restored
-                      ? t("recovery.recordCount", { count: status.notes })
-                      : null,
-                    status.pending ? t("recovery.pending") : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </div>
-              <label className="flex items-start gap-3 text-sm">
-                <Checkbox
-                  className="mt-1"
-                  checked={resetSettings}
-                  disabled={busy || status.pending}
-                  onCheckedChange={(checked) =>
-                    setResetSettings(checked === true)
-                  }
-                />
-                <span>{t("recovery.resetSettings")}</span>
-              </label>
-              {status.pending ? (
-                <Button
-                  disabled={busy}
-                  onClick={() => void run(() => relaunchApp())}
-                >
-                  {t("recovery.restart")}
-                </Button>
-              ) : (
-                <Button
-                  variant="destructive"
-                  disabled={busy || !status.restored}
-                  onClick={() => setConfirm(true)}
-                >
-                  {t("recovery.schedule")}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
+                  {t("recovery.scheduleHint")}
+                </HelpTooltip>
+              </h3>
+            </legend>
+            <p
+              role="status"
+              tabIndex={status.restored || status.pending ? 0 : undefined}
+              className="min-w-0 overflow-auto text-sm empty:hidden"
+            >
+              {[
+                status.restored
+                  ? t("recovery.recordCount", { count: status.notes })
+                  : null,
+                status.pending ? t("recovery.pending") : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            <label className="flex items-start gap-3 text-sm">
+              <Checkbox
+                className="mt-1"
+                checked={resetSettings}
+                disabled={busy || status.pending}
+                onCheckedChange={(checked) =>
+                  setResetSettings(checked === true)
+                }
+              />
+              <span>{t("recovery.resetSettings")}</span>
+            </label>
+            {status.pending ? (
+              <Button
+                disabled={busy}
+                onClick={() => void run(() => relaunchApp())}
+              >
+                {t("recovery.restart")}
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                disabled={busy || !status.restored}
+                onClick={() => setConfirm(true)}
+              >
+                {t("recovery.schedule")}
+              </Button>
+            )}
+          </fieldset>
         </>
       ) : null}
       {error && error !== recoveryError && !confirm ? (

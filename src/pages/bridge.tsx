@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Loader2Icon, TerminalIcon } from "lucide-react";
+import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/code-block";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -100,10 +99,7 @@ export default function Bridge() {
   return (
     <div className="studio-page">
       <div className="studio-intro">
-        <div className="flex items-center gap-2">
-          <TerminalIcon className="size-4 text-muted-foreground" />
-          <h2>{t("bridge.title")}</h2>
-        </div>
+        <h2>{t("bridge.title")}</h2>
         <p>{t("bridge.subtitle")}</p>
       </div>
 
@@ -111,9 +107,6 @@ export default function Bridge() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
             {t("bridge.demo")}
-            <HelpTooltip label={`${t("bridge.demo")} · ${t("title.help")}`}>
-              {t("bridge.demoHint")}
-            </HelpTooltip>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -153,7 +146,8 @@ export default function Bridge() {
           </form>
 
           <div
-            className="flex min-w-0 items-start gap-3 rounded-md border bg-muted/40 px-3 py-2.5"
+            data-surface="control"
+            className="flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5"
             role="status"
             aria-live="polite"
           >
@@ -172,8 +166,8 @@ export default function Bridge() {
         </CardContent>
       </Card>
 
-      <details className="rounded-xl border bg-card">
-        <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <details data-disclosure-radius="xl" className="border app-surface">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("bridge.developerDetails")}
         </summary>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-3 p-4 pt-0">
@@ -196,11 +190,6 @@ export default function Bridge() {
             <CardHeader className="min-h-7">
               <CardTitle className="flex items-center gap-2 text-xs font-medium">
                 {t("bridge.frontend")}
-                <HelpTooltip
-                  label={`${t("bridge.frontend")} · ${t("title.help")}`}
-                >
-                  {t("bridge.note")}
-                </HelpTooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>

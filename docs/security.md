@@ -14,19 +14,21 @@
 
 ## 能力最小化
 
-[`src-tauri/capabilities/`](../src-tauri/capabilities/) 是 Tauri 核心与插件命令的白名单，未授予的插件能力默认拒绝。**它不是所有自定义 Rust 命令的 ACL**：本项目未启用应用命令 ACL，`bindings.rs` 注册的命令默认可由本地应用前端调用。需要按窗口限制时，先通过 `tauri_build::AppManifest::commands` 定义应用 ACL，再声明权限并分配 capability；命令内部仍须校验入参。参见 [Tauri 应用命令权限](https://v2.tauri.app/security/capabilities/)。
+[`src-tauri/capabilities/`](../src-tauri/capabilities/) 是 Tauri 核心与插件命令的白名单，未授予的插件能力默认拒绝。**它不是所有自定义 Rust 命令的 ACL**：本项目未启用应用命令 ACL，`bindings.rs` 注册的命令由 Rust 各入口校验。更新检查 / 安装、应用退出 / 重启、自启动、演示凭据、全局快捷键及恢复管理只接受主 / 次窗口；独立扩展宿主仍可读取恢复状态供启动门禁使用。其他命令沿用各自的身份与授权规则，不能据此推断已有全面的窗口 ACL。扩大隔离范围时，可通过 `tauri_build::AppManifest::commands` 定义应用 ACL，再声明权限并分配 capability。参见 [Tauri 应用命令权限](https://v2.tauri.app/security/capabilities/)。
 
 主 / 次窗口使用 [`default.json`](../src-tauri/capabilities/default.json)，可信扩展宿主窗口使用 [`extensions.json`](../src-tauri/capabilities/extensions.json)，均未授予远程页面 capability。主 / 次窗口的直接插件能力如下，精确权限以配置为准：
 
-| 能力       | 范围                                                |
-| ---------- | --------------------------------------------------- |
-| 核心与窗口 | 标题栏、显示、焦点、全屏等已有窗口操作              |
-| 通知       | 查询 / 请求授权、通知与点击；后台任务不主动请求授权 |
-| 剪贴板     | 用户主动读写文本，无后台监听                        |
-| 全局快捷键 | 登记、检查和释放；演示组合另由门面限制              |
-| opener     | 将 `http(s)` 交给系统浏览器                         |
+| 能力       | 范围                                                                                     |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| 核心与窗口 | 版本读取、事件订阅与标题栏、显示、焦点、全屏等操作；不授予前端事件发送或枚举其他 WebView |
+| 通知       | 查询 / 请求授权、通知与点击；后台任务不主动请求授权                                      |
+| 剪贴板     | 用户主动读写文本，无后台监听                                                             |
+| 全局快捷键 | 通过类型化 Rust 命令登记和释放，原生边界只接受预定义演示组合；不开放通用插件登记权限     |
+| opener     | 将 `http(s)` 交给系统浏览器                                                              |
 
 dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 由 Rust 服务调用；前端没有通用文件、任意 Shell、SQL 或 updater 插件接口。HTTP 演示同样改由类型化 Rust 命令处理，仅允许主 / 次窗口访问既有两个演示 HTTPS 域名，禁止重定向、凭据及传输控制头，保留请求、响应与超时预算和按窗口取消；不再授予前端 HTTP 插件权限，以免绕过宿主直连设置。窗口状态由 Rust 插件管理。注册插件不等于开放其全部前端权限，Rust 直接调用插件时仍由自定义服务负责安全边界。
+
+视频壁纸选择和媒体协议只接受主 / 次窗口。原生命令自行打开系统文件对话框，不接受前端提供的任意文件路径；`wallpaper-media` 仅定位应用管理的内容副本，不赋予扩展 iframe、独立插件窗口或远程页面读取权限。
 
 权限变更必须说明用途和窗口范围，避免 `core:all`、通配符和无关授权，删除不再使用的能力。展示外部内容的窗口不应继承可信宿主的权限。配置变化与验证结果放在同一 PR。
 
@@ -56,7 +58,8 @@ dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 
 - `style-src 'unsafe-inline'` 用于 Radix 浮层定位，脚本仍只允许本地来源。
 - `connect-src` 保留 `ipc:` 与 `http://ipc.localhost` 供 IPC 使用；宿主网络仅开放配置中的演示 HTTPS / WSS 来源。浏览器同源策略、桌面 CSP 与原生 HTTP 命令的来源校验各自生效，不能互代。
 - `devCsp: null` 回退生产 `csp`，适用于 Tauri 提供的本地应用资源；Windows 地址可能为 `http://tauri.localhost`。`app:dev` 从 Vite 加载，开发能运行不能证明正式包 CSP 正确；改用本地 `dist` 或接入新开发资源时重新验证，不预先放开 HMR 端口。
-- 本地图片可用 `asset:`、`data:` / `blob:`，媒体仅本地和 `blob:`；只为用户选取的附件构造固定 MIME，并释放不用的 object URL。Markdown 不执行原始 HTML，媒体 Markdown 禁止远端图片和危险协议。
+- 本地图片使用同源资源、`data:` / `blob:`；`media-src` 仅允许同源、`blob:` 及视频壁纸专用 `wallpaper-media:`、`http://wallpaper-media.localhost`、`https://wallpaper-media.localhost`。未启用的通用 asset 协议不列入来源。只为用户选取的附件 / 视频构造固定 MIME，并释放不用的 object URL。Markdown 不执行原始 HTML，媒体 Markdown 禁止远端图片和危险协议。
+- `object-src`、`base-uri`、`form-action` 和 `frame-ancestors` 均为 `'none'`；宿主不接受对象嵌入、基础 URL 改写、表单导航或被外部页面嵌入。
 - 扩展专用 frame 来源不授予远程页面 Tauri API；自定义界面的独立 CSP 按上节维护。
 
 变更后检查生产构建启动、导航和涉及的资源类型；白屏或资源缺失先查控制台 CSP 拦截，不以 `*` 或远程脚本绕过。
@@ -66,7 +69,8 @@ dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 
 前端及外部存档均不可信。生成绑定提供编译期类型，Rust 提交边界仍须校验类型、大小、层级、标识、数值范围与当前身份；按 [实际风险](./conventions/code-style.md#约束与复杂度) 选规则，不给展示名称、JSON 成员键或语义相同的配置排版增加无关白名单。
 
 - 自有数据使用固定目录和受控 ID，外部文件由原生选择、拖入或关联授权，后续 IPC 接收资源 ID。不要开放任意绝对路径、数据库路径、SQL 或整个临时目录。
-- 设置使用 revision CAS；背景只接受本机重绘的有界栅格 data URL，Rust 复核名称、格式、文件头与体积，拒绝路径、远端 URL 和 SVG。图库路径由服务决定，配额与存档规则见 [数据存储](./architecture.md#数据存储)。笔记校验长度 / ID / 版本并使用参数化查询。
+- 设置使用 revision CAS；背景图片和视频封面只接受本机重绘的有界栅格 data URL，Rust 复核名称、格式、文件头与体积，拒绝路径、远端 URL 和 SVG。可选视频引用严格限定为 SHA-256 内容 ID 与 MP4 / WebM MIME，不接受路径或播放 URL。图库路径由服务决定，配额与存档规则见 [数据存储](./architecture.md#数据存储)。笔记校验长度 / ID / 版本并使用参数化查询。
+- 视频导入校验普通文件、容量、媒体头及固定 MIME，复制到受控目录后由前端实际解码并生成封面；后缀或头部通过不等于当前 WebView 可以播放。媒体协议复核调用窗口、ID、后缀及文件归属，处理 Range 并限制单次读取量，不能把长视频完整装入一次 IPC 或设置快照。清理只针对应用副本，保留当前设置、图库和近期导入引用；未来 / 损坏存档或引用读取失败时拒绝清理，不删除原始文件或用户数据来恢复导入。实现见 [`wallpaper_video.rs`](../src-tauri/src/wallpaper_video.rs)。
 - 文件访问规范化根与目标，按路径组件校验归属，并处理链接、特殊文件、大小及检查后被替换的竞态。阻塞 I/O 移入既有 blocking 服务，字符串前缀检查不能建立文件边界。
 - [`workbench.rs`](../src-tauri/src/workbench.rs) 保存授权规范路径，重开核对未重定向，遍历不跟随链接；文本限 UTF-8、图片查文件头，JSON / 应用专属文档保存前校验。同目录临时写入和磁盘 revision 检查保留外部冲突。最后检查与替换仍有竞态窗口，不能抵御同账户恶意并发进程。
 - 任务保留执行 / 排队、深度、文件数与哈希大小限额；页面卸载或停止等待不代表 worker 已停止。深链 / 文件关联只处理 [品牌配置](../app.config.json) 的 scheme、后缀和路由；初始化按 [派生流程](./development.md#项目初始化) 同步，不占用通用协议或后缀。
@@ -79,22 +83,27 @@ dialog、目录定位、数据库、更新、凭据、自启动和固定 worker 
 
 - 构建签名证书、更新私钥和服务 API Key 通过环境变量或 CI Secrets 注入；运行时用户凭据使用系统 keyring，不存 localStorage、普通 JSON 或 SQLite。
 - 不提交真实 `.env`。忽略范围见 [`.gitignore`](../.gitignore)，仅允许不含凭据的 `.env.example`；忽略规则不保护已跟踪文件，误提交须撤销或轮换并评估产物。
-- 更新私钥生成后离线备份两份。正常换钥先用旧密钥签发包含新公钥的过渡版本，或通过可信部署 / 手动安装迁移；只换服务器公钥不能迁移旧客户端。
+- 更新私钥生成后离线备份两份。正常换钥先用旧密钥签发包含新公钥的过渡版本，或手动安装可信版本；只换服务器公钥不能迁移旧客户端。
 - 本机私钥和口令副本存仓库外并限制读取。Windows DPAPI 副本绑定账户与机器，不能代替离线备份；迁移 / 重装前通过可信密码管理器或离线介质备份，明文不得进入日志、Git 或聊天。
-- 日志不得包含令牌、完整请求体或路径中的用户名。
+- 日志不得包含令牌、完整请求体或路径中的用户名。stderr 和轮换文件目标在输出前统一执行基础脱敏，诊断导出继续复核；新增敏感字段仍需审查，不能依赖正则覆盖任意正文中的秘密。
+
+发布工作流的 Action 固定到上游提交 SHA，由 Dependabot 通过 PR 维护。更新私钥只注入发布配置校验与 Tauri 构建步骤，不写入后续步骤共享的环境；Apple 证书只在 macOS job 临近构建时注入，并在结束后清空。各 job 明确声明权限；当前构建 job 同时上传草稿 Release 资产，因此仍需要 `contents: write`，不能仅改成只读而保留上传行为。
 
 ## 依赖审计
 
 ```sh
 pnpm audit
+pnpm --dir examples/extensions audit
 pnpm outdated
 cargo audit --file src-tauri/Cargo.lock # 先 cargo install cargo-audit --locked
+cargo audit --file examples/extensions/apps/Cargo.lock
+cargo audit --file examples/extensions/rust/Cargo.lock
 cargo tree --manifest-path src-tauri/Cargo.toml -d
 ```
 
 镜像无 audit 端点时可用 `pnpm audit --registry https://registry.npmjs.org`。请求失败表示未完成审计；`cargo audit` 信息告警可能不影响退出码，须同时看输出与 advisory。
 
-提交 `pnpm-lock.yaml` 与 `Cargo.lock`；系统工具链和外部构建工具另行控制。[审计 CI](../.github/workflows/audit.yml) 每周一和手动触发，本地命令用于复查与修复验证。新增依赖按 [评审标准](./development.md#新增依赖的评审标准)；高危优先升级，暂不能升级时记录原因与缓解措施。
+提交 `pnpm-lock.yaml` 与 `Cargo.lock`；系统工具链和外部构建工具另行控制。[审计 CI](../.github/workflows/audit.yml) 每周一和手动触发，覆盖宿主与本仓库扩展示例的独立 npm / Rust 锁文件；单项失败仍检查其余锁文件，最后汇总失败状态。该工作流不包含市场子模块，其依赖需在独立仓库另行审计。本地命令用于复查与修复验证。新增依赖按 [评审标准](./development.md#新增依赖的评审标准)；高危优先升级，暂不能升级时记录原因与缓解措施。
 
 [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) 为 WDIO 传递依赖设置 scoped overrides；调整时核对上游范围、审计并运行真实 E2E，安装与类型检查不能证明运行兼容。
 
@@ -109,19 +118,29 @@ cargo tree --manifest-path src-tauri/Cargo.toml -d
 | `zvariant 5.15.1`、`zvariant_derive 5.15.1`、`zbus_names 4.3.5` | [RUSTSEC-2026-0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)、[0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html)、[0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html)，停止独立维护 | opener / single-instance → zbus 5；跟踪插件迁移，不强行跨主版本替换 GUI / DBus 依赖 |
 | `paste 1.0.15`                                                  | [RUSTSEC-2024-0436](https://rustsec.org/advisories/RUSTSEC-2024-0436.html)，停止维护                                                                                                                                   | Specta 间接依赖，跟踪兼容迁移，不强制替换宏 crate                                   |
 
+### Wasmtime 缓存依赖补丁
+
+宿主在 [`Cargo.toml`](../src-tauri/Cargo.toml) 中定向替换 `wasmtime-internal-cache 49.0.4`：保留官方发布源码、Extism / Wasmtime 版本和缓存功能，仅将压缩依赖下限改为 `zstd 0.14.3`。锁文件据此使用 `zstd-safe 8.2.0`，继续只启用 `std`，不启用 `legacy` / `seekable`。原包校验值、最小差异、许可证、验证和撤销条件见[补丁来源说明](../src-tauri/vendor/wasmtime-internal-cache/README.md)。
+
+版本下限对应 [RUSTSEC-2026-0391](https://rustsec.org/advisories/RUSTSEC-2026-0391.html)、[0398](https://rustsec.org/advisories/RUSTSEC-2026-0398.html)、[0403](https://rustsec.org/advisories/RUSTSEC-2026-0403.html) 及 [`zstd-safe` 的相关 `unsound` 公告](https://rustsec.org/packages/zstd-safe.html)所列修复范围。使用修复版本后仍执行联网审计并检查全部输出，不由这组修复推断其他告警已解决。
+
+Extism 显式启用 Wasmtime 的缓存编译特性；应用调用 `.with_cache_disabled()` 只关闭运行时磁盘缓存，不能代替依赖修复。这个本地补丁承担压缩库兼容验证与来源维护责任：修改时执行 Rust 构建、保留的缓存单测和真实无界面 worker 检查，并在目标平台验证；后续正式上游配套可用时按来源说明撤销，不扩大补丁范围或添加忽略列表。
+
 ## 更新通道
 
 配置、签名和安装操作见 [自动更新](./build-release.md#自动更新)。安全边界如下：
 
 - 默认策略编译自 `app.config.json`，前端不能传任意更新 URL。端点须 HTTPS、无凭据 / fragment，原生客户端拒绝 HTTP 降级；CSP 不限制 Rust 请求。
 - 端点或公钥任一为空时禁用且不联网；启用后强制校验包签名及被签版本，不跳过验签或接受版本漂移。只接受 Tauri v2 原生更新格式，关闭旧 ZIP 兼容路径；最终字节签名后不得再改。
-- `appConfigDir/deployment.json` 的 `updates` 整体替换默认策略，不逐字段合并；为空禁用，过大、不可读或无效时报错。安装前重读策略，发生变化须重新检查。
-- 部署文件没有独立签名，写入者能同时更换端点和信任公钥。受控部署须限制目录写权限并通过可信渠道审查 / 分发；包验签不抵御已控制同一账户的攻击。
+- `appConfigDir/deployment.json` 的 `updates.endpoint` 可覆盖镜像地址，空端点禁用更新；过大、不可读或无效时报错。退出协商及扩展停止等待结束后、实际安装前再次重读策略，发生变化须重新检查，不能沿用等待前的校验结果。
+- 验签公钥固定在编译期品牌配置中。部署文件可省略 `publicKey`；若提供，必须与内置值完全相同，否则拒绝检查和安装。它不能为未内置公钥的客户端启用更新，也不能用来换钥；换钥须发布可信过渡版本或手动安装，取舍见 [ADR 0020](./adr/0020-pin-updater-trust-root.md)。此约束避免普通配置回写改变信任根，不提供同账户恶意进程或被替换应用二进制的系统级防护。
 - 公钥可提交，私钥仅用于构建 / CI，不进入品牌配置、部署文件或诊断。派生初始化会清理不再适用的模板信任，规则见 [初始化流程](./development.md#项目初始化)。
 
 ## 本地数据
 
 位置与备份范围见 [数据存储](./architecture.md#数据存储)。偏好、SQLite、备份、工作台历史 / 报告、插件 KV、LAN 历史和日志均未加密；凭据演示仅使用 keyring 固定项，E2E 禁用。读取的凭据会进入界面内存，系统服务不可用时报错；本地会话示例不实现 OAuth、远程认证或真实令牌刷新。
+
+Unix 上笔记数据库以 `0600` 创建，打开已有存档时收紧数据库及现存 WAL / SHM 权限；新建 SQLite sidecar 继承数据库权限。Windows 沿用应用数据目录的账户 ACL。扩展读取除路径检查外还拒绝末级链接并检查打开的文件句柄；这不等于持有所有祖先目录句柄，不能承诺抵御同账户进程并发替换整个目录树。
 
 偏好保留原子写入与 revision；临时文件在 `appCacheDir` 按任务隔离，由创建者定义清理时机。重置偏好不等于清理用户数据，外部文件授权不等于磁盘隔离。
 

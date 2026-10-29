@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CheckIcon,
   ExternalLinkIcon,
   MonitorIcon,
   MoonIcon,
@@ -9,7 +8,6 @@ import {
   ChevronDownIcon,
   LanguagesIcon,
   SunMoonIcon,
-  PaletteIcon,
   SquareIcon,
   TypeIcon,
   ALargeSmallIcon,
@@ -24,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { LanguageSwitch } from "@/components/language-switch";
 import { SkinPicker } from "@/components/skin-picker";
+import { AccentPicker } from "@/components/accent-picker";
 import { SettingsSearch } from "@/components/settings-search";
 import { SettingsPersistence } from "@/components/settings-persistence";
 import { DesktopSettings } from "@/components/desktop-settings";
@@ -62,9 +61,7 @@ import {
 import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { useI18n } from "@/providers/i18n";
 import {
-  ACCENTS,
   useSettings,
-  type Accent,
   type Font,
   type FontSize,
   type Radius,
@@ -87,16 +84,6 @@ const THEMES = [
   { value: "dark", labelKey: "title.dark", icon: MoonIcon },
   { value: "system", labelKey: "title.system", icon: MonitorIcon },
 ] as const;
-
-const ACCENT_COLORS: Record<Accent, string> = {
-  neutral: "oklch(0.205 0 0)",
-  indigo: "oklch(0.51 0.23 277)",
-  blue: "oklch(0.55 0.19 250)",
-  emerald: "oklch(0.51 0.12 164)",
-  amber: "oklch(0.76 0.16 80)",
-  rose: "oklch(0.56 0.22 12)",
-  violet: "oklch(0.53 0.24 300)",
-};
 
 const FONT_OPTIONS = [
   { value: "geist", labelKey: "settings.fontGeist" },
@@ -322,11 +309,11 @@ export default function Settings() {
         <SkinPicker />
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.appearance")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 [&>.settings-row]:py-0">
+      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+        <legend className="text-sm font-medium">
+          {t("settings.appearance")}
+        </legend>
+        <div className="space-y-3 [&>.settings-row]:py-0">
           <SettingRow
             id="settings-language"
             icon={LanguagesIcon}
@@ -346,14 +333,15 @@ export default function Settings() {
                 return (
                   <button
                     key={item.value}
+                    data-surface="control"
                     type="button"
                     aria-pressed={active}
                     onClick={() => setTheme(item.value)}
                     className={cn(
-                      "flex flex-col items-center gap-2 rounded-lg border px-3 py-3 text-xs transition-colors",
+                      "flex flex-col items-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors",
                       active
-                        ? "border-primary bg-primary/5 font-medium"
-                        : "text-muted-foreground hover:bg-muted/50",
+                        ? "border-primary bg-(--surface-state-selected) font-medium"
+                        : "text-muted-foreground hover:bg-(--surface-state-hover)",
                     )}
                   >
                     <item.icon className="size-4" />
@@ -364,38 +352,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div
-            id="settings-accent"
-            tabIndex={-1}
-            className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <SettingLabel icon={PaletteIcon} label={t("settings.accent")} />
-            <div className="flex flex-wrap gap-2">
-              {ACCENTS.map((accent) => {
-                const active = settings.accent === accent;
-                return (
-                  <button
-                    key={accent}
-                    type="button"
-                    aria-label={t(`settings.color.${accent}`)}
-                    title={t(`settings.color.${accent}`)}
-                    aria-pressed={active}
-                    onClick={() => update({ accent })}
-                    className={cn(
-                      "flex size-7 items-center justify-center rounded-full border transition-transform hover:scale-110",
-                      active &&
-                        "ring-2 ring-ring ring-offset-2 ring-offset-background",
-                    )}
-                    style={{ backgroundColor: ACCENT_COLORS[accent] }}
-                  >
-                    {active ? (
-                      <CheckIcon className="size-3.5 text-white mix-blend-difference" />
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <AccentPicker />
 
           <Separator />
 
@@ -481,7 +438,6 @@ export default function Settings() {
             id="settings-motion"
             icon={ActivityIcon}
             label={t("settings.motion")}
-            hint={t("settings.motionHint")}
           >
             <ToggleGroup
               type="single"
@@ -500,21 +456,23 @@ export default function Settings() {
               </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
-      <Card id="settings-layout" tabIndex={-1}>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {t("studio.settingsWorkspace")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y">
+      <fieldset
+        data-surface="panel"
+        id="settings-layout"
+        tabIndex={-1}
+        className="min-w-0 space-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <legend className="text-sm font-medium">
+          {t("studio.settingsWorkspace")}
+        </legend>
+        <div className="divide-y [&>.settings-row]:py-2 [&>.settings-row:first-child]:pt-0 [&>.settings-row:last-child]:pb-0">
           <SettingRow
             id="settings-menuBar"
             icon={MenuIcon}
             label={t("settings.menuBar")}
-            hint={t("settings.menuBarHint")}
           >
             <Switch
               checked={settings.menuBar}
@@ -572,27 +530,19 @@ export default function Settings() {
               className="w-40 accent-primary"
             />
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
-      <Card id="settings-window" tabIndex={-1}>
-        <CardHeader>
-          <div className="flex items-center gap-1.5">
-            <CardTitle className="text-sm">
-              {t("desktop.settingsTitle")}
-            </CardTitle>
-            <HelpTooltip
-              label={t("common.helpFor", { name: t("settings.windowSize") })}
-            >
-              {t(
-                native
-                  ? "settings.windowSizeHint"
-                  : "settings.windowBrowserHint",
-              )}
-            </HelpTooltip>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 [&>.settings-row]:py-0">
+      <fieldset
+        data-surface="panel"
+        id="settings-window"
+        tabIndex={-1}
+        className="min-w-0 space-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <legend className="text-sm font-medium">
+          {t("desktop.settingsTitle")}
+        </legend>
+        <div className="space-y-3 [&>.settings-row]:py-0">
           <DesktopSettings />
           <Separator />
           <div
@@ -617,6 +567,7 @@ export default function Settings() {
               const control = (
                 <button
                   key={preset.id}
+                  data-surface="control"
                   data-window-preset={preset.id}
                   type="button"
                   aria-pressed={active}
@@ -629,10 +580,10 @@ export default function Settings() {
                       void applyWindowSize(preset.width, preset.height);
                   }}
                   className={cn(
-                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                     active
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-muted/50",
+                      ? "border-primary bg-(--surface-state-selected)"
+                      : "hover:bg-(--surface-state-hover)",
                     unavailable && "pointer-events-none h-full w-full",
                   )}
                 >
@@ -683,25 +634,15 @@ export default function Settings() {
             })}
           </div>
           {native ? (
-            <div className="flex h-8 min-w-0 items-center justify-between gap-2 text-xs">
+            <div className="flex min-h-8 min-w-0 items-center justify-between gap-2 text-xs">
               {windowError ? (
                 <>
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span
-                      role="alert"
-                      className="min-w-0 truncate text-destructive"
-                    >
-                      {nativeErrorText(windowError, t)}
-                    </span>
-                    <HelpTooltip
-                      label={t("common.helpFor", {
-                        name: nativeErrorText(windowError, t),
-                      })}
-                      className="shrink-0"
-                    >
-                      {nativeErrorText(windowError, t)}
-                    </HelpTooltip>
-                  </div>
+                  <span
+                    role="alert"
+                    className="min-w-0 break-words text-destructive"
+                  >
+                    {nativeErrorText(windowError, t)}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
@@ -751,16 +692,14 @@ export default function Settings() {
               </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
       <UpdateSettings />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("settings.network")}</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+        <legend className="text-sm font-medium">{t("settings.network")}</legend>
+        <div className="[&>.settings-row]:py-0">
           <SettingRow
             id="settings-networkMode"
             icon={GlobeIcon}
@@ -796,10 +735,14 @@ export default function Settings() {
               </SelectContent>
             </Select>
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </fieldset>
 
-      <details className="studio-panel settings-about" id="settings-about">
+      <details
+        data-disclosure-radius="xl"
+        className="studio-panel settings-about"
+        id="settings-about"
+      >
         <summary>
           {t("studio.settingsAbout")}
           <ChevronDownIcon size={16} />
@@ -833,7 +776,7 @@ export default function Settings() {
                 <ExternalLink
                   key={link.url}
                   href={link.url}
-                  className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-(--surface-state-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span>{link.label}</span>{" "}
                   <span className="flex min-w-0 items-center gap-1.5 break-all font-mono text-xs text-muted-foreground">
@@ -850,7 +793,7 @@ export default function Settings() {
         </div>
       </details>
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed px-4 py-3">
+      <Card className="flex-row items-center justify-between gap-4 px-4 py-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <p className="text-sm">{t("common.reset")}</p>
           <HelpTooltip label={t("common.helpFor", { name: t("common.reset") })}>
@@ -868,7 +811,7 @@ export default function Settings() {
           <RotateCcwIcon />
           {t("common.reset")}
         </Button>
-      </div>
+      </Card>
       <Dialog
         open={confirmReset}
         onOpenChange={(open) => {

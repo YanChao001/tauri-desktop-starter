@@ -103,7 +103,7 @@ pnpm branding:check
 定制时保留以下约束：
 
 - 安装文字使用原生控件，不写入图片。WiX 会叠加标题和正文；横幅图形留右侧，欢迎页视觉留左侧，IU 不是 Win32 对话框单位。以实际中英文 / 高 DPI 安装界面核对留白和比例。
-- [NSIS 模板](../src-tauri/installer/installer.nsi) 的“品牌定制”段维护文案、字体、页脚、等比页眉和铺满侧栏。保留 24 位缩放目标、绘制失败回退和图片所有权；布局脚本会静默检查，但不能代替实际安装验收。
+- [NSIS 模板](../src-tauri/installer/installer.nsi) 的“品牌定制”段维护文案、字体、页脚、等比页眉和铺满侧栏。对话框使用标准安装器字体度量，欢迎 / 完成页标题独立设置现代字体，避免字体行高拉高整个窗口；侧栏按最终控件尺寸等比铺满、居中裁切装饰边缘，不留白或拉伸主体。保留 24 位缩放目标、绘制失败回退和图片所有权；布局脚本会静默检查，但不能代替实际安装验收。
 - 自定义文案使用独立 `LangString`；增加语言时补齐并编译检查。NSIS 语言由 `nsis.languages`、MSI 由 `wix.language` 控制；`bundle.copyright` 为空会使 NSIS 回退上游页脚。
 - [WiX 片段](../src-tauri/installer/wix-ui.wxs) 跳过可见 `PrepareDlg`，后台准备与提权仍保留；`fragmentPaths` 与 `componentGroupRefs` 必须同时配置。
 - 重新构建才更新安装包。Rust 构建监听 `icons/`，NSIS 快捷方式使用已安装 exe 的图标索引 0 并刷新缓存；验收同时检查安装器、已安装 exe 和快捷方式，旧缓存见 [排障](./troubleshooting.md#安装后仍显示旧图标)。
@@ -218,15 +218,17 @@ Rust updater 经 [`src/lib/tauri.ts`](../src/lib/tauri.ts) 的生成命令提供
 4. 按正式流程发版。CI 临时启用 `createUpdaterArtifacts: true`，收集后用 [Rust 验证器](../src-tauri/src/bin/verify-updater.rs) 核对最终文件、公钥、`.sig` 与签名版本；本地默认构建不额外生成更新签名。
 5. 独立 job 汇总四个目标元数据，与 draft 实际资产按文件名 / 上传标签匹配，再生成唯一 `latest.json`。下载 URL 使用 GitHub 返回的正式资产名，不猜重命名或使用草稿临时地址。正文取自 Release，最多 8000 字符，优先保留摘要、限制与完整说明链接。
 
-初始无公钥客户端须手动安装带公钥版本，或通过可信部署迁移。首轮验收使用两个不同版本完成发现、下载、验签和安装；同版本安装或仅生成清单不足以证明升级可用。便携版更新会转为安装版。
+初始无公钥客户端须手动安装带公钥版本；运行期部署文件不能新增或替换信任公钥。首轮验收使用两个不同版本完成发现、下载、验签和安装；同版本安装或仅生成清单不足以证明升级可用。便携版更新会转为安装版。
 
 默认 `/releases/latest/` 不分发 draft / prerelease，详见 [GitHub Release 规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。测试通道须另行设计端点、版本比较与发布校验；tag 加 `beta` 不会进入默认通道。手动生成更新签名也须提供匹配 `--app-version`，不得复用不同版本的签名；内部工具见 [release-lib.mjs](../scripts/release-lib.mjs)。
 
 ### 运行时策略与安装行为
 
-默认策略编译自 `app.config.json`。受控部署可在 `appConfigDir/deployment.json` 写 `{ "updates": { "endpoint": "...", "publicKey": "..." } }` 整体覆盖；只放公钥和端点，安全限制见 [更新通道](./security.md#更新通道)。变更策略后须重新检查，旧安装句柄不能沿用。
+默认策略编译自 `app.config.json`。受控部署可在 `appConfigDir/deployment.json` 写 `{ "updates": { "endpoint": "https://mirror.example/latest.json" } }` 覆盖镜像，或将 `endpoint` 设为空字符串禁用更新。已有部署文件若包含 `publicKey`，必须与安装包内置值完全相同；不匹配时明确报错并保留文件。安全限制和换钥规则见 [更新通道](./security.md#更新通道)。变更策略后须重新检查，旧安装句柄不能沿用。
 
 检查、下载句柄与进度由 Rust 管理并跨窗口同步。下载验签后、实际安装前统一协商所有窗口的笔记草稿、文件编辑和任务；保存失败或取消则保留工作，安装期间冻结窗口。见 [更新与恢复架构](./architecture.md#恢复诊断与更新)。
+
+设置中的更新区保持状态与操作简洁；发现新版本后，点击“版本说明”在弹窗中阅读该版本的 Markdown 正文。正文复用安全 Markdown 渲染，支持标题、列表、表格和代码块，长内容在弹窗内部滚动；外链沿用受控入口，HTML 和远程图片不执行或加载。没有正文时显示空态，不影响下载安装。
 
 Windows 安装可能结束当前进程、启动安装器并重新打开应用，不能承诺停留等待重启；其他平台安装后仍在运行时，可用界面重启入口。
 

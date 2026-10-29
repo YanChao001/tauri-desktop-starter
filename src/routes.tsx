@@ -59,8 +59,8 @@ export type AppNavigationItem = Pick<
   "path" | "labelKey" | "group" | "icon" | "exact" | "preload"
 > & { label?: string };
 
-export function extensionPath(id: string, command: string, window = false) {
-  return `${window ? "/extension-window" : "/extensions/app"}/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
+export function extensionPath(id: string, command: string) {
+  return `/extensions/app/${encodeURIComponent(id)}/${encodeURIComponent(command)}`;
 }
 function loadExtensionPage() {
   return import("@/pages/extension-app");
@@ -133,6 +133,7 @@ export const APP_ROUTES: AppRoute[] = [
     group: "experience",
     icon: BlocksIcon,
     ...lazyPage(() => import("@/pages/catalog")),
+    hidden: true,
   },
   {
     path: "/recovery",
@@ -217,6 +218,7 @@ export const APP_ROUTES: AppRoute[] = [
     icon: SparklesIcon,
     ...lazyPage(() => import("@/pages/motion")),
     demoOnly: true,
+    hidden: true,
   },
   {
     path: "/desktop",
@@ -240,6 +242,7 @@ export const APP_ROUTES: AppRoute[] = [
     icon: TerminalIcon,
     ...lazyPage(() => import("@/pages/bridge")),
     demoOnly: true,
+    hidden: true,
   },
   {
     path: "/diagnostics",

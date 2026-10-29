@@ -116,11 +116,9 @@ impl ExtensionStore {
             ));
         }
         let mut bytes = Vec::new();
-        fs::File::open(path)
-            .and_then(|file| {
-                file.take(UI_DOCUMENT_LIMIT as u64 + 1)
-                    .read_to_end(&mut bytes)
-            })
+        crate::extension_paths::open_regular(&path)?
+            .take(UI_DOCUMENT_LIMIT as u64 + 1)
+            .read_to_end(&mut bytes)
             .map_err(|error| io("Cannot read UI document", error))?;
         if bytes.len() != document.bytes as usize || digest(&bytes) != document.sha256 {
             return Err(NativeError::new(
@@ -259,8 +257,10 @@ impl ExtensionUiStore {
             .0
             .lock()
             .map_err(|_| io("UI leases unavailable", "lock poisoned"))?;
-        // Each trusted host window has one active surface; replacing it revokes its old URL.
-        leases.retain(|_, old| old.owner != lease.owner);
+        // 同一窗口可保留多个入口的 iframe；只撤销被重建入口的旧 URL。
+        leases.retain(|_, old| {
+            old.owner != lease.owner || old.id != lease.id || old.command != lease.command
+        });
         if leases.len() >= MAX_LEASES || leases.contains_key(&token) {
             return Err(invalid("UI lease limit reached"));
         }
@@ -268,18 +268,21 @@ impl ExtensionUiStore {
         Ok(token)
     }
 
-    fn document(&self, store: &ExtensionStore, owner: &str, token: &str) -> NativeResult<String> {
+    fn lease(&self, owner: &str, token: &str) -> NativeResult<Lease> {
         if !valid_digest(token) {
             return Err(invalid("Invalid UI lease"));
         }
-        let lease = self
-            .0
+        self.0
             .lock()
             .map_err(|_| io("UI leases unavailable", "lock poisoned"))?
             .get(token)
             .cloned()
             .filter(|lease| lease.owner == owner)
-            .ok_or_else(|| invalid("UI lease is not available to this window"))?;
+            .ok_or_else(|| invalid("UI lease is not available to this window"))
+    }
+
+    fn document(&self, store: &ExtensionStore, owner: &str, token: &str) -> NativeResult<String> {
+        let lease = self.lease(owner, token)?;
         store.ui_document(&lease.id, &lease.command, &lease.hash, lease.generation)
     }
 
@@ -381,13 +384,18 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
             let owner = context.webview_label().to_owned();
             let path = request.uri().path().trim_start_matches('/');
             let token = path.to_owned();
-            let valid =
-                request.method() == tauri::http::Method::GET && request.uri().query().is_none();
+            if request.method() != tauri::http::Method::GET
+                || request.uri().query().is_some()
+                || app
+                    .state::<ExtensionUiStore>()
+                    .lease(&owner, &token)
+                    .is_err()
+            {
+                responder.respond(document_response(Err(invalid("Unsupported UI request"))));
+                return;
+            }
             tauri::async_runtime::spawn(async move {
                 let document = crate::blocking::run(move || {
-                    if !valid {
-                        return Err(invalid("Unsupported UI request"));
-                    }
                     app.state::<ExtensionUiStore>().document(
                         &app.state::<ExtensionStore>(),
                         &owner,
@@ -524,6 +532,60 @@ mod tests {
         assert!(ui.document(&store, "main", &current).is_err());
         ui.close_window("main");
         assert!(ui.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn retained_surfaces_keep_their_leases_when_another_entry_opens() {
+        let (_dir, store, item, _) = fixture();
+        let ui = ExtensionUiStore::default();
+        let first = ui.issue(lease(&item)).unwrap();
+        let mut another_command = lease(&item);
+        another_command.command = "preview".into();
+        let second = ui.issue(another_command).unwrap();
+        let mut another_extension = lease(&item);
+        another_extension.id = "example.other".into();
+        let third = ui.issue(another_extension).unwrap();
+
+        // 第一页的协议读取可能晚于后续导航，仍须能读取已保留的文档。
+        assert!(
+            ui.document(&store, "main", &first)
+                .unwrap()
+                .contains("My UI")
+        );
+        assert!(ui.lease("main", &second).is_ok());
+        assert!(ui.lease("main", &third).is_ok());
+        assert!(ui.lease("secondary", &first).is_err());
+
+        let replacement = ui.issue(lease(&item)).unwrap();
+        assert!(ui.lease("main", &first).is_err());
+        assert!(ui.lease("main", &replacement).is_ok());
+        assert!(ui.lease("main", &second).is_ok());
+        assert!(ui.lease("main", &third).is_ok());
+
+        ui.close_window("main");
+        assert!(ui.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn retained_leases_remain_bounded_and_can_be_replaced_at_capacity() {
+        let ui = ExtensionUiStore::default();
+        let entry = |index: usize| Lease {
+            owner: "main".into(),
+            id: "example.test".into(),
+            command: format!("command-{index}"),
+            hash: "a".repeat(64),
+            generation: 1,
+        };
+        let tokens: Vec<_> = (0..MAX_LEASES)
+            .map(|index| ui.issue(entry(index)).unwrap())
+            .collect();
+        assert!(ui.issue(entry(MAX_LEASES)).is_err());
+        assert!(tokens.iter().all(|token| ui.lease("main", token).is_ok()));
+
+        let replacement = ui.issue(entry(0)).unwrap();
+        assert!(ui.lease("main", &tokens[0]).is_err());
+        assert!(ui.lease("main", &replacement).is_ok());
+        assert_eq!(ui.0.lock().unwrap().len(), MAX_LEASES);
     }
     #[test]
     fn tampered_ui_and_rollback_resources_are_refused_without_replacing_the_registry() {

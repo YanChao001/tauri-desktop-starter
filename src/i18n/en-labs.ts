@@ -7,21 +7,20 @@ export const enLabs = {
   "labs.eyebrow": "Try the features",
   "labs.fixture": "Local demo",
   "labs.live": "Online test",
-  "labs.desktopRequired":
-    "This action requires the desktop app. Local demos also work in a browser.",
+  "labs.desktopRequired": "This action requires the desktop app.",
   "labs.error": "Operation failed: {error}",
   "labs.idle": "Not run yet",
   "labs.loading": "Working…",
   "labs.reset": "Reset demo",
   "labs.network.title": "Network connection test",
   "labs.network.description":
-    "Try getting and sending content, viewing saved results offline and testing sign-in status. The default demo stays on this device. Only online mode sends requests to httpbin.org.",
+    "Test content transfers, offline results and sign-in status. Demos run locally by default; online tests use httpbin.org.",
   "labs.network.requests": "Get and send content",
   "labs.network.mode": "Request source",
   "labs.network.fixtureHint":
-    "Simulate success, failure, timeouts and retries on this device without making network requests.",
+    "Simulate connection states on this device without going online.",
   "labs.network.liveHint":
-    "Getting and sending content connects to https://httpbin.org/anything. Use test text only. Do not enter real passwords or business information.",
+    "Content is sent to httpbin.org. Do not enter passwords or sensitive information.",
   "labs.network.fault": "Test scenario",
   "labs.network.normal": "Success",
   "labs.network.flaky": "Fail once, then succeed",
@@ -39,31 +38,30 @@ export const enLabs = {
   "labs.network.cacheMiss":
     "No current result was available, so a new one was retrieved.",
   "labs.network.cacheOffline":
-    "Showing the last result offline. It may be out of date; no request was made.",
+    "Showing the last result. It may be out of date.",
   "labs.network.clearCache": "Clear last result",
   "labs.network.cacheHint":
-    "Results are reused for 30 seconds before getting a new one. Sending content never retries automatically. Results last for this page visit only.",
+    "Reuse the last result for 30 seconds, then fetch a new one. Results are cleared when you leave this page.",
   "labs.network.offline": "Simulate offline",
   "labs.network.offlineState": "Offline · requests paused",
   "labs.network.offlineHint":
-    "New requests are paused offline. The last result remains readable. Turn simulation off or restore the network to retry.",
+    "Pause new requests while keeping the last result available.",
   "labs.network.message": "Content to send",
   "labs.network.messageDefault": "Hello from the desktop lab",
   "labs.network.response": "Returned content",
   "labs.network.attempts": "Current failure count: {count}",
   "labs.network.requestError": "Request failed",
   "labs.network.error.timeout":
-    "Request timed out. Choose a shorter-delay scenario or increase the timeout and retry.",
-  "labs.network.error.server":
-    "Service unavailable. Getting content retries at most twice.",
+    "Request timed out. Increase the timeout and try again.",
+  "labs.network.error.server": "Service unavailable. Try again later.",
   "labs.network.error.invalid":
     "The returned content has an invalid format, so this result was not saved.",
   "labs.network.error.input":
     "Enter 3–200 characters and a timeout of 100–10000 milliseconds.",
   "labs.network.error.cancelled": "Request cancelled.",
-  "labs.session.title": "Try sign-in status",
+  "labs.session.title": "Sign-in demo",
   "labs.session.hint":
-    "Use a display name to try signing in, signing out and automatic expiry after 30 seconds. This local demo does not create a real account or save sign-in information.",
+    "Demo sign-ins expire after 30 seconds. No account is created or sign-in information saved.",
   "labs.session.name": "Demo display name",
   "labs.session.signIn": "Try signing in",
   "labs.session.signOut": "Sign out",
@@ -75,7 +73,7 @@ export const enLabs = {
   "labs.session.remaining": "{seconds} seconds remaining",
   "labs.credential.title": "System secure storage",
   "labs.credential.hint":
-    "Only the test value you enter is saved to your operating system's secure storage. It is kept out of browser storage, app settings, notes, request history and logs.",
+    "Test content is saved in system secure storage, never in ordinary files or logs.",
   "labs.credential.value": "Test content",
   "labs.credential.save": "Save securely",
   "labs.credential.read": "Check saved content",
@@ -91,7 +89,7 @@ export const enLabs = {
   "labs.credential.deleted": "Test content deleted.",
   "labs.data.title": "Data studio",
   "labs.data.description":
-    "Filter, sort and organize 10,000 sample records, or fill in a request with line items. Data is used on this page only. No request is submitted or added to your notes.",
+    "Organize sample records or fill in a request with line items. Data stays on this page and is never submitted or saved.",
   "labs.data.records": "Demo records",
   "labs.data.search": "Filter by name, email or team",
   "labs.data.name": "Name",
@@ -110,7 +108,7 @@ export const enLabs = {
   "labs.data.selected": "{count} selected",
   "labs.data.archive": "Archive selected",
   "labs.data.batchHint":
-    "Local partial-failure demo: records divisible by 7 are protected. Failed rows stay selected for inspection.",
+    "Some sample records are protected. Rows that fail to archive stay selected.",
   "labs.data.batchResult":
     "{success} succeeded, {failed} failed. Failed rows were retained.",
   "labs.data.virtual": "Continuous scrolling",
@@ -122,8 +120,7 @@ export const enLabs = {
   "labs.data.page": "Page {page} / {pages} · {count} filtered records",
   "labs.data.empty": "No matching records.",
   "labs.form.title": "Request with line items",
-  "labs.form.hint":
-    "Business requests need a company name. The end date cannot precede the start date. Failed submissions keep your input, and error messages link to the fields. This is a demo: requests are never sent or saved.",
+  "labs.form.hint": "This is a demo. Requests are never sent or saved.",
   "labs.form.customer": "Applicant",
   "labs.form.kind": "Request type",
   "labs.form.personal": "Personal",
@@ -156,10 +153,10 @@ export const enLabs = {
   "labs.form.lineLimit": "Keep 1–10 line items.",
   "labs.media.title": "Media & messages",
   "labs.media.description":
-    "Edit text, preview images, audio and video, view charts and try sending messages. Nothing goes online by default. Messages reach an external test service only when you choose online mode.",
+    "Edit text, preview media, view charts and send messages. Demos run locally by default; online tests connect to external services.",
   "labs.media.markdown": "Markdown editor & preview",
   "labs.media.markdownHint":
-    "Supports common formatting, tables and task lists. Scripts in the text are not run. External images and unsafe links are blocked.",
+    "Supports tables and task lists. Scripts, external images and unsafe links are blocked.",
   "labs.media.source": "Markdown content",
   "labs.media.preview": "Preview",
   "labs.media.table": "Markdown table",
@@ -168,7 +165,7 @@ export const enLabs = {
   "labs.media.taskPending": "Incomplete Markdown task",
   "labs.media.file": "Local media preview",
   "labs.media.fileHint":
-    "Choose an image, audio or video up to 20 MiB to preview in this window without uploading it. Replacing the file or leaving closes the preview. Unsupported formats show an error.",
+    "Preview files up to 20 MiB on this device without uploading them.",
   "labs.media.choose": "Choose image, audio or video",
   "labs.media.clear": "Close preview",
   "labs.media.invalidFile":
@@ -178,14 +175,14 @@ export const enLabs = {
   "labs.media.empty": "No media selected.",
   "labs.media.chart": "One week of demo metrics",
   "labs.media.chartHint":
-    "Charts use fixed local demo data. The table below provides the same values; chart animation is disabled.",
+    "Uses sample data. The table below shows the same values.",
   "labs.media.day": "Day",
   "labs.media.requests": "Requests",
   "labs.media.latency": "Latency (milliseconds)",
   "labs.media.metric": "Chart metric",
   "labs.socket.title": "Message test",
   "labs.socket.hint":
-    "Local mode returns your message without going online. Online mode sends messages to echo.websocket.events and receives them back. Each message can contain up to 1000 characters. Do not send passwords or other sensitive information.",
+    "Local tests stay offline. Online tests send messages to echo.websocket.events; do not enter sensitive information. Limit: 1000 characters per message.",
   "labs.socket.local": "Local test",
   "labs.socket.live": "Online test",
   "labs.socket.connect": "Connect",
@@ -207,7 +204,7 @@ export const enLabs = {
     "The message was not sent. Check the connection and retry. Each message can contain up to 1000 characters.",
   "labs.sidecar.title": "Text conversion",
   "labs.sidecar.hint":
-    "Convert text to uppercase and count its characters on this device. This feature requires the desktop app. It does not run programs or commands that you supply.",
+    "Convert text to uppercase and count characters locally. Requires the desktop app.",
   "labs.sidecar.input": "Text to convert (up to 1000 bytes)",
   "labs.sidecar.run": "Convert to uppercase",
   "labs.sidecar.tooLong": "Enter text no larger than 1000 bytes.",

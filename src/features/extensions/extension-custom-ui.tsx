@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { useSettings, type Motion } from "@/providers/settings";
 import { THEME_REVEAL_EVENT, type ThemeReveal } from "@/hooks/use-theme-switch";
 import hostFont from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?inline";
 import { nativeErrorText } from "@/lib/native-error";
+import { UI_STYLES, readUiTokens } from "@/lib/ui-theme";
 import {
   openExtensionUi,
   closeExtensionUi,
@@ -19,47 +21,15 @@ import {
 import { ExtensionLoading } from "./extension-loading";
 import { useExtensionActivity } from "./extension-activity";
 
-const TOKENS = [
-  "--background",
-  "--foreground",
-  "--card",
-  "--card-foreground",
-  "--popover",
-  "--popover-foreground",
-  "--primary",
-  "--primary-foreground",
-  "--secondary",
-  "--secondary-foreground",
-  "--accent",
-  "--accent-foreground",
-  "--muted",
-  "--muted-foreground",
-  "--border",
-  "--input",
-  "--destructive",
-  "--destructive-foreground",
-  "--ring",
-  "--radius",
-  "--control-input-font-size",
-  "--control-input-line-height",
-  "--chart-1",
-  "--chart-2",
-  "--chart-3",
-  "--chart-4",
-  "--chart-5",
-];
 function readTheme(motion: Motion) {
   const styles = getComputedStyle(document.documentElement);
-  const tokens: Record<string, string> = Object.fromEntries(
-    TOKENS.map((name) => [name, styles.getPropertyValue(name).trim()]),
-  );
-  tokens["--host-font-size"] = styles.fontSize;
-  tokens["--host-font-family"] = styles.fontFamily;
+  const tokens = readUiTokens(styles);
   return {
     mode: document.documentElement.classList.contains("dark")
       ? "dark"
       : "light",
     motion,
+    styles: UI_STYLES,
     font: { family: "Geist Variable", dataUrl: hostFont },
     tokens,
   };
@@ -99,10 +69,12 @@ export function ExtensionCustomUi({
   const [handshakeReady, setHandshakeReady] = useState(false);
   const bridge = useRef<ExtensionUiBridge | null>(null);
   const run = useRef(execute);
-  run.current = execute;
   const snapshot = useRef<unknown>(null);
   const hasView = useRef(view !== null);
-  hasView.current = view !== null;
+  useLayoutEffect(() => {
+    run.current = execute;
+    hasView.current = view !== null;
+  }, [execute, view]);
   const [palette, setPalette] = useState(0);
   useEffect(() => {
     if (!active) return;
@@ -112,9 +84,13 @@ export function ExtensionCustomUi({
       scheduled = requestAnimationFrame(() => setPalette((value) => value + 1));
     };
     const observer = new MutationObserver(schedule);
-    // Match the host CSS breakpoint; resizing within a range does not resend the font payload.
-    const inputBreakpoint = window.matchMedia("(min-width: 48rem)");
-    inputBreakpoint.addEventListener("change", schedule);
+    // 只在字号断点或高对比度策略变化时重读，不为同一档内的 resize 重发字体。
+    const media = [
+      "(min-width: 48rem)",
+      "(prefers-contrast: more)",
+      "(forced-colors: active)",
+    ].map((query) => window.matchMedia(query));
+    media.forEach((query) => query.addEventListener("change", schedule));
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: [
@@ -125,23 +101,29 @@ export function ExtensionCustomUi({
         "data-font-size",
         "data-radius",
         "data-motion",
+        "data-background",
+        "data-background-intensity",
       ],
     });
     return () => {
       observer.disconnect();
-      inputBreakpoint.removeEventListener("change", schedule);
+      media.forEach((query) => query.removeEventListener("change", schedule));
       cancelAnimationFrame(scheduled);
     };
   }, [active]);
   const [theme, setTheme] = useState(() => readTheme(settings.motion));
-  // Synchronize external root attributes once per palette change, rather than on each field edit.
+  // 外部根属性按外观变化同步，普通字段编辑不重新读取整份主题。
   useLayoutEffect(() => {
     if (!active) return;
     const next = readTheme(settings.motion);
-    // 回到缓存页面时重新读取外观；值未变则沿用引用，避免重新复制字体与主题。
+    // 回到缓存页面时重读外观；仅完整快照不变才复用，删除变量与共享规则更新也须发送。
     setTheme((current) =>
       current.mode === next.mode &&
       current.motion === next.motion &&
+      current.styles === next.styles &&
+      current.font.family === next.font.family &&
+      current.font.dataUrl === next.font.dataUrl &&
+      Object.keys(current.tokens).length === Object.keys(next.tokens).length &&
       Object.entries(next.tokens).every(
         ([name, value]) => current.tokens[name] === value,
       )
@@ -162,7 +144,7 @@ export function ExtensionCustomUi({
       busy,
       dirty,
       active,
-      locale: language === "zh" ? "zh-CN" : "en",
+      locale: getLocale(language).documentLang,
       grantedPermissions: item.grantedPermissions,
       theme,
     },
@@ -404,10 +386,14 @@ export function ExtensionCustomUi({
     <div
       data-extension-custom-ui
       data-extension-active={active}
-      className="relative min-w-0 bg-background"
+      className="relative min-w-0"
     >
       {error ? (
-        <div role="alert" className="space-y-3 rounded-lg border p-4">
+        <div
+          role="alert"
+          data-surface="solid"
+          className="space-y-3 rounded-lg border p-4"
+        >
           <p>{t("ext.uiUnavailable")}</p>
           <p className="text-sm text-muted-foreground">
             {nativeErrorText(error, t)}
@@ -425,9 +411,7 @@ export function ExtensionCustomUi({
         <div
           data-extension-loading-layout
           className={
-            lease
-              ? "pointer-events-none absolute inset-0 z-10 bg-background"
-              : "bg-background"
+            lease ? "pointer-events-none absolute inset-0 z-10" : undefined
           }
         >
           <div className="app-page-content">
@@ -444,13 +428,12 @@ export function ExtensionCustomUi({
           sandbox="allow-scripts"
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"
           referrerPolicy="no-referrer"
-          className="block w-full border-0 bg-background"
+          className="block w-full border-0 bg-transparent"
           aria-hidden={!connected}
           tabIndex={connected ? undefined : -1}
           style={{
             opacity: connected ? 1 : 0,
             pointerEvents: connected ? undefined : "none",
-            backgroundColor: theme.tokens["--background"],
           }}
         />
       ) : null}

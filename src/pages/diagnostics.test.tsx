@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter } from "react-router-dom";
 import { toast } from "sonner";
 import { copyText } from "@/lib/clipboard";
 import {
@@ -16,6 +16,7 @@ import {
   type DiagnosticsReport,
 } from "@/lib/tauri";
 import Diagnostics from "./diagnostics";
+import { RouteErrorBoundary } from "@/components/route-error-boundary";
 
 const language = vi.hoisted(() => ({ value: "en" }));
 vi.mock("@/lib/tauri", () => ({
@@ -86,6 +87,40 @@ describe("diagnostics actions", () => {
     });
   });
   afterEach(cleanup);
+  it("keeps the loaded report, recovery status and expanded details when navigating to the current page again", async () => {
+    render(
+      <MemoryRouter initialEntries={["/diagnostics"]}>
+        <Link to="/diagnostics">Diagnostics navigation</Link>
+        <RouteErrorBoundary>
+          <Diagnostics />
+        </RouteErrorBoundary>
+      </MemoryRouter>,
+    );
+    const copy = screen.getByRole("button", { name: "Copy diagnostics" });
+    await waitFor(() => expect(copy).toBeEnabled());
+    const healthy = await screen.findByText("Storage is healthy");
+    const summary = screen.getByText("View detailed report and logs");
+    fireEvent.click(summary);
+    const details = summary.closest("details");
+    expect(details).toHaveAttribute("open");
+    expect(getDiagnosticsReport).toHaveBeenCalledOnce();
+    expect(recoveryStatus).toHaveBeenCalledOnce();
+
+    const navigation = screen.getByRole("link", {
+      name: "Diagnostics navigation",
+    });
+    for (let click = 0; click < 3; click++) {
+      fireEvent.click(navigation);
+      expect(screen.getByRole("button", { name: "Copy diagnostics" })).toBe(
+        copy,
+      );
+      expect(copy).toBeEnabled();
+      expect(screen.getByText("Storage is healthy")).toBe(healthy);
+      expect(details).toHaveAttribute("open");
+    }
+    expect(getDiagnosticsReport).toHaveBeenCalledOnce();
+    expect(recoveryStatus).toHaveBeenCalledOnce();
+  });
   it("deduplicates copying and reports failures in the currently selected language before retrying", async () => {
     const copy = deferred<void>();
     vi.mocked(copyText).mockReturnValueOnce(copy.promise);

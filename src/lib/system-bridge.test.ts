@@ -24,10 +24,8 @@ const plugins = vi.hoisted(() => ({
   requestPermission: vi.fn<() => Promise<NotificationPermission>>(),
   sendNotification: vi.fn(),
   onAction: vi.fn(),
-  isRegistered: vi.fn<() => Promise<boolean>>(),
   register: vi.fn(),
   unregister: vi.fn(),
-  activateMain: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   Channel: class {
@@ -45,14 +43,10 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
   sendNotification: plugins.sendNotification,
   onAction: plugins.onAction,
 }));
-vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
-  isRegistered: plugins.isRegistered,
-  register: plugins.register,
-  unregister: plugins.unregister,
-}));
 vi.mock("./generated/bindings", () => ({
   commands: {
-    activateMain: plugins.activateMain,
+    registerDemoShortcut: plugins.register,
+    unregisterDemoShortcut: plugins.unregister,
     requestDemoHttp: plugins.requestDemoHttp,
     cancelDemoHttp: plugins.cancelDemoHttp,
   },
@@ -144,10 +138,8 @@ beforeEach(() => {
   plugins.cancelDemoHttp.mockResolvedValue({ status: "ok", data: undefined });
   plugins.isPermissionGranted.mockResolvedValue(false);
   plugins.requestPermission.mockResolvedValue("denied");
-  plugins.isRegistered.mockResolvedValue(false);
-  plugins.register.mockResolvedValue(undefined);
-  plugins.unregister.mockResolvedValue(undefined);
-  plugins.activateMain.mockResolvedValue({ status: "ok", data: undefined });
+  plugins.register.mockResolvedValue({ status: "ok", data: undefined });
+  plugins.unregister.mockResolvedValue({ status: "ok", data: undefined });
 });
 afterEach(() => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
@@ -625,44 +617,55 @@ describe("global shortcut ownership", () => {
     async (shortcut) => {
       desktop();
       const cancel = await registerGlobalShortcut(shortcut);
-      expect(plugins.isRegistered).toHaveBeenCalledWith(shortcut);
-      expect(plugins.register).toHaveBeenCalledWith(
-        shortcut,
-        expect.any(Function),
-      );
+      expect(plugins.register).toHaveBeenCalledExactlyOnceWith(shortcut);
       await cancel();
       expect(plugins.unregister).toHaveBeenCalledWith(shortcut);
     },
   );
 
-  it("rejects unapproved combinations and occupied shortcuts without registering", async () => {
+  it("preserves native allowlist and shortcut conflict errors without unregistering", async () => {
     desktop();
+    plugins.register.mockResolvedValueOnce({
+      status: "error",
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "Unsupported demo shortcut",
+        retryable: false,
+      },
+    });
     await expect(registerGlobalShortcut("CommandOrControl+Q")).rejects.toThrow(
       "Unsupported demo shortcut",
     );
-    expect(plugins.isRegistered).not.toHaveBeenCalled();
-    plugins.isRegistered.mockResolvedValue(true);
+    plugins.register.mockResolvedValueOnce({
+      status: "error",
+      error: {
+        code: "CONFLICT",
+        message: "Shortcut is already registered",
+        retryable: false,
+      },
+    });
     await expect(registerGlobalShortcut("Alt+Shift+Y")).rejects.toThrow(
       "already registered",
     );
-    expect(plugins.register).not.toHaveBeenCalled();
     expect(plugins.unregister).not.toHaveBeenCalled();
   });
 
-  it("keeps OS registration failures observable and activates only on key press", async () => {
+  it("keeps registration and unregistration failures observable", async () => {
     desktop();
     plugins.register.mockRejectedValueOnce(new Error("OS shortcut occupied"));
     await expect(registerGlobalShortcut("Alt+Shift+Y")).rejects.toThrow(
       "OS shortcut occupied",
     );
     expect(plugins.unregister).not.toHaveBeenCalled();
-    await registerGlobalShortcut("Alt+Shift+Y");
-    const handler = plugins.register.mock.calls[1]?.[1] as (event: {
-      state: "Pressed" | "Released";
-    }) => void;
-    handler({ state: "Released" });
-    expect(plugins.activateMain).not.toHaveBeenCalled();
-    handler({ state: "Pressed" });
-    await vi.waitFor(() => expect(plugins.activateMain).toHaveBeenCalledOnce());
+    const unregister = await registerGlobalShortcut("Alt+Shift+Y");
+    plugins.unregister.mockResolvedValueOnce({
+      status: "error",
+      error: {
+        code: "WINDOW_ERROR",
+        message: "Cannot unregister shortcut",
+        retryable: false,
+      },
+    });
+    await expect(unregister()).rejects.toMatchObject({ code: "WINDOW_ERROR" });
   });
 });

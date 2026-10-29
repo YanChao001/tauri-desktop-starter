@@ -83,21 +83,6 @@ it("announces each search failure once with a retry that retains the failed quer
   await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
 });
 
-it.each([true, false])(
-  "shows the correct native=%s search explanation on keyboard focus without a permanent hint row",
-  async (native) => {
-    state.native = native;
-    render(<CommandPalette />);
-    expect(screen.getByRole("status")).toBeEmptyDOMElement();
-    fireEvent.focus(
-      screen.getByRole("button", { name: "Help for Quick actions" }),
-    );
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      native ? "Type at least 2 characters" : "Search commands in a browser",
-    );
-  },
-);
-
 it("uses one live status slot for loading and query limits", () => {
   const mounted = render(<CommandPalette />);
   const status = screen.getByRole("status");

@@ -10,12 +10,23 @@ import * as native from "@/lib/tauri";
 import { THEME_REVEAL_EVENT } from "@/hooks/use-theme-switch";
 import { ExtensionCustomUi } from "./extension-custom-ui";
 import { ExtensionActivityProvider } from "./extension-activity";
+import { UI_STYLES } from "@/lib/ui-theme";
 
 const environment = vi.hoisted(() => ({
   language: "en" as "en" | "zh",
   inputWide: true,
   inputListeners: new Set<() => void>(),
+  sharedStyles: null as string | null,
 }));
+vi.mock("@/lib/ui-theme", async (original) => {
+  const source = await original<typeof import("@/lib/ui-theme")>();
+  return {
+    ...source,
+    get UI_STYLES() {
+      return environment.sharedStyles ?? source.UI_STYLES;
+    },
+  };
+});
 vi.mock("@/providers/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key, language: environment.language }),
 }));
@@ -48,11 +59,13 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   document.documentElement.classList.remove("dark");
-  document.documentElement.style.removeProperty("font-size");
+  document.documentElement.removeAttribute("style");
+  document.documentElement.removeAttribute("data-background-intensity");
   document.documentElement.removeAttribute("data-font-size");
   environment.language = "en";
   environment.inputWide = true;
   environment.inputListeners.clear();
+  environment.sharedStyles = null;
 });
 
 it("limits missing paint acknowledgements only after a visible first view, resetting for background and offscreen pauses", async () => {
@@ -534,6 +547,30 @@ it("updates environment and drafts without rereading the palette or reloading th
   });
   vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
   document.documentElement.style.fontSize = "17px";
+  const glassTokens: Record<string, string> = {
+    "--control-background": "rgba(24, 24, 24, 0.3)",
+    "--surface-popover": "rgba(24, 24, 24, 0.3)",
+    "--surface-dialog": "rgba(24, 24, 24, 0.5)",
+    "--surface-control-blur": "9px",
+    "--surface-popup-blur": "14px",
+    "--glass-muted-foreground": "oklch(0.948 0 0)",
+    "--future-widget-surface": "rgba(24, 24, 24, 0.65)",
+  };
+  // 真实浏览器从计算样式枚举这些变量，测试不再依赖手写同步名单。
+  for (const [name, value] of Object.entries(glassTokens))
+    document.documentElement.style.setProperty(name, value);
+  document.documentElement.style.setProperty(
+    "--control-input-font-size",
+    "0.875rem",
+  );
+  document.documentElement.style.setProperty(
+    "--control-input-line-height",
+    "1.25rem",
+  );
+  document.documentElement.style.setProperty(
+    "--tw-internal-fixture",
+    "private",
+  );
   const readProperty = CSSStyleDeclaration.prototype.getPropertyValue;
   vi.spyOn(
     CSSStyleDeclaration.prototype,
@@ -543,6 +580,8 @@ it("updates environment and drafts without rereading the palette or reloading th
       return environment.inputWide ? "0.875rem" : "1rem";
     if (property === "--control-input-line-height")
       return environment.inputWide ? "1.25rem" : "1.5rem";
+    const glassValue = glassTokens[property];
+    if (glassValue !== undefined) return glassValue;
     return readProperty.call(this, property);
   });
   const styles = vi.spyOn(window, "getComputedStyle");
@@ -600,7 +639,11 @@ it("updates environment and drafts without rereading the palette or reloading th
           value: {
             locale: string;
             fields: Record<string, string>;
-            theme: { mode: string; tokens: Record<string, string> };
+            theme: {
+              mode: string;
+              tokens: Record<string, string>;
+              styles: string;
+            };
             grantedPermissions: string[];
           };
         } =>
@@ -623,6 +666,30 @@ it("updates environment and drafts without rereading the palette or reloading th
   expect(paletteReads()).toBe(before);
   expect(native.openExtensionUi).toHaveBeenCalledOnce();
   expect(state().theme.tokens["--control-input-font-size"]).toBe("0.875rem");
+  expect(state().theme.tokens).toMatchObject(glassTokens);
+  expect(state().theme.tokens).not.toHaveProperty("--tw-internal-fixture");
+  expect(state().theme.styles).toBe(UI_STYLES);
+  delete glassTokens["--future-widget-surface"];
+  act(() =>
+    document.documentElement.style.removeProperty("--future-widget-surface"),
+  );
+  await waitFor(() =>
+    expect(state().theme.tokens).not.toHaveProperty("--future-widget-surface"),
+  );
+  const updatedStyles = `${UI_STYLES}\n@layer starter-defaults { meter { border-style: dashed; } }`;
+  environment.sharedStyles = updatedStyles;
+  act(() =>
+    document.documentElement.setAttribute("data-background-intensity", "90"),
+  );
+  await waitFor(() => expect(state().theme.styles).toBe(updatedStyles));
+  expect(native.openExtensionUi).toHaveBeenCalledOnce();
+  glassTokens["--control-background"] = "rgba(24, 24, 24, 0.35)";
+  document.documentElement.setAttribute("data-background-intensity", "100");
+  await waitFor(() =>
+    expect(state().theme.tokens["--control-background"]).toBe(
+      glassTokens["--control-background"],
+    ),
+  );
   const priorResize = paletteReads();
   await act(async () => {
     window.dispatchEvent(new Event("resize"));

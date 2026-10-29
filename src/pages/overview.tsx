@@ -27,6 +27,7 @@ import { useSettings } from "@/providers/settings";
 import { isTauri } from "@/lib/tauri";
 import type { AppSettings } from "@/lib/settings-model";
 import { APP_CONFIG } from "@/config/app";
+import { DEFAULT_BACKGROUND_INTENSITY } from "@/lib/backgrounds";
 import "@/styles/showroom.css";
 
 const VIBES = [
@@ -173,7 +174,7 @@ export default function Overview() {
     settings.accent === vibe.accent &&
     settings.theme === vibe.theme &&
     settings.radius === vibe.radius &&
-    settings.backgroundIntensity === "balanced";
+    settings.backgroundIntensity === DEFAULT_BACKGROUND_INTENSITY;
   function move(event: PointerEvent<HTMLDivElement>) {
     if (!active || event.pointerType === "touch") return;
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -196,7 +197,7 @@ export default function Overview() {
     update({
       accent: vibe.accent,
       background: vibe.background,
-      backgroundIntensity: "balanced",
+      backgroundIntensity: DEFAULT_BACKGROUND_INTENSITY,
       radius: vibe.radius,
     });
     setTheme(vibe.theme);
@@ -270,26 +271,29 @@ export default function Overview() {
               </Link>
             </Button>
             <Button asChild variant="ghost">
-              <Link to="/motion">
-                {t("nav.motion")}
+              <Link to="/catalog">
+                {t("nav.catalog")}
                 <ArrowDownRightIcon />
               </Link>
             </Button>
           </div>
           <button
+            data-surface="transparent"
+            data-variant="ghost"
             type="button"
             onClick={() => setPaletteOpen(true)}
             className="showroom-command-link"
           >
             <CommandIcon size={15} />
             <span>{t("showroom.shortcut")}</span>
-            <kbd>⌘ / Ctrl K</kbd>
+            <kbd data-surface="control">⌘ / Ctrl K</kbd>
             <span className="sr-only">{t("showroom.commands")}</span>
           </button>
         </div>
         <div className="showroom-preview">
           <div
             ref={scene}
+            data-surface="artwork"
             className="showroom-scene"
             data-vibe={vibe.id}
             data-active={active}
@@ -349,7 +353,11 @@ export default function Overview() {
                 </span>
               </div>
             </motion.div>
-            <div className="showroom-floating-note" aria-hidden="true">
+            <div
+              data-surface="reading"
+              className="showroom-floating-note"
+              aria-hidden="true"
+            >
               <span className="showroom-note-icon">
                 <LayersIcon size={18} />
               </span>
@@ -370,13 +378,6 @@ export default function Overview() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 id="showroom-vibes-heading">{t("showroom.chooseVibe")}</h3>
-                <HelpTooltip
-                  label={t("common.helpFor", {
-                    name: t("showroom.chooseVibe"),
-                  })}
-                >
-                  {t("showroom.vibeHint")}
-                </HelpTooltip>
               </div>
             </div>
             <fieldset className="showroom-vibe-options">
@@ -385,6 +386,7 @@ export default function Overview() {
                 <label
                   key={item.id}
                   className="showroom-vibe"
+                  data-surface="control"
                   data-vibe={item.id}
                   data-selected={vibeIndex === index}
                 >
@@ -396,7 +398,11 @@ export default function Overview() {
                     checked={vibeIndex === index}
                     onChange={() => setVibeIndex(index)}
                   />
-                  <span className="showroom-vibe-swatch" aria-hidden="true" />
+                  <span
+                    data-surface="artwork"
+                    className="showroom-vibe-swatch"
+                    aria-hidden="true"
+                  />
                   <span>{t(item.label)}</span>
                   {vibeIndex === index ? <CheckIcon size={12} /> : null}
                 </label>
@@ -441,4 +447,3 @@ export default function Overview() {
     </div>
   );
 }
-import { HelpTooltip } from "@/components/help-tooltip";

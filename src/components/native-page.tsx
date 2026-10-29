@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertCircleIcon, LayersIcon, ArrowRightIcon } from "lucide-react";
+import { AlertCircleIcon, ArrowRightIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useI18n, type DictKey } from "@/providers/i18n";
@@ -117,10 +117,6 @@ export function NativePage({
             <NativeFlow />
             <NativePreviewActions />
           </div>
-          <p className="studio-native-note">
-            <LayersIcon size={13} />
-            {t("studio.nativeNote")}
-          </p>
         </section>
       )}
     </div>
@@ -138,7 +134,8 @@ export function ResourceError({
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-background p-3 text-sm"
+      data-surface="solid"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3 text-sm"
     >
       <span className="flex items-center gap-2">
         <AlertCircleIcon className="size-4 shrink-0 text-destructive" />

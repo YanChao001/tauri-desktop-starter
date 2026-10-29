@@ -1,21 +1,40 @@
 import { expect } from "@playwright/test";
+import { checkHostControlStyles } from "./surface-checks.mjs";
 
 export async function pasteCalculatorExpression(frame, value) {
   await pasteCalculatorValue(frame, value, "expression");
 }
 
 async function pasteCalculatorValue(frame, value, id) {
-  await frame.locator("main").evaluate((node, text) => {
-    const clipboardData = new DataTransfer();
-    clipboardData.setData("text/plain", text);
-    node.dispatchEvent(
-      new ClipboardEvent("paste", {
-        clipboardData,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  }, value);
+  // 将可编辑检查与粘贴放在同一个事件循环内，避免单位换算的延迟任务插入二者之间。
+  // 忙碌期间不派发、也不重复派发已接受的输入；真实 UI 仍会拒绝忙碌时的粘贴。
+  await expect
+    .poll(
+      () =>
+        frame.locator("main").evaluate(
+          (node, { text, id }) => {
+            const input = document.getElementById(id);
+            if (
+              node.getAttribute("aria-busy") === "true" ||
+              input?.dataset.locked === "true"
+            )
+              return false;
+            const clipboardData = new DataTransfer();
+            clipboardData.setData("text/plain", text);
+            node.dispatchEvent(
+              new ClipboardEvent("paste", {
+                clipboardData,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            return true;
+          },
+          { text: value, id },
+        ),
+      { timeout: 60000 },
+    )
+    .toBe(true);
   await expect(frame.locator("#" + id)).toHaveValue(value);
 }
 
@@ -461,6 +480,26 @@ export async function checkCalculatorDates({ page, frame, idle, snapshot }) {
   });
   await snapshot("date-difference");
   await compute(() => frame.locator("#date-operation").selectOption("add"));
+  // Windows 字体家族/正文色保留；普通偏移表单仍须继承宿主的尺寸和材质。
+  await checkHostControlStyles(
+    page,
+    frame,
+    ["#date-years", "#date-months", "#date-days"],
+    {
+      styleProperties: [
+        "boxSizing",
+        "fontSize",
+        "fontWeight",
+        "lineHeight",
+        "borderTopLeftRadius",
+        "borderTopWidth",
+        "borderTopStyle",
+        "borderTopColor",
+        "backgroundColor",
+        "backdropFilter",
+      ],
+    },
+  );
   await date("from", "2024-01-31");
   await frame.locator("#date-months").fill("1");
   await expect
@@ -591,8 +630,23 @@ export async function checkCalculatorConverters({
       ).toBeAttached({ timeout: 60000 });
       await frame.locator("#converter-" + side).selectOption(value);
     }
+    // 单位选择会触发异步换算；合成粘贴不会自动等待控件恢复可交互。
+    await expect(frame.locator("#converterInput")).toHaveAttribute(
+      "data-locked",
+      "false",
+    );
     await pasteCalculatorValue(frame, input, "converterInput");
     await converted(category, from, to, input, expected);
+    // 单位选择器保留 Windows 无框布局，只比较应继承的共享输入字号。
+    await checkHostControlStyles(
+      page,
+      frame,
+      ["#converter-from", "#converter-to"],
+      {
+        styleProperties: ["fontSize"],
+        compareHeight: false,
+      },
+    );
     await snapshot("converter-" + category);
     results.push({ category, from, to, input, expected, realWasm: true });
     if (category === "currency") {

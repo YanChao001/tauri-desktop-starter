@@ -68,11 +68,6 @@ export default function Catalog() {
           <h3 id="capability-list-heading" className="text-base font-medium">
             {t("catalog.modules")}
           </h3>
-          <HelpTooltip
-            label={t("common.helpFor", { name: t("catalog.modules") })}
-          >
-            {t("catalog.statusHint")}
-          </HelpTooltip>
           <Input
             type="search"
             aria-label={t("catalog.search")}
@@ -142,8 +137,8 @@ export default function Catalog() {
           </p>
         ) : null}
       </section>
-      <details className="rounded-xl border bg-card">
-        <summary className="cursor-pointer rounded-xl p-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <details data-disclosure-radius="xl" className="border app-surface">
+        <summary className="cursor-pointer p-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t("catalog.developerResources")}
         </summary>
         <div className="space-y-5 border-t p-4">
@@ -176,6 +171,9 @@ export default function Catalog() {
               ))}
             </ul>
           </section>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/bridge">{t("nav.bridge")}</Link>
+          </Button>
           <section aria-labelledby="catalog-tutorial" className="space-y-4">
             <div className="space-y-1">
               <h3 id="catalog-tutorial" className="text-sm font-medium">
@@ -207,7 +205,7 @@ export default function Catalog() {
                 aria-labelledby="catalog-rust-example"
                 code={rustIpcExample}
                 language="rust"
-                className="max-h-96 rounded-md bg-muted"
+                className="max-h-96 rounded-md"
               />
             </div>
             <div className="min-w-0 space-y-2">
@@ -221,7 +219,7 @@ export default function Catalog() {
                 aria-labelledby="catalog-typescript-example"
                 code={typescriptIpcExample}
                 language="typescript"
-                className="max-h-96 rounded-md bg-muted"
+                className="max-h-96 rounded-md"
               />
             </div>
             <div className="flex flex-wrap gap-3 text-sm">
@@ -247,4 +245,3 @@ export default function Catalog() {
     </div>
   );
 }
-import { HelpTooltip } from "@/components/help-tooltip";

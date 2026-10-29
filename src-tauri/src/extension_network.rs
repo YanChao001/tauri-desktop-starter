@@ -114,11 +114,14 @@ fn image_transport_error(error: reqwest::Error) -> NativeError {
     } else {
         ErrorCode::ExtensionRunFailed
     };
-    NativeError::operation(
+    let mut failure = NativeError::operation(
         code,
         "Extension image connection failed",
         format!("{error:?}"),
-    )
+    );
+    // 此处是固定 GET 的传输故障，同一错误码的 Wasm 执行失败则不默认重试。
+    failure.retryable = true;
+    failure
 }
 pub(crate) fn check_cancelled(stop: &AtomicBool) -> NativeResult<()> {
     if stop.load(Ordering::Acquire) {

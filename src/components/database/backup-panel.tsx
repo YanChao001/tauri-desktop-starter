@@ -1,3 +1,4 @@
+import { getLocale } from "@/i18n/registry";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -251,12 +252,13 @@ export function BackupPanel({
                 {backups.map((backup) => (
                   <li
                     key={backup.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"
+                    data-surface="control"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3"
                   >
                     <div>
                       <p className="text-sm">
                         {new Date(backup.createdAt).toLocaleString(
-                          language === "zh" ? "zh-CN" : "en",
+                          getLocale(language).documentLang,
                         )}
                       </p>
                       <p className="text-xs text-muted-foreground">

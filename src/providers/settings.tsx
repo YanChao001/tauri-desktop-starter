@@ -42,6 +42,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       {
         load: desktop.loadSettingsSnapshot,
         save: desktop.saveSettingsSnapshot,
+        reset: desktop.resetSettingsSnapshot,
         subscribe: desktop.onSettingsChanged,
       },
       (state) => {
@@ -105,8 +106,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(async () => {
     const next = { ...DEFAULT_SETTINGS, language: current.current.language };
     if (sync.current) {
-      futureVersion.current = false;
       await sync.current.reset(next);
+      futureVersion.current = false;
+      setRetry((value) => value + 1);
     } else {
       if (native) throw { code: "STORAGE_UNAVAILABLE" };
       try {

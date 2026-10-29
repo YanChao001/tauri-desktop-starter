@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { HelpTooltip } from "@/components/help-tooltip";
 import {
   CartesianGrid,
   Line,
@@ -29,9 +28,6 @@ export function MetricsChart() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.chart")}
-          <HelpTooltip label={`${t("labs.media.chart")} · ${t("title.help")}`}>
-            {t("labs.media.chartHint")}
-          </HelpTooltip>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -66,7 +62,9 @@ export function MetricsChart() {
               <YAxis stroke="var(--muted-foreground)" />
               <Tooltip
                 contentStyle={{
-                  background: "var(--card)",
+                  background: "var(--surface-popover)",
+                  backdropFilter: "blur(var(--surface-popup-blur))",
+                  WebkitBackdropFilter: "blur(var(--surface-popup-blur))",
                   borderColor: "var(--border)",
                   color: "var(--foreground)",
                 }}

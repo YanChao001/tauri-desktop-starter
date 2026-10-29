@@ -1,5 +1,11 @@
-import { useRef, useState } from "react";
-import { BellRingIcon, LayersIcon, SlidersHorizontalIcon } from "lucide-react";
+import { lazy, Suspense, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  BellRingIcon,
+  LayersIcon,
+  SlidersHorizontalIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProjectStudio } from "@/components/showcase/project-studio";
 import { FeedbackStudio } from "@/components/showcase/feedback-studio";
@@ -10,6 +16,12 @@ import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
 import "@/styles/components-showcase.css";
 
+const MotionStudio = lazy(() =>
+  import("@/components/motion-lab/motion-studio").then((module) => ({
+    default: module.MotionStudio,
+  })),
+);
+
 const STAGES = [
   { id: "inputs", label: "playground.inputs", icon: SlidersHorizontalIcon },
   { id: "feedback", label: "playground.feedback", icon: BellRingIcon },
@@ -19,11 +31,27 @@ const STAGES = [
     label: "experience.workspace",
     icon: SlidersHorizontalIcon,
   },
+  { id: "motion", label: "nav.motion", icon: SparklesIcon },
 ] as const;
 
 export default function Components() {
   const { t } = useI18n();
-  const [stage, setStage] = useState("inputs");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedStage = searchParams.get("stage");
+  const stage =
+    STAGES.find((item) => item.id === requestedStage)?.id ?? "inputs";
+  const [motionVisited, setMotionVisited] = useState(false);
+  function setStage(value: string) {
+    if (stage === "motion" || value === "motion") setMotionVisited(true);
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("stage", value);
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const root = useRef<HTMLDivElement>(null);
   const { active, reduced } = useDemoMotion(root);
   return (
@@ -40,7 +68,7 @@ export default function Components() {
       <Tabs value={stage} onValueChange={setStage} className="playground-tabs">
         <TabsList
           aria-label={t("playground.stages")}
-          className="playground-stage-list"
+          className="playground-stage-list app-control-surface"
         >
           {STAGES.map(({ id, label, icon: Icon }, index) => (
             <TabsTrigger
@@ -89,8 +117,20 @@ export default function Components() {
         >
           <WorkspaceStudio />
         </TabsContent>
+        <TabsContent
+          value="motion"
+          forceMount
+          hidden={stage !== "motion"}
+          className="playground-stage"
+        >
+          {stage === "motion" || motionVisited ? (
+            <Suspense fallback={<p role="status">{t("common.loading")}</p>}>
+              <MotionStudio enabled={stage === "motion"} />
+            </Suspense>
+          ) : null}
+        </TabsContent>
       </Tabs>
-      <ControlReference />
+      {stage !== "motion" ? <ControlReference /> : null}
     </div>
   );
 }

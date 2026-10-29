@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { browser, $, $$ } from "@wdio/globals";
-import { appearance, invoke, language, navigate, ready } from "../helpers.mjs";
+import {
+  appearance,
+  invoke,
+  language,
+  navigate,
+  openDeepLink,
+  ready,
+} from "../helpers.mjs";
 import {
   patchSettings,
   screenshot,
@@ -183,7 +190,7 @@ export function desktopUiChecks() {
       await settledAppearance({ language: "zh", fontSize: "md" });
       await $("#settings-desktop").scrollIntoView();
       await screenshot("desktop-controls.png");
-      await navigate("/bridge");
+      await openDeepLink("/bridge");
       await browser.waitUntil(async () =>
         /^(应用通信|App communication)$/.test(await $("main h2").getText()),
       );
@@ -313,7 +320,10 @@ export function desktopUiChecks() {
       });
       await settledAppearance({ language: "en", background: "plain" });
       await navigate("/settings");
-      await $("input[type=file]").waitForExist();
+      const fileInput = await $(".wallpaper-library input[type=file]");
+      await fileInput.waitForExist();
+      // 图库订阅和首次读取完成前输入仍被禁用，不能提前注入会被丢弃的 change。
+      await fileInput.waitForEnabled();
       // 由真实 Canvas 生成无用户数据的文件夹具，经同一 file input / React 导入入口处理。
       await browser.execute(async () => {
         const canvas = document.createElement("canvas");
@@ -328,17 +338,59 @@ export function desktopUiChecks() {
         const blob = await new Promise((resolve) =>
           canvas.toBlob(resolve, "image/png"),
         );
+        if (!blob) throw new Error("Could not create the PNG import fixture");
         const transfer = new DataTransfer();
         transfer.items.add(
           new File([blob], "e2e-background.png", { type: "image/png" }),
         );
-        const input = document.querySelector("input[type=file]");
+        const input = document.querySelector(
+          ".wallpaper-library input[type=file]",
+        );
+        if (!input || input.disabled)
+          throw new Error("Wallpaper import input became unavailable");
         input.files = transfer.files;
         input.dispatchEvent(new Event("change", { bubbles: true }));
       });
-      await browser.waitUntil(
-        async () => (await appearance()).background === "custom",
-      );
+      try {
+        await browser.waitUntil(
+          async () => (await appearance()).background === "custom",
+        );
+      } catch (error) {
+        const diagnostic = await browser
+          .execute(() => ({
+            background: document.documentElement.dataset.background,
+            inputDisabled: document.querySelector(
+              ".wallpaper-library input[type=file]",
+            )?.disabled,
+            libraryBusy: document
+              .querySelector(".wallpaper-library")
+              ?.getAttribute("aria-busy"),
+            wallpapers: document.querySelectorAll(".wallpaper-card").length,
+            errors: [
+              ...document.querySelectorAll(
+                '[data-sonner-toast][data-type="error"]',
+              ),
+            ].map((toast) => toast.textContent?.slice(0, 500)),
+          }))
+          .catch((cause) => ({ captureError: cause.message }));
+        try {
+          writeFileSync(
+            join(
+              "artifacts",
+              "e2e",
+              process.env.STARTER_E2E_PHASE,
+              "wallpaper-import-failed.json",
+            ),
+            JSON.stringify(diagnostic, null, 2),
+          );
+        } catch (cause) {
+          console.warn(
+            "Could not save wallpaper import diagnostics:",
+            cause.message,
+          );
+        }
+        throw error;
+      }
       await browser.waitUntil(() =>
         browser.execute(() => {
           const image = document.querySelector("[data-custom-background]");

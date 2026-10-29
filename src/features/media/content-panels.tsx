@@ -1,10 +1,17 @@
 import { SafeMarkdown } from "@/components/safe-markdown";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useDemoMotion } from "@/hooks/use-demo-motion";
 import { useI18n } from "@/providers/i18n";
@@ -13,45 +20,47 @@ import { markdownExample, mediaKind } from "./model";
 export function MarkdownPanel() {
   const { t, language } = useI18n();
   const [content, setContent] = useState(() => markdownExample(language));
+  const previewLabel = useId();
   return (
     <Card className="@container/markdown">
-      <CardHeader>
+      <CardHeader className="items-center">
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.markdown")}
-          <HelpTooltip
-            label={`${t("labs.media.markdown")} · ${t("title.help")}`}
-          >
-            {t("labs.media.markdownHint")}
-          </HelpTooltip>
         </CardTitle>
-      </CardHeader>
-      <CardContent className="grid items-start gap-4 @min-[46rem]/markdown:grid-cols-2">
-        <div className="min-w-0 space-y-2">
-          <Label htmlFor="markdown-source">{t("labs.media.source")}</Label>
-          <Textarea
-            id="markdown-source"
-            rows={16}
-            maxLength={20000}
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            className="font-mono text-xs leading-relaxed md:text-xs"
-          />
+        <CardAction>
           <Button
             variant="outline"
             onClick={() => setContent(markdownExample(language))}
           >
             {t("labs.reset")}
           </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-4 @min-[46rem]/markdown:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-2">
+          <Label htmlFor="markdown-source" className="leading-5">
+            {t("labs.media.source")}
+          </Label>
+          <Textarea
+            id="markdown-source"
+            rows={16}
+            maxLength={20000}
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            className="grow font-mono text-xs leading-relaxed md:text-xs"
+          />
         </div>
-        <section
-          aria-label={t("labs.media.preview")}
-          className="min-w-0 rounded-md border p-4"
-        >
-          <h3 className="mb-3 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-col gap-2">
+          <h3 id={previewLabel} className="text-sm leading-5 font-medium">
             {t("labs.media.preview")}
           </h3>
-          <SafeMarkdown content={content} />
-        </section>
+          <section
+            aria-labelledby={previewLabel}
+            className="min-w-0 flex-1 rounded-md border p-4"
+          >
+            <SafeMarkdown content={content} />
+          </section>
+        </div>
       </CardContent>
     </Card>
   );
@@ -84,19 +93,15 @@ export function MediaPreview({ active = true }: { active?: boolean }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           {t("labs.media.file")}
-          <HelpTooltip label={`${t("labs.media.file")} · ${t("title.help")}`}>
-            <p>{t("labs.media.fileHint")}</p>
-            <p>{t("experience.media.connectionHint")}</p>
-          </HelpTooltip>
         </CardTitle>
+        <CardDescription>{t("labs.media.fileHint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Label htmlFor="media-file">{t("labs.media.choose")}</Label>
-        <input
+        <Input
           id="media-file"
           type="file"
           accept="image/*,audio/*,video/*"
-          className="block w-full rounded-md border p-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-foreground"
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
@@ -114,7 +119,7 @@ export function MediaPreview({ active = true }: { active?: boolean }) {
           }}
         />
         {preview ? (
-          <div className="space-y-3 rounded-md bg-muted/40 p-3">
+          <div data-surface="control" className="space-y-3 rounded-md p-3">
             <p className="break-all text-xs text-muted-foreground">
               {preview.name}
             </p>

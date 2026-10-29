@@ -42,6 +42,8 @@ export function ControlStates() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
+                        data-surface="transparent"
+                        data-variant="ghost"
                         id="reference-title-error"
                         type="button"
                         className="block w-full truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -111,8 +113,8 @@ export function ControlStates() {
             value={t("playground.sampleValue")}
           />
         </div>
-        <fieldset className="space-y-3">
-          <legend className="mb-3 text-sm font-medium">
+        <fieldset className="space-y-3 p-3">
+          <legend className="text-sm font-medium">
             {t("playground.mixedSelection")}
           </legend>
           <Label>

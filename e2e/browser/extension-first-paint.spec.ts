@@ -6,6 +6,7 @@ const sdk = await readFile(
   new URL("../../sdk/extension-ui.js", import.meta.url),
   "utf8",
 );
+const styles = `@layer starter-defaults {\n${await readFile(new URL("../../src/styles/surface-tokens.css", import.meta.url), "utf8")}\n${await readFile(new URL("../../src/styles/control-styles.css", import.meta.url), "utf8")}\n}`;
 
 for (const mode of ["dark", "light"] as const) {
   for (const motion of ["full", "reduced"] as const) {
@@ -30,6 +31,7 @@ for (const mode of ["dark", "light"] as const) {
         theme: {
           mode,
           motion,
+          styles,
           tokens: {
             "--background": background,
             "--foreground": foreground,
@@ -39,6 +41,22 @@ for (const mode of ["dark", "light"] as const) {
             "--secondary-foreground": foreground,
             "--muted": muted,
             "--border": foreground,
+            "--input": foreground,
+            "--popover": background,
+            "--popover-foreground": foreground,
+            "--muted-foreground": foreground,
+            "--glass-muted-foreground": foreground,
+            "--surface-control-border": foreground,
+            "--surface-border": foreground,
+            "--surface-state-selected": background,
+            "--surface-state-hover": muted,
+            "--control-background": background,
+            "--control-disabled-background": muted,
+            "--control-select-hover-background": muted,
+            "--surface-reading": background,
+            "--surface-control-blur": "0px",
+            "--surface-popup-blur": "0px",
+            "--surface-reading-blur": "0px",
           },
         },
       };

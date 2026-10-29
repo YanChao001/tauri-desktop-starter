@@ -7,6 +7,7 @@ import {
   type ExtensionView,
   type ExtensionArtifact,
   type ExtensionService,
+  type Wallpaper,
 } from "../../src/lib/tauri";
 import type { NativeError } from "../../src/lib/generated/bindings";
 import type { UnsavedWork } from "../../src/providers/unsaved-work";
@@ -64,16 +65,18 @@ const configuration = (await fetch(
       "all",
   })}`,
 ).then((response) => response.json())) as { snapshot: ExtensionSnapshot };
-// A separate host-data dialog case grants only this declared optional permission.
-// The regular profiles retain their ungranted offline Lab experience.
+// 宿主数据对话框用例单独合成文本声明和授权，不给真实工作台增加权限或调用已移除的数据动作。
 if (
   new URLSearchParams(location.search).get("hostDataBoundaryMock") === "true"
 ) {
   const lab = configuration.snapshot.items.find(
     (item) => item.package.manifest.id === "starter.extension-lab",
   );
-  if (!lab?.package.manifest.optionalPermissions.includes("text:read"))
-    throw new Error("The host-data fixture requires declared text:read");
+  if (!lab) throw new Error("The host-data fixture requires a UI package");
+  lab.package.manifest.optionalPermissions = [
+    ...lab.package.manifest.optionalPermissions,
+    "text:read",
+  ];
   lab.grantedPermissions = [...lab.grantedPermissions, "text:read"];
   window.__extensionUiTest.permissionGrantBoundaryMock = true;
 }
@@ -88,6 +91,23 @@ const snapshotDelayUntil =
     ),
   );
 export const isTauri = () => true;
+// 材质回归挂载真实设置图库，但只读取与插件相同的显式图库边界替身。
+export const listWallpapers = async (): Promise<Wallpaper[]> => {
+  const item = configuration.snapshot.items.find(
+    (entry) => entry.package.manifest.id === "market.wallpaper-browser",
+  );
+  if (!item) throw new Error("Wallpaper surface fixture requires its package");
+  const library = await request<{ items: Wallpaper[] }>("service", {
+    id: item.package.manifest.id,
+    expectedSha256: item.package.sha256,
+    expectedGeneration: item.generation,
+    service: "wallpaper",
+    request: { action: "list" },
+    boundaryMock: true,
+  });
+  return library.items;
+};
+export const onWallpapersChanged = async () => () => {};
 export const extensionSnapshot = async () => {
   const latency = snapshotDelayUntil - performance.now();
   if (latency > 0)

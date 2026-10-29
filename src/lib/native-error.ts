@@ -31,6 +31,7 @@ const ERROR_KEYS: Record<string, MessageKey> = {
   STORAGE_CORRUPT: "errors.IO",
   DATABASE_ERROR: "errors.DATABASE",
   PLATFORM_UNAVAILABLE: "errors.UNSUPPORTED",
+  NATIVE_BUSY: "nativeError.busy",
   HTTP_TIMEOUT: "nativeError.httpTimeout",
   AUTOSTART_ERROR: "errors.AUTOSTART_ERROR",
   UPDATE_BUSY: "errors.UPDATE_BUSY",
@@ -60,7 +61,9 @@ export function errorMessage(error: unknown): string {
 }
 export function nativeErrorText(error: unknown, t: Translate): string {
   const key =
-    isRecord(error) && typeof error.code === "string"
+    isRecord(error) &&
+    typeof error.code === "string" &&
+    Object.hasOwn(ERROR_KEYS, error.code)
       ? ERROR_KEYS[error.code]
       : undefined;
   if (key) return t(key);

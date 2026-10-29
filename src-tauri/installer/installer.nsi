@@ -355,12 +355,12 @@ FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
 
-; 保留 MUI 按 DPI 换算的对话框单位布局，在显示前替换默认标题字体
-; 字体变量与页面宏保持一致
+; 对话框沿用标准安装器字体的紧凑度量，标题独立使用现代字体。
+; 图片在最终控件尺寸内等比铺满，只裁切装饰边缘。
 Function StarterWelcomeShow
   !insertmacro StarterSetSharpBitmap $mui.WelcomePage.Image "$PLUGINSDIR\modern-wizard.bmp" $mui.WelcomePage.Image.Bitmap cover
   System::Call 'gdi32::DeleteObject(p $mui.WelcomePage.Title.Font)'
-  CreateFont $mui.WelcomePage.Title.Font "$(^Font)" "14" "600"
+  CreateFont $mui.WelcomePage.Title.Font "$(StarterTitleFont)" "13" "600"
   SendMessage $mui.WelcomePage.Title ${WM_SETFONT} $mui.WelcomePage.Title.Font 1
   ; nsDialogs 标签不会继承主对话框按语言设置的字体
   Push $0
@@ -634,7 +634,7 @@ Var AppStartMenuFolder
 Function StarterFinishShow
   !insertmacro StarterSetSharpBitmap $mui.FinishPage.Image "$PLUGINSDIR\modern-wizard.bmp" $mui.FinishPage.Image.Bitmap cover
   System::Call 'gdi32::DeleteObject(p $mui.FinishPage.Title.Font)'
-  CreateFont $mui.FinishPage.Title.Font "$(^Font)" "14" "600"
+  CreateFont $mui.FinishPage.Title.Font "$(StarterTitleFont)" "13" "600"
   SendMessage $mui.FinishPage.Title ${WM_SETFONT} $mui.FinishPage.Title.Font 1
   Push $0
   SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $0
@@ -705,10 +705,11 @@ FunctionEnd
 
 ; 品牌定制开始
 ; 页面宏引用独立的 LangString，避免覆盖 NSIS 内置翻译及重复定义警告。
-; 新增安装语言时，同时补齐这四个字符串。
+; 新增安装语言时，同时补齐标题字体与四个文案字符串。
+; SetFont 决定整套对话框的尺寸；采用 NSIS 标准字体，避免微软雅黑行高拉高窗口。
 !ifdef LANG_SIMPCHINESE
-  ; 中文使用自身字体度量，避免 Segoe UI 的窄字符宽度压缩向导与侧栏图片。
-  SetFont /LANG=${LANG_SIMPCHINESE} "Microsoft YaHei UI" 8
+  SetFont /LANG=${LANG_SIMPCHINESE} "SimSun" 9
+  LangString StarterTitleFont ${LANG_SIMPCHINESE} "Microsoft YaHei UI"
   LangString StarterWelcomeTitle ${LANG_SIMPCHINESE} "开始安装"
   LangString StarterWelcomeText ${LANG_SIMPCHINESE} "${PRODUCTNAME}$\r$\n版本 ${VERSION}$\r$\n$\r$\n接下来选择安装位置，即可将应用添加到这台电脑。$\r$\n$\r$\n$_CLICK"
   LangString StarterFinishTitle ${LANG_SIMPCHINESE} "安装完成"
@@ -716,7 +717,8 @@ FunctionEnd
 !endif
 
 !ifdef LANG_ENGLISH
-  SetFont /LANG=${LANG_ENGLISH} "Segoe UI" 8
+  SetFont /LANG=${LANG_ENGLISH} "MS Shell Dlg" 8
+  LangString StarterTitleFont ${LANG_ENGLISH} "Segoe UI"
   LangString StarterWelcomeTitle ${LANG_ENGLISH} "Ready to install"
   LangString StarterWelcomeText ${LANG_ENGLISH} "${PRODUCTNAME}$\r$\nVersion ${VERSION}$\r$\n$\r$\nChoose where to install the app on this computer.$\r$\n$\r$\n$_CLICK"
   LangString StarterFinishTitle ${LANG_ENGLISH} "Installation complete"

@@ -16,6 +16,7 @@ pub enum ErrorCode {
     NotFound,
     Conflict,
     PlatformUnavailable,
+    NativeBusy,
     HttpTimeout,
     AutostartError,
     UpdateNotConfigured,
@@ -62,7 +63,21 @@ impl NativeError {
         Self {
             code,
             message: message.into(),
-            retryable: false,
+            retryable: matches!(
+                code,
+                ErrorCode::NativeBusy
+                    | ErrorCode::HttpTimeout
+                    | ErrorCode::UpdateBusy
+                    | ErrorCode::UpdateCheckFailed
+                    | ErrorCode::UpdateCheckTimeout
+                    | ErrorCode::UpdateFeedUnavailable
+                    | ErrorCode::UpdatePlatformUnavailable
+                    | ErrorCode::UpdateDownloadFailed
+                    | ErrorCode::ExtensionBusy
+                    | ErrorCode::ExtensionTimeout
+                    | ErrorCode::MarketUnavailable
+                    | ErrorCode::MarketChanged
+            ),
         }
     }
 
@@ -71,11 +86,7 @@ impl NativeError {
             "{}",
             crate::redaction::redact(&format!("{message}: {error}"))
         );
-        Self {
-            code,
-            message: message.into(),
-            retryable: true,
-        }
+        Self::new(code, message)
     }
 }
 
@@ -103,4 +114,34 @@ pub fn bounded_text(value: &str, maximum: usize, field: &str) -> NativeResult<()
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retryability_uses_the_code_instead_of_the_constructor() {
+        for code in [
+            ErrorCode::InvalidArgument,
+            ErrorCode::StorageCorrupt,
+            ErrorCode::StorageIo,
+            ErrorCode::Conflict,
+            ErrorCode::UserCancelled,
+            ErrorCode::UpdateInstallFailed,
+        ] {
+            assert!(!NativeError::new(code, "Failure").retryable);
+            assert!(!NativeError::operation(code, "Failure", "detail").retryable);
+        }
+        for code in [
+            ErrorCode::NativeBusy,
+            ErrorCode::HttpTimeout,
+            ErrorCode::ExtensionBusy,
+            ErrorCode::UpdateCheckTimeout,
+            ErrorCode::MarketUnavailable,
+        ] {
+            assert!(NativeError::new(code, "Failure").retryable);
+            assert!(NativeError::operation(code, "Failure", "detail").retryable);
+        }
+    }
 }

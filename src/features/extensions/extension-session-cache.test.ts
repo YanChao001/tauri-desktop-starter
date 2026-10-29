@@ -7,6 +7,16 @@ function visit(cache: ExtensionSessionCache, key: string) {
   return session;
 }
 
+it("bounds clean sessions created by renders that never commit or acquire a lease", async () => {
+  const cache = new ExtensionSessionCache(2);
+  cache.getOrCreate("first", "first");
+  cache.getOrCreate("second", "second");
+  const third = cache.getOrCreate("third", "third");
+  await Promise.resolve();
+  expect([...cache.sessions.keys()]).toEqual(["second", "third"]);
+  expect(cache.getOrCreate("third", "third")).toBe(third);
+});
+
 it("evicts the least recently visited clean session when the count budget is exceeded", async () => {
   const cache = new ExtensionSessionCache(2);
   const first = visit(cache, "first");

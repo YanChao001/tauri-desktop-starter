@@ -46,6 +46,20 @@ export function AppSidebar({
   const [previewWidth, setPreviewWidth] = useState<number | null>(null);
   const [tooltip, setTooltip] = useState<string | null>(null);
   const tooltipIntent = useRef<string | null>(null);
+  const preloadTimer = useRef<number | null>(null);
+  const cancelPreload = useCallback(() => {
+    if (preloadTimer.current !== null)
+      window.clearTimeout(preloadTimer.current);
+    preloadTimer.current = null;
+  }, []);
+  function schedulePreload(preload: (() => void) | undefined) {
+    cancelPreload();
+    if (preload)
+      preloadTimer.current = window.setTimeout(() => {
+        preloadTimer.current = null;
+        preload();
+      }, 150);
+  }
   const resizeHandle = useCallback(
     (node: HTMLDivElement | null) => {
       if (!node) {
@@ -62,7 +76,8 @@ export function AppSidebar({
   useLayoutEffect(() => {
     tooltipIntent.current = null;
     setTooltip(null);
-  }, [collapsed, pathname, width]);
+    return cancelPreload;
+  }, [collapsed, pathname, width, cancelPreload]);
   const tooltipChanged = (id: string, open: boolean) => {
     if (open && (!collapsed || tooltipIntent.current !== id)) return;
     setTooltip((current) => (open ? id : current === id ? null : current));
@@ -185,14 +200,21 @@ export function AppSidebar({
                             to={path}
                             end={exact}
                             className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
-                            onPointerEnter={preload}
+                            onPointerEnter={() => schedulePreload(preload)}
                             onPointerMove={() => trackTooltip(path)}
                             onFocus={() => {
                               trackTooltip(path);
+                              cancelPreload();
                               preload?.();
                             }}
-                            onPointerLeave={() => leaveTooltip(path)}
-                            onBlur={() => leaveTooltip(path)}
+                            onPointerLeave={() => {
+                              cancelPreload();
+                              leaveTooltip(path);
+                            }}
+                            onBlur={() => {
+                              cancelPreload();
+                              leaveTooltip(path);
+                            }}
                           >
                             <Icon
                               className="size-4 shrink-0"
@@ -234,6 +256,7 @@ export function AppSidebar({
           <TooltipTrigger asChild>
             <button
               type="button"
+              data-surface="control"
               className="app-sidebar-command flex w-full items-center gap-2.5 overflow-hidden rounded-lg px-3"
               aria-label={`${t("navContext.commands")} ${formatShortcut({ key: "k", primary: true })}`}
               aria-keyshortcuts={isMacOS() ? "Meta+K" : "Control+K"}

@@ -18,7 +18,9 @@ vi.mock("@/hooks/use-latest-translator", () => ({
   useLatestTranslator: () => lifecycle.translate,
 }));
 vi.mock("@/lib/report-error", () => ({ reportClientError: vi.fn() }));
-vi.mock("@/lib/tauri", () => ({
+vi.mock("@/lib/tauri", async (original) => ({
+  NativeBridgeError: (await original<typeof import("@/lib/tauri")>())
+    .NativeBridgeError,
   isTauri: () => true,
   getCurrentWindowLabel: vi.fn(),
   getWorkbenchTaskSnapshot: vi.fn(),
@@ -81,7 +83,10 @@ beforeEach(() => {
   vi.mocked(native.sendSystemNotification).mockResolvedValue(true);
   vi.mocked(native.cancelWorkbenchTask).mockResolvedValue(undefined);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("global background task lifecycle", () => {
   it("takes an initial baseline and notifies once for a terminal transition without requesting permission", async () => {
@@ -185,5 +190,26 @@ describe("global background task lifecycle", () => {
     await act(async () => registration.resolve(stop));
     expect(stop).toHaveBeenCalledOnce();
     expect(native.getWorkbenchTaskSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("bounds waiting even when a snapshot stalls and preserves active tasks after timeout", async () => {
+    renderHook(useTaskNotifications);
+    await waitFor(() => expect(lifecycle.work?.dirty).toBe(true));
+    vi.useFakeTimers();
+    const stalled = deferred<WorkbenchTaskSnapshot>();
+    vi.mocked(native.getWorkbenchTaskSnapshot)
+      .mockClear()
+      .mockReturnValueOnce(stalled.promise);
+    const waiting = lifecycle.work!.save();
+    const rejected = expect(waiting).rejects.toMatchObject({
+      code: "NATIVE_BUSY",
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    await rejected;
+    expect(lifecycle.work?.dirty).toBe(true);
+    expect(native.cancelWorkbenchTask).not.toHaveBeenCalled();
+    await act(async () => stalled.resolve(snapshot(2, [running])));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(native.getWorkbenchTaskSnapshot).toHaveBeenCalledOnce();
   });
 });

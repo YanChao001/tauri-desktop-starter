@@ -1,7 +1,7 @@
+import { getLocale } from "@/i18n/registry";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { TriangleAlertIcon } from "lucide-react";
-import { HelpTooltip } from "@/components/help-tooltip";
 import {
   Popover,
   PopoverContent,
@@ -114,6 +114,8 @@ export function OrderForm() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button
+              data-surface="transparent"
+              data-variant="ghost"
               type="button"
               id={`${fieldId(name)}-error`}
               className="min-w-0 flex-1 truncate rounded-sm text-right text-xs text-destructive underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -146,9 +148,6 @@ export function OrderForm() {
             <CardTitle className="min-w-0 truncate">
               {t("labs.form.title")}
             </CardTitle>
-            <HelpTooltip label={`${t("labs.form.title")} · ${t("title.help")}`}>
-              {t("labs.form.hint")}
-            </HelpTooltip>
           </div>
           {summary.length ? (
             <div role="alert" className="shrink-0">
@@ -224,10 +223,9 @@ export function OrderForm() {
             toast.success(
               t("labs.form.success", {
                 count: values.lines.length,
-                total: new Intl.NumberFormat(
-                  language === "zh" ? "zh-CN" : "en",
-                  { maximumFractionDigits: 2 },
-                ).format(orderTotal(values)),
+                total: new Intl.NumberFormat(getLocale(language).documentLang, {
+                  maximumFractionDigits: 2,
+                }).format(orderTotal(values)),
               }),
             );
           })}
@@ -342,16 +340,17 @@ export function OrderForm() {
               />
             </div>
           ) : null}
-          <fieldset className="space-y-3">
-            <legend className="mb-2 text-sm font-medium">
-              {t("labs.form.lines")}
-            </legend>
+          <div
+            className="space-y-3"
+            role="group"
+            aria-label={t("labs.form.lines")}
+          >
             {fields.map((field, index) => (
               <fieldset
                 key={field.id}
                 className="@container/order-line min-w-0 rounded-md border p-3"
               >
-                <legend className="px-1 text-xs text-muted-foreground">
+                <legend className="text-sm font-medium">
                   {t("labs.form.line", { number: index + 1 })}
                 </legend>
                 <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3 @min-[34rem]/order-line:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
@@ -441,7 +440,7 @@ export function OrderForm() {
             >
               {t("labs.form.addLine")}
             </Button>
-          </fieldset>
+          </div>
           <div className="space-y-2">
             <div className="flex min-h-5 min-w-0 items-center gap-2">
               <label className="flex shrink-0 items-center gap-2 text-sm">

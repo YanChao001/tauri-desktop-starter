@@ -154,6 +154,7 @@ function fixture(t) {
   mkdirSync(join(root, "src-tauri", "src"), { recursive: true });
   mkdirSync(join(root, "src-tauri", "src", "bin"));
   mkdirSync(join(root, ".signpath"));
+  mkdirSync(join(root, ".vscode"));
   const files = {
     "app.config.json": JSON.stringify(config),
     "package.json": JSON.stringify({
@@ -187,6 +188,8 @@ function fixture(t) {
       "fn main() { old_app_lib::bindings::export() }\n",
     "src-tauri/src/bin/verify-updater.rs":
       "fn main() { old_app_lib::update_signature::verify_manifest() }\n",
+    "src-tauri/src/bin/extension-tool.rs":
+      "use old_app_lib::{extension_runtime, extensions::ExtensionManifest};\nfn main() {}\n",
     "index.html": "<html><head><title>Starter</title></head></html>\n",
     "README.md":
       "# Starter\n\n[主页](https://example.com) · [文档](https://example.com/docs) · [发行记录](https://github.com/example/app/releases)\n",
@@ -194,6 +197,17 @@ function fixture(t) {
       "# Starter\n\n[Releases](https://github.com/example/app/releases)\n",
     ".signpath/artifact-configuration.xml":
       '<pe-file product-name="Starter" />\n',
+    ".vscode/launch.json": JSON.stringify({
+      version: "0.2.0",
+      configurations: [
+        {
+          name: "Desktop: Rust + WebView",
+          type: "lldb",
+          cargo: { args: ["build", "--bin", "old-app"] },
+        },
+        { name: "Other binary", type: "lldb", cargo: { args: ["build"] } },
+      ],
+    }),
   };
   for (const [path, content] of Object.entries(files))
     writeFileSync(join(root, path), content);
@@ -229,6 +243,13 @@ test("dry-run plans consistent identities without writing or changing version/si
     /acme_desk_lib::update_signature::verify_manifest\(\)/,
   );
   assert.match(
+    read("src-tauri/src/bin/extension-tool.rs"),
+    /use acme_desk_lib::\{/,
+  );
+  const launches = JSON.parse(read(".vscode/launch.json")).configurations;
+  assert.deepEqual(launches[0].cargo.args, ["build", "--bin", "acme-desk"]);
+  assert.deepEqual(launches[1].cargo.args, ["build"]);
+  assert.match(
     read("src-tauri/src/main.rs"),
     /old-app is a historical example/,
   );
@@ -260,6 +281,127 @@ test("dry-run plans consistent identities without writing or changing version/si
   );
   assert.equal(checkVersions(root), "0.1.0");
   assert.equal(prepareInitialization(root).changes.length, 0);
+});
+
+test("configuration checks detect a stale library import in the extension tool", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(
+    prepareInitialization(root, { packageName: "acme-desk" }),
+  );
+  assert.deepEqual(checkInitialization(root), []);
+  const path = "src-tauri/src/bin/extension-tool.rs";
+  writeFileSync(
+    join(root, path),
+    readFileSync(join(root, path), "utf8").replace(
+      "acme_desk_lib::",
+      "old_app_lib::",
+    ),
+  );
+  assert.deepEqual(checkInitialization(root), [path]);
+});
+
+test("configuration checks detect and repair an ambiguous desktop debug target", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(
+    prepareInitialization(root, { packageName: "acme-desk" }),
+  );
+  const path = ".vscode/launch.json";
+  const launch = JSON.parse(readFileSync(join(root, path), "utf8"));
+  for (const [args, expected] of [
+    [["build"], ["build", "--bin", "acme-desk"]],
+    [
+      ["build", "--bin", "old-app"],
+      ["build", "--bin", "acme-desk"],
+    ],
+    [
+      ["build", "--bin=old-app"],
+      ["build", "--bin=acme-desk"],
+    ],
+  ]) {
+    launch.configurations[0].cargo.args = args;
+    writeFileSync(join(root, path), JSON.stringify(launch));
+    assert.deepEqual(checkInitialization(root), [path]);
+    applyInitialization(prepareInitialization(root));
+    assert.deepEqual(checkInitialization(root), []);
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(root, path), "utf8")).configurations[0].cargo
+        .args,
+      expected,
+    );
+  }
+  for (const args of [
+    ["build", "--bin", "acme-desk", "--bin=extension-tool"],
+    ["build", "--bin=acme-desk", "--bin", "extension-tool"],
+  ]) {
+    launch.configurations[0].cargo.args = args;
+    const original = JSON.stringify(launch);
+    writeFileSync(join(root, path), original);
+    assert.throws(() => checkInitialization(root), /唯一且完整的 --bin/);
+    assert.throws(() => prepareInitialization(root), /唯一且完整的 --bin/);
+    assert.equal(readFileSync(join(root, path), "utf8"), original);
+  }
+});
+
+test("initialization preserves VS Code JSONC comments and trailing commas", (t) => {
+  const { root } = fixture(t);
+  applyInitialization(prepareInitialization(root));
+  const path = join(root, ".vscode/launch.json");
+  const launch = `{
+  // Keep this local debugging note.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Desktop: Rust + WebView",
+      "type": "lldb",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin",
+          /* Main program */ "old-app",
+        ],
+      },
+    },
+    { "name": "Other binary", "type": "lldb", "cargo": { "args": ["build"], }, },
+  ],
+}
+`;
+  writeFileSync(path, launch);
+  assert.deepEqual(checkInitialization(root), []);
+  applyInitialization(
+    prepareInitialization(root, { packageName: "acme-desk" }),
+  );
+  assert.equal(
+    readFileSync(path, "utf8"),
+    launch.replace('"old-app"', '"acme-desk"'),
+  );
+  assert.deepEqual(checkInitialization(root), []);
+
+  const inline = launch
+    .replace('          "--bin",\n', "")
+    .replace('"old-app"', '"--bin=old-app"');
+  writeFileSync(path, inline);
+  assert.deepEqual(checkInitialization(root), [".vscode/launch.json"]);
+  applyInitialization(prepareInitialization(root));
+  assert.equal(
+    readFileSync(path, "utf8"),
+    inline.replace('"--bin=old-app"', '"--bin=acme-desk"'),
+  );
+  assert.deepEqual(checkInitialization(root), []);
+
+  const ambiguous = launch
+    .replace('          "--bin",\n', "")
+    .replace('          /* Main program */ "old-app",\n', "");
+  writeFileSync(path, ambiguous);
+  assert.deepEqual(checkInitialization(root), [".vscode/launch.json"]);
+  applyInitialization(prepareInitialization(root));
+  const repaired = readFileSync(path, "utf8");
+  assert.match(repaired, /\/\/ Keep this local debugging note\./);
+  assert.ok(repaired.includes('"--bin"'));
+  assert.ok(repaired.includes('"acme-desk"'));
+  assert.ok(
+    repaired.endsWith(ambiguous.slice(ambiguous.indexOf('    { "name":'))),
+  );
+  assert.deepEqual(checkInitialization(root), []);
 });
 
 test("repository derivation drops inherited links and updater endpoint unless explicitly supplied", (t) => {

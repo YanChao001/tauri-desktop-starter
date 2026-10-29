@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import { InfoIcon } from "lucide-react";
+import { CircleHelpIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -33,7 +33,10 @@ export function HelpTooltip({
             className={className}
             aria-label={label}
           >
-            <InfoIcon className="size-3.5 text-muted-foreground" />
+            <CircleHelpIcon
+              className="size-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
           </Button>
         </TooltipTrigger>
         <TooltipContent

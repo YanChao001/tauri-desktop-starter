@@ -38,14 +38,14 @@
   padding: 1.2rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: color-mix(in oklab, var(--card) 96%, transparent);
+  background: var(--surface-card);
   transition:
     border-color 180ms,
     background 180ms;
 }
 .experience-route:hover {
   border-color: var(--primary);
-  background: var(--accent);
+  background: var(--surface-state-hover);
 }
 .experience-route:focus-visible {
   outline: 2px solid var(--ring);
@@ -112,7 +112,7 @@
   padding: 1rem 1.2rem 0.7rem;
   border: 1px solid color-mix(in oklab, var(--primary) 25%, var(--border));
   border-radius: var(--radius-xl);
-  background: var(--card);
+  background: var(--surface-card);
   min-width: 0;
 }
 .journey-guide-heading {
@@ -173,7 +173,7 @@
 .demo-page-tabs {
   width: 100%;
   min-width: 0;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 .demo-page-tabs [data-slot="tabs-list"] {
   max-width: 100%;
@@ -204,7 +204,7 @@
 .native-flow li {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--card);
+  background: var(--surface-card);
   padding: 0.9rem;
   min-width: 0;
 }

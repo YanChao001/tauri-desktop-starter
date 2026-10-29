@@ -715,6 +715,36 @@ it("refreshes the current view locale while retaining field drafts and unsaved s
   expect(saved.view.fields[0].value).toBe("Canonical value");
 });
 
+it("uses declared defaults for newly added prototype-named fields during a locale refresh", async () => {
+  const added = ["__proto__", "constructor", "toString"].map((id) => ({
+    id,
+    label: id,
+    value: `Default for ${id}`,
+  }));
+  vi.mocked(native.viewExtension)
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({ ...first, fields: [...first.fields, ...added] });
+  const mounted = render(app());
+  fireEvent.change(await screen.findByLabelText("Query"), {
+    target: { value: "Unsubmitted draft" },
+  });
+  locale.language = "zh";
+  mounted.rerender(app());
+  for (const field of added)
+    expect(await screen.findByLabelText(field.label)).toHaveValue(field.value);
+  expect(screen.getByLabelText("Query")).toHaveValue("Unsubmitted draft");
+  await act(async () => lifecycle.work!.save());
+  const saved = JSON.parse(
+    vi.mocked(native.saveExtensionSession).mock.calls.at(-1)![1],
+  );
+  expect(saved.fields).toEqual(
+    Object.fromEntries([
+      ["query", "Unsubmitted draft"],
+      ...added.map((field) => [field.id, field.value]),
+    ]),
+  );
+});
+
 it("refreshes the requested locale after a draft changed before the locale effect is corrected", async () => {
   vi.mocked(native.viewExtension)
     .mockResolvedValueOnce(first)

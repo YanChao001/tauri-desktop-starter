@@ -30,6 +30,9 @@ it("keeps one accessible validation slot through invalid, duplicate and successf
   );
   fireEvent.click(screen.getByRole("button", { name: "Add a collaborator" }));
   const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveAccessibleDescription(
+    "Simulated invitations stay on this page. No email is sent.",
+  );
   const input = within(dialog).getByLabelText("Email address");
   const submit = within(dialog).getByRole("button", {
     name: "Add to the demo",
@@ -51,21 +54,4 @@ it("keeps one accessible validation slot through invalid, duplicate and successf
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByText("new@example.com")).toBeVisible();
   expect(toast.success).toHaveBeenCalledWith("Demo collaborator added");
-});
-
-it("retains the local demo boundary as keyboard-accessible contextual help", async () => {
-  render(
-    <TooltipProvider>
-      <FeedbackStudio />
-    </TooltipProvider>,
-  );
-  expect(
-    screen.getByRole("heading", { name: "Demo collaborators" }),
-  ).toBeVisible();
-  fireEvent.focus(
-    screen.getByRole("button", { name: "Help for Demo collaborators" }),
-  );
-  expect(await screen.findByRole("tooltip")).toHaveTextContent(
-    "No email is sent and no account is changed.",
-  );
 });

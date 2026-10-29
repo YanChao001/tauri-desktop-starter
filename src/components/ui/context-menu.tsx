@@ -14,7 +14,7 @@ function ContextMenuContent({
       <Primitive.Content
         data-slot="context-menu-content"
         className={cn(
-          "z-50 min-w-44 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-none",
+          "z-50 min-w-44 rounded-lg border p-1 shadow-md outline-none",
           className,
         )}
         {...props}
@@ -31,7 +31,7 @@ function ContextMenuItem({
     <Primitive.Item
       data-slot="context-menu-item"
       className={cn(
-        "flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4",
+        "flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4",
         className,
       )}
       {...props}
