@@ -65,11 +65,16 @@ describe("主题色选择器", () => {
     expect(
       screen.getByRole("dialog", { name: "Custom accent color" }),
     ).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Pick a color"), {
-      target: { value: "#123456" },
-    });
     const input = screen.getByRole("textbox", { name: "HEX color" });
-    expect(input).toHaveValue("#123456");
+    expect(screen.getByRole("group", { name: "Pick a color" })).toBeVisible();
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+    await user.clear(input);
+    await user.type(input, "#00ff00");
+    const hue = screen.getByRole("slider", { name: "Hue" });
+    expect(hue).toHaveAttribute("aria-valuenow", "120");
+    hue.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(input).toHaveValue("#00FF04");
     expect(state.update).not.toHaveBeenCalled();
     await user.clear(input);
     await user.type(input, " #abc ");
@@ -153,5 +158,50 @@ describe("主题色选择器", () => {
       customAccent: "#FFFFFF",
     });
     expect(trigger).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("灰色上选定的色相在增加饱和度后保留，HEX同步也保留灰色色相", async () => {
+    const user = userEvent.setup();
+    render(<AccentPicker />);
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    const input = screen.getByRole("textbox", { name: "HEX color" });
+    fireEvent.change(input, { target: { value: "#0000FF" } });
+    const hue = screen.getByRole("slider", { name: "Hue" });
+    const saturation = screen.getByRole("slider", { name: "Saturation" });
+    expect(hue).toHaveAttribute("aria-valuenow", "240");
+    fireEvent.change(input, { target: { value: "#808080" } });
+    expect(hue).toHaveAttribute("aria-valuenow", "240");
+    expect(saturation).toHaveAttribute("aria-valuenow", "0");
+    hue.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(input).toHaveValue("#808080");
+    expect(hue).toHaveAttribute("aria-valuenow", "241");
+    saturation.focus();
+    await user.keyboard("{End}");
+    expect(hue).toHaveAttribute("aria-valuenow", "241");
+    expect(saturation).toHaveAttribute("aria-valuenow", "100");
+    expect(input).not.toHaveValue("#808080");
+    expect(state.update).not.toHaveBeenCalled();
+  });
+
+  it("亮度滑到黑白端点后调回会恢复原色相和饱和度", async () => {
+    state.settings = { accent: "custom", customAccent: "#00FF00" };
+    const user = userEvent.setup();
+    render(<AccentPicker />);
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    const input = screen.getByRole("textbox", { name: "HEX color" });
+    const hue = screen.getByRole("slider", { name: "Hue" });
+    const saturation = screen.getByRole("slider", { name: "Saturation" });
+    const lightness = screen.getByRole("slider", { name: "Lightness" });
+    lightness.focus();
+    await user.keyboard("{Home}");
+    expect(input).toHaveValue("#000000");
+    await user.keyboard("{End}");
+    expect(input).toHaveValue("#FFFFFF");
+    expect(hue).toHaveAttribute("aria-valuenow", "120");
+    expect(saturation).toHaveAttribute("aria-valuenow", "100");
+    await user.keyboard("{Home}{PageUp}{PageUp}{PageUp}{PageUp}{PageUp}");
+    expect(input).toHaveValue("#00FF00");
+    expect(state.update).not.toHaveBeenCalled();
   });
 });

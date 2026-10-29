@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from "react";
 import { CheckIcon, PaletteIcon } from "lucide-react";
 import { SettingLabel } from "@/components/setting-row";
+import { ColorPicker } from "@/components/color-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { PRESET_ACCENTS, normalizeAccentColor } from "@/lib/accent-colors";
+import { hexToHsl, hslToHex } from "@/lib/color-picker-model";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
@@ -20,9 +22,12 @@ export function AccentPicker() {
   const id = useId();
   const hexInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(settings.customAccent);
+  const [draft, setDraft] = useState(() => ({
+    text: settings.customAccent,
+    color: hexToHsl(settings.customAccent),
+  }));
   const [attempted, setAttempted] = useState(false);
-  const normalized = normalizeAccentColor(draft);
+  const normalized = normalizeAccentColor(draft.text);
   const invalid = attempted && normalized === null;
 
   return (
@@ -69,7 +74,10 @@ export function AccentPicker() {
           onOpenChange={(next) => {
             if (next) {
               // 一次打开只建立一个草稿，晚到的跨窗口设置不覆盖正在输入的内容。
-              setDraft(settings.customAccent);
+              setDraft({
+                text: settings.customAccent,
+                color: hexToHsl(settings.customAccent),
+              });
               setAttempted(false);
             }
             setOpen(next);
@@ -119,18 +127,15 @@ export function AccentPicker() {
               }}
             >
               <div className="flex items-end gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor={`${id}-picker`}>
-                    {t("settings.customAccentPicker")}
-                  </Label>
-                  <Input
-                    id={`${id}-picker`}
-                    type="color"
-                    value={normalized ?? settings.customAccent}
-                    onChange={(event) => setDraft(event.target.value)}
-                    className="h-9 w-full min-w-16 cursor-pointer p-1"
-                  />
-                </div>
+                <span
+                  data-color-picker-preview
+                  data-surface="artwork"
+                  aria-hidden="true"
+                  className="size-9 shrink-0 rounded-md border"
+                  style={{
+                    backgroundColor: normalized ?? hslToHex(draft.color),
+                  }}
+                />
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <Label htmlFor={`${id}-hex`}>
                     {t("settings.customAccentHex")}
@@ -138,8 +143,17 @@ export function AccentPicker() {
                   <Input
                     ref={hexInput}
                     id={`${id}-hex`}
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    value={draft.text}
+                    onChange={(event) => {
+                      const text = event.target.value;
+                      const color = normalizeAccentColor(text);
+                      setDraft((current) => ({
+                        text,
+                        color: color
+                          ? hexToHsl(color, current.color.hue)
+                          : current.color,
+                      }));
+                    }}
                     autoComplete="off"
                     spellCheck={false}
                     aria-invalid={invalid}
@@ -157,6 +171,12 @@ export function AccentPicker() {
                   {t("settings.customAccentInvalid")}
                 </p>
               ) : null}
+              <ColorPicker
+                value={draft.color}
+                onValueChange={(color) =>
+                  setDraft({ text: hslToHex(color), color })
+                }
+              />
               <Button type="submit" className="w-full">
                 {t("settings.customAccentApply")}
               </Button>

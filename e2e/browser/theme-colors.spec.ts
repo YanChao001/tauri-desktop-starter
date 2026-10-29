@@ -49,6 +49,38 @@ async function openCustom(page: Page) {
     exact: true,
   });
   await expect(picker).toBeVisible();
+  const controls = picker.getByRole("group", {
+    name: "Pick a color",
+    exact: true,
+  });
+  await expect(controls.getByRole("slider")).toHaveCount(3);
+  for (const name of ["Hue", "Saturation", "Lightness"])
+    await expect(
+      controls.getByRole("slider", { name, exact: true }),
+    ).toBeVisible();
+  await expect(picker.locator('input[type="color"]')).toHaveCount(0);
+  // 入场动画结束后留两帧给浮层定位，避免把尚未校准的位置当作溢出。
+  await picker.evaluate(async (element) => {
+    await Promise.all(
+      element
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !== Infinity,
+        )
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  const bounds = await picker.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
   return picker;
 }
 
@@ -165,11 +197,14 @@ test("custom accent normalizes, survives reload and preset switching, and cancel
   const picker = await openCustom(page);
   const hex = picker.getByRole("textbox", { name: "HEX color", exact: true });
   await expect(hex).toHaveValue("#33AADD");
-  const colorInput = picker.getByLabel("Pick a color", { exact: true });
-  await expect(colorInput).toHaveValue("#33aadd");
-  await colorInput.fill("#ff00aa");
-  await expect(hex).toHaveValue("#ff00aa");
-  await hex.press("Escape");
+  const hue = picker.getByRole("slider", { name: "Hue", exact: true });
+  await hue.press("Home");
+  await hue.press("ArrowRight");
+  await expect(hue).toHaveAttribute("aria-valuenow", "1");
+  await expect(hex).not.toHaveValue("#33AADD");
+  await expect(hex).toHaveValue(/^#[\dA-F]{6}$/);
+  expect(await savedAccent(page)).toEqual({ ...expected, accent: "blue" });
+  await hue.press("Escape");
   await expect(picker).toHaveCount(0);
   await expect(customTrigger(page)).toBeFocused();
   await expect
@@ -204,6 +239,74 @@ test("custom accent normalizes, survives reload and preset switching, and cancel
   await page.reload();
   await expect(customTrigger(page)).toHaveAttribute("aria-pressed", "true");
   expect(await savedAccent(page)).toEqual(expected);
+});
+
+test("the in-app color picker follows theme surfaces and corner preferences on a narrow screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seed(page);
+  await page.goto("./#/settings");
+  const themeSurfaces = new Set<string>();
+  for (const theme of ["Light", "Dark"]) {
+    await page
+      .locator("#settings-theme")
+      .getByRole("button", { name: theme, exact: true })
+      .click();
+    let previous: { popupRadius: number; previewRadius: number } | undefined;
+    for (const radius of ["Sharp", "Round"]) {
+      await page
+        .locator("#settings-radius")
+        .getByText(radius, { exact: true })
+        .click();
+      const picker = await openCustom(page);
+      const appearance = await picker.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const preview = getComputedStyle(
+          element.querySelector("[data-color-picker-preview]")!,
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        const pixel = (color: string) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          return [...context.getImageData(0, 0, 1, 1).data].join(",");
+        };
+        return {
+          background: pixel(style.backgroundColor),
+          expectedBackground: pixel(
+            style.getPropertyValue("--surface-popover"),
+          ),
+          foreground: pixel(style.color),
+          expectedForeground: pixel(
+            style.getPropertyValue("--popover-foreground"),
+          ),
+          popupRadius: parseFloat(style.borderTopLeftRadius),
+          previewRadius: parseFloat(preview.borderTopLeftRadius),
+        };
+      });
+      expect(appearance.background).toBe(appearance.expectedBackground);
+      expect(appearance.foreground).toBe(appearance.expectedForeground);
+      expect(appearance.popupRadius).toBeGreaterThan(0);
+      expect(appearance.previewRadius).toBeGreaterThan(0);
+      if (previous) {
+        expect(appearance.popupRadius).toBeGreaterThan(previous.popupRadius);
+        expect(appearance.previewRadius).toBeGreaterThan(
+          previous.previewRadius,
+        );
+      }
+      previous = appearance;
+      themeSurfaces.add(appearance.background);
+      await picker
+        .getByRole("slider", { name: "Hue", exact: true })
+        .press("Escape");
+      await expect(picker).toHaveCount(0);
+      await expectNoPageOverflow(page);
+    }
+  }
+  expect(themeSurfaces.size).toBe(2);
 });
 
 test("every preset remains selectable on a narrow page and has distinct light and dark colors", async ({
