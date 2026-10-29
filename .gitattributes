@@ -18,3 +18,6 @@
 # 锁文件在 diff 中折叠展示
 pnpm-lock.yaml linguist-generated=true
 src-tauri/Cargo.lock linguist-generated=true
+
+# 上游许可证逐字保留官方归档中的末尾空行。
+src-tauri/vendor/wasmtime-internal-cache/LICENSE whitespace=-blank-at-eof

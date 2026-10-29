@@ -15,6 +15,8 @@ macOS 需要 Xcode Command Line Tools；Linux 需要 WebKitGTK、编译工具和
 
 先安装 Node.js、与 `packageManager` 一致的 pnpm 和 rustup。仓库内运行 Rust 命令时，rustup 会按 `rust-toolchain.toml` 自动安装工具链与组件；CI 也读取该文件。升级版本后需验证三端构建。
 
+默认 Node.js 跟随 `.nvmrc` 固定的 LTS 版本；保留支持的其他版本线也须满足 `engines.node` 的安全补丁下限。Node.js 25 起，官方 Linux 二进制额外依赖 `libatomic`；若启动提示缺少 `libatomic.so.1`，Debian / Ubuntu 可安装 `libatomic1`，其他发行版使用对应运行库包。详见 [Node.js LTS 发布说明](https://nodejs.org/en/blog/release/v26.13.0)。
+
 ## 首次启动
 
 以下项目命令均从仓库根目录运行。

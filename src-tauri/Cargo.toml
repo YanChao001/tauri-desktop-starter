@@ -64,6 +64,10 @@ default = []
 e2e = ["dep:tauri-plugin-wdio-webdriver"]
 bindings = []
 
+# 仅替换缓存 crate 的压缩依赖约束；来源、差异与撤销条件见补丁目录 README。
+[patch.crates-io]
+wasmtime-internal-cache = { path = "vendor/wasmtime-internal-cache" }
+
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.6"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

@@ -175,6 +175,9 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+      - name: Wasmtime 缓存补丁压缩往返
+        run: pnpm test:wasmtime-cache
+
       - name: 扩展 worker 隔离、取消与协议回归（无 GUI）
         run: pnpm extension:test:worker
 
