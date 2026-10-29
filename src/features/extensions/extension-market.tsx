@@ -236,17 +236,15 @@ export function ExtensionMarket({
                 current.package.manifest.version,
               )
             : 1;
-          const downloadLabel = !compatible
-            ? t("ext.market.hostRequired", { version: manifest.minHostVersion })
-            : t(
-                !current
-                  ? "ext.market.download"
-                  : difference > 0
-                    ? "ext.market.update"
-                    : difference < 0
-                      ? "ext.market.newerInstalled"
-                      : "ext.market.installed",
-              );
+          const downloadLabel = t(
+            !current
+              ? "ext.market.download"
+              : difference > 0
+                ? "ext.market.update"
+                : difference < 0
+                  ? "ext.market.newerInstalled"
+                  : "ext.market.installed",
+          );
           const downloading = downloadingId === manifest.id;
           const installing = installingId === manifest.id;
           const active = downloading || installing;

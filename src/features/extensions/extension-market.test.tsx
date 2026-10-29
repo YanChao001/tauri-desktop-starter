@@ -403,9 +403,10 @@ it("disables known future downloads and excludes them from installed update acti
     />,
   );
   const button = screen.getByRole("button", {
-    name: "Requires app 0.2.0 or newer",
+    name: en["ext.market.download"],
   });
   expect(button).toBeDisabled();
+  expect(screen.getAllByText("Requires app 0.2.0 or newer")).toHaveLength(1);
   fireEvent.click(button);
   expect(download).not.toHaveBeenCalled();
   const installed: native.ExtensionInfo = {
