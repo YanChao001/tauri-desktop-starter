@@ -222,7 +222,7 @@ it("lazily opens named advanced settings and preserves its draft across dialog c
   const view = renderCard({}, true);
   expect(ExtensionResources).not.toHaveBeenCalled();
   await user.click(screen.getByText("About and permissions"));
-  expect(screen.getByText("Author (self-reported)")).toBeVisible();
+  expect(screen.getByText("Author")).toBeVisible();
   expect(screen.getAllByText(item.package.manifest.description)).toHaveLength(
     1,
   );

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { useI18n, type DictKey } from "@/providers/i18n";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,20 @@ export const PERMISSION_LABELS: Record<ExtensionPermission, DictKey> = {
   "wallpapers:manage": "ext.permission.wallpapers:manage",
 };
 
+const PERMISSION_DESCRIPTIONS: Record<ExtensionPermission, DictKey> = {
+  "text:read": "ext.permissionDescription.text:read",
+  "files:read": "ext.permissionDescription.files:read",
+  "network:https": "ext.permissionDescription.network:https",
+  "network:local": "ext.permissionDescription.network:local",
+  "network:images": "ext.permissionDescription.network:images",
+  "network:system-proxy": "ext.permissionDescription.network:system-proxy",
+  "links:open": "ext.permissionDescription.links:open",
+  "window:control": "ext.permissionDescription.window:control",
+  storage: "ext.permissionDescription.storage",
+  "messaging:lan": "ext.permissionDescription.messaging:lan",
+  "wallpapers:manage": "ext.permissionDescription.wallpapers:manage",
+};
+
 export function ExtensionDetails({
   value,
   origin,
@@ -39,6 +54,7 @@ export function ExtensionDetails({
   };
 }) {
   const { t } = useI18n();
+  const id = useId();
   const manifest = value.manifest;
   const selectedOptionalCount = manifest.optionalPermissions.filter(
     (permission) => consent?.grants.includes(permission),
@@ -50,44 +66,44 @@ export function ExtensionDetails({
     (permission) =>
       permission.startsWith("network:") || permission === "messaging:lan",
   );
+  const sourceLabel = origin
+    ? t(
+        origin.kind === "market"
+          ? "ext.source.market"
+          : origin.kind === "bundled"
+            ? "ext.source.bundled"
+            : "ext.source.local",
+      )
+    : null;
   return (
-    <div className="min-w-0 space-y-3 text-sm">
-      {showIdentity ? (
-        <div>
-          <h3 className="font-semibold break-words">{manifest.name}</h3>
-          <p className="mt-1 break-words text-muted-foreground">
-            {manifest.description}
-          </p>
-        </div>
-      ) : null}
-      <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-[auto_1fr]">
-        {[
-          [t("ext.version"), manifest.version],
-          [t("ext.author"), manifest.author],
-          [
-            t("ext.features"),
-            manifest.commands.map((command) => command.title).join(" · "),
-          ],
-        ].map(([label, content]) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 break-words">{content}</dd>
+    <div className="min-w-0 space-y-3 text-sm leading-5">
+      <div className="space-y-2">
+        {showIdentity ? (
+          <div className="space-y-1">
+            <h3 className="text-sm leading-5 font-medium break-words">
+              {manifest.name}
+            </h3>
+            {manifest.description ? (
+              <p className="break-words text-muted-foreground">
+                {manifest.description}
+              </p>
+            ) : null}
           </div>
-        ))}
-      </dl>
-      {origin ? (
-        <div className="space-y-1">
-          <h4 className="font-medium">{t("ext.source")}</h4>
-          <p>
-            {t(
-              origin.kind === "market"
-                ? "ext.source.market"
-                : origin.kind === "bundled"
-                  ? "ext.source.bundled"
-                  : "ext.source.local",
-            )}
-          </p>
-          <p className="leading-relaxed text-muted-foreground">
+        ) : null}
+        <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5">
+          {[
+            [t("ext.version"), manifest.version],
+            [t("ext.author"), manifest.author],
+            ...(sourceLabel ? [[t("ext.source"), sourceLabel]] : []),
+          ].map(([label, content]) => (
+            <div key={label} className="flex min-w-0 max-w-full gap-1.5">
+              <dt className="shrink-0 text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-words">{content}</dd>
+            </div>
+          ))}
+        </dl>
+        {origin ? (
+          <p className="text-xs leading-5 text-muted-foreground">
             {t(
               origin.kind === "market"
                 ? "ext.source.marketHint"
@@ -96,170 +112,186 @@ export function ExtensionDetails({
                   : "ext.source.localHint",
             )}
           </p>
-        </div>
-      ) : null}
-      {canConnect ? (
-        <p className="leading-relaxed text-muted-foreground">
-          {t("ext.permissionScopeHint")}
-        </p>
-      ) : null}
-      <div>
-        <h4 className="font-medium">{t("ext.requiredPermissions")}</h4>
-        {manifest.permissions.length ? (
-          <ul className="mt-2 list-inside list-disc space-y-1">
-            {manifest.permissions.map((permission) => (
-              <li key={permission}>{t(PERMISSION_LABELS[permission])}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-muted-foreground">{t("ext.noPermissions")}</p>
-        )}
+        ) : null}
       </div>
-      {manifest.optionalPermissions.length ? (
-        <fieldset className="min-w-0">
-          <legend className="font-medium">
-            {t("ext.optionalPermissions")}
-          </legend>
-          <p className="mt-1 text-muted-foreground">
-            {t("ext.optionalPermissionsHint")}
-          </p>
-          {consent ? (
-            <Label className="mt-2 items-start leading-6">
-              <Checkbox
-                className="mt-1"
-                checked={
-                  selectedOptionalCount === 0
-                    ? false
-                    : selectedOptionalCount ===
-                        manifest.optionalPermissions.length
-                      ? true
-                      : "indeterminate"
-                }
-                disabled={consent.disabled}
-                onCheckedChange={(checked) =>
-                  consent.onChange(
-                    checked === true
-                      ? [
-                          ...new Set([
-                            ...consent.grants,
-                            ...manifest.optionalPermissions,
-                          ]),
-                        ]
-                      : consent.grants.filter(
-                          (grant) =>
-                            !manifest.optionalPermissions.includes(grant),
-                        ),
-                  )
-                }
-              />
-              <span className="min-w-0">
-                {t("ext.selectAllOptionalPermissions")}
-              </span>
-            </Label>
-          ) : null}
-          <ul className="mt-2 list-inside list-disc space-y-1">
-            {manifest.optionalPermissions.map((permission) => (
-              <li
-                key={permission}
-                className={consent ? "list-none" : undefined}
-              >
-                {consent ? (
-                  <Label className="items-start leading-6">
-                    <Checkbox
-                      className="mt-1"
-                      checked={consent.grants.includes(permission)}
-                      disabled={consent.disabled}
-                      onCheckedChange={(checked) =>
-                        consent.onChange(
-                          checked === true
-                            ? [...new Set([...consent.grants, permission])]
-                            : consent.grants.filter(
-                                (grant) => grant !== permission,
-                              ),
-                        )
-                      }
-                    />
-                    <span className="min-w-0">
-                      {t(PERMISSION_LABELS[permission])}
-                    </span>
-                  </Label>
-                ) : (
-                  <span>
-                    {t(PERMISSION_LABELS[permission])}
-                    {grantedPermissions ? (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {t(
-                          grantedPermissions.includes(permission)
-                            ? "ext.permissionAllowed"
-                            : "ext.permissionNotAllowed",
-                        )}
-                      </span>
-                    ) : null}
-                  </span>
-                )}
+      <fieldset>
+        <legend>{t("ext.requiredPermissions")}</legend>
+        {manifest.permissions.length ? (
+          <ul className="space-y-2">
+            {manifest.permissions.map((permission) => (
+              <li key={permission} className="space-y-0.5">
+                <p className="font-medium">
+                  {t(PERMISSION_LABELS[permission])}
+                </p>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t(PERMISSION_DESCRIPTIONS[permission])}
+                </p>
               </li>
             ))}
           </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {t("ext.noPermissions")}
+          </p>
+        )}
+      </fieldset>
+      {manifest.optionalPermissions.length ? (
+        <fieldset aria-labelledby={`${id}-optional`}>
+          <legend className="max-w-full">
+            <span className="inline-flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span id={`${id}-optional`}>{t("ext.optionalPermissions")}</span>
+              {consent ? (
+                <Label className="min-h-7 gap-1.5 text-xs leading-5 font-normal">
+                  <Checkbox
+                    checked={
+                      selectedOptionalCount === 0
+                        ? false
+                        : selectedOptionalCount ===
+                            manifest.optionalPermissions.length
+                          ? true
+                          : "indeterminate"
+                    }
+                    disabled={consent.disabled}
+                    onCheckedChange={(checked) =>
+                      consent.onChange(
+                        checked === true
+                          ? [
+                              ...new Set([
+                                ...consent.grants,
+                                ...manifest.optionalPermissions,
+                              ]),
+                            ]
+                          : consent.grants.filter(
+                              (grant) =>
+                                !manifest.optionalPermissions.includes(grant),
+                            ),
+                      )
+                    }
+                  />
+                  <span>{t("ext.selectAllOptionalPermissions")}</span>
+                </Label>
+              ) : null}
+            </span>
+          </legend>
+          <p className="mb-2 text-xs leading-5 text-muted-foreground">
+            {t("ext.optionalPermissionsHint")}
+          </p>
+          <ul className="space-y-2">
+            {manifest.optionalPermissions.map((permission) => {
+              const permissionId = `${id}-${permission}`;
+              return (
+                <li
+                  key={permission}
+                  className={
+                    consent
+                      ? "grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2 gap-y-0.5"
+                      : "space-y-0.5"
+                  }
+                >
+                  {consent ? (
+                    <>
+                      <Checkbox
+                        id={permissionId}
+                        className="mt-0.5"
+                        aria-describedby={`${permissionId}-description`}
+                        checked={consent.grants.includes(permission)}
+                        disabled={consent.disabled}
+                        onCheckedChange={(checked) =>
+                          consent.onChange(
+                            checked === true
+                              ? [...new Set([...consent.grants, permission])]
+                              : consent.grants.filter(
+                                  (grant) => grant !== permission,
+                                ),
+                          )
+                        }
+                      />
+                      <Label
+                        htmlFor={permissionId}
+                        className="min-w-0 leading-5"
+                      >
+                        {t(PERMISSION_LABELS[permission])}
+                      </Label>
+                    </>
+                  ) : (
+                    <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
+                      <span>{t(PERMISSION_LABELS[permission])}</span>
+                      {grantedPermissions ? (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {t(
+                            grantedPermissions.includes(permission)
+                              ? "ext.permissionAllowed"
+                              : "ext.permissionNotAllowed",
+                          )}
+                        </span>
+                      ) : null}
+                    </p>
+                  )}
+                  <p
+                    id={`${permissionId}-description`}
+                    className={`${consent ? "col-start-2 " : ""}text-xs leading-5 text-muted-foreground`}
+                  >
+                    {t(PERMISSION_DESCRIPTIONS[permission])}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
         </fieldset>
       ) : null}
-      <details className="border-t pt-3">
-        <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {canConnect ? (
+        <p className="text-xs leading-5 text-muted-foreground">
+          {t("ext.permissionScopeHint")}
+        </p>
+      ) : null}
+      <details>
+        <summary className="px-3 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
           {t("ext.technicalInfo")}
         </summary>
-        <div className="space-y-3 pt-3">
-          <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-[auto_1fr]">
-            {[
-              [t("ext.identifier"), manifest.id],
-              [t("ext.minHostVersion"), manifest.minHostVersion],
-              [
-                t("ext.technicalCommands"),
-                manifest.commands
-                  .map(
-                    (command) =>
-                      `${command.title} (${command.inputFormat} → ${command.resultFormat})`,
-                  )
-                  .join(", "),
-              ],
-            ].map(([label, content]) => (
-              <div key={label} className="contents">
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="min-w-0 break-all">{content}</dd>
-              </div>
-            ))}
-          </dl>
-          {origin?.kind === "market" ? (
-            <div className="space-y-1">
-              <h4 className="font-medium">{t("ext.source")}</h4>
-              <p className="break-all">
-                <code>{origin.source.repository}</code> ·{" "}
-                {t("ext.market.revision", {
-                  revision: origin.source.catalogRevision,
-                })}
-              </p>
-              <p className="break-all text-xs text-muted-foreground">
-                {t("ext.source.key")}{" "}
-                <code>{origin.source.publicKeyFingerprint}</code>
-              </p>
+        <dl className="grid gap-3 border-t p-3">
+          {[
+            [t("ext.identifier"), manifest.id],
+            [t("ext.minHostVersion"), manifest.minHostVersion],
+            ...(manifest.commands.length
+              ? [
+                  [
+                    t("ext.technicalCommands"),
+                    manifest.commands
+                      .map(
+                        (command) =>
+                          `${command.title} (${command.inputFormat} → ${command.resultFormat})`,
+                      )
+                      .join(", "),
+                  ],
+                ]
+              : []),
+            ...(origin?.kind === "market"
+              ? [[t("ext.market.repository"), origin.source.repository]]
+              : []),
+            ...(manifest.network.length
+              ? [
+                  [
+                    t("ext.allowedHosts"),
+                    manifest.network
+                      .map(
+                        (rule) => `${rule.origin} · ${rule.methods.join(", ")}`,
+                      )
+                      .join("\n"),
+                  ],
+                ]
+              : []),
+          ].map(([label, content]) => (
+            <div
+              key={label}
+              className="grid min-w-0 gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"
+            >
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-words whitespace-pre-line [overflow-wrap:anywhere]">
+                {content}
+              </dd>
             </div>
-          ) : null}
-          {manifest.network.length ? (
-            <div className="space-y-1">
-              <h4 className="font-medium">{t("ext.allowedHosts")}</h4>
-              {manifest.network.map((rule) => (
-                <p key={rule.origin} className="break-all">
-                  <code>{rule.origin}</code> · {rule.methods.join(", ")}
-                </p>
-              ))}
-            </div>
-          ) : null}
-          <div>
-            <p className="font-medium">{t("ext.hash")}</p>
-            <code className="block break-all text-xs">{value.sha256}</code>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("ext.bytes", { bytes: value.bytes })} · {t("ext.hashHint")}
-            </p>
-          </div>
-        </div>
+          ))}
+        </dl>
       </details>
     </div>
   );
