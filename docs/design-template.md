@@ -1,6 +1,6 @@
 # 设计提案模板
 
-达到 [设计评审门槛](./engineering-at-scale.md#设计评审与-adr-门槛) 时，将模板复制到 issue 或 PR，只保留相关项；不适用的兼容与恢复事项说明原因。落地后同步当前文档，长期取舍记录到 [ADR](./adr/README.md)。普通局部改动直接在 PR 说明，无须另建提案。
+达到 [设计评审门槛](./engineering-at-scale.md#设计评审与-adr-门槛) 时，将模板复制到 issue 或 PR，只保留相关项；不适用的兼容与恢复事项说明原因。需要随代码维护的跨里程碑方案可按 [文档层级](./engineering-at-scale.md#文档层级与维护职责) 放入 `docs/plans/`，PR 引用该计划，不重复维护。落地后同步当前文档，长期取舍记录到 [ADR](./adr/README.md)。普通局部改动直接在 PR 说明，无须另建提案。
 
 ```markdown
 # 设计：要解决的问题

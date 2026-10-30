@@ -97,3 +97,4 @@ ADR 采纳后保留原始决策与上下文。结论改变时新增 ADR 并标�
 | [0021](./0021-managed-video-wallpapers.md)           | 用独立媒体副本保存视频壁纸             | 已采纳       | 2026-10-28 |
 | [0022](./0022-shared-control-materials.md)           | 让宿主与插件共用完整控件样式和材质规则 | 已采纳       | 2026-10-29 |
 | [0023](./0023-preserve-extension-upgrade-consent.md) | 对授权范围未变的可信升级复用现有授权   | 已采纳       | 2026-10-29 |
+| [0024](./0024-device-session-capture-boundaries.md)  | 将设备会话与记录回放独立于插件页面     | 已采纳       | 2026-10-30 |
