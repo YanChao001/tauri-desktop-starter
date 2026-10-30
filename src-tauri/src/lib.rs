@@ -16,6 +16,7 @@ mod data_commands;
 mod database;
 mod demo_http;
 mod desktop;
+pub mod device;
 mod diagnostics;
 mod error;
 mod extension_commands;

@@ -46,6 +46,7 @@ flowchart LR
 | `desktop.rs` / `window_geometry.rs` / `autostart.rs`                            | 窗口与托盘、逻辑尺寸和位置适配、平台自启动                             |
 | `lifecycle.rs` / `system_commands.rs` / `recovery.rs`                           | 退出协商；工作区、激活、凭据与固定 worker；启动隔离和重启恢复          |
 | `extensions.rs` / `extension_*.rs`                                              | 扩展安装、执行、授权、受控服务、界面、市场与旧数据恢复，分工见扩展指南 |
+| `device/`                                                                       | 独立设备会话、虚拟输入、有限字节历史、只读游标与发送仲裁               |
 | `diagnostics.rs` / `updater.rs` / `src/lib/updates-store.ts`                    | 脱敏诊断；原生更新句柄与各 WebView 的进度快照                          |
 | `sdk/` / `examples/extensions/` / `marketplace/`                                | 界面 SDK、互操作示例、独立市场子模块                                   |
 | `resources/branding/` / `scripts/branding.mjs` / `scripts/fs-utils.mjs`         | 品牌生成；初始化和版本脚本共用的暂存、冲突检测与回滚                   |
@@ -69,6 +70,12 @@ AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留�
 会话缓存只回收非活动的干净工作，凭据系统调用按插件协调，不持全局注册表锁等待外部服务。宿主与隔离 HTML 共用原生 CSS 的材质配置和完整控件规则；[ui-theme.ts](../src/lib/ui-theme.ts) 装配同一原文，`ExtensionCustomUi` 在嵌入页与独立窗口中将样式及自动收集的主题变量经现有主题快照发送。SDK 不维护另一份控件 CSS，不按当前 DOM 裁剪；Shadow DOM 由作者显式接入，不共享宿主组件实例。内置和市场插件的普通 UI 一致性、布局职责与明确设计例外由 [共同外观规范](./conventions/ui-guidelines.md#宿主与插件的共同外观) 维护，运行时同步及注入边界见 [界面 SDK](../sdk/README.md#默认外观与动效)，取舍见 [ADR 0022](./adr/0022-shared-control-materials.md)。SDK 公共 DTO 从 Rust 生成绑定提取闭合依赖，独立插件开发无需引用宿主源码树。
 
 命令清单可选择标准或计算预算；原生执行、效果往返、离线 CLI 与预编译均使用已校验清单的档位，编译缓存按预算区分。选择只改变有界 Wasm fuel，不新增权限或延长墙钟；版本与限额见[扩展指南](./extensions.md#执行存储与生命周期)，取舍见 [ADR 0019](./adr/0019-bounded-extension-compute.md)。
+
+## 设备领域
+
+`device/` 将会话身份、连接代次、有限字节历史与发送仲裁独立于插件页面；只读游标不持有连接生命周期。当前只有显式推进的虚拟输入与发送回显，公共事件保持二进制，不依赖文件、Tauri 或 React。
+
+当前未把该模块注册成桌面 state、IPC 或插件服务，也没有真实串口、后台线程或物理设备权限。模块级独立不等于从当前宿主 crate 的编译依赖或基础包移除；记录回放、无头工具、原生适配和工作台按 [实施计划](./plans/device-workbench-foundation.md) 依次集成。当前身份、容量与失败语义统一见 [设备工作台指南](./device-workbench.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
 
 ## 命令与桌面交互
 
