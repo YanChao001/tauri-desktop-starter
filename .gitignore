@@ -19,6 +19,7 @@ coverage
 
 # 工具缓存与临时文件
 .cache/
+.claude/worktrees/
 .pnpm-store/
 *.tsbuildinfo
 *.tmp
