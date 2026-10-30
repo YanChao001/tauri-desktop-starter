@@ -209,6 +209,16 @@ pnpm bindings:check
 
 局部修改可筛选对应模块；新增 feature 也要单独编译检查。服务测试注入临时路径和数据，覆盖入参、稳定错误码、事务迁移、未来版本保护与并发冲突，避免为纯逻辑启动图形界面。正式构建与 E2E feature 分别验证。
 
+设备与记录模块可在没有真实硬件和 GUI 的条件下验证：
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml --locked --lib device::
+cargo test --manifest-path src-tauri/Cargo.toml --locked --lib capture::
+cargo test --manifest-path src-tauri/Cargo.toml --locked --bin device-tool --test device_tool
+```
+
+`device_tool` 集成测试运行本轮构建的 CLI，只使用自建临时目录；校验虚拟接收／发送回显的精确二进制数据、原始记录与回放摘要、既有输出保护、严格截断拒绝、显式前缀恢复和未来格式。设备单元测试另覆盖多游标、淘汰缺口、旧连接 token、发送仲裁、队列饱和仍可关闭、关闭后排空及最后引擎销毁结算；记录单元测试覆盖短读取、逐字节截断、帧／文件限额、坏校验与失败写入器。它们不证明真实串口独占、控制线、硬件时序、安装版或其他平台已验收，当前边界见 [设备工作台指南](./device-workbench.md)。
+
 [Wasmtime 缓存依赖补丁](../src-tauri/vendor/wasmtime-internal-cache/README.md)另用 `pnpm test:wasmtime-cache` 运行保留的上游单元和集成测试。该 crate 是宿主的依赖，不能直接从宿主 workspace 用 `cargo test -p` 测试其开发依赖；脚本复制源码和宿主锁文件到独立临时目录，以仓库根目录的工具链运行，并复用 `src-tauri/target`。Cargo 只在临时锁文件中补齐测试依赖，退出后清理副本；不修改生产 workspace、宿主锁文件或 vendor 源码，也不在 vendor 下生成锁文件和构建目录。此检查不包含在 `pnpm verify` 中，修改补丁或压缩依赖时单独执行。
 
 IPC 改动后运行 `pnpm bindings:generate` 并提交生成文件；它也会更新独立 SDK 公共 DTO。`bindings:check` 重新导出比较，Windows Rust CI 会阻止漂移；前端 CI 另用 `pnpm extension:sdk:check` 检查公开类型依赖闭包，脚本测试将 SDK 复制到仓库外做严格编译。生成类型不提供 Rust 边界的运行时校验。

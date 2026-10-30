@@ -46,7 +46,7 @@ flowchart LR
 | `desktop.rs` / `window_geometry.rs` / `autostart.rs`                            | 窗口与托盘、逻辑尺寸和位置适配、平台自启动                             |
 | `lifecycle.rs` / `system_commands.rs` / `recovery.rs`                           | 退出协商；工作区、激活、凭据与固定 worker；启动隔离和重启恢复          |
 | `extensions.rs` / `extension_*.rs`                                              | 扩展安装、执行、授权、受控服务、界面、市场与旧数据恢复，分工见扩展指南 |
-| `device/` / `capture/`                                                          | 独立设备会话、有限字节历史与发送仲裁；二进制记录与只读回放             |
+| `device/` / `capture/` / `bin/device_tool.rs`                                   | 独立虚拟会话、有限字节流与发送仲裁；二进制记录、只读回放和无头工具     |
 | `diagnostics.rs` / `updater.rs` / `src/lib/updates-store.ts`                    | 脱敏诊断；原生更新句柄与各 WebView 的进度快照                          |
 | `sdk/` / `examples/extensions/` / `marketplace/`                                | 界面 SDK、互操作示例、独立市场子模块                                   |
 | `resources/branding/` / `scripts/branding.mjs` / `scripts/fs-utils.mjs`         | 品牌生成；初始化和版本脚本共用的暂存、冲突检测与回滚                   |
@@ -75,7 +75,9 @@ AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留�
 
 `device/` 将会话身份、连接代次、有限字节历史与发送仲裁独立于插件页面；只读游标不持有连接生命周期。当前只有显式推进的虚拟输入与发送回显，公共事件保持二进制，不依赖文件、Tauri 或 React。`capture/` 仅消费设备公开值类型，通过有界二进制帧记录和只读回放；设备模块不反向依赖文件格式。
 
-当前未把该模块注册成桌面 state、IPC 或插件服务，也没有真实串口、后台线程或物理设备权限。模块级独立不等于从当前宿主 crate 的编译依赖或基础包移除；无头工具、原生适配和工作台按 [实施计划](./plans/device-workbench-foundation.md) 依次集成。当前身份、容量与失败语义统一见 [设备工作台指南](./device-workbench.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
+`device-tool` 通过显式虚拟输入与文件参数组合两模块，不初始化桌面，不访问用户应用存档；记录创建不覆盖既有文件，回放不会执行历史 TX。
+
+当前未把该模块注册成桌面 state、IPC 或插件服务，也没有真实串口、后台线程或物理设备权限。模块级独立不等于从当前宿主 crate 的编译依赖或基础包移除；原生适配和工作台按 [实施计划](./plans/device-workbench-foundation.md) 继续演进。当前身份、容量与失败语义统一见 [设备工作台指南](./device-workbench.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
 
 ## 命令与桌面交互
 

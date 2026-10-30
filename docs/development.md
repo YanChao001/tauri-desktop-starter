@@ -118,6 +118,7 @@ node scripts/doctor.mjs --json
 | `pnpm docs:capture --interactive`                                                                        | Windows 原生截图采集并同步，见 [截图流程](./testing.md#readme-原生截图更新)                       |
 | `pnpm docs:previews` / `pnpm docs:previews:check`                                                        | 同步已采集截图 / 只检查已提交截图格式与尺寸，均不启动窗口                                         |
 | `pnpm extension:pack` / `pnpm extension:validate` / `pnpm extension:test`                                | 扩展打包 / Rust 预检 / 真实离线 worker fixture，参数见 [扩展指南](./extensions.md#构建-rust-示例) |
+| `pnpm device:tool`                                                                                       | 虚拟设备采集与原始记录只读回放，不启动桌面或真实设备，见 [设备工作台指南](./device-workbench.md)  |
 | `pnpm extension:demos:check` / `pnpm extension:test:worker` / `pnpm test:extensions:ui`                  | 内置 Wasm 回执 / worker 协议 / 自定义界面检查，见 [扩展验证](./extensions.md#验证)                |
 | `pnpm test:extensions:styles`                                                                            | 无头对照真实宿主控件与 SDK 默认外观、Shadow DOM 和键盘语义                                        |
 | `pnpm clean:outputs` / `pnpm clean:temporary` / `pnpm clean:artifacts` / `pnpm clean` / `pnpm clean:all` | 删除范围见 [下节](#清理构建产物)，均支持 `--dry-run`                                              |

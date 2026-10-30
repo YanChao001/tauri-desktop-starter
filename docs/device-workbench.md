@@ -1,17 +1,18 @@
 # 设备会话与记录回放
 
-本文维护设备领域的当前模块边界。演进范围见 [实施计划](./plans/device-workbench-foundation.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。当前提供虚拟输入、只读游标、发送仲裁与二进制记录回放，不提供真实串口或插件设备授权；可操作无头工具在下一里程碑接入。
+本文维护设备领域的当前模块边界。演进范围见 [实施计划](./plans/device-workbench-foundation.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。当前提供虚拟输入、只读游标、发送仲裁与二进制记录回放，不提供真实串口或插件设备授权。无头 CLI 组合真实模块验证虚拟采集与文件回放，不初始化桌面或访问物理设备。
 
 ## 模块与责任
 
-| 模块                              | 责任                                                      |
-| --------------------------------- | --------------------------------------------------------- |
-| `src-tauri/src/device/model.rs`   | 会话 ID、连接事件、方向、二进制字节、偏移、缺口与共享校验 |
-| `src-tauri/src/device/session.rs` | 虚拟会话生命周期、连接代次、有界发送队列、显式推进及结算  |
-| `src-tauri/src/device/stream.rs`  | 单份有限历史、独立只读游标、受限批次与淘汰缺口            |
-| `src-tauri/src/capture/`          | 有界二进制记录、逐帧完整性、只读回放与显式前缀恢复        |
+| 模块                               | 责任                                                      |
+| ---------------------------------- | --------------------------------------------------------- |
+| `src-tauri/src/device/model.rs`    | 会话 ID、连接事件、方向、二进制字节、偏移、缺口与共享校验 |
+| `src-tauri/src/device/session.rs`  | 虚拟会话生命周期、连接代次、有界发送队列、显式推进及结算  |
+| `src-tauri/src/device/stream.rs`   | 单份有限历史、独立只读游标、受限批次与淘汰缺口            |
+| `src-tauri/src/capture/`           | 有界二进制记录、逐帧完整性、只读回放与显式前缀恢复        |
+| `src-tauri/src/bin/device_tool.rs` | 无头组合虚拟会话、记录与回放，只访问显式文件参数          |
 
-记录模块仅依赖设备公共值类型，设备不反向依赖记录实现。设备模块不依赖文件、Tauri、React 或插件页面。当前仍与桌面应用在同一 Rust crate 中编译，不表示已经实现轻量独立运行时分发。没有新增自动后台线程、桌面 state、IPC、插件服务或 capability。
+`device-tool` 同时调用设备和记录模块；记录模块仅依赖设备公共值类型，设备不反向依赖记录实现。设备模块不依赖文件、Tauri、React 或插件页面。当前仍与桌面应用在同一 Rust crate 中编译，不表示已经实现轻量独立运行时分发。没有新增自动后台线程、桌面 state、IPC、插件服务或 capability。
 
 内部 API 供可信 Rust 调用方使用，不是用户授权。未来设备 API 对外开放前，须完成资源选择、权限、所有者、撤权和退出协商，不能直接把可用 Rust 方法全部注册为 IPC。原生调用即使复用同一领域模块，也必须经过资源身份和授权边界。
 
@@ -41,7 +42,7 @@
 - 完成尾帧绑定累计事件／字节／缺口统计与内容摘要；读取方重新累计核对，尾帧后必须 EOF。
 - 帧／文件／事件预算同时约束读写，分配前检查长度和溢出；文件处理内存不随总日志线性增长。具体布局见 [记录格式实现](../src-tauri/src/capture/format.rs)，额度见 [记录模型](../src-tauri/src/capture/model.rs)。
 
-记录开始于会话序号 1；若开始读取时前缀已被历史淘汰，先写显式 Gap。没有 Gap 时序号连续、已知连接状态合法、Rx／Tx 各自偏移连续；Gap 后允许未知状态和偏移向前跳，但不能回退时间、代次或已知偏移。关闭后的新事件被拒绝。
+记录开始于会话序号 1；若开始读取时前缀已被历史淘汰，先写显式 Gap。没有 Gap 时序号连续、已知连接状态合法、Rx／Tx 各自偏移连续；Gap 后允许未知状态和偏移向前跳，但不能回退时间、代次或已知偏移。关闭后的新事件被拒绝。缺口内部没有可验证事件，完整性状态不证明其中的物理历史或所有状态转换可达。
 
 默认严格读取拒绝半帧、缺少完成尾帧、坏摘要、非法顺序及尾后垃圾。未来版本、未知必需标志／来源／帧类型明确拒绝，不当空文件或自动降级。
 
@@ -51,6 +52,29 @@
 
 回放没有真实连接 token、发送回调或 transport 依赖。历史 TX 只表示已记录的观察结果，不重新执行发送；完成记录不要求设备会话同时关闭。
 
+## 无头工具
+
+先从仓库根目录准备前端产物供当前 Rust crate 的 `generate_context!` 使用，再运行工具：
+
+```powershell
+pnpm build
+pnpm device:tool --help
+pnpm device:tool record-virtual --output "$env:TEMP/device-sample.dcap" --frames 16
+pnpm device:tool replay --input "$env:TEMP/device-sample.dcap"
+```
+
+输出目录必须已存在；首次文件名若已经存在，请选择另一个新文件名。工具不覆盖、不追加既有文件，不提供 `--force`，不删除失败输出，不读取应用用户数据目录。路径使用原生参数，支持中文；输入必须是普通文件，拒绝末级链接／Windows 重解析点。CLI 显式选择的祖先路径由调用者控制，不声称建立了应用托管目录的完整授权或同账户竞态沙箱。
+
+`record-virtual` 的 `--frames` 为 1–4096，缺省 16。每次生成带 NUL／非 UTF-8 的固定二进制块，经虚拟接收、发送队列与回显后逐批写入。stdout 只给有限 JSON 摘要；完成尾帧、flush 和文件 `sync_all` 成功后才报告 `complete`／`synced`，`fileBytes` 是已写文件大小。写入失败保留可能未完成的前缀，不显示成功。
+
+`replay` 默认严格校验，输出来源 `replay`、原始来源、会话、完成状态、统计与摘要；不将整份日志打印到终端。显式检查中断前缀：
+
+```powershell
+pnpm device:tool replay --input "$env:TEMP/interrupted.dcap" --recover-prefix
+```
+
+恢复模式的成功退出表示完成一次前缀检查，不表示原文件完整。必须同时读取 `complete`、`status`、`recoveredPrefix`、`failureOffset` 和 `verifiedOffset`；自动化不能只按退出码把前缀当完整记录。错误、未知格式和严格模式失败使用非零退出码。
+
 ## 验证与后续
 
 就近测试覆盖独立游标、历史淘汰、队列与旧 token、关闭排空、最后引擎销毁结算和容量回收；从仓库根目录先构建 `dist/`，再运行：
@@ -59,6 +83,9 @@
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --locked --lib device::
 cargo test --manifest-path src-tauri/Cargo.toml --locked --lib capture::
+cargo test --manifest-path src-tauri/Cargo.toml --locked --bin device-tool --test device_tool
 ```
 
-记录单元测试覆盖短读取、逐字节截断、坏摘要／非法顺序／尾后垃圾、未来格式、分配前额度和失败 I/O，默认严格模式与显式恢复状态分别验证。可操作无头 CLI 按 [M4](./plans/device-workbench-foundation.md#里程碑与集成顺序) 集成；此时不提前声明命令已经可用。没有真实 UART、设备枚举、控制线、原生推送、界面面板、持久工作区或物理重连，也不保证应用退出期间持续采集。浏览器 demo 保持原有环境边界，不伪造设备调用成功。
+记录单元测试覆盖短读取、逐字节截断、坏摘要／非法顺序／尾后垃圾、未来格式、分配前额度和失败 I/O，默认严格模式与显式恢复状态分别验证。跨进程集成测试运行本轮构建的 CLI，仅使用自建临时目录，校验精确二进制往返与摘要、既有文件不覆盖、截断／损坏／未来格式和退出码。
+
+没有真实 UART、设备枚举、控制线、原生推送、界面面板、持久工作区或物理重连，也不保证应用退出期间持续采集。浏览器 demo 保持原有环境边界，不伪造设备调用成功。下一阶段见 [M5 原生服务与真实串口](./plans/device-workbench-foundation.md#m5-原生会话与真实串口)，仍需独立的授权、生命周期、平台设备与正式安装版验收。

@@ -89,6 +89,10 @@ required-features = ["bindings"]
 name = "extension-tool"
 path = "src/bin/extension-tool.rs"
 
+[[bin]]
+name = "device-tool"
+path = "src/bin/device_tool.rs"
+
 # 默认优先程序体积；安装包与便携版可用 --optimize speed 切换为编译速度优先。
 [profile.release]
 codegen-units = 1
