@@ -373,6 +373,27 @@ struct CacheCleanupState {
     running: bool,
     requested: bool,
 }
+#[derive(Clone, Copy)]
+enum ServiceActivityKind {
+    Ordinary,
+    LanStop,
+}
+#[derive(Default)]
+struct ServiceCounts {
+    ordinary: usize,
+    lan_stop: usize,
+}
+impl ServiceCounts {
+    fn count_mut(&mut self, kind: ServiceActivityKind) -> &mut usize {
+        match kind {
+            ServiceActivityKind::Ordinary => &mut self.ordinary,
+            ServiceActivityKind::LanStop => &mut self.lan_stop,
+        }
+    }
+    fn is_running(&self) -> bool {
+        self.ordinary > 0 || self.lan_stop > 0
+    }
+}
 struct StoreInner {
     root: PathBuf,
     isolated: bool,
@@ -381,7 +402,7 @@ struct StoreInner {
     writing: Mutex<()>,
     runs: Mutex<VecDeque<ActiveRun>>,
     run_changed: Condvar,
-    services: Mutex<HashMap<String, usize>>,
+    services: Mutex<HashMap<String, ServiceCounts>>,
     windows: Mutex<HashMap<String, WindowSession>>,
     cache_cleanup: Mutex<CacheCleanupState>,
     preparation: Mutex<Option<Arc<PreparationFlight>>>,
@@ -404,6 +425,7 @@ impl Drop for ExtensionPause {
 pub(crate) struct ServiceActivity {
     store: ExtensionStore,
     token: WindowRunToken,
+    kind: ServiceActivityKind,
 }
 impl ServiceActivity {
     pub(crate) fn check(&self) -> NativeResult<()> {
@@ -437,10 +459,10 @@ impl Drop for ServiceActivity {
     fn drop(&mut self) {
         if let Ok(_runs) = self.store.0.runs.lock() {
             if let Ok(mut services) = self.store.0.services.lock()
-                && let Some(count) = services.get_mut(&self.token.owner)
+                && let Some(counts) = services.get_mut(&self.token.owner)
             {
-                *count -= 1;
-                if *count == 0 {
+                *counts.count_mut(self.kind) -= 1;
+                if !counts.is_running() {
                     services.remove(&self.token.owner);
                 }
             }
@@ -2200,14 +2222,28 @@ impl ExtensionStore {
     }
     fn services_running(&self, owner: Option<&str>) -> bool {
         self.0.services.lock().map_or(true, |services| {
-            owner.map_or(!services.is_empty(), |label| {
-                services.get(label).is_some_and(|count| *count > 0)
-            })
+            owner.map_or_else(
+                || services.values().any(ServiceCounts::is_running),
+                |label| services.get(label).is_some_and(ServiceCounts::is_running),
+            )
         })
     }
     pub(crate) fn begin_service(
         &self,
         token: WindowRunToken,
+    ) -> NativeResult<Arc<ServiceActivity>> {
+        self.begin_service_kind(token, ServiceActivityKind::Ordinary)
+    }
+    pub(crate) fn begin_lan_stop_service(
+        &self,
+        token: WindowRunToken,
+    ) -> NativeResult<Arc<ServiceActivity>> {
+        self.begin_service_kind(token, ServiceActivityKind::LanStop)
+    }
+    fn begin_service_kind(
+        &self,
+        token: WindowRunToken,
+        kind: ServiceActivityKind,
     ) -> NativeResult<Arc<ServiceActivity>> {
         let _runs = self
             .0
@@ -2220,8 +2256,13 @@ impl ExtensionStore {
             .services
             .lock()
             .map_err(|_| io("Service leases unavailable", "lock poisoned"))?;
-        let count = services.entry(token.owner.clone()).or_default();
-        if *count >= 4 {
+        let counts = services.entry(token.owner.clone()).or_default();
+        let count = counts.count_mut(kind);
+        let limit = match kind {
+            ServiceActivityKind::Ordinary => 4,
+            ServiceActivityKind::LanStop => 1,
+        };
+        if *count >= limit {
             return Err(NativeError::new(
                 ErrorCode::ExtensionBusy,
                 "Window service limit reached",
@@ -2231,6 +2272,7 @@ impl ExtensionStore {
         Ok(Arc::new(ServiceActivity {
             store: self.clone(),
             token,
+            kind,
         }))
     }
     pub fn wait_window_stopped(&self, label: &str) {
@@ -4379,33 +4421,111 @@ mod tests {
         assert!(!store.is_running());
     }
     #[test]
-    fn window_wait_holds_until_last_native_service_lease_is_released() {
+    fn window_and_global_wait_hold_until_the_last_ordinary_or_stop_lease_is_released() {
         let (_dir, store) = store();
-        let token = store.window_run_token("main".into()).unwrap();
-        let lease = store.begin_service(token).unwrap();
-        let clone = lease.clone();
-        store.wait_window_stopped("unrelated-window");
-        let waiter = store.clone();
-        let (started_tx, started_rx) = std::sync::mpsc::channel();
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || {
-            started_tx.send(()).unwrap();
-            waiter.wait_window_stopped("main");
-            done_tx.send(()).unwrap();
-        });
-        started_rx.recv().unwrap();
-        drop(lease);
-        assert!(
-            done_rx
-                .recv_timeout(std::time::Duration::from_millis(20))
-                .is_err()
-        );
-        drop(clone);
-        done_rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .unwrap();
-        thread.join().unwrap();
+        for kind in [ServiceActivityKind::Ordinary, ServiceActivityKind::LanStop] {
+            let token = store.window_run_token("main".into()).unwrap();
+            let lease = store.begin_service_kind(token, kind).unwrap();
+            let clone = lease.clone();
+            store.wait_window_stopped("unrelated-window");
+            let ready = Arc::new(std::sync::Barrier::new(3));
+            let (done_tx, done_rx) = std::sync::mpsc::channel();
+            let threads: Vec<_> = [false, true]
+                .into_iter()
+                .map(|global| {
+                    let waiter = store.clone();
+                    let ready = ready.clone();
+                    let done = done_tx.clone();
+                    std::thread::spawn(move || {
+                        ready.wait();
+                        if global {
+                            waiter.wait_stopped();
+                        } else {
+                            waiter.wait_window_stopped("main");
+                        }
+                        done.send(()).unwrap();
+                    })
+                })
+                .collect();
+            ready.wait();
+            drop(lease);
+            let premature = done_rx.recv_timeout(Duration::from_millis(20));
+            drop(clone);
+            assert!(matches!(
+                premature,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ));
+            for _ in 0..2 {
+                done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+        }
     }
+    #[test]
+    fn lan_stop_has_one_independent_slot_per_window_until_its_last_clone_finishes() {
+        let (_dir, store) = store();
+        let first = store.window_run_token("main".into()).unwrap();
+        let second = store.window_run_token("secondary".into()).unwrap();
+        let stop = store.begin_lan_stop_service(first.clone()).unwrap();
+        let clone = stop.clone();
+        // 此处只验证窗口计数；全局唯一停止容量由 ExtensionServices 准入约束。
+        let other_stop = store.begin_lan_stop_service(second.clone()).unwrap();
+        let ordinary: Vec<_> = (0..4)
+            .map(|_| store.begin_service(first.clone()).unwrap())
+            .collect();
+        assert_eq!(
+            store.begin_service(first.clone()).err().unwrap().code,
+            ErrorCode::ExtensionBusy
+        );
+        for token in [first.clone(), second] {
+            assert_eq!(
+                store.begin_lan_stop_service(token).err().unwrap().code,
+                ErrorCode::ExtensionBusy
+            );
+        }
+        drop(stop);
+        drop(other_stop);
+        drop(ordinary);
+        {
+            let services = store.0.services.lock().unwrap();
+            assert_eq!(services.len(), 1);
+            assert_eq!(services["main"].ordinary, 0);
+            assert_eq!(services["main"].lan_stop, 1);
+        }
+        assert!(store.is_running());
+        assert_eq!(
+            store
+                .begin_lan_stop_service(first.clone())
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ExtensionBusy
+        );
+        let pause = store.pause();
+        assert!(clone.check().is_err());
+        assert!(clone.commit(|| Ok(())).is_err());
+        drop(pause);
+        store.begin_window_close("main").unwrap();
+        store.reopen_window("main").unwrap();
+        assert!(clone.check().is_err());
+        drop(clone);
+        assert!(!store.is_running());
+        assert!(store.0.services.lock().unwrap().is_empty());
+        assert_eq!(
+            store.begin_lan_stop_service(first).err().unwrap().code,
+            ErrorCode::ExtensionUnavailable
+        );
+        let next = store
+            .begin_lan_stop_service(store.window_run_token("main".into()).unwrap())
+            .unwrap();
+        next.commit(|| Ok(())).unwrap();
+        drop(next);
+        store.wait_window_stopped("main");
+        store.wait_stopped();
+    }
+
     #[test]
     fn service_admission_and_commits_obey_pause_shutdown_and_per_window_limits() {
         let (_dir, store) = store();

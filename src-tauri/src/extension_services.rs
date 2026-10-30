@@ -40,8 +40,8 @@ pub struct ExtensionServices {
     extension_gates: Mutex<HashMap<String, Weak<tokio::sync::RwLock<()>>>>,
     identities: Mutex<HashMap<(String, ExtensionService), ExtensionInfo>>,
     owners: Mutex<HashMap<String, HashSet<String>>>,
-    capacity: tokio::sync::Semaphore,
-    lan_stop_capacity: tokio::sync::Semaphore,
+    capacity: Arc<tokio::sync::Semaphore>,
+    lan_stop_capacity: Arc<tokio::sync::Semaphore>,
 }
 impl Default for ExtensionServices {
     fn default() -> Self {
@@ -50,16 +50,31 @@ impl Default for ExtensionServices {
             extension_gates: Mutex::default(),
             identities: Mutex::default(),
             owners: Mutex::default(),
-            capacity: tokio::sync::Semaphore::new(8),
-            lan_stop_capacity: tokio::sync::Semaphore::new(1),
+            capacity: Arc::new(tokio::sync::Semaphore::new(8)),
+            lan_stop_capacity: Arc::new(tokio::sync::Semaphore::new(1)),
         }
     }
 }
-struct ServiceAdmission<'a> {
+struct ServiceAdmission {
     token: WindowRunToken,
-    _capacity: tokio::sync::SemaphorePermit<'a>,
-    _gate: tokio::sync::RwLockReadGuard<'a, ()>,
+    lan_stop: bool,
+    _capacity: tokio::sync::OwnedSemaphorePermit,
+    _gate: tokio::sync::OwnedRwLockReadGuard<()>,
     _extension_gate: tokio::sync::OwnedRwLockReadGuard<()>,
+}
+struct ServiceIdentity {
+    id: String,
+    sha256: String,
+    generation: i32,
+}
+struct AuthorizedService {
+    token: WindowRunToken,
+    item: ExtensionInfo,
+    permit: ServicePermit,
+}
+struct ServiceLease {
+    activity: Arc<crate::extensions::ServiceActivity>,
+    _admission: Option<Arc<ServiceAdmission>>,
 }
 pub(crate) struct ServiceMutation {
     id: String,
@@ -115,7 +130,7 @@ impl ExtensionServices {
         owner: String,
         id: &str,
         lan_stop: bool,
-    ) -> NativeResult<ServiceAdmission<'_>> {
+    ) -> NativeResult<Arc<ServiceAdmission>> {
         // 长传输和系统对话框可占满普通容量；停止仍保留一项有界容量，
         // 后续窗口代次、维护门闩、安装身份和权限检查与普通请求相同。
         let capacity = if lan_stop {
@@ -123,33 +138,101 @@ impl ExtensionServices {
         } else {
             &self.capacity
         }
-        .try_acquire()
+        .clone()
+        .try_acquire_owned()
         .map_err(|_| NativeError::new(ErrorCode::ExtensionBusy, "Desktop services are busy"))?;
-        // Capture before the first await: a queued old window must not acquire a reopened epoch.
+        // 首次 await 前捕获，排队的旧窗口不能换成重开后的 epoch。
         let token = store.window_run_token(owner)?;
-        let gate = self.gate.read().await;
+        let gate = self.gate.clone().read_owned().await;
         let extension_gate = self.extension_gate(id)?.read_owned().await;
         store.check_run_available(&token)?;
-        Ok(ServiceAdmission {
+        Ok(Arc::new(ServiceAdmission {
             token,
+            lan_stop,
             _capacity: capacity,
             _gate: gate,
             _extension_gate: extension_gate,
+        }))
+    }
+
+    // 命令与回归共用完整准入；分类只从精确请求得出，不接受调用方优先级。
+    async fn authorize(
+        &self,
+        store: &ExtensionStore,
+        owner: String,
+        identity: ServiceIdentity,
+        service: ExtensionService,
+        request: &serde_json::Value,
+    ) -> NativeResult<AuthorizedService> {
+        let admission = self
+            .admit(store, owner, &identity.id, is_lan_stop(service, request))
+            .await?;
+        let token = admission.token.clone();
+        let item = admission.current_entry(store.clone(), identity).await?;
+        store.check_run_available(&token)?;
+        authorized_request(&item, service, request)?;
+        let activity = if admission.lan_stop {
+            store.begin_lan_stop_service(token.clone())?
+        } else {
+            store.begin_service(token.clone())?
+        };
+        Ok(AuthorizedService {
+            token,
+            item,
+            permit: ServicePermit(Arc::new(ServiceLease {
+                activity,
+                _admission: Some(admission),
+            })),
         })
     }
 }
+impl ServiceAdmission {
+    async fn current_entry(
+        self: &Arc<Self>,
+        store: ExtensionStore,
+        identity: ServiceIdentity,
+    ) -> NativeResult<ExtensionInfo> {
+        // 同步身份读取持有准入直到真实完成；取消 async 等待不能提前归还容量或维护门闩。
+        let admission = self.clone();
+        let read = move || {
+            let _admission = admission;
+            store.current_entry(&identity.id, &identity.sha256, identity.generation)
+        };
+        if self.lan_stop {
+            // 仅一个精确 stop 可到达这里，不竞争通用 blocking::run 的 16 项容量，
+            // 注册表文件 I/O 仍在阻塞池；维护、身份与授权检查保持不变。
+            tauri::async_runtime::spawn_blocking(read)
+                .await
+                .map_err(|error| {
+                    NativeError::operation(
+                        ErrorCode::Internal,
+                        "Cannot read LAN stop installation identity",
+                        error,
+                    )
+                })?
+        } else {
+            blocking::run(read).await
+        }
+    }
+}
 #[derive(Clone)]
-pub(crate) struct ServicePermit(Arc<crate::extensions::ServiceActivity>);
+pub(crate) struct ServicePermit(Arc<ServiceLease>);
 impl ServicePermit {
     #[cfg(test)]
     pub(crate) fn for_test(activity: Arc<crate::extensions::ServiceActivity>) -> Self {
-        Self(activity)
+        Self(Arc::new(ServiceLease {
+            activity,
+            _admission: None,
+        }))
     }
     pub(crate) fn check(&self) -> NativeResult<()> {
-        self.0.check()
+        self.0.activity.check()
     }
     pub(crate) fn commit<T>(&self, operation: impl FnOnce() -> NativeResult<T>) -> NativeResult<T> {
-        self.0.commit(operation)
+        self.0.activity.commit(operation)
+    }
+    fn owner(&self) -> String {
+        self.0.activity.owner()
     }
 }
 fn authorized(item: &ExtensionInfo, service: ExtensionService) -> NativeResult<()> {
@@ -270,24 +353,24 @@ pub async fn request_extension_service(
     }
     let services = app.state::<ExtensionServices>();
     let store = app.state::<ExtensionStore>().inner().clone();
-    let admission = services
-        .admit(
+    let AuthorizedService {
+        token,
+        item,
+        permit,
+    } = services
+        .authorize(
             &store,
             window.label().into(),
-            &id,
-            is_lan_stop(service, &request),
+            ServiceIdentity {
+                id,
+                sha256: expected_sha256,
+                generation: expected_generation,
+            },
+            service,
+            &request,
         )
         .await?;
-    let token = admission.token.clone();
-    let current_store = store.clone();
-    let item = blocking::run(move || {
-        current_store.current_entry(&id, &expected_sha256, expected_generation)
-    })
-    .await?;
-    store.check_run_available(&token)?;
-    authorized_request(&item, service, &request)?;
-    let permit = ServicePermit(store.begin_service(token.clone())?);
-    let owner = permit.0.owner();
+    let owner = permit.owner();
     {
         let mut owners = services
             .owners
@@ -417,6 +500,7 @@ mod tests {
     use super::*;
     use crate::extensions::{ExtensionManifest, ExtensionOrigin, ExtensionPreview};
     use serde_json::json;
+    use std::{future::Future, pin::Pin, sync::mpsc, time::Duration};
 
     fn item(id: &str, grants: &[ExtensionPermission]) -> ExtensionInfo {
         let manifest: ExtensionManifest = serde_json::from_value(json!({
@@ -447,6 +531,84 @@ mod tests {
             .map(|service| ((item.package.manifest.id.clone(), service), item.clone()))
             .into_iter()
             .collect()
+    }
+
+    fn installed_lan() -> (tempfile::TempDir, ExtensionStore, ExtensionInfo) {
+        use crate::extensions::{
+            ExtensionConsent, InstallCondition, demo_package, preview_package,
+        };
+        let directory = crate::extension_paths::temporary_directory();
+        let store = ExtensionStore::new(directory.path().join("extensions"), false);
+        let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        content["manifest"]["id"] = "test.services".into();
+        content["manifest"]["minHostVersion"] = "0.1.7".into();
+        content["manifest"]["optionalPermissions"] = json!(["messaging:lan"]);
+        let content = content.to_string();
+        let preview = preview_package(&content).unwrap();
+        let current = store
+            .install_reviewed(
+                &content,
+                InstallCondition {
+                    revision: 0,
+                    replace: false,
+                    sha256: &preview.sha256,
+                },
+                ExtensionOrigin::Local,
+                ExtensionConsent {
+                    trusted: true,
+                    granted_permissions: vec![
+                        ExtensionPermission::TextRead,
+                        ExtensionPermission::MessagingLan,
+                    ],
+                },
+                |_, _| Ok(()),
+            )
+            .unwrap()
+            .items
+            .remove(0);
+        assert!(current.enabled);
+        (directory, store, current)
+    }
+
+    fn identity(item: &ExtensionInfo) -> ServiceIdentity {
+        ServiceIdentity {
+            id: item.package.manifest.id.clone(),
+            sha256: item.package.sha256.clone(),
+            generation: item.generation,
+        }
+    }
+
+    async fn authorize_lan(
+        services: &ExtensionServices,
+        store: &ExtensionStore,
+        item: &ExtensionInfo,
+        owner: &str,
+        action: &str,
+    ) -> NativeResult<AuthorizedService> {
+        let request = json!({"action":action});
+        services
+            .authorize(
+                store,
+                owner.into(),
+                identity(item),
+                ExtensionService::Lan,
+                &request,
+            )
+            .await
+    }
+
+    async fn assert_pending(future: &mut Pin<Box<impl Future>>) {
+        std::future::poll_fn(|context| {
+            assert!(future.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+    }
+
+    fn assert_idle(services: &ExtensionServices, store: &ExtensionStore) {
+        assert_eq!(services.capacity.available_permits(), 8);
+        assert_eq!(services.lan_stop_capacity.available_permits(), 1);
+        assert!(!store.is_running());
     }
 
     #[test]
@@ -703,89 +865,358 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn saturated_desktop_services_leave_bounded_capacity_for_lan_stop() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = ExtensionStore::new(directory.path().join("extensions"), false);
+    async fn two_saturated_windows_leave_exactly_one_global_lan_stop_slot() {
+        let (_directory, store, item) = installed_lan();
         let services = ExtensionServices::default();
         let mut normal = Vec::new();
-        for _ in 0..8 {
+        for owner in ["main", "secondary"] {
+            for _ in 0..4 {
+                normal.push(
+                    authorize_lan(&services, &store, &item, owner, "status")
+                        .await
+                        .unwrap(),
+                );
+            }
+        }
+        assert_eq!(
+            authorize_lan(&services, &store, &item, "third", "status")
+                .await
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ExtensionBusy
+        );
+        let stop = authorize_lan(&services, &store, &item, "main", "stop")
+            .await
+            .unwrap();
+        stop.permit.check().unwrap();
+        stop.permit.commit(|| Ok(())).unwrap();
+        assert_eq!(services.capacity.available_permits(), 0);
+        assert_eq!(services.lan_stop_capacity.available_permits(), 0);
+        for owner in ["main", "secondary"] {
+            assert_eq!(
+                authorize_lan(&services, &store, &item, owner, "stop")
+                    .await
+                    .err()
+                    .unwrap()
+                    .code,
+                ErrorCode::ExtensionBusy
+            );
+        }
+        drop(stop);
+        // 两个窗口的普通租约仍然占满，另一个窗口也能使用归还后的唯一停止容量。
+        drop(
+            authorize_lan(&services, &store, &item, "secondary", "stop")
+                .await
+                .unwrap(),
+        );
+        assert_eq!(services.lan_stop_capacity.available_permits(), 1);
+        assert!(store.is_running());
+        drop(normal);
+        assert_idle(&services, &store);
+    }
+
+    #[tokio::test]
+    async fn lan_stop_started_first_does_not_consume_any_of_the_four_window_slots() {
+        let (_directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        let stop = authorize_lan(&services, &store, &item, "main", "stop")
+            .await
+            .unwrap();
+        let mut normal = Vec::new();
+        for _ in 0..4 {
             normal.push(
-                services
-                    .admit(&store, "main".into(), "test.services", false)
+                authorize_lan(&services, &store, &item, "main", "status")
                     .await
                     .unwrap(),
             );
         }
         assert_eq!(
-            services
-                .admit(&store, "main".into(), "test.services", false)
+            authorize_lan(&services, &store, &item, "main", "status")
                 .await
                 .err()
                 .unwrap()
                 .code,
             ErrorCode::ExtensionBusy
         );
-        let stop = services
-            .admit(&store, "main".into(), "test.services", true)
-            .await
-            .unwrap();
-        assert_eq!(services.capacity.available_permits(), 0);
-        assert_eq!(services.lan_stop_capacity.available_permits(), 0);
-        assert_eq!(
-            services
-                .admit(&store, "main".into(), "test.services", true)
-                .await
-                .err()
-                .unwrap()
-                .code,
-            ErrorCode::ExtensionBusy
-        );
-        drop(stop);
-        store.begin_window_close("main").unwrap();
-        assert_eq!(
-            services
-                .admit(&store, "main".into(), "test.services", true)
-                .await
-                .err()
-                .unwrap()
-                .code,
-            ErrorCode::ExtensionUnavailable
-        );
-        assert_eq!(services.lan_stop_capacity.available_permits(), 1);
+        assert_eq!(services.capacity.available_permits(), 4);
         drop(normal);
-        assert_eq!(services.capacity.available_permits(), 8);
+        assert!(store.is_running());
+        drop(stop);
+        assert_idle(&services, &store);
     }
 
     #[tokio::test]
-    async fn queued_service_admission_cannot_switch_to_a_reopened_window_epoch() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = ExtensionStore::new(directory.path().join("extensions"), false);
-        let services = Arc::new(ExtensionServices::default());
-        let gate = services.gate.write().await;
-        let queued = services.clone();
-        let queued_store = store.clone();
-        let pending = tokio::spawn(async move {
-            queued
-                .admit(&queued_store, "main".into(), "test.services", false)
+    async fn queued_service_authorization_cannot_switch_to_a_reopened_window_epoch() {
+        let (_directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        for action in ["status", "stop"] {
+            let gate = services.gate.write().await;
+            let mut pending = Box::pin(authorize_lan(&services, &store, &item, "main", action));
+            assert_pending(&mut pending).await;
+            assert_eq!(
+                services.lan_stop_capacity.available_permits(),
+                usize::from(action != "stop")
+            );
+            store.begin_window_close("main").unwrap();
+            store.reopen_window("main").unwrap();
+            drop(gate);
+            assert_eq!(
+                pending.await.err().unwrap().code,
+                ErrorCode::ExtensionUnavailable
+            );
+            assert_idle(&services, &store);
+            drop(
+                authorize_lan(&services, &store, &item, "main", action)
+                    .await
+                    .unwrap(),
+            );
+            assert_idle(&services, &store);
+        }
+    }
+
+    #[tokio::test]
+    async fn lan_stop_authorization_rejects_identity_grant_and_lifecycle_changes_without_leaking() {
+        let (_directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        let request = json!({"action":"stop"});
+        for forged in [
+            ServiceIdentity {
+                id: "test.other".into(),
+                ..identity(&item)
+            },
+            ServiceIdentity {
+                sha256: "b".repeat(64),
+                ..identity(&item)
+            },
+            ServiceIdentity {
+                generation: item.generation + 1,
+                ..identity(&item)
+            },
+        ] {
+            assert_eq!(
+                services
+                    .authorize(
+                        &store,
+                        "main".into(),
+                        forged,
+                        ExtensionService::Lan,
+                        &request
+                    )
+                    .await
+                    .err()
+                    .unwrap()
+                    .code,
+                ErrorCode::Conflict
+            );
+            assert_idle(&services, &store);
+        }
+        for (enabled, grants, allowed) in [
+            (true, vec![ExtensionPermission::TextRead], false),
+            (false, vec![], false),
+            (true, item.granted_permissions.clone(), true),
+        ] {
+            let maintenance = services.mutation(&item.package.manifest.id).await.unwrap();
+            store
+                .set_enabled(
+                    &item.package.manifest.id,
+                    enabled,
+                    grants,
+                    store.snapshot().unwrap().revision,
+                    true,
+                )
+                .unwrap();
+            drop(maintenance);
+            let result = authorize_lan(&services, &store, &item, "main", "stop").await;
+            if allowed {
+                drop(result.unwrap());
+            } else {
+                assert_eq!(result.err().unwrap().code, ErrorCode::ExtensionUnavailable);
+            }
+            assert_idle(&services, &store);
+        }
+        let pause = store.pause();
+        assert_eq!(
+            authorize_lan(&services, &store, &item, "main", "stop")
                 .await
-                .map(|_| ())
-        });
-        // The current-thread runtime runs the task up to its first await at the write gate.
-        tokio::task::yield_now().await;
-        assert_eq!(services.capacity.available_permits(), 7);
-        store.begin_window_close("main").unwrap();
-        store.reopen_window("main").unwrap();
-        drop(gate);
-        assert!(matches!(
-            pending.await.unwrap().unwrap_err().code,
+                .err()
+                .unwrap()
+                .code,
             ErrorCode::ExtensionUnavailable
-        ));
-        assert_eq!(services.capacity.available_permits(), 8);
-        assert!(
-            services
-                .admit(&store, "main".into(), "test.services", false)
+        );
+        assert_idle(&services, &store);
+        drop(pause);
+        store.begin_window_close("main").unwrap();
+        assert_eq!(
+            authorize_lan(&services, &store, &item, "main", "stop")
                 .await
-                .is_ok()
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ExtensionUnavailable
+        );
+        assert_idle(&services, &store);
+        store.reopen_window("main").unwrap();
+        drop(
+            authorize_lan(&services, &store, &item, "main", "stop")
+                .await
+                .unwrap(),
+        );
+        assert_idle(&services, &store);
+        store.begin_shutdown();
+        assert_eq!(
+            authorize_lan(&services, &store, &item, "main", "stop")
+                .await
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ExtensionUnavailable
+        );
+        assert_idle(&services, &store);
+    }
+
+    #[tokio::test]
+    async fn lan_stop_waits_for_both_maintenance_gates_and_cancelled_admission_recovers() {
+        let (_directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        for global in [false, true] {
+            let global_gate = if global {
+                Some(services.gate.write().await)
+            } else {
+                None
+            };
+            let plugin_gate = if global {
+                None
+            } else {
+                Some(services.mutation(&item.package.manifest.id).await.unwrap())
+            };
+            let mut cancelled = Box::pin(authorize_lan(&services, &store, &item, "main", "stop"));
+            assert_pending(&mut cancelled).await;
+            assert_eq!(services.lan_stop_capacity.available_permits(), 0);
+            drop(cancelled);
+            assert_idle(&services, &store);
+            let mut waiting = Box::pin(authorize_lan(&services, &store, &item, "main", "stop"));
+            assert_pending(&mut waiting).await;
+            drop(plugin_gate);
+            drop(global_gate);
+            drop(
+                tokio::time::timeout(Duration::from_secs(2), waiting)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+            assert_idle(&services, &store);
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_identity_read_retains_stop_capacity_and_gates_until_the_worker_finishes() {
+        let (_directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        let (entered_send, entered_recv) = tokio::sync::oneshot::channel();
+        let (release_send, release_recv) = mpsc::channel();
+        let reading_store = store.clone();
+        let current = item.clone();
+        let registry = std::thread::spawn(move || {
+            reading_store
+                .with_current_entry(
+                    &current.package.manifest.id,
+                    &current.package.sha256,
+                    current.generation,
+                    |_| {
+                        entered_send.send(()).unwrap();
+                        release_recv.recv_timeout(Duration::from_secs(5)).unwrap();
+                        Ok(())
+                    },
+                )
+                .unwrap();
+        });
+        entered_recv.await.unwrap();
+        let mut reading = Box::pin(authorize_lan(&services, &store, &item, "main", "stop"));
+        assert_pending(&mut reading).await;
+        drop(reading);
+        assert_eq!(services.lan_stop_capacity.available_permits(), 0);
+        assert_eq!(
+            authorize_lan(&services, &store, &item, "secondary", "stop")
+                .await
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ExtensionBusy
+        );
+        let mut maintenance = Box::pin(services.mutation(&item.package.manifest.id));
+        assert_pending(&mut maintenance).await;
+        let mut archive = Box::pin(services.gate.clone().write_owned());
+        assert_pending(&mut archive).await;
+        release_send.send(()).unwrap();
+        registry.join().unwrap();
+        let maintenance = tokio::time::timeout(Duration::from_secs(2), maintenance)
+            .await
+            .unwrap()
+            .unwrap();
+        drop(maintenance);
+        drop(
+            tokio::time::timeout(Duration::from_secs(2), archive)
+                .await
+                .unwrap(),
+        );
+        assert_idle(&services, &store);
+    }
+
+    #[tokio::test]
+    async fn cancelled_stop_waiter_keeps_the_cloned_lease_until_real_blocking_work_ends() {
+        let (_directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        let active = authorize_lan(&services, &store, &item, "main", "stop")
+            .await
+            .unwrap();
+        let permit = active.permit.clone();
+        drop(active);
+        let (entered_send, entered_recv) = tokio::sync::oneshot::channel();
+        let (release_send, release_recv) = mpsc::channel();
+        let (done_send, done_recv) = tokio::sync::oneshot::channel();
+        let waiter = tokio::spawn(async move {
+            tauri::async_runtime::spawn_blocking(move || {
+                entered_send.send(()).unwrap();
+                release_recv.recv_timeout(Duration::from_secs(5)).unwrap();
+                let mut committed = false;
+                let result = permit.commit(|| {
+                    committed = true;
+                    Ok(())
+                });
+                drop(permit);
+                done_send.send((result, committed)).unwrap();
+            })
+            .await
+        });
+        entered_recv.await.unwrap();
+        waiter.abort();
+        assert!(waiter.await.unwrap_err().is_cancelled());
+        assert!(store.is_running());
+        assert_eq!(services.lan_stop_capacity.available_permits(), 0);
+        let mut maintenance = Box::pin(services.mutation(&item.package.manifest.id));
+        assert_pending(&mut maintenance).await;
+        let mut archive = Box::pin(services.gate.clone().write_owned());
+        assert_pending(&mut archive).await;
+        let pause = store.pause();
+        release_send.send(()).unwrap();
+        let (result, committed) = done_recv.await.unwrap();
+        assert_eq!(result.unwrap_err().code, ErrorCode::ExtensionUnavailable);
+        assert!(!committed);
+        assert_idle(&services, &store);
+        store.wait_window_stopped("main");
+        pause.wait_stopped();
+        drop(pause);
+        drop(
+            tokio::time::timeout(Duration::from_secs(2), maintenance)
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+        drop(
+            tokio::time::timeout(Duration::from_secs(2), archive)
+                .await
+                .unwrap(),
         );
     }
 
@@ -799,13 +1230,11 @@ mod tests {
             .await
             .unwrap();
         // 模拟仍在等待用户的保存服务；其他插件管理无需等待这个读租约。
-        let unrelated = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            services.mutation("test.second"),
-        )
-        .await
-        .expect("Unrelated extension mutation waited for an active service")
-        .unwrap();
+        let unrelated =
+            tokio::time::timeout(Duration::from_secs(2), services.mutation("test.second"))
+                .await
+                .expect("Unrelated extension mutation waited for an active service")
+                .unwrap();
         let queued = services.clone();
         let same_extension = tokio::spawn(async move {
             let _mutation = queued.mutation("test.first").await.unwrap();
@@ -822,30 +1251,25 @@ mod tests {
         let services = Arc::new(ExtensionServices::default());
         let maintenance = services.mutation("test.first").await.unwrap();
         assert!(maintenance.check_identity("test.second").is_err());
-        let (entered_send, entered_recv) = std::sync::mpsc::channel();
-        let (release_send, release_recv) = std::sync::mpsc::channel();
+        let (entered_send, entered_recv) = mpsc::channel();
+        let (release_send, release_recv) = mpsc::channel();
         let actual = maintenance.clone();
         let worker = std::thread::spawn(move || {
             let _maintenance = actual;
             entered_send.send(()).unwrap();
             let _ = release_recv.recv();
         });
-        entered_recv
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .unwrap();
+        entered_recv.recv_timeout(Duration::from_secs(2)).unwrap();
         // 代表前端已停止等待；原生实际工作仍持有 owned 门闩。
         drop(maintenance);
         let queued = services.clone();
         let same_plugin = tokio::spawn(async move { queued.mutation("test.first").await });
         tokio::task::yield_now().await;
         assert!(!same_plugin.is_finished());
-        let other = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            services.mutation("test.second"),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let other = tokio::time::timeout(Duration::from_secs(2), services.mutation("test.second"))
+            .await
+            .unwrap()
+            .unwrap();
         drop(other);
         release_send.send(()).unwrap();
         worker.join().unwrap();

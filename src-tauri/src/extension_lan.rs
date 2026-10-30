@@ -2199,10 +2199,11 @@ pub(crate) async fn request(
 ) -> NativeResult<Value> {
     let request = parse_request(request)?;
     permit.check()?;
+    let lan_stop = matches!(request, Request::Stop {});
     let state = app.state::<ExtensionLan>().inner.clone();
     let owner = owner.to_owned();
     let id = extension_id.to_owned();
-    blocking::run(move || {
+    let dispatch = move || {
         let broker = ExtensionLan { inner: state };
         let result = match request {
             Request::SendAttachment { .. } | Request::SaveAttachment { .. } => {
@@ -2212,8 +2213,18 @@ pub(crate) async fn request(
         };
         permit.check()?;
         Ok(result)
-    })
-    .await
+    };
+    if lan_stop {
+        // 精确 stop 已持独立准入；真实阻塞分派不再竞争普通任务的 16 项容量。
+        // permit 随 worker 持有容量、维护门闩与窗口活动，取消等待不能提前释放。
+        tauri::async_runtime::spawn_blocking(dispatch)
+            .await
+            .map_err(|error| {
+                NativeError::operation(ErrorCode::Internal, "LAN stop did not complete", error)
+            })?
+    } else {
+        blocking::run(dispatch).await
+    }
 }
 pub fn close_window(app: &tauri::AppHandle, owner: &str) {
     app.state::<ExtensionLan>().close_window(owner);
