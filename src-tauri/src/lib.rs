@@ -11,6 +11,7 @@ mod app_config;
 mod autostart;
 pub mod bindings;
 mod blocking;
+pub mod capture;
 mod commands;
 mod data_commands;
 mod database;
