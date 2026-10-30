@@ -108,7 +108,7 @@ impl ConnectionToken {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteStatus {
     Pending,
-    /// 仅表示虚拟 TX 与回显 RX 已提交到会话历史，不是设备 ACK。
+    /// 仅表示虚拟 TX 与回显 RX 已提交到会话历史，不代表外部操作成功。
     VirtualCompleted,
     Cancelled,
 }

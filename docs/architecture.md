@@ -71,13 +71,13 @@ AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留�
 
 命令清单可选择标准或计算预算；原生执行、效果往返、离线 CLI 与预编译均使用已校验清单的档位，编译缓存按预算区分。选择只改变有界 Wasm fuel，不新增权限或延长墙钟；版本与限额见[扩展指南](./extensions.md#执行存储与生命周期)，取舍见 [ADR 0019](./adr/0019-bounded-extension-compute.md)。
 
-## 设备领域
+## 虚拟数据流示例
 
-`device/` 将会话身份、连接代次、有限字节历史与发送仲裁独立于插件页面；只读游标不持有连接生命周期。当前只有显式推进的虚拟输入与发送回显，公共事件保持二进制，不依赖文件、Tauri 或 React。`capture/` 仅消费设备公开值类型，通过有界二进制帧记录和只读回放；设备模块不反向依赖文件格式。
+`device/` 作为桌面应用 demo 基座中的虚拟会话示例，将会话身份、连接代次、有限字节历史与发送仲裁独立于插件页面；只读游标不持有连接生命周期。当前只有显式推进的虚拟输入与发送回显，公共事件保持二进制，不依赖文件、Tauri 或 React。`capture/` 仅消费会话公开值类型，通过有界二进制帧记录和只读回放；会话模块不反向依赖文件格式。
 
 `device-tool` 通过显式虚拟输入与文件参数组合两模块，不初始化桌面，不访问用户应用存档；记录创建不覆盖既有文件，回放不会执行历史 TX。
 
-当前未把该模块注册成桌面 state、IPC 或插件服务，也没有真实串口、后台线程或物理设备权限。模块级独立不等于从当前宿主 crate 的编译依赖或基础包移除；原生适配和工作台按 [实施计划](./plans/device-workbench-foundation.md) 继续演进。当前身份、容量与失败语义统一见 [设备工作台指南](./device-workbench.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
+当前未把该模块注册成桌面 state、IPC 或插件服务，也没有自动后台线程或外部资源授权。模块级独立不等于从当前宿主 crate 的编译依赖或基础包移除；[实施计划](./plans/device-workbench-foundation.md) 中的后续方向按实际示例需求评估。当前身份、容量与失败语义统一见 [虚拟会话指南](./device-workbench.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
 
 ## 命令与桌面交互
 

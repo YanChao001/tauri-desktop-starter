@@ -19,7 +19,7 @@
 | 主题、布局、控件、动效与无障碍              | [界面规范](./conventions/ui-guidelines.md)、[皮肤资源](../resources/skins/README.md)        |
 | 分支、提交、评审与合并                      | [Git 协作](./conventions/git-workflow.md)、[贡献流程](../CONTRIBUTING.md)                   |
 | 跨模块、兼容或高影响设计                    | [设计门槛](./engineering-at-scale.md#设计评审与-adr-门槛)、[提案模板](./design-template.md) |
-| 设备会话、虚拟采集与原始记录回放            | [设备工作台指南](./device-workbench.md)、[实施计划](./plans/device-workbench-foundation.md) |
+| 虚拟会话、数据流与原始记录回放示例          | [虚拟会话指南](./device-workbench.md)、[实施计划](./plans/device-workbench-foundation.md)   |
 | 长期技术取舍与历史                          | [ADR 索引](./adr/README.md)                                                                 |
 | 编码智能体工作约束                          | [AGENTS.md](../AGENTS.md)                                                                   |
 

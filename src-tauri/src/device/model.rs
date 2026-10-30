@@ -74,7 +74,7 @@ pub struct DeviceEvent {
     pub session_id: SessionId,
     pub sequence: u64,
     pub epoch: u64,
-    /// 会话开始后的主机观察时间，不是线路上逐字节到达时间。
+    /// 会话开始后的主机观察时间，不表示来源端的逐字节时间。
     pub timestamp_micros: u64,
     pub kind: DeviceEventKind,
 }
@@ -118,7 +118,7 @@ impl DeviceEvent {
     }
 }
 
-/// 已被会话历史淘汰的半开序号区间；不宣称知道物理设备丢了多少字节。
+/// 已被会话历史淘汰的半开序号区间；不推断来源端的数据丢失数量。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamGap {
     pub session_id: SessionId,

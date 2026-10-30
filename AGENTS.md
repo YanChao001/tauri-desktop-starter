@@ -5,6 +5,7 @@
 ## 开始工作
 
 - 先读 [README](./README.md) 和 [文档索引](./docs/README.md)，再按任务阅读相关文档与源码，不必为局部改动通读全部资料。
+- 项目定位为通用桌面应用 demo 基座；文档、代码示例与后续计划描述通用能力，具体业务方向由派生项目定义。
 - 默认保留完整可操作 demo；`minimal` 仅改变展示，不删除源码、依赖或权限；真实裁剪与新增页面 / IPC 见 [模块指南](./docs/demo-modules.md)。
 - 按任务查阅 [架构](./docs/architecture.md)、[开发](./docs/development.md) 或 [排障](./docs/troubleshooting.md)。命令、版本和默认值以配置与实现为准，发现文档偏差时一并修正。
 - 跨模块、兼容、权限、窗口生命周期或发布恢复变更按 [设计门槛](./docs/engineering-at-scale.md#设计评审与-adr-门槛) 明确影响和验证方案；长期取舍记入 [ADR](./docs/adr/README.md)，普通局部改动无需提案或 ADR。

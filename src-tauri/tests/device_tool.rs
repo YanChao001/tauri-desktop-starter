@@ -40,7 +40,7 @@ fn record(path: &std::path::Path, frames: &str) -> Value {
 #[test]
 fn virtual_capture_and_read_only_replay_roundtrip_real_binary_bytes() {
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("虚拟串口记录.dcap");
+    let path = directory.path().join("虚拟数据记录.dcap");
     let recorded = record(&path, "4");
     assert_eq!(recorded["source"], "virtual");
     assert_eq!(recorded["complete"], true);

@@ -1,4 +1,4 @@
-//! 组合虚拟设备与原始记录回放，不初始化桌面、不打开真实设备或用户应用存档。
+//! 组合虚拟会话与原始记录回放，仅使用内存示例和显式文件参数。
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -239,9 +239,7 @@ fn record_virtual(output: &Path, frames: usize) -> ToolResult<Value> {
         if engine.step_virtual(&token, 1)? != 1
             || ticket.try_result() != WriteStatus::VirtualCompleted
         {
-            return Err(
-                "Virtual write did not complete; no hardware acknowledgement is implied".into(),
-            );
+            return Err("Virtual write did not commit its simulated events".into());
         }
         append_available(&mut reader, &mut writer, &mut observation)?;
     }
@@ -314,7 +312,7 @@ fn execute(action: Action) -> ToolResult<Option<Value>> {
     match action {
         Action::Help => {
             println!(
-                "Usage: device-tool record-virtual --output <new file> [--frames <1..4096>]\n       device-tool replay --input <capture file> [--recover-prefix]\n\nVirtual captures are synthetic. Replay never opens or writes a physical device."
+                "Usage: device-tool record-virtual --output <new file> [--frames <1..4096>]\n       device-tool replay --input <capture file> [--recover-prefix]\n\nVirtual captures are synthetic. Replay reads recorded events without executing writes."
             );
             Ok(None)
         }
