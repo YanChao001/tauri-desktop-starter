@@ -9,10 +9,13 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useContext } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { createTranslator } from "@/i18n/translate";
 import { en } from "@/i18n/en";
+import { zhCN } from "@/i18n/zh-CN";
+import { I18nContext } from "@/providers/i18n-context";
 import { MediaPreview } from "./content-panels";
 
 const bridge = vi.hoisted(() => ({
@@ -30,7 +33,8 @@ vi.mock("@/providers/settings", () => ({
 }));
 
 vi.mock("@/providers/i18n", () => ({
-  useI18n: () => ({ language: "en", t: createTranslator(en) }),
+  useI18n: () =>
+    useContext(I18nContext) ?? { language: "en", t: createTranslator(en) },
 }));
 afterEach(() => {
   cleanup();
@@ -80,6 +84,67 @@ it("Markdown 表格保留表格语义，并提供有名称的键盘滚动区域"
   expect(within(region).getAllByRole("columnheader")).toHaveLength(2);
   await user.tab();
   expect(region).toHaveFocus();
+});
+
+it("更新 Markdown 表格内容时保留键盘焦点和局部滚动位置", () => {
+  const { rerender } = render(
+    <SafeMarkdown content={"| A | B |\n| - | - |\n| 1 | 2 |"} />,
+  );
+  const region = screen.getByRole("region", { name: "Markdown table" });
+  region.focus();
+  region.scrollLeft = 120;
+
+  rerender(<SafeMarkdown content={"| A | B |\n| - | - |\n| 3 | 4 |"} />);
+
+  expect(screen.getByRole("cell", { name: "3" })).toBeVisible();
+  expect(region).toHaveFocus();
+  expect(
+    screen.getByRole("region", { name: "Markdown table" }).scrollLeft,
+  ).toBe(120);
+});
+
+it("更新 Markdown 代码块时保留键盘焦点和局部滚动位置", () => {
+  const { container, rerender } = render(
+    <SafeMarkdown content={"```text\nfirst\n```"} />,
+  );
+  const block = container.querySelector("pre")!;
+  block.focus();
+  block.scrollTop = 80;
+
+  rerender(<SafeMarkdown content={"```text\nsecond\n```"} />);
+
+  expect(screen.getByText("second")).toBeVisible();
+  expect(block).toHaveFocus();
+  expect(container.querySelector("pre")?.scrollTop).toBe(80);
+});
+
+it("Markdown 内容不变时仍更新翻译，并保留表格的键盘位置", () => {
+  const content =
+    "| A |\n| - |\n| 1 |\n\n- [x] Done\n\n![image](https://example.test/image.png)";
+  const { rerender } = render(
+    <I18nContext.Provider value={{ language: "en", t: createTranslator(en) }}>
+      <SafeMarkdown content={content} />
+    </I18nContext.Provider>,
+  );
+  const region = screen.getByRole("region", { name: "Markdown table" });
+  region.focus();
+
+  rerender(
+    <I18nContext.Provider value={{ language: "zh", t: createTranslator(zhCN) }}>
+      <SafeMarkdown content={content} />
+    </I18nContext.Provider>,
+  );
+
+  expect(screen.getByRole("region", { name: zhCN["labs.media.table"] })).toBe(
+    region,
+  );
+  expect(region).toHaveFocus();
+  expect(
+    screen.getByRole("checkbox", { name: zhCN["labs.media.taskCompleted"] }),
+  ).toBeChecked();
+  expect(
+    screen.getByText(new RegExp(zhCN["labs.media.blockedImage"])),
+  ).toBeVisible();
 });
 
 it.each([

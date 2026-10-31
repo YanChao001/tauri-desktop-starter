@@ -53,7 +53,7 @@ export function ExtensionCard({
 }: {
   item: ExtensionInfo;
   busy: boolean;
-  update: MarketEntry | null;
+  update: Pick<MarketEntry, "package"> | null;
   onOpen: (commandId?: string) => void;
   onWindow: (commandId: string) => void;
   onEnable: () => void;

@@ -2463,6 +2463,67 @@ test("full screen menu and F11 share real fullscreen state and restore the sideb
   await expect(page.locator(".app-chrome")).toBeVisible();
 });
 
+for (const theme of ["light", "dark"]) {
+  test(`full screen automatic focus handoff avoids a content frame in ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme });
+    await page.goto("./#/data-studio");
+    const main = page.getByRole("main");
+    const view = page.getByRole("button", { name: "View", exact: true });
+    await view.focus();
+    await page.keyboard.press("F11");
+    await expect(page.locator(".app-shell")).toHaveClass(/app-shell-immersive/);
+    await expect(main).toBeFocused();
+    await expect(main).toHaveCSS("box-shadow", "none");
+    await expect(main).toHaveCSS("outline-style", "none");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".app-shell")).not.toHaveClass(
+      /app-shell-immersive/,
+    );
+    await expect(main).toHaveCSS("box-shadow", "none");
+
+    // 菜单关闭后的延迟焦点恢复也应保持正文无框。
+    await view.click();
+    await page.getByRole("menuitem", { name: /Immersive fullscreen/ }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".app-chrome")).toBeHidden();
+    await expect(main).toHaveCSS("box-shadow", "none");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".app-shell")).not.toHaveClass(
+      /app-shell-immersive/,
+    );
+    await expect(main).toHaveCSS("box-shadow", "none");
+
+    await main.focus();
+    await page.keyboard.press("Control+k");
+    await page
+      .getByRole("combobox", { name: "Quick actions", exact: true })
+      .fill("fullscreen");
+    await page.getByRole("option", { name: /Immersive fullscreen/ }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".app-shell")).toHaveClass(/app-shell-immersive/);
+    await expect(main).toHaveCSS("box-shadow", "none");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".app-shell")).not.toHaveClass(
+      /app-shell-immersive/,
+    );
+    await expect(main).toHaveCSS("box-shadow", "none");
+
+    // 真正用 Tab 进入滚动区时，仍须显示可见焦点并允许键盘滚动。
+    await main.focus();
+    await page.keyboard.press("Tab");
+    await expect(main).not.toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(main).toBeFocused();
+    await expect(main).not.toHaveCSS("box-shadow", "none");
+    await page.keyboard.press("PageDown");
+    await expect
+      .poll(() => main.evaluate((node) => node.scrollTop))
+      .toBeGreaterThan(0);
+  });
+}
+
 test("immersive edges animate over the content and keep portalled menus usable", async ({
   page,
 }, testInfo) => {

@@ -63,7 +63,7 @@ export default function Tasks() {
   const accept = useCallback((next: WorkbenchTaskSnapshot) => {
     if (mounted.current) {
       setSnapshot((current) =>
-        !current || next.revision >= current.revision ? next : current,
+        !current || next.revision > current.revision ? next : current,
       );
       setError(null);
     }

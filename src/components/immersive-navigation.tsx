@@ -27,11 +27,12 @@ export function ImmersiveNavigation() {
   }, []);
 
   useLayoutEffect(() => {
-    // 进入全屏时将旧导航焦点交给正文，避免菜单关闭后仍撑开标题栏。
+    // 自动交接焦点不显示正文焦点环；Tab 进入正文时仍保留键盘提示。
+    // 避免菜单关闭后旧导航焦点仍撑开标题栏。
     if (document.activeElement?.closest("#app-chrome, #app-sidebar"))
       document
         .querySelector<HTMLElement>(".app-main")
-        ?.focus({ preventScroll: true });
+        ?.focus({ preventScroll: true, focusVisible: false });
   }, []);
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export function ImmersiveNavigation() {
         ) {
           document
             .querySelector<HTMLElement>(".app-main")
-            ?.focus({ preventScroll: true });
+            ?.focus({ preventScroll: true, focusVisible: false });
           return;
         }
       reconcile();

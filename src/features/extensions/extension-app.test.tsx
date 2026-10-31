@@ -25,14 +25,16 @@ import { ExtensionActivityProvider } from "./extension-activity";
 function render(ui: ReactNode) {
   return renderUi(ui, {
     wrapper: ({ children }) => (
-      <TooltipProvider>
-        <ExtensionChromeProvider scope="test-session">
-          <nav aria-label="Session navigation">
-            <ExtensionChromeSlot placement="navigation" />
-          </nav>
-          {children}
-        </ExtensionChromeProvider>
-      </TooltipProvider>
+      <ExtensionsProvider>
+        <TooltipProvider>
+          <ExtensionChromeProvider scope="test-session">
+            <nav aria-label="Session navigation">
+              <ExtensionChromeSlot placement="navigation" />
+            </nav>
+            {children}
+          </ExtensionChromeProvider>
+        </TooltipProvider>
+      </ExtensionsProvider>
     ),
   });
 }
@@ -753,23 +755,23 @@ it("refreshes the requested locale after a draft changed before the locale effec
       fields: [{ id: "query", label: "查询", value: "Canonical value" }],
     });
   function DraftPatch({ draft }: { draft?: string }) {
-    const { sessions } = useExtensions();
+    const { sessionCache } = useExtensions();
     useEffect(() => {
       if (draft !== undefined)
-        sessions.get(`${item.package.manifest.id}:open`)!.update({
+        sessionCache.sessions.get(`${item.package.manifest.id}:open`)!.update({
           fields: {
             query: draft,
           },
         });
-    }, [draft, sessions]);
+    }, [draft, sessionCache]);
     return null;
   }
   function workspace(draft?: string) {
     return (
-      <ExtensionsProvider>
+      <>
         <DraftPatch draft={draft} />
         {app()}
-      </ExtensionsProvider>
+      </>
     );
   }
   const mounted = render(workspace());
@@ -915,10 +917,10 @@ it("restores the same view and edited fields when navigating away and back withi
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : <p>Other page</p>}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -949,10 +951,10 @@ it("keeps a session locked when returning while its export is still pending", as
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : <p>Other page</p>}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1028,20 +1030,20 @@ it("keeps select drafts in the generic form restricted to the current view optio
     ],
   });
   function DraftPatch({ value }: { value?: string }) {
-    const { sessions } = useExtensions();
+    const { sessionCache } = useExtensions();
     useEffect(() => {
       if (value !== undefined)
-        sessions
+        sessionCache.sessions
           .get(`${item.package.manifest.id}:open`)!
           .update({ fields: { query: value } });
-    }, [sessions, value]);
+    }, [sessionCache, value]);
     return null;
   }
   const workspace = (value?: string) => (
-    <ExtensionsProvider>
+    <>
       <DraftPatch value={value} />
       {app()}
-    </ExtensionsProvider>
+    </>
   );
   const mounted = render(workspace());
   await screen.findByRole("combobox", { name: "Category" });
@@ -1124,10 +1126,10 @@ it("preserves the draft and unlocks a remounted session when its export is cance
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : <p>Other page</p>}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1244,7 +1246,7 @@ it("starts a fresh session for a higher package version even when the Wasm hash 
       },
     };
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVersion("1.1.0")}>Upgrade</button>
         <ExtensionApp
           key={version}
@@ -1254,7 +1256,7 @@ it("starts a fresh session for a higher package version even when the Wasm hash 
           onClose={onClose}
           onSettled={onSettled}
         />
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1281,7 +1283,7 @@ it("isolates retained sessions and late cancellation across same-hash installati
   function Workspace() {
     const [generation, setGeneration] = useState(1);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setGeneration(2)}>Replace installation</button>
         <ExtensionApp
           key={generation}
@@ -1291,7 +1293,7 @@ it("isolates retained sessions and late cancellation across same-hash installati
           onClose={onClose}
           onSettled={onSettled}
         />
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1325,10 +1327,10 @@ it("observes a retained run directly after remount and preserves its failure fee
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : null}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);

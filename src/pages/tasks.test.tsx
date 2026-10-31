@@ -7,6 +7,7 @@ import {
   act,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Profiler } from "react";
 import * as native from "@/lib/tauri";
 import type { WorkbenchTask, WorkbenchTaskSnapshot } from "@/lib/tauri";
 import Tasks from "./tasks";
@@ -86,9 +87,54 @@ beforeEach(() => {
   vi.mocked(native.startWorkbenchTask).mockResolvedValue(task);
   vi.mocked(native.cancelWorkbenchTask).mockResolvedValue(undefined);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("background task center", () => {
+  it("does not commit the task history again when polling returns the same revision", async () => {
+    vi.useFakeTimers();
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockImplementation(async () => ({
+      revision: 2,
+      active: 0,
+      queued: 0,
+      tasks: [{ ...task, status: "completed" }],
+    }));
+    const onRender = vi.fn();
+    render(
+      <Profiler id="tasks" onRender={onRender}>
+        <Tasks />
+      </Profiler>,
+    );
+    await act(async () => {});
+    expect(screen.getByText("tasks.status.completed")).toBeVisible();
+    onRender.mockClear();
+
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(onRender).not.toHaveBeenCalled();
+
+    act(() => listener?.({ revision: 3, active: 1, queued: 0, tasks: [task] }));
+    expect(screen.getByText("tasks.status.running")).toBeVisible();
+    expect(onRender).toHaveBeenCalled();
+  });
+
+  it("clears a refresh failure when a valid event repeats the current revision", async () => {
+    vi.useFakeTimers();
+    render(<Tasks />);
+    await act(async () => {});
+    expect(screen.getByText("tasks.empty")).toBeVisible();
+    const failure = { code: "STORAGE_IO" };
+    vi.mocked(native.getWorkbenchTaskSnapshot).mockRejectedValue(failure);
+
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(toast.error).toHaveBeenCalledOnce();
+    act(() => listener?.({ revision: 1, active: 0, queued: 0, tasks: [] }));
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(toast.error).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("tasks.empty")).toBeVisible();
+  });
+
   it("distinguishes a pending first snapshot from an empty history and zero counts", async () => {
     let resolve!: (value: WorkbenchTaskSnapshot) => void;
     vi.mocked(native.getWorkbenchTaskSnapshot).mockReturnValueOnce(

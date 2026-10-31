@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import {
   DownloadIcon,
-  ExternalLinkIcon,
+  BookOpenIcon,
   RefreshCwIcon,
+  SearchIcon,
   ShieldCheckIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,20 +28,29 @@ import {
 import { ResourceError } from "@/components/native-page";
 import { ExternalLink } from "@/components/external-link";
 import { APP_CONFIG } from "@/config/app";
+import { repositoryFileUrl } from "@/features/catalog/model";
 import { useI18n } from "@/providers/i18n";
 import type {
   ExtensionInfo,
+  BundledExtensionCatalog,
   MarketDownloadProgress,
   MarketEntry,
   MarketSnapshot,
 } from "@/lib/tauri";
 import { ExtensionIcon } from "./extension-icon";
-import { compareExtensionVersions } from "./market-model";
+import {
+  compareExtensionVersions,
+  extensionCatalogEntries,
+  type ExtensionCatalogEntry,
+} from "./market-model";
 import { ExtensionHelp } from "./extension-help";
 import { nativeErrorText } from "@/lib/native-error";
 
 export function ExtensionMarket({
   snapshot,
+  bundled = null,
+  bundledLoading = false,
+  bundledError = null,
   loading,
   error,
   busy,
@@ -50,8 +60,13 @@ export function ExtensionMarket({
   installed,
   onRefresh,
   onDownload,
+  onInstallBundled,
+  installActions,
 }: {
   snapshot: MarketSnapshot | null;
+  bundled?: BundledExtensionCatalog | null;
+  bundledLoading?: boolean;
+  bundledError?: unknown;
   loading: boolean;
   error: unknown;
   busy: boolean;
@@ -61,6 +76,10 @@ export function ExtensionMarket({
   installed: readonly ExtensionInfo[];
   onRefresh: () => void;
   onDownload: (entry: MarketEntry) => void;
+  onInstallBundled: (
+    entry: ExtensionCatalogEntry & { kind: "bundled" },
+  ) => void;
+  installActions?: ReactNode;
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -78,22 +97,17 @@ export function ExtensionMarket({
       });
   }, [snapshot, error, t, id]);
   const needle = query.trim().toLocaleLowerCase();
-  const entries = (snapshot?.catalog.entries ?? [])
-    .filter(
-      (entry) =>
-        (category === "all" || entry.category === category) &&
-        [
-          entry.package.manifest.name,
-          entry.package.manifest.id,
-          entry.package.manifest.description,
-          entry.package.manifest.author,
-        ].some((text) => text.toLocaleLowerCase().includes(needle)),
-    )
-    .sort(
-      (a, b) =>
-        Number(b.featured) - Number(a.featured) ||
-        a.package.manifest.name.localeCompare(b.package.manifest.name),
-    );
+  const catalog = extensionCatalogEntries(bundled, snapshot);
+  const entries = catalog.filter(
+    (entry) =>
+      (category === "all" || entry.category === category) &&
+      [
+        entry.package.manifest.name,
+        entry.package.manifest.id,
+        entry.package.manifest.description,
+        entry.package.manifest.author,
+      ].some((text) => text.toLocaleLowerCase().includes(needle)),
+  );
   const incompatibleEntries = (snapshot?.incompatibleEntries ?? []).filter(
     (entry) =>
       (category === "all" || entry.category === category) &&
@@ -101,106 +115,123 @@ export function ExtensionMarket({
         text.toLocaleLowerCase().includes(needle),
       ),
   );
-  const statusMessage = loading
-    ? t("ext.market.loading")
-    : snapshot && (snapshot.stale || error)
-      ? t("ext.market.stale")
-      : "";
+  const statusMessage =
+    loading || bundledLoading
+      ? t("ext.market.loading")
+      : snapshot && (snapshot.stale || error)
+        ? t("ext.market.stale")
+        : "";
   return (
     <section
       aria-label={t("ext.market.title")}
-      aria-busy={loading}
+      aria-busy={loading || bundledLoading}
       className="@container/market space-y-4"
     >
-      <div className="space-y-3 rounded-xl border app-surface p-4">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-          <h3 className="flex items-center gap-2 font-semibold">
-            <ShieldCheckIcon className="size-5 shrink-0 text-primary" />
+      <div className="space-y-3 rounded-xl border app-surface p-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <h3 className="flex shrink-0 items-center gap-2 text-sm font-semibold">
+            <ShieldCheckIcon
+              className="size-4 text-primary"
+              aria-hidden="true"
+            />
             {t("ext.market.title")}
             <ExtensionHelp label={t("ext.market.title")}>
               {t("ext.market.hint")}
             </ExtensionHelp>
           </h3>
-          <div className="flex items-center gap-2">
-            {APP_CONFIG.extensionMarket.repository ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button asChild variant="ghost">
-                      <ExternalLink
-                        href={`https://github.com/${APP_CONFIG.extensionMarket.repository}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={t("ext.market.repository")}
-                      >
-                        <ExternalLinkIcon className="size-4" />
-                        <span className="hidden @2xl/market:inline">
-                          {t("ext.market.repository")}
-                        </span>
-                      </ExternalLink>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {t("ext.market.repository")}
-                    {snapshot ? (
-                      <p className="mt-1 text-xs">
-                        {t("ext.market.revision", {
-                          revision: snapshot.catalog.revision,
-                        })}
-                      </p>
-                    ) : null}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-            <Button
-              variant="outline"
-              disabled={loading || busy}
-              onClick={onRefresh}
-            >
-              <RefreshCwIcon className="size-4" />
-              {t("ext.market.refresh")}
-            </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p
+                  role="status"
+                  tabIndex={statusMessage ? 0 : undefined}
+                  className="min-w-0 flex-1 truncate rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {statusMessage}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                {statusMessage}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon">
+                    <ExternalLink
+                      href={repositoryFileUrl(
+                        APP_CONFIG.repositoryUrl,
+                        "docs/extensions.md",
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={t("ext.docs")}
+                    >
+                      <BookOpenIcon aria-hidden="true" />
+                    </ExternalLink>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{t("ext.docs")}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("ext.market.refresh")}
+                    disabled={loading || bundledLoading || busy}
+                    onClick={onRefresh}
+                  >
+                    <RefreshCwIcon aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {t("ext.market.refresh")}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
         <ResourceError error={!snapshot ? error : null} retry={onRefresh} />
-        <div className="grid gap-3 @xl/market:grid-cols-[minmax(0,1fr)_12rem]">
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex h-6 min-w-0 items-center gap-3">
-              <Label htmlFor={`${id}-search`} className="shrink-0">
-                {t("ext.market.search")}
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p
-                      role="status"
-                      tabIndex={statusMessage ? 0 : undefined}
-                      className="min-w-0 flex-1 truncate rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {statusMessage}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    {statusMessage}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+        <ResourceError error={bundledError} retry={onRefresh} />
+        <div
+          className={cn(
+            "grid gap-2",
+            installActions
+              ? "grid-cols-[minmax(0,1fr)_auto] @sm/market:grid-cols-[minmax(0,1fr)_9rem_auto] @xl/market:grid-cols-[minmax(0,1fr)_12rem_auto]"
+              : "grid-cols-[minmax(0,1fr)_9rem] @xl/market:grid-cols-[minmax(0,1fr)_12rem]",
+          )}
+        >
+          <div
+            className={cn(
+              "relative min-w-0",
+              installActions && "col-span-full @sm/market:col-span-1",
+            )}
+          >
+            <Label htmlFor={`${id}-search`} className="sr-only">
+              {t("ext.market.search")}
+            </Label>
+            <SearchIcon
+              className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
               id={`${id}-search`}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("ext.market.searchHint")}
+              className="pl-9"
             />
           </div>
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex h-6 items-center">
-              <Label htmlFor={`${id}-category`}>
-                {t("ext.market.category")}
-              </Label>
-            </div>
+          <div className="min-w-0">
+            <Label htmlFor={`${id}-category`} className="sr-only">
+              {t("ext.market.category")}
+            </Label>
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger id={`${id}-category`} className="w-full">
                 <SelectValue />
@@ -216,15 +247,23 @@ export function ExtensionMarket({
               </SelectContent>
             </Select>
           </div>
+          {installActions ? (
+            <div className="flex min-w-0 items-center justify-end">
+              {installActions}
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="extension-card-grid">
         {entries.map((entry) => {
           const manifest = entry.package.manifest;
+          const hostVersion =
+            entry.kind === "bundled"
+              ? bundled?.hostVersion
+              : snapshot?.hostVersion;
           const compatible =
-            snapshot !== null &&
             compareExtensionVersions(
-              snapshot.hostVersion ?? "0.0.0",
+              hostVersion ?? "0.0.0",
               manifest.minHostVersion,
             ) >= 0;
           const current = installed.find(
@@ -271,7 +310,7 @@ export function ExtensionMarket({
               : (percent ?? 0);
           return (
             <article
-              key={manifest.id}
+              key={`${entry.kind}:${manifest.id}`}
               tabIndex={-1}
               className="row-span-3 grid min-w-0 grid-rows-subgrid gap-4 rounded-xl border app-surface p-4"
             >
@@ -287,8 +326,8 @@ export function ExtensionMarket({
                     {manifest.description}
                   </p>
                 </div>
-                {entry.featured ? (
-                  <Badge variant="secondary">{t("ext.market.featured")}</Badge>
+                {entry.kind === "bundled" ? (
+                  <Badge variant="secondary">{t("ext.market.bundled")}</Badge>
                 ) : null}
               </div>
               <div className="flex min-w-0 flex-wrap items-start gap-2 self-start text-xs wrap-anywhere text-muted-foreground">
@@ -318,7 +357,11 @@ export function ExtensionMarket({
                     active &&
                       "bg-primary/10 text-foreground disabled:opacity-100",
                   )}
-                  onClick={() => onDownload(entry)}
+                  onClick={() =>
+                    entry.kind === "bundled"
+                      ? onInstallBundled(entry)
+                      : onDownload(entry)
+                  }
                 >
                   {active ? (
                     <span
@@ -395,11 +438,14 @@ export function ExtensionMarket({
           </article>
         ))}
       </div>
-      {snapshot && entries.length === 0 && incompatibleEntries.length === 0 ? (
+      {(snapshot || bundled) &&
+      !loading &&
+      !bundledLoading &&
+      entries.length === 0 &&
+      incompatibleEntries.length === 0 ? (
         <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
           {t(
-            snapshot.catalog.entries.length +
-              (snapshot.incompatibleEntries?.length ?? 0)
+            catalog.length + (snapshot?.incompatibleEntries?.length ?? 0)
               ? "ext.market.noMatches"
               : "ext.market.empty",
           )}

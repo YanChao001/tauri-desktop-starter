@@ -22,7 +22,6 @@ import {
 
 import { extensionInstallationIdentity } from "./extension-model";
 import {
-  createExtensionSession,
   ExtensionSessionCache,
   type ExtensionSession,
 } from "./extension-session-cache";
@@ -127,7 +126,6 @@ export function ExtensionsProvider({ children }: { children: ReactNode }) {
       error,
       loading,
       reload,
-      sessions: sessionCache.sessions,
       sessionCache,
     }),
     [data, error, loading, reload, sessionCache],
@@ -141,11 +139,10 @@ export function useExtensions() {
 }
 
 export function useExtensionSession(key: string, identity: string) {
-  const context = useContext(Context);
-  const cache = context?.sessionCache;
-  const [session] = useState<ExtensionSession>(
-    () => cache?.getOrCreate(key, identity) ?? createExtensionSession(identity),
+  const { sessionCache: cache } = useExtensions();
+  const [session] = useState<ExtensionSession>(() =>
+    cache.getOrCreate(key, identity),
   );
-  useLayoutEffect(() => cache?.retain(session), [cache, session]);
+  useLayoutEffect(() => cache.retain(session), [cache, session]);
   return session;
 }

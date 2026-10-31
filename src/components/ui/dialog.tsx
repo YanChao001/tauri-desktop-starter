@@ -14,7 +14,11 @@ function focusDialogTarget(target: Element | null) {
     !target.isConnected || target.matches(":disabled") ||
     target.closest("[hidden], [inert], [data-slot=dialog-content][data-state=closed]")
   ) return false
-  target.focus({ preventScroll: true })
+  // 正文仅承接自动恢复的兜底焦点，避免绘制覆盖整个内容区的焦点框。
+  target.focus({
+    preventScroll: true,
+    focusVisible: target.tagName === "MAIN" ? false : undefined,
+  })
   return document.activeElement === target
 }
 
