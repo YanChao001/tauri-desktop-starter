@@ -77,7 +77,7 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
   vi.mocked(native.extensionCredentialSlots).mockResolvedValue([
     { origin: "https://service.example", alias: "api" },
   ]);
-  fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(native.setExtensionCredential).toHaveBeenCalledWith(
       "example.resources",
@@ -94,7 +94,7 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
     await screen.findByRole("button", { name: "Delete credential api" }),
   );
   const confirmation = await screen.findByRole("dialog", {
-    name: "Delete credential",
+    name: "Delete",
   });
   expect(confirmation).toHaveAccessibleDescription(
     expect.stringContaining("https://service.example"),
@@ -107,7 +107,7 @@ it("saves an origin-scoped credential, clears the secret input and deletes only 
   );
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: "Delete credential",
+      name: "Delete",
     }),
   );
   await waitFor(() =>
@@ -133,18 +133,14 @@ it("keeps failed credential deletion open for retry and focuses the origin when 
     await screen.findByRole("button", { name: "Delete credential api" }),
   );
   const dialog = await screen.findByRole("dialog", {
-    name: "Delete credential",
+    name: "Delete",
   });
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Delete credential" }),
-  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   expect(within(dialog).getByRole("alert")).toBeVisible();
   expect(dialog).toBeVisible();
   vi.mocked(native.extensionCredentialSlots).mockResolvedValue([]);
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Delete credential" }),
-  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
   await waitFor(() =>
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
   );
@@ -159,7 +155,7 @@ it("keeps failed credential deletion open for retry and focuses the origin when 
 it("requires confirmation and the displayed storage revision to clear private data", async () => {
   render(<ExtensionResources item={item} />);
   await screen.findByText("2 entries · 100 bytes");
-  const clear = screen.getByRole("button", { name: "Clear private storage" });
+  const clear = screen.getByRole("button", { name: "Clear data" });
   fireEvent.click(clear);
   const dialog = await screen.findByRole("dialog");
   expect(native.clearExtensionStorage).not.toHaveBeenCalled();
@@ -168,7 +164,7 @@ it("requires confirmation and the displayed storage revision to clear private da
   fireEvent.click(clear);
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: "Clear private storage",
+      name: "Clear data",
     }),
   );
   await waitFor(() =>
@@ -195,7 +191,7 @@ it("retains entered credentials after a failed save and keeps storage visible wh
   vi.mocked(native.setExtensionCredential).mockRejectedValueOnce({
     code: "KEYRING_ERROR",
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(native.setExtensionCredential).toHaveBeenCalledOnce(),
   );
@@ -213,7 +209,7 @@ it("settles an initial storage failure and keeps refresh available without repor
   render(<ExtensionResources item={item} />);
   await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   const storageStatus = screen.getByRole("status", {
-    name: "Plugin private storage",
+    name: "Private data",
   });
   expect(within(storageStatus).getByRole("alert")).toHaveTextContent(
     "Private storage uses a newer schema version.",
@@ -292,19 +288,17 @@ it("keeps a failed clear confirmation open for retry and reports the error as a 
   });
   render(<ExtensionResources item={item} />);
   await screen.findByText("2 entries · 100 bytes");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Clear private storage" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Clear data" }));
   const dialog = await screen.findByRole("dialog");
   const clear = within(dialog).getByRole("button", {
-    name: "Clear private storage",
+    name: "Clear data",
   });
   fireEvent.click(clear);
   await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   expect(dialog).toBeVisible();
   expect(clear).toBeEnabled();
   expect(dialog).toHaveAccessibleDescription(
-    expect.stringContaining("Current sessions and selected files are retained"),
+    expect.stringContaining("Current sessions and selected files remain"),
   );
 });
 
@@ -323,7 +317,7 @@ it("does not restart resource loading after a save completes on a disposed scree
   fireEvent.change(screen.getByLabelText("Secret / access token"), {
     target: { value: "secret" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   mounted.unmount();
   await act(async () => finish());
   expect(native.extensionStorageInfo).toHaveBeenCalledOnce();
@@ -343,12 +337,12 @@ it("keeps ordinary save failures separate from persistent resource read status",
   fireEvent.change(screen.getByLabelText("Secret / access token"), {
     target: { value: "keep-secret" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
   expect(
-    within(
-      screen.getByRole("status", { name: "Plugin private storage" }),
-    ).queryByRole("alert"),
+    within(screen.getByRole("status", { name: "Private data" })).queryByRole(
+      "alert",
+    ),
   ).not.toBeInTheDocument();
   expect(
     within(

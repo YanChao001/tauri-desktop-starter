@@ -27,25 +27,25 @@ const manifest = {
   formatVersion: 3,
   apiVersion: 2,
   minHostVersion: "0.1.4",
-  id: "market.text-tools",
+  id: "market.registry-fixture",
   version: "1.0.0",
-  name: "文本工具箱",
+  name: "市场校验夹具",
   author: "Tauri Desktop Starter",
   description: "仅用于离线验签和市场安装校验的测试扩展。",
   icon: "puzzle",
   commands: [
     {
-      id: "uppercase",
-      title: "转为大写",
-      function: "uppercase",
+      id: "echo",
+      title: "回显",
+      function: "echo",
       inputFormat: "text",
       resultFormat: "text",
       permissions: ["text:read"],
     },
     {
-      id: "lowercase",
-      title: "转为小写",
-      function: "lowercase",
+      id: "repeat",
+      title: "重复",
+      function: "repeat",
       inputFormat: "text",
       resultFormat: "text",
       permissions: ["text:read"],
@@ -55,7 +55,7 @@ const manifest = {
   optionalPermissions: [],
   network: [],
 };
-// 仅包含两个正确签名的导出；fixture 从不执行转换逻辑。
+// 仅包含两个正确签名的导出；fixture 不执行插件业务逻辑。
 const section = (id, data) => Buffer.from([id, data.length, ...data]);
 const exportName = (name, index) => [
   name.length,
@@ -67,7 +67,7 @@ const wasm = Buffer.concat([
   Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]),
   section(1, [1, 0x60, 0, 1, 0x7f]),
   section(3, [2, 0, 0]),
-  section(7, [2, ...exportName("uppercase", 0), ...exportName("lowercase", 1)]),
+  section(7, [2, ...exportName("echo", 0), ...exportName("repeat", 1)]),
   section(10, [2, 4, 0, 0x41, 0, 0x0b, 4, 0, 0x41, 0, 0x0b]),
 ]);
 new WebAssembly.Module(wasm);
@@ -86,7 +86,7 @@ const catalog = {
       category: "text",
       featured: true,
       releaseTag: "market-1",
-      asset: "market.text-tools-1.0.0.starter-extension.json",
+      asset: "market.registry-fixture-1.0.0.starter-extension.json",
       packageSha256: hash(pkg),
       packageBytes: pkg.length,
     },

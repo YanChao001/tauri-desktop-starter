@@ -62,9 +62,7 @@ describe("主题色选择器", () => {
     const trigger = screen.getByRole("button", { name: "Custom" });
     trigger.focus();
     await user.keyboard("{Enter}");
-    expect(
-      screen.getByRole("dialog", { name: "Custom accent color" }),
-    ).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Custom accent" })).toBeVisible();
     const input = screen.getByRole("textbox", { name: "HEX color" });
     expect(screen.getByRole("group", { name: "Pick a color" })).toBeVisible();
     expect(document.querySelector('input[type="color"]')).toBeNull();

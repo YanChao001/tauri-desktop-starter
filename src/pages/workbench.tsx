@@ -94,6 +94,10 @@ export default function Workbench() {
   const [remote, setRemote] = useState<WorkbenchDocument | null>(null);
   const [closeId, setCloseId] = useState<string | null>(null);
   const mounted = useRef(false);
+  const recentGeneration = useRef(0);
+  const invalidateRecent = useCallback(() => {
+    recentGeneration.current++;
+  }, []);
   useEffect(() => {
     if (error && !conflict) toast.error(nativeErrorText(error, latest));
   }, [error, conflict, latest]);
@@ -149,8 +153,14 @@ export default function Workbench() {
     }
   }, [selected]);
   const refreshRecent = useCallback(async () => {
-    const entries = await recentWorkbenchFiles();
-    if (mounted.current) setRecent(entries.filter((entry) => !entry.directory));
+    const request = ++recentGeneration.current;
+    try {
+      const entries = await recentWorkbenchFiles();
+      if (mounted.current && request === recentGeneration.current)
+        setRecent(entries.filter((entry) => !entry.directory));
+    } catch (reason) {
+      if (mounted.current && request === recentGeneration.current) throw reason;
+    }
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -182,9 +192,10 @@ export default function Workbench() {
     return () => {
       mounted.current = false;
       disposed = true;
+      invalidateRecent();
       stop?.();
     };
-  }, [refreshRecent]);
+  }, [refreshRecent, invalidateRecent]);
   useUnsavedWork({
     id: "workbench",
     label: t("nav.workbench"),

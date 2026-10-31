@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import appConfig from "../../app.config.json" with { type: "json" };
 
@@ -29,7 +31,7 @@ async function openSettings(page: Page) {
   ).toBeEnabled();
 }
 
-/** 录制真实的本地 WebM；首帧相同，后续画面不同，用于验证视频身份不依赖封面。 */
+/** 录制真实的本地 WebM，用于播放、重载与媒体回收场景。 */
 async function videoFile(page: Page, name: string, finalColor: string) {
   const bytes = await page.evaluate(async (color) => {
     const canvas = document.createElement("canvas");
@@ -158,7 +160,7 @@ test("video wallpapers keep a local cover and reference across reload and pause 
     .poll(() => video.evaluate((node) => !(node as HTMLVideoElement).paused))
     .toBe(true);
   await page
-    .getByRole("button", { name: "Clear image background", exact: true })
+    .getByRole("button", { name: "Clear background", exact: true })
     .click();
   await expect(page.locator("[data-custom-background-video]")).toHaveCount(0);
   await expect(page.locator("html")).toHaveAttribute(
@@ -171,8 +173,28 @@ test("different videos with the same cover select independently and deleting ano
   page,
 }) => {
   await openSettings(page);
-  const first = await videoFile(page, "first.webm", "#657eb2");
-  const second = await videoFile(page, "second.webm", "#b87d64");
+  // 固定夹具首四帧相同、末四帧不同，避免 MediaRecorder 启动时采到黑帧。
+  // 在仓库根目录生成（以下换行参数合为一条命令）：
+  // ffmpeg -f lavfi -i "color=c=0x669c88:s=160x90:r=20:d=0.4"
+  //   -vf "drawbox=c=COLOR:t=fill:enable='gte(t,0.2)'" -an
+  //   -c:v libvpx-vp9 -lossless 1 -pix_fmt yuv420p -threads 1 -lag-in-frames 0
+  //   -fflags +bitexact -flags:v +bitexact -map_metadata -1 e2e/fixtures/FILE
+  // COLOR/FILE 分别为 0x657eb2/video-wallpaper-first.webm、
+  // 0xb87d64/video-wallpaper-second.webm；测试本身无需安装 FFmpeg。
+  const first = {
+    name: "first.webm",
+    mimeType: "video/webm",
+    buffer: await readFile(
+      new URL("../fixtures/video-wallpaper-first.webm", import.meta.url),
+    ),
+  };
+  const second = {
+    name: "second.webm",
+    mimeType: "video/webm",
+    buffer: await readFile(
+      new URL("../fixtures/video-wallpaper-second.webm", import.meta.url),
+    ),
+  };
   await page.locator('input[type="file"]').setInputFiles([first, second]);
   await expect(page.locator(".wallpaper-card")).toHaveCount(2);
   const firstChoice = page.getByRole("radio", {
@@ -186,6 +208,9 @@ test("different videos with the same cover select independently and deleting ano
   await expect(secondChoice).toBeChecked();
   await expect(firstChoice).not.toBeChecked();
   const secondId = await currentVideo(page);
+  expect(secondId).toBe(
+    createHash("sha256").update(second.buffer).digest("hex"),
+  );
   const secondCover = await page.evaluate((key) => {
     const value = JSON.parse(localStorage.getItem(key) ?? "{}");
     return value.customBackground?.dataUrl as string;
@@ -194,6 +219,7 @@ test("different videos with the same cover select independently and deleting ano
   await expect(firstChoice).toBeChecked();
   await expect(secondChoice).not.toBeChecked();
   const firstId = await currentVideo(page);
+  expect(firstId).toBe(createHash("sha256").update(first.buffer).digest("hex"));
   expect(firstId).not.toBe(secondId);
   expect(
     await page.evaluate((key) => {

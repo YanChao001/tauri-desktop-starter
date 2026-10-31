@@ -12,6 +12,7 @@ import type {
   ExtensionArchivePreview,
   ExtensionArchiveResult,
   ExtensionPreview,
+  BundledExtensionCatalog,
   ExtensionRunInput,
   ExtensionRunStatus,
   ExtensionSnapshot,
@@ -37,6 +38,10 @@ import type {
 } from "./generated/bindings";
 
 export type {
+  BundledExtension,
+  BundledExtensionCatalog,
+  ExtensionConsent,
+  ExtensionOrigin,
   ExtensionArchivePreview,
   ExtensionArchiveResult,
   ExtensionArchiveStatus,
@@ -133,8 +138,11 @@ export async function downloadMarketExtension(
 export function previewExtension(content: string): Promise<ExtensionPreview> {
   return callNative((commands) => commands.previewExtension(content));
 }
-export function extensionDemo(id = "starter.text-tools"): Promise<string> {
-  return callNative((commands) => commands.extensionDemo(id));
+export function bundledExtensionPackage(id: string): Promise<string> {
+  return callNative((commands) => commands.bundledExtensionPackage(id));
+}
+export function bundledExtensionCatalog(): Promise<BundledExtensionCatalog> {
+  return callNative((commands) => commands.bundledExtensionCatalog());
 }
 export function viewExtension(
   input: ExtensionViewInput,
@@ -197,7 +205,7 @@ export function installExtension(
   expectedRevision: number,
   replaceExisting: boolean,
   expectedSha256: string,
-  consent: ExtensionConsent,
+  consent?: ExtensionConsent,
 ): Promise<ExtensionSnapshot> {
   return callNative((commands) =>
     commands.installExtension(
@@ -205,7 +213,7 @@ export function installExtension(
       expectedRevision,
       replaceExisting,
       expectedSha256,
-      consent,
+      consent ?? null,
     ),
   );
 }
@@ -232,7 +240,7 @@ export function installMarketExtension(
   replaceExisting: boolean,
   expectedSha256: string,
   source: MarketSource,
-  consent: ExtensionConsent,
+  consent?: ExtensionConsent,
 ): Promise<ExtensionSnapshot> {
   return callNative((commands) =>
     commands.installMarketExtension(
@@ -241,7 +249,7 @@ export function installMarketExtension(
       replaceExisting,
       expectedSha256,
       source,
-      consent,
+      consent ?? null,
     ),
   );
 }

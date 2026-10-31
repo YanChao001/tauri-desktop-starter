@@ -45,7 +45,7 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    expect(screen.getByText("界面出错了")).toBeInTheDocument();
+    expect(screen.getByText("界面异常")).toBeInTheDocument();
     expect(screen.getByText("渲染炸了")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "重新加载" }),
@@ -62,9 +62,7 @@ describe("ErrorBoundary", () => {
         <Boom />
       </ErrorBoundary>,
     );
-    expect(
-      screen.getByText("The interface encountered an error"),
-    ).toBeVisible();
+    expect(screen.getByText("Interface error")).toBeVisible();
     expect(screen.getByRole("button", { name: "Reload" })).toBeVisible();
   });
 
@@ -93,7 +91,7 @@ describe("ErrorBoundary", () => {
         <ThrowValue />
       </ErrorBoundary>,
     );
-    expect(screen.getByText("界面出错了")).toBeInTheDocument();
+    expect(screen.getByText("界面异常")).toBeInTheDocument();
     expect(screen.getByText(message!)).toBeInTheDocument();
   });
 });

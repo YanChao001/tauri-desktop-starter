@@ -95,7 +95,7 @@ it("explains the UTF-8 text limit and enables running again after the input is c
     />,
   );
   const input = screen.getByLabelText("Input text");
-  const run = screen.getByRole("button", { name: "Run extension" });
+  const run = screen.getByRole("button", { name: "Run" });
   fireEvent.change(input, {
     target: { value: "汉".repeat(Math.ceil((1024 * 1024) / 3)) },
   });
@@ -121,8 +121,8 @@ it("keeps short runs locked without flashing progress or changing the feedback c
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  const run = screen.getByRole("button", { name: "Run extension" });
-  const stop = screen.getByText("Request stop", { selector: "button" });
+  const run = screen.getByRole("button", { name: "Run" });
+  const stop = screen.getByText("Stop", { selector: "button" });
   const status = screen.getByRole("status", { name: "Execution status" });
   vi.useFakeTimers();
   fireEvent.click(run);
@@ -153,14 +153,12 @@ it("continues announcing a long run and cooperative stopping from the output hea
   );
   const status = screen.getByRole("status", { name: "Execution status" });
   vi.useFakeTimers();
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await act(async () => vi.advanceTimersByTimeAsync(300));
-  expect(status).toHaveTextContent("Queued, waiting for a runtime slot…");
+  expect(status).toHaveTextContent("Queued…");
   expect(status).toHaveAttribute("tabindex", "0");
   fireEvent.focus(status);
-  expect(screen.getByRole("tooltip")).toHaveTextContent(
-    "Queued, waiting for a runtime slot…",
-  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Queued…");
   fireEvent.blur(status);
   view.rerender(
     <ExtensionRunner
@@ -170,7 +168,7 @@ it("continues announcing a long run and cooperative stopping from the output hea
     />,
   );
   expect(status).toHaveTextContent("Running: test.tool");
-  fireEvent.click(screen.getByRole("button", { name: "Request stop" }));
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   expect(status).toHaveTextContent("Waiting for the extension to stop…");
   expect(native.cancelExtension).toHaveBeenCalledWith("test.tool", 1);
   await act(async () => pending.resolve("Final result"));
@@ -189,7 +187,7 @@ it("exports the actual final result when completion races with lifecycle cancell
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   const saving = lifecycle.work!.save();
   await act(async () => {
     nativeRun.resolve("Final result before stop");
@@ -230,7 +228,7 @@ it("starts a clean session when navigation selects another command after export"
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "First command input" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await screen.findByText("First command result");
   await act(async () => lifecycle.work!.save());
   mounted.rerender(<ExtensionRunner {...props} requestedCommand="second" />);
@@ -263,10 +261,10 @@ it("keeps input and previous output after failure and leaves a cancelled export 
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "Keep this input" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await screen.findByText("<script>plain text</script>");
   expect(document.querySelector("script")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await waitFor(() => expect(toast.error).toHaveBeenCalled());
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Input text")).toHaveValue("Keep this input");
@@ -298,15 +296,15 @@ it("keeps its run occupied until native cancellation completes and cancels on un
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   expect(
-    screen.queryByRole("button", { name: "Request stop" }),
+    screen.queryByRole("button", { name: "Stop" }),
   ).not.toBeInTheDocument();
-  fireEvent.click(await screen.findByRole("button", { name: "Request stop" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith("test.tool", 1),
   );
-  expect(screen.getByRole("button", { name: "Run extension" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
   expect(lifecycle.work?.dirty).toBe(true);
   view.unmount();
   expect(native.cancelExtension).toHaveBeenCalledTimes(2);
@@ -360,14 +358,12 @@ it("keeps a pending file selection attached to its command when navigation reque
   const mounted = render(
     <ExtensionRunner {...props} requestedExtension="test.tool" />,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Choose files for this run" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Files for this run" }));
   mounted.rerender(
     <ExtensionRunner {...props} requestedExtension="test.other" />,
   );
   expect(
-    screen.getByRole("combobox", { name: "Select an extension command" }),
+    screen.getByRole("combobox", { name: "Choose command" }),
   ).toHaveTextContent("Test tool · Run");
   await act(async () => {
     selecting.resolve([
@@ -396,9 +392,7 @@ it("waits for an active file picker and exports the selection that actually comp
       onSettled={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Choose files for this run" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Files for this run" }));
   expect(lifecycle.work?.dirty).toBe(true);
   const saving = lifecycle.work!.save();
   expect(native.saveExtensionSession).not.toHaveBeenCalled();
@@ -432,16 +426,16 @@ it("keeps an old installation's exportable draft without sending it to a same-ha
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "Old installation draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await screen.findByText("Previous result");
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   mounted.rerender(
     <ExtensionRunner items={[{ ...tool, generation: 2 }]} {...props} />,
   );
   await act(async () => late.resolve("Late old result"));
   expect(screen.queryByText("Late old result")).not.toBeInTheDocument();
   expect(screen.getByText("Previous result")).toBeVisible();
-  expect(screen.getByRole("button", { name: "Run extension" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
   await act(async () => lifecycle.work!.save());
   const saved = JSON.parse(
     String(vi.mocked(native.saveExtensionSession).mock.calls.at(-1)?.[1]),
@@ -451,13 +445,13 @@ it("keeps an old installation's exportable draft without sending it to a same-ha
     inputText: "Old installation draft",
     result: { text: "Previous result" },
   });
-  screen.getByRole("combobox", { name: "Select an extension command" }).focus();
+  screen.getByRole("combobox", { name: "Choose command" }).focus();
   await user.keyboard("{ArrowDown}");
   const option = await screen.findByRole("option", { name: "Test tool · Run" });
   option.focus();
   await user.keyboard("{Enter}");
   expect(screen.getByLabelText("Input text")).toHaveValue("");
-  fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
   await screen.findByText("New installation result");
   expect(native.runExtension).toHaveBeenLastCalledWith(
     expect.objectContaining({ expectedGeneration: 2, inputText: "" }),
@@ -496,8 +490,8 @@ it.each([
         onSettled={vi.fn().mockResolvedValue(undefined)}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Run extension" }));
-    const save = screen.getByRole("button", { name: "Save result separately" });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    const save = screen.getByRole("button", { name: "Save result" });
     await waitFor(() => expect(save).toBeEnabled());
     fireEvent.click(save);
     await waitFor(() => expect(native.saveTextExport).toHaveBeenCalledOnce());

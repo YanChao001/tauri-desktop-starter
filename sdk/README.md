@@ -35,7 +35,7 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 | `onChange(listener)`                 | 订阅完整快照，返回取消订阅函数；包含视图、字段、检查点、活动状态、语言、主题、授权、忙碌和未保存状态 |
 | `run(action, fields?)`               | 将提供的字段合并到当前已声明字段，调用本命令的 Wasm 函数                                             |
 | `setFields(fields)`                  | 更新当前窗口的字段草稿，不运行 Wasm                                                                  |
-| `checkpoint(value, dirty)`           | 登记最多 256 KiB 的 JSON 草稿及未保存状态；界面重建后从快照恢复                                      |
+| `checkpoint(value, dirty)`           | 登记 JSON 草稿及未保存状态；界面重建后从快照恢复，额度见[草稿契约](../docs/extensions.md#自定义界面) |
 | `saveArtifact(index)`                | 保存当前视图的指定产物，用户选择系统路径；取消返回 `false`                                           |
 | `notify(message, { tone }?)`         | 在宿主右下角显示纯文本 toast；`tone` 为 `info`（默认）、`success` 或 `error`                         |
 | `applyStyles(shadowRoot)`            | 为本插件文档内的 Shadow DOM 接入默认控件样式和 select 增强，返回清理函数                             |
@@ -45,11 +45,11 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 
 快照相互隔离，内部增量传输由 SDK 合并，作者无需处理协议。首个快照前通道关闭或解码失败会拒绝 `ready`，这些故障也会拒绝未完成请求；发送失败会拒绝对应调用。宿主返回的错误带稳定 `code` / `retryable`，按 `code` 映射本地化反馈，同时处理本地编码或通道异常，不解析错误文本。失败应保留输入，成功提示应等待真实回执。
 
-宿主可在启用时或启动后台提前编译 Wasm；编译不创建实例、不运行初始化或导出，不改变 `ready` / `run` 语义。每次真实运行仍使用新实例，作者不能依赖编译缓存保留 guest 内存、全局变量或 WASI 状态；触发与资源预算见 [扩展执行生命周期](../docs/extensions.md#执行存储与生命周期)。
+每次 `run` 使用新的 Wasm 实例；跨动作状态通过协议传递。预编译触发与资源预算见 [执行生命周期](../docs/extensions.md#执行存储与生命周期)。
 
 `notify` 文本须非空、不含 NUL，UTF-8 最多 2 KiB；宿主标明插件名，同一会话的新提示替换上一条。这是应用 toast，不能发送操作系统通知。常驻说明、校验和重试入口遵循 [说明与布局稳定](../docs/conventions/ui-guidelines.md#说明与布局稳定)。
 
-不要仅用 iframe 局部变量保存输入。通过检查点恢复界面草稿，完成业务保存后才报告 `dirty: false`；宿主“导出会话”包含检查点，不代替插件业务保存。会话导入绑定插件身份和文档哈希，不执行代码或恢复文件授权，见 [会话边界](../docs/extensions.md#开发带界面的应用插件)。
+通过字段和检查点登记需要恢复的输入，业务保存完成后才报告 `dirty: false`。宿主导出会话包含检查点，身份校验和授权边界见 [会话契约](../docs/extensions.md#开发带界面的应用插件)。
 
 隔离文档禁止表单提交、直接网络、跳转、弹窗、直接下载和浏览器存储；使用 `type="button"`、显式键盘事件和 SDK，不依赖默认 submit 或 `requestSubmit()`。外部字符串使用 `textContent` 或框架文本节点。自定义右键菜单须阻止默认行为，并处理键盘、Esc 和焦点恢复；默认右键与文本编辑行为遵循 [组件约定](../docs/conventions/ui-guidelines.md#组件选择顺序)。
 
@@ -57,27 +57,21 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 
 ## 活动状态与页面保留
 
-宿主在最近使用的有界页面范围内保留插件文档；离页不一定卸载 iframe。`snapshot.active` 表示该页面当前可见且可交互，宿主发送布尔值；兼容旧宿主时用 `snapshot.active !== false`，缺省视为活动，不要求为这一可选字段提高最低宿主版本。独立窗口未参与页面切换时保持活动，窗口 / 文档可见性仍需另行判断。
+离页可能保留 iframe。`snapshot.active` 表示页面当前可见且可交互，使用 `snapshot.active !== false` 处理可选字段；独立窗口仍需结合文档可见性暂停工作。
 
-`active: false` 时停止自行创建的 `requestAnimationFrame`、Web Animations、定时器、轮询及其他持续工作；恢复后从已有模型继续，卸载时释放监听和资源。SDK 将根元素 `data-active` 同步为 `"true"` / `"false"`，自动暂停文档及显式接入 Shadow DOM 的 CSS animation、关闭增强 select 而不提交尚未选择的候选，并停止主题过渡；不会接管作者自己的 JavaScript 循环。`data-motion` 继续表示原有 `full` / `reduced` 偏好，隐藏不会改写成 reduced。旧插件的 CSS 动画可自动暂停，已有 JavaScript 动画仍应增加活动状态处理。
+页面不活动时，作者停止自己的动画帧、Web Animations、定时器和轮询；恢复后沿用模型继续，卸载时释放资源。SDK 同步根元素 `data-active`，自动暂停普通 DOM 与已登记 Shadow DOM 的 CSS animation、关闭增强 select 并停止主题过渡；作者的 JavaScript 循环由作者管理。`data-motion` 继续表示减少动效偏好。
 
-隐藏时所有新 SDK 请求立即以 `code: "EXTENSION_UNAVAILABLE"` 拒绝；宿主消息桥也独立拒绝隐藏 frame 的新请求，不能通过手写消息绕过。已发出的请求继续接收真实回执，离页不表示原生取消或回滚。编辑发生时及时登记字段和检查点，不能依赖隐藏后再发起保存；在途失败保留输入，不自动重复具有副作用的操作。
+隐藏时 SDK 和宿主桥均拒绝新请求，返回 `EXTENSION_UNAVAILABLE`；在途请求继续收到真实回执。编辑发生时及时登记字段 / 检查点，失败保留输入，恢复后由用户决定是否重试有副作用的操作。
 
-超出保留范围、包身份失效或权限不再满足时，宿主释放旧文档和端口。重新打开从现有会话、字段与检查点重建；未登记的局部状态可能丢失，不能将页面保留代替草稿协议。具体预算、身份校验与恢复边界见 [自定义界面](../docs/extensions.md#自定义界面)，取舍见 [ADR 0016](../docs/adr/0016-retain-extension-surfaces.md)。
+超出保留范围或安装身份 / 权限失效时释放文档，重开从已登记状态恢复。宿主的保留额度、租约和回收规则见 [自定义界面](../docs/extensions.md#自定义界面)，取舍见 [ADR 0016](../docs/adr/0016-retain-extension-surfaces.md)。
 
 ## 默认外观与动效
 
-内置与市场插件的通用界面保持宿主风格，适用范围和业务专用例外以 [共同外观规范](../docs/conventions/ui-guidelines.md#宿主与插件的共同外观) 为准。作者维护布局与业务内容，不把宿主通用控件样式复制进插件包。
+通用界面复用宿主的 [共同外观规范](../docs/conventions/ui-guidelines.md#宿主与插件的共同外观)；业务专用视觉区域按该规范确定范围。作者维护布局与内容，共享控件 CSS 由宿主提供。
 
-宿主直接使用 [surface-tokens.css](../src/styles/surface-tokens.css) 和 [control-styles.css](../src/styles/control-styles.css)，[ui-theme.ts](../src/lib/ui-theme.ts) 将相同原文装配为 `theme.styles`，SDK 注入 `starter-defaults` layer。它不按插件当前控件裁剪，也不维护另一份默认 CSS；后续动态插入的标准元素同样匹配。宿主共享样式的源码修改须更新实际运行的宿主，插件无需为同步这些规则重新打包。普通作者 CSS 在层叠上优先于该 layer，无需 `!important`；这一能力服务布局与明确的业务专用设计，不把偶然覆盖造成的差异视为约定。
+[surface-tokens.css](../src/styles/surface-tokens.css) 和 [control-styles.css](../src/styles/control-styles.css) 经 [ui-theme.ts](../src/lib/ui-theme.ts) 装配为 `theme.styles`，SDK 注入 `starter-defaults` layer。完整规则也适用于后插入的标准元素，普通作者 CSS 在该 layer 之上；共享样式更新随宿主交付，无需重打插件包。标准按钮支持 `data-variant`，材质容器使用 `data-surface`；具体角色见 [语义 token](../docs/conventions/ui-guidelines.md#颜色只用语义-token)，尺寸和选择规则直接复用共享 CSS。
 
-标准单行按钮 / 输入使用同一尺寸规则，文档 padding 为 1rem，并提供基础表格 / 图片 / 文本样式和 8px 滚动条。`button` 与 `input[type="button"/"submit"/"reset"]` 使用共同按钮规则，`data-variant` 支持 default、outline、secondary、ghost、destructive、link。自定义多行卡片可声明材质角色并保留自身布局。复选与单选保留原生 input 的值、键盘和无障碍语义，通过共同 CSS 对齐宿主形态；强制颜色模式保留系统反馈。`kbd`、`pre/code`、`output`、`details/summary`、表头、日期 / 文件 / 颜色输入和进度类控件同样包含在完整规则中。
-
-相关设置或表单参数可用原生 `fieldset` / `legend`，与宿主共用嵌边组标题：顶部 8px、其余 12px 内边距，标题 14px 中等字重。legend 不占组内的额外垂直间距，也无需添加背景遮挡边线。控件组、普通正文、输出列表与画布的选择原则见[界面规范](../docs/conventions/ui-guidelines.md#组件选择顺序)。
-
-隔离文档沿用浏览器默认的按需滚动槽，不为无需整页滚动的内容预留空槽，避免自定义背景右侧露出宿主底色；实际溢出时仍由文档原生滚动条占位。宿主普通页面和侧栏的稳定滚动槽不受影响。
-
-默认样式直接覆盖普通文档 DOM，不会穿透 Web Components 的 Shadow DOM。当前宿主提供 `starter.applyStyles(root)`，组件可在创建 shadow root 后显式接入，并在卸载时调用返回的清理函数；重复接入按引用计数释放。注册的 root 使用相同完整规则并随主题样式更新，其后新增控件无需再次接入。不改写 `attachShadow`、不扫描其他组件，也不增加原生能力。使用当前 SDK 的插件声明 `minHostVersion: "0.1.7"`，并随当前开发宿主一起验证；开发快照不维护旧 SDK 的适配分支或历史宿主验证矩阵。
+默认样式覆盖普通 DOM；Web Components 在创建 ShadowRoot 后调用 `starter.applyStyles(root)`，卸载时调用返回的清理函数，重复登记按引用计数释放。登记的 root 同步共享样式、主题和 select 增强，后插入控件无需重新登记。使用当前 SDK 的插件声明 `minHostVersion: "0.1.7"` 并配套当前宿主验证。
 
 ```javascript
 const root = element.attachShadow({ mode: "open" });
@@ -86,27 +80,20 @@ const button = document.createElement("button");
 button.type = "button";
 button.textContent = "Refresh";
 root.append(button);
-// 组件卸载时释放；重新挂载时重新接入。
-disposeStyles();
+// 组件卸载时调用 disposeStyles()。
 ```
 
-一致性范围是共同 CSS 中的标准元素、材质与语义状态，不复制宿主 React / Radix 组件。第三方组件库的自绘结构、Canvas / SVG 像素和平台日期 / 文件子弹窗不能仅靠 CSS 自动推断，作者须显式接入；确有业务专用设计的内容按上述规范保留专用配色。皮肤壁纸属于宿主窗口底层，扩展外壳、内容框和文档默认透明，背后沿用宿主的阅读保护；100% 是壁纸完整显现，前景控件仍保留可读底线。明确采用独立背景的业务区域负责该背景下的文字与控件对比。
+第三方自绘控件、Canvas / SVG 和平台子弹窗由作者负责接入。扩展外壳与文档默认透明，沿用宿主阅读保护；使用独立背景的业务区域负责文字和控件对比，iframe 模糊只能采样当前文档。
 
-手写容器通过 `data-surface` 声明用途：`transparent` 用于布局和已受保护的内部区块，`panel` 用于含文卡片，`control` 用于一般控件 / 输出，`popover` 用于浮层，`reading` 用于代码 / 日志 / 吸顶表头，`solid` 用于关键错误，`artwork` 标识内容专用绘制。对应的 `.app-surface`、`.app-control-surface`、`.app-overlay-surface`、`.app-reading-surface` 类同样可用；完整分类见[界面规范](../docs/conventions/ui-guidelines.md#颜色只用语义-token)。不要给每个 div 加模糊，也不要用完全透明布局代替阅读面板。原生选项和语义状态图元保留明确配色，普通 hover / selected、placeholder 与弱说明由共同规则处理。纯色、0%、高对比度和不支持模糊时恢复实体降级。模糊只采样当前文档内背景，无法跨 iframe 模糊宿主壁纸。
+内容框占满侧栏右侧或独立窗口标题栏下的空间，文档默认 padding 为 1rem，以文档承担整页滚动。居中布局在内部容器设置 `max-width`、自动外边距和 padding；隔离文档按需出现滚动槽。独立窗口默认尺寸通过清单 `ui.windowSize` 声明，范围与记忆规则见 [应用窗口](../docs/extensions.md#开发带界面的应用插件)。
 
-内容框占满侧栏右侧或独立窗口标题栏下的可用空间，宿主不叠加阅读宽度和外层 padding。以文档承担整页滚动，普通区块自然排版；需要居中时在内部容器设置 `max-width`、自动外边距和 padding，避免固定高度、嵌套滚动或视口最小高度叠加 padding 撑出第二条滚动条。
+普通单选 `select` 默认增强为主题弹层，原 DOM 继续提供值、表单状态、reset、`input` / `change`、fieldset 禁用与 optgroup 语义。`multiple`、`size > 1` 或 `data-starter-select="native"` 使用原生交互。
 
-游戏等已明确采用专用视觉设计的区域可以按需定制字体、颜色和布局，未纳入该设计范围的普通设置、菜单与外围控件仍遵循共同外观；整套游戏界面的例外范围见 [共同外观规范](../docs/conventions/ui-guidelines.md#宿主与插件的共同外观)。所有区域继续处理宿主语言、活动状态与减少动效。独立窗口的默认逻辑尺寸可在清单声明 `ui.windowSize`，其范围、最低宿主和尺寸记忆规则见 [应用窗口](../docs/extensions.md#开发带界面的应用插件)；插件文档不能直接修改宿主 DOM 或调用原生窗口 API。
+`theme.tokens` 收集根元素公开主题变量并排除内部 `--tw-*`，同时提供 `--host-font-family` / `--host-font-size`；公开根变量用于外观，业务数据放模型或存储。`theme.styles` 仅随主题引用变化传递。字体、字号和语言继承宿主设置，输入字号断点以宿主窗口为准；代码输出可用等宽字体。
 
-普通单选 `select` 默认增强为主题下拉弹层，原 DOM 仍提供值和表单状态，保留 `value`、`selectedIndex`、reset、`input` / `change`、fieldset 禁用和 optgroup 语义。`multiple`、`size > 1` 或 `data-starter-select="native"` 使用原生交互；增强不开放表单提交权限。
+`theme.mode` 为 `light` / `dark` 并同步根 class，`theme.motion` 为 `full` / `reduced` 并同步 `data-motion`，SDK 同时遵循系统减少动效。活动界面及已登记 ShadowRoot 接收实时外观更新，隐藏页恢复时同步最新设置。持续动画还须处理 [活动状态](#活动状态与页面保留)、离屏、文档隐藏和卸载；主题过渡不可用或不适合播放时直接应用主题。
 
-`theme.tokens` 自动收集计算后的根元素主题变量并排除实现内部的 `--tw-*`，新增材质或语法色无需同步手写名字清单；同时提供 `--host-font-family` / `--host-font-size` 与响应式文本输入规则。根元素的自定义变量属于公开外观契约，业务数据留在组件或存储中。`theme.styles` 提供当前宿主的完整共享 CSS，仅在主题引用更新时随主题发送，普通字段编辑不重新复制样式或字体。本地 Geist 通过 data 字体注入，系统字体沿用宿主栈；输入字号断点以宿主窗口为准，不以较窄 iframe 重算。正文与控件继承应用字体，代码输出按需使用等宽字体。主题、字体和语言随宿主设置同步，不另存同一份偏好。
-
-嵌入页与独立插件窗口复用同一主题消息链。运行时外观设置变化后，活动界面接收最新变量与样式，SDK 更新文档及显式登记的 ShadowRoot；隐藏保留页暂停主题观察，恢复活动时重新读取最新外观。未登记的 Shadow DOM 不会自动注入，插件也不能要求宿主把样式扩散到任意第三方文档。验证须对照真实宿主组件与实际包内界面，入口和覆盖范围见 [样式一致性检查](../docs/testing.md#自定义扩展界面)。
-
-`theme.mode` 为 `light` / `dark`，对应根元素同名 class；`theme.motion` 为 `full` / `reduced`，对应 `data-motion`。SDK 同时遵循系统减少动效设置。作者持续动画须消费 [活动状态](#活动状态与页面保留)，并在离屏、文档隐藏、卸载和 reduced motion 时停止。宿主主题圆形过渡会同步到活动内容框；API 不可用、减少动效、页面不活动或窗口隐藏时直接应用主题。
-
-首次加载由宿主显示骨架，SDK 完成非空视图、主题和 DOM 的首轮呈现握手后显示内容框；握手停滞时提供重试，后台或离屏不按前台等待误报。此过程没有固定等待时间，后续忙碌保持内容可见，作者无需发送内部消息。`ready` 和握手均不证明业务渲染成功，插件自己的异步数据仍需真实加载与失败反馈。
+首次加载的骨架在非空视图、主题和 DOM 首轮呈现握手后解除，握手停滞时宿主提供重试，后台 / 离屏暂停等待计时。后续忙碌保持内容可见。作者的异步业务另外显示真实加载与失败反馈；样式检查入口见 [自定义扩展界面](../docs/testing.md#自定义扩展界面)。
 
 ## 注册的宿主服务
 
@@ -122,14 +109,10 @@ disposeStyles();
 
 图片 `preview` 返回 `{ dataUrl }`；`save` 可传建议文件名 `name`，系统对话框决定路径，返回 `{ cancelled: true }` 或 `{ cancelled: false, name }`。另存保留已验证原图，`wallpaper` 的 `{ action: "import-resource", resourceId, name }` 会重绘压缩后加入图库。图库缩略图可能为 `dataUrl: null`，不能把缩略图缺失当作列表或写入失败。
 
-自身窗口服务需独立授权 `window:control`，只控制当前插件的独立原生窗口，不接受任意 label。嵌入主界面的插件与浏览器环境不能置顶宿主窗口；入口应保持其他功能可用，并按拒绝结果反馈。完整边界见 [插件自身窗口](../docs/extensions.md#插件自身窗口)。
+按 [服务能力矩阵](../docs/extensions.md#受控桌面服务) 声明并取得授权。`window` 只控制当前插件的独立窗口；`lan` 附件通过原生对话框选择 / 另存，传消息 ID 与元数据，不经 SDK 传文件字节。LAN 连接由原生窗口持有，切页或重建 iframe 不停止接收；多个窗口共享服务，明确停止会影响其他窗口。
 
-LAN 需 `messaging:lan`，包括文字、Unicode 大表情、图片和文件收发。`start` 的 `mode` 区分局域网与本机回环监听；`loopback` 启动真实 TCP 回环助手，状态带 `mode` / `loopbackPeerId`。`sendAttachment` 传 `peerId` 和 `kind: "image" | "file"`，由原生对话框选择文件，普通文件在服务内流式传输，不把字节经 SDK / Wasm / 检查点传递；`previewAttachment`、`saveAttachment` 传 `messageId`，分别获取受控预览或弹出系统另存对话框。消息附件元数据包含 `name`、`mime`、`bytes`、`sha256`，没有系统路径。取消对话框不代表已发送或保存，不自动打开收到的文件；精确请求、额度、明文与协议版本边界见 [局域网通信](../docs/extensions.md#局域网通信)。
-
-资源 ID 仅对当前插件安装和原生窗口短期有效，及时 `release`，过期、关闭、撤权或重启后重新获取，不作为持久下载资格导出。`network:images` 允许任意公网 HTTPS GET 图片来源，URL 查询可能发送数据；搜索文本仍走 Wasm 的精确 origin HTTP 效果。来源和许可由插件解释。
-
-HTTP 效果和图片请求通常省略可选 `networkMode`，继承宿主“设置 → 网络”的连接方式；使用系统代理仍须独立的 `network:system-proxy` 授权，缺少授权的缺省请求直连。本机 HTTP 缺省始终直连，旧显式模式的兼容与拒绝规则见 [网络授权](../docs/extensions.md#来源与授权)。不另存一份宿主连接偏好。
+图片句柄应及时 `release`，到期、关闭、撤权或重启后重新获取；句柄不是持久下载资格。搜索文本走 Wasm 的精确 origin HTTP 效果，图片来源和许可由插件解释。HTTP 与图片请求通常省略 `networkMode`，继承宿主网络偏好，代理授权及模式规则见 [网络契约](../docs/extensions.md#来源与授权)。
 
 服务请求不自动改变整个插件的 `busy`。将后台查询与用户操作分别管理，忽略早于业务操作的过期查询结果，保留新草稿、焦点和选区。按[消息桥额度与背压](../docs/extensions.md#自定义界面)限制请求并发；桥或 SDK 因超额返回 `EXTENSION_BUSY` 时该请求未执行，恢复容量后可重新发起，SDK 不自动重试。
 
-原生对话框可等待用户选择，SDK 没有统一前端请求超时。停止等待不等于原生取消，失败也不保证副作用回滚；未获回执时不能断言写入结果或自动重试发送。LAN 连接由原生持有，同一窗口切页或重建 iframe 不停止接收，无需隐藏 iframe。更完整的原生活动与回收规则见 [服务生命周期](../docs/extensions.md#受控桌面服务)。真实 WebView 的隔离和平台交互仍需按 [验证范围](../docs/extensions.md#验证) 验收。
+原生对话框可等待用户选择，SDK 没有统一前端请求超时。停止等待不等于原生取消；未获回执时先核对操作结果，再决定是否显式重试。原生活动与回收见 [服务生命周期](../docs/extensions.md#受控桌面服务)，测试选择见 [验证入口](../docs/extensions.md#验证)。

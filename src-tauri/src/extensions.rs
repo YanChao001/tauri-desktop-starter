@@ -90,6 +90,13 @@ pub(crate) struct InstallCondition<'a> {
     pub sha256: &'a str,
 }
 
+enum InstallAuthorization {
+    Reviewed(ExtensionConsent),
+    PreserveExisting,
+    #[cfg(test)]
+    UnreviewedFixture,
+}
+
 impl ExtensionConsent {
     fn validate(&self, manifest: &ExtensionManifest) -> NativeResult<()> {
         let grants = &self.granted_permissions;
@@ -194,6 +201,18 @@ pub struct ExtensionPreview {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[specta(optional)]
     pub ui_documents: Vec<ExtensionUiDocument>,
+}
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BundledExtension {
+    pub package: ExtensionPreview,
+    pub category: crate::extension_market::MarketCategory,
+}
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BundledExtensionCatalog {
+    pub host_version: String,
+    pub entries: Vec<BundledExtension>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -366,6 +385,32 @@ struct CacheCleanupState {
     running: bool,
     requested: bool,
 }
+#[derive(Clone, Copy)]
+enum ServiceActivityKind {
+    Ordinary,
+    LanStop,
+}
+#[derive(Default)]
+struct ServiceCounts {
+    ordinary: usize,
+    lan_stop: usize,
+}
+impl ServiceCounts {
+    fn count_mut(&mut self, kind: ServiceActivityKind) -> &mut usize {
+        match kind {
+            ServiceActivityKind::Ordinary => &mut self.ordinary,
+            ServiceActivityKind::LanStop => &mut self.lan_stop,
+        }
+    }
+    fn is_running(&self) -> bool {
+        self.ordinary > 0 || self.lan_stop > 0
+    }
+}
+#[derive(Default)]
+struct ServiceActivities {
+    windows: HashMap<String, ServiceCounts>,
+    management: usize,
+}
 struct StoreInner {
     root: PathBuf,
     isolated: bool,
@@ -374,7 +419,7 @@ struct StoreInner {
     writing: Mutex<()>,
     runs: Mutex<VecDeque<ActiveRun>>,
     run_changed: Condvar,
-    services: Mutex<HashMap<String, usize>>,
+    services: Mutex<ServiceActivities>,
     windows: Mutex<HashMap<String, WindowSession>>,
     cache_cleanup: Mutex<CacheCleanupState>,
     preparation: Mutex<Option<Arc<PreparationFlight>>>,
@@ -397,6 +442,7 @@ impl Drop for ExtensionPause {
 pub(crate) struct ServiceActivity {
     store: ExtensionStore,
     token: WindowRunToken,
+    kind: ServiceActivityKind,
 }
 impl ServiceActivity {
     pub(crate) fn check(&self) -> NativeResult<()> {
@@ -430,12 +476,25 @@ impl Drop for ServiceActivity {
     fn drop(&mut self) {
         if let Ok(_runs) = self.store.0.runs.lock() {
             if let Ok(mut services) = self.store.0.services.lock()
-                && let Some(count) = services.get_mut(&self.token.owner)
+                && let Some(counts) = services.windows.get_mut(&self.token.owner)
             {
-                *count -= 1;
-                if *count == 0 {
-                    services.remove(&self.token.owner);
+                *counts.count_mut(self.kind) -= 1;
+                if !counts.is_running() {
+                    services.windows.remove(&self.token.owner);
                 }
+            }
+            self.store.0.run_changed.notify_all();
+        }
+    }
+}
+pub(crate) struct ManagementActivity {
+    store: ExtensionStore,
+}
+impl Drop for ManagementActivity {
+    fn drop(&mut self) {
+        if let Ok(_runs) = self.store.0.runs.lock() {
+            if let Ok(mut services) = self.store.0.services.lock() {
+                services.management -= 1;
             }
             self.store.0.run_changed.notify_all();
         }
@@ -513,6 +572,25 @@ pub(crate) fn version(value: &str) -> NativeResult<(u16, u16, u16)> {
     Ok((parse(parts[0])?, parse(parts[1])?, parse(parts[2])?))
 }
 impl ExtensionManifest {
+    fn same_permission_scope(&self, other: &Self) -> bool {
+        let same_permissions = |left: &[ExtensionPermission], right: &[ExtensionPermission]| {
+            left.len() == right.len() && left.iter().all(|permission| right.contains(permission))
+        };
+        same_permissions(&self.permissions, &other.permissions)
+            && same_permissions(&self.optional_permissions, &other.optional_permissions)
+            && self.network.len() == other.network.len()
+            && self.network.iter().all(|rule| {
+                other.network.iter().any(|candidate| {
+                    rule.origin == candidate.origin
+                        && rule.methods.len() == candidate.methods.len()
+                        && rule
+                            .methods
+                            .iter()
+                            .all(|method| candidate.methods.contains(method))
+                })
+            })
+    }
+
     pub fn has_permission(&self, permission: ExtensionPermission) -> bool {
         self.permissions.contains(&permission) || self.optional_permissions.contains(&permission)
     }
@@ -873,16 +951,8 @@ pub(crate) fn package(content: &str) -> NativeResult<Bundle> {
 pub fn preview_package(content: &str) -> NativeResult<ExtensionPreview> {
     Ok(package(content)?.preview)
 }
-pub fn demo_package() -> String {
-    format!(
-        "{{\"manifest\":{},\"wasm\":\"{}\"}}",
-        include_str!("../../examples/extensions/extension.json"),
-        STANDARD.encode(crate::extension_runtime::DEMO_WASM)
-    )
-}
 pub fn bundled_package(id: &str) -> NativeResult<String> {
     let manifest = match id {
-        "starter.text-tools" => return Ok(demo_package()),
         "starter.extension-lab" => include_str!("../../examples/extensions/apps/extension.json"),
         _ => return Err(invalid("Unknown bundled extension")),
     };
@@ -892,6 +962,42 @@ pub fn bundled_package(id: &str) -> NativeResult<String> {
         "uiDocuments": {"main": include_str!("../../examples/extensions/apps/ui/main.html")},
     }).to_string())
 }
+
+/// 内置目录独立于安装记录和在线市场，读取不会登记、启用或重装插件。
+pub fn bundled_catalog() -> NativeResult<BundledExtensionCatalog> {
+    use crate::extension_market::MarketCategory;
+    Ok(BundledExtensionCatalog {
+        host_version: env!("CARGO_PKG_VERSION").to_owned(),
+        entries: vec![BundledExtension {
+            package: preview_package(&bundled_package("starter.extension-lab")?)?,
+            category: MarketCategory::Tools,
+        }],
+    })
+}
+
+pub(crate) fn verified_package_origin(bundle: &Bundle) -> NativeResult<ExtensionOrigin> {
+    let Ok(content) = bundled_package(&bundle.preview.manifest.id) else {
+        return Ok(ExtensionOrigin::Local);
+    };
+    let bundled: Package =
+        serde_json::from_str(&content).map_err(|_| invalid("Bundled package is invalid"))?;
+    // ID 或模块哈希都不足以证明来源；清单和界面文档也必须来自当前随包资源。
+    let manifest = serde_json::to_value(&bundle.preview.manifest)
+        .map_err(|error| io("Cannot verify bundled manifest", error))?;
+    let trusted_manifest = serde_json::to_value(&bundled.manifest)
+        .map_err(|error| io("Cannot verify bundled manifest", error))?;
+    Ok(
+        if manifest == trusted_manifest
+            && STANDARD.encode(&bundle.binary) == bundled.wasm
+            && bundle.ui_documents == bundled.ui_documents
+        {
+            ExtensionOrigin::Bundled
+        } else {
+            ExtensionOrigin::Local
+        },
+    )
+}
+
 impl ExtensionStore {
     // Called while holding `writing`: identity checks and admission are atomic with revoke.
     fn compilation_lease(&self, id: &str, hash: &str, background: bool) -> NativeResult<RunLease> {
@@ -1147,7 +1253,7 @@ impl ExtensionStore {
             writing: Mutex::new(()),
             runs: Mutex::new(VecDeque::new()),
             run_changed: Condvar::new(),
-            services: Mutex::new(HashMap::new()),
+            services: Mutex::new(ServiceActivities::default()),
             windows: Mutex::new(HashMap::new()),
             cache_cleanup: Mutex::new(CacheCleanupState::default()),
             preparation: Mutex::new(None),
@@ -1582,6 +1688,7 @@ impl ExtensionStore {
         operation: impl FnOnce(&ExtensionInfo) -> NativeResult<T>,
     ) -> NativeResult<T> {
         maintenance.check_identity(id)?;
+        let _activity = self.begin_management()?;
         let item = self.current_entry(id, expected_hash, expected_generation)?;
         let result = operation(&item)?;
         self.current_entry(id, expected_hash, expected_generation)?;
@@ -1649,7 +1756,7 @@ impl ExtensionStore {
         bundle: Bundle,
         condition: InstallCondition<'_>,
         origin: ExtensionOrigin,
-        consent: Option<ExtensionConsent>,
+        authorization: InstallAuthorization,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
         let InstallCondition {
@@ -1661,6 +1768,12 @@ impl ExtensionStore {
             return Err(conflict());
         }
         origin.validate()?;
+        let preserve_required = matches!(&authorization, InstallAuthorization::PreserveExisting);
+        let consent = if let InstallAuthorization::Reviewed(consent) = authorization {
+            Some(consent)
+        } else {
+            None
+        };
         if let Some(consent) = &consent {
             consent.validate(&bundle.preview.manifest)?;
         }
@@ -1691,40 +1804,23 @@ impl ExtensionStore {
         }
         let previous = position.map(|index| registry.extensions[index].clone());
         let preserve_grants = previous.as_ref().is_some_and(|old| {
-            let old_version = version(&old.package.manifest.version).ok();
-            let new_version = version(&bundle.preview.manifest.version).ok();
-            old.enabled
-                && old.origin.same_trusted_source(&origin)
-                && old_version
-                    .zip(new_version)
-                    .is_some_and(|(old, new)| old.0 == new.0 && old.1 == new.1)
-                && bundle
-                    .preview
+            old.origin.same_trusted_source(&origin)
+                && old
+                    .package
                     .manifest
-                    .permissions
-                    .iter()
-                    .all(|permission| old.granted_permissions.contains(permission))
-                && bundle.preview.manifest.network.iter().all(|new| {
-                    old.package.manifest.network.iter().any(|rule| {
-                        rule.origin == new.origin
-                            && new
-                                .methods
-                                .iter()
-                                .all(|method| rule.methods.contains(method))
-                    })
-                })
+                    .same_permission_scope(&bundle.preview.manifest)
         });
+        if preserve_required && !preserve_grants {
+            return Err(conflict());
+        }
         let grants = previous
             .as_ref()
             .filter(|_| preserve_grants)
-            .map_or_else(Vec::new, |old| {
-                old.granted_permissions
-                    .iter()
-                    .copied()
-                    .filter(|grant| bundle.preview.manifest.has_permission(*grant))
-                    .collect()
-            });
-        let enabled = consent.is_some() || preserve_grants;
+            .map_or_else(Vec::new, |old| old.granted_permissions.clone());
+        let enabled = consent.is_some()
+            || previous
+                .as_ref()
+                .is_some_and(|old| preserve_grants && old.enabled);
         if enabled {
             let started = Instant::now();
             let lease = self.compilation_lease(&id, expected_hash, false)?;
@@ -1834,7 +1930,7 @@ impl ExtensionStore {
                 sha256: expected_hash,
             },
             origin,
-            None,
+            InstallAuthorization::UnreviewedFixture,
             before_replace,
         )
     }
@@ -1847,23 +1943,32 @@ impl ExtensionStore {
         consent: ExtensionConsent,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
-        self.install_prepared_reviewed(
+        self.install_prepared(
             package(content)?,
             condition,
             origin,
-            consent,
+            Some(consent),
             before_replace,
         )
     }
-    pub(crate) fn install_prepared_reviewed(
+    pub(crate) fn install_prepared(
         &self,
         bundle: Bundle,
         condition: InstallCondition<'_>,
         origin: ExtensionOrigin,
-        consent: ExtensionConsent,
+        consent: Option<ExtensionConsent>,
         before_replace: impl FnOnce(&ExtensionInfo, &ExtensionOrigin) -> NativeResult<()>,
     ) -> NativeResult<ExtensionSnapshot> {
-        self.install_bundle(bundle, condition, origin, Some(consent), before_replace)
+        self.install_bundle(
+            bundle,
+            condition,
+            origin,
+            consent.map_or(
+                InstallAuthorization::PreserveExisting,
+                InstallAuthorization::Reviewed,
+            ),
+            before_replace,
+        )
     }
     pub fn rollback(&self, id: &str, revision: i32) -> NativeResult<ExtensionSnapshot> {
         self.rollback_with_cleanup(id, revision, |_| Ok(()))
@@ -2152,14 +2257,61 @@ impl ExtensionStore {
     }
     fn services_running(&self, owner: Option<&str>) -> bool {
         self.0.services.lock().map_or(true, |services| {
-            owner.map_or(!services.is_empty(), |label| {
-                services.get(label).is_some_and(|count| *count > 0)
-            })
+            owner.map_or_else(
+                || {
+                    services.management > 0
+                        || services.windows.values().any(ServiceCounts::is_running)
+                },
+                |label| {
+                    services
+                        .windows
+                        .get(label)
+                        .is_some_and(ServiceCounts::is_running)
+                },
+            )
+        })
+    }
+    /// 管理不占窗口或 Wasm 执行位，但暂停、退出须等待它的实际系统调用和提交收尾。
+    pub(crate) fn begin_management(&self) -> NativeResult<ManagementActivity> {
+        let _runs = self
+            .0
+            .runs
+            .lock()
+            .map_err(|_| io("Extension management unavailable", "lock poisoned"))?;
+        if self.0.isolated
+            || self.0.shutting_down.load(Ordering::SeqCst)
+            || self.0.pauses.load(Ordering::SeqCst) > 0
+        {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionUnavailable,
+                "Extension management is paused or shutting down",
+            ));
+        }
+        self.0
+            .services
+            .lock()
+            .map_err(|_| io("Extension management unavailable", "lock poisoned"))?
+            .management += 1;
+        Ok(ManagementActivity {
+            store: self.clone(),
         })
     }
     pub(crate) fn begin_service(
         &self,
         token: WindowRunToken,
+    ) -> NativeResult<Arc<ServiceActivity>> {
+        self.begin_service_kind(token, ServiceActivityKind::Ordinary)
+    }
+    pub(crate) fn begin_lan_stop_service(
+        &self,
+        token: WindowRunToken,
+    ) -> NativeResult<Arc<ServiceActivity>> {
+        self.begin_service_kind(token, ServiceActivityKind::LanStop)
+    }
+    fn begin_service_kind(
+        &self,
+        token: WindowRunToken,
+        kind: ServiceActivityKind,
     ) -> NativeResult<Arc<ServiceActivity>> {
         let _runs = self
             .0
@@ -2172,8 +2324,13 @@ impl ExtensionStore {
             .services
             .lock()
             .map_err(|_| io("Service leases unavailable", "lock poisoned"))?;
-        let count = services.entry(token.owner.clone()).or_default();
-        if *count >= 4 {
+        let counts = services.windows.entry(token.owner.clone()).or_default();
+        let count = counts.count_mut(kind);
+        let limit = match kind {
+            ServiceActivityKind::Ordinary => 4,
+            ServiceActivityKind::LanStop => 1,
+        };
+        if *count >= limit {
             return Err(NativeError::new(
                 ErrorCode::ExtensionBusy,
                 "Window service limit reached",
@@ -2183,6 +2340,7 @@ impl ExtensionStore {
         Ok(Arc::new(ServiceActivity {
             store: self.clone(),
             token,
+            kind,
         }))
     }
     pub fn wait_window_stopped(&self, label: &str) {
@@ -2325,13 +2483,14 @@ impl ExtensionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extension_test_support::package as test_package;
     fn store() -> (tempfile::TempDir, ExtensionStore) {
         let dir = crate::extension_paths::temporary_directory();
         let store = ExtensionStore::new(dir.path().join("extensions"), false);
         (dir, store)
     }
     fn install(store: &ExtensionStore) -> ExtensionSnapshot {
-        let content = demo_package();
+        let content = test_package();
         let preview = preview_package(&content).unwrap();
         store.install(&content, 0, false, &preview.sha256).unwrap()
     }
@@ -2548,7 +2707,7 @@ mod tests {
         wait_for_preparation(&store);
         let unchanged = store.snapshot().unwrap();
         assert!(!unchanged.items[0].enabled);
-        let mut other: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut other: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
         other["manifest"]["id"] = "tests.other".into();
         let content = other.to_string();
         let preview = preview_package(&content).unwrap();
@@ -2604,7 +2763,7 @@ mod tests {
     #[test]
     fn reviewed_install_validates_consent_before_mutating_and_enables_in_one_revision() {
         let (dir, store) = store();
-        let content = demo_package();
+        let content = test_package();
         let preview = preview_package(&content).unwrap();
         let required = preview.manifest.permissions.clone();
         for consent in [
@@ -2716,7 +2875,7 @@ mod tests {
     fn optional_grants_allow_offline_use_and_changes_cancel_old_calls() {
         let (_dir, store) = store();
         // 可选授权属于宿主契约，不能依赖内置工作台是否仍提供私有存储功能。
-        let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut content: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
         content["manifest"]["id"] = "tests.optional-grants".into();
         content["manifest"]["permissions"] = serde_json::json!([]);
         content["manifest"]["optionalPermissions"] = serde_json::json!(["storage"]);
@@ -2797,7 +2956,7 @@ mod tests {
     #[test]
     fn installation_generation_rejects_old_identity_even_when_the_wasm_is_unchanged() {
         let (_dir, store) = store();
-        let content = demo_package();
+        let content = test_package();
         let hash = preview_package(&content).unwrap().sha256;
         let installed = store
             .install_with_origin(&content, 0, false, &hash, ExtensionOrigin::Bundled)
@@ -2975,7 +3134,7 @@ mod tests {
         let installed = enable(&store, &install(&store));
         let item = &installed.items[0];
         let old_hash = item.package.sha256.clone();
-        let mut value: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
         value["manifest"]["version"] = "1.0.1".into();
         let mut module = STANDARD.decode(value["wasm"].as_str().unwrap()).unwrap();
         module.extend_from_slice(&[0, 1, 0]); // An empty custom section changes identity without execution.
@@ -3001,51 +3160,339 @@ mod tests {
         );
     }
     #[test]
-    fn trusted_patch_updates_keep_only_existing_grants_without_expanding_network_access() {
-        for (origin, change, expected_enabled) in [
-            (ExtensionOrigin::Bundled, "optional", true),
-            (ExtensionOrigin::Local, "optional", false),
-            (ExtensionOrigin::Bundled, "required", false),
-            (ExtensionOrigin::Bundled, "network", false),
-            (ExtensionOrigin::Bundled, "minor", false),
+    fn trusted_updates_preserve_enabled_state_and_exact_grants_across_version_levels() {
+        for origin in [
+            ExtensionOrigin::Bundled,
+            market_origin("example/market", 'a', 1),
         ] {
-            let (_dir, store) = store();
-            let content = demo_package();
-            let hash = preview_package(&content).unwrap().sha256;
-            let initial = store
-                .install_with_origin(&content, 0, false, &hash, origin.clone())
-                .unwrap();
-            let enabled = enable(&store, &initial);
-            let mut value: serde_json::Value = serde_json::from_str(&content).unwrap();
-            value["manifest"]["version"] = if change == "minor" { "1.1.0" } else { "1.0.1" }.into();
-            value["manifest"]["optionalPermissions"] = serde_json::json!(["storage"]);
-            if change == "required" {
-                value["manifest"]["permissions"] = serde_json::json!(["text:read", "files:read"]);
-            }
-            if change == "network" {
-                value["manifest"]["optionalPermissions"] =
-                    serde_json::json!(["storage", "network:https"]);
-                value["manifest"]["network"] =
-                    serde_json::json!([{ "origin": "https://api.github.com", "methods": ["GET"] }]);
-            }
-            let updated = store
-                .install_with_origin(&value.to_string(), enabled.revision, true, &hash, origin)
-                .unwrap();
-            assert_eq!(updated.items[0].enabled, expected_enabled, "{change}");
-            assert!(
-                !updated.items[0]
-                    .granted_permissions
-                    .contains(&ExtensionPermission::Storage)
-            );
-            if expected_enabled {
-                assert_eq!(
-                    updated.items[0].granted_permissions,
-                    vec![ExtensionPermission::TextRead]
-                );
-            } else {
-                assert!(updated.items[0].granted_permissions.is_empty());
+            for enabled in [false, true] {
+                let (dir, store) = store();
+                let mut value = update_fixture();
+                let hash = preview_package(&value.to_string()).unwrap().sha256;
+                let initial = store
+                    .install_with_origin(&value.to_string(), 0, false, &hash, origin.clone())
+                    .unwrap();
+                let mut current = if enabled {
+                    store
+                        .set_enabled(
+                            &initial.items[0].package.manifest.id,
+                            true,
+                            vec![
+                                ExtensionPermission::TextRead,
+                                ExtensionPermission::FilesRead,
+                            ],
+                            initial.revision,
+                            true,
+                        )
+                        .unwrap()
+                } else {
+                    initial
+                };
+                let grants = current.items[0].granted_permissions.clone();
+                for release in ["1.0.1", "1.1.0", "2.0.0"] {
+                    value["manifest"]["version"] = release.into();
+                    value["manifest"]["optionalPermissions"]
+                        .as_array_mut()
+                        .unwrap()
+                        .reverse();
+                    value["manifest"]["network"]
+                        .as_array_mut()
+                        .unwrap()
+                        .reverse();
+                    for rule in value["manifest"]["network"].as_array_mut().unwrap() {
+                        rule["methods"].as_array_mut().unwrap().reverse();
+                    }
+                    let next_origin = if matches!(origin, ExtensionOrigin::Bundled) {
+                        origin.clone()
+                    } else {
+                        market_origin("example/market", 'a', 20)
+                    };
+                    let previous_version = current.items[0].package.manifest.version.clone();
+                    let previous_generation = current.items[0].generation;
+                    current = store
+                        .install_prepared(
+                            package(&value.to_string()).unwrap(),
+                            InstallCondition {
+                                revision: current.revision,
+                                replace: true,
+                                sha256: &hash,
+                            },
+                            next_origin,
+                            None,
+                            |old, next| {
+                                assert!(old.origin.same_trusted_source(next));
+                                Ok(())
+                            },
+                        )
+                        .unwrap();
+                    let item = &current.items[0];
+                    assert_eq!(item.enabled, enabled);
+                    assert_eq!(item.granted_permissions, grants);
+                    assert_eq!(
+                        item.previous_package.as_ref().unwrap().manifest.version,
+                        previous_version
+                    );
+                    assert!(item.generation > previous_generation);
+                    let reopened = ExtensionStore::new(dir.path().join("extensions"), false)
+                        .snapshot()
+                        .unwrap();
+                    assert_eq!(reopened.items[0].enabled, enabled);
+                    assert_eq!(reopened.items[0].granted_permissions, grants);
+                }
+                let rolled = store
+                    .rollback(&current.items[0].package.manifest.id, current.revision)
+                    .unwrap();
+                assert!(!rolled.items[0].enabled);
+                assert!(rolled.items[0].granted_permissions.is_empty());
             }
         }
+    }
+
+    fn market_origin(repository: &str, key: char, revision: u32) -> ExtensionOrigin {
+        ExtensionOrigin::Market {
+            source: crate::extension_market::MarketSource {
+                repository: repository.into(),
+                public_key_fingerprint: key.to_string().repeat(64),
+                catalog_revision: revision,
+                package_sha256: "b".repeat(64),
+            },
+        }
+    }
+
+    fn update_fixture() -> serde_json::Value {
+        let mut value: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
+        value["manifest"]["optionalPermissions"] =
+            serde_json::json!(["storage", "files:read", "network:https"]);
+        value["manifest"]["network"] = serde_json::json!([
+            {"origin":"https://api.example.com", "methods":["GET", "POST"]},
+            {"origin":"https://static.example.com", "methods":["HEAD"]},
+        ]);
+        value
+    }
+
+    #[test]
+    fn unreviewed_permission_or_source_changes_leave_the_installed_package_untouched() {
+        for change in [
+            "required-add",
+            "required-remove",
+            "optional-add",
+            "optional-remove",
+            "promote",
+            "origin-add",
+            "origin-remove",
+            "origin-change",
+            "method-add",
+            "method-remove",
+            "local",
+            "market-repository",
+            "market-key",
+            "source-kind",
+        ] {
+            let (dir, store) = store();
+            let mut value = update_fixture();
+            let hash = preview_package(&value.to_string()).unwrap().sha256;
+            let old_origin = if change == "local" {
+                ExtensionOrigin::Local
+            } else {
+                market_origin("example/market", 'a', 1)
+            };
+            let initial = store
+                .install_with_origin(&value.to_string(), 0, false, &hash, old_origin.clone())
+                .unwrap();
+            let enabled = enable(&store, &initial);
+            let registry_path = dir.path().join("extensions/registry.json");
+            let original = fs::read(&registry_path).unwrap();
+            let run = store
+                .prepare(&enabled.items[0].package.manifest.id, &hash)
+                .unwrap();
+            value["manifest"]["version"] = "1.0.1".into();
+            let mut origin = old_origin;
+            match change {
+                "required-add" => value["manifest"]["permissions"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push("messaging:lan".into()),
+                "required-remove" => {
+                    value["manifest"]["permissions"] = serde_json::json!([]);
+                    for command in value["manifest"]["commands"].as_array_mut().unwrap() {
+                        command["permissions"] = serde_json::json!([]);
+                    }
+                }
+                "optional-add" => value["manifest"]["optionalPermissions"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push("messaging:lan".into()),
+                "optional-remove" => {
+                    value["manifest"]["optionalPermissions"]
+                        .as_array_mut()
+                        .unwrap()
+                        .remove(0);
+                }
+                "promote" => {
+                    value["manifest"]["optionalPermissions"]
+                        .as_array_mut()
+                        .unwrap()
+                        .remove(0);
+                    value["manifest"]["permissions"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push("storage".into());
+                }
+                "origin-add" => value["manifest"]["network"].as_array_mut().unwrap().push(
+                    serde_json::json!({"origin":"https://extra.example.com", "methods":["GET"]}),
+                ),
+                "origin-remove" => {
+                    value["manifest"]["network"]
+                        .as_array_mut()
+                        .unwrap()
+                        .remove(1);
+                }
+                "origin-change" => {
+                    value["manifest"]["network"][0]["origin"] = "https://changed.example.com".into()
+                }
+                "method-add" => value["manifest"]["network"][0]["methods"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push("DELETE".into()),
+                "method-remove" => {
+                    value["manifest"]["network"][0]["methods"]
+                        .as_array_mut()
+                        .unwrap()
+                        .pop();
+                }
+                "market-repository" => origin = market_origin("other/market", 'a', 2),
+                "market-key" => origin = market_origin("example/market", 'c', 2),
+                "source-kind" => origin = ExtensionOrigin::Bundled,
+                _ => {}
+            }
+            assert_eq!(
+                store
+                    .install_prepared(
+                        package(&value.to_string()).unwrap(),
+                        InstallCondition {
+                            revision: enabled.revision,
+                            replace: true,
+                            sha256: &hash
+                        },
+                        origin,
+                        None,
+                        |_, _| panic!("Unreviewed changes must not clean credentials"),
+                    )
+                    .unwrap_err()
+                    .code,
+                ErrorCode::Conflict,
+                "{change}"
+            );
+            assert_eq!(fs::read(&registry_path).unwrap(), original, "{change}");
+            assert!(!run.stop.load(Ordering::Relaxed), "{change}");
+        }
+    }
+
+    #[test]
+    fn unreviewed_installs_require_an_existing_newer_update_and_current_revision() {
+        let (dir, store) = store();
+        let content = test_package();
+        let hash = preview_package(&content).unwrap().sha256;
+        assert_eq!(
+            store
+                .install_prepared(
+                    package(&content).unwrap(),
+                    InstallCondition {
+                        revision: 0,
+                        replace: false,
+                        sha256: &hash
+                    },
+                    ExtensionOrigin::Bundled,
+                    None,
+                    |_, _| Ok(()),
+                )
+                .unwrap_err()
+                .code,
+            ErrorCode::Conflict
+        );
+        assert!(!dir.path().join("extensions").exists());
+        let installed = store
+            .install_with_origin(&content, 0, false, &hash, ExtensionOrigin::Bundled)
+            .unwrap();
+        let original = fs::read(dir.path().join("extensions/registry.json")).unwrap();
+        for (release, revision, replace, expected_hash) in [
+            ("1.0.0", installed.revision, true, hash.as_str()),
+            ("0.9.0", installed.revision, true, hash.as_str()),
+            ("2.0.0", 0, true, hash.as_str()),
+            ("2.0.0", installed.revision, false, hash.as_str()),
+            ("2.0.0", installed.revision, true, "wrong-hash"),
+        ] {
+            let mut value: serde_json::Value = serde_json::from_str(&content).unwrap();
+            value["manifest"]["version"] = release.into();
+            assert_eq!(
+                store
+                    .install_prepared(
+                        package(&value.to_string()).unwrap(),
+                        InstallCondition {
+                            revision,
+                            replace,
+                            sha256: expected_hash
+                        },
+                        ExtensionOrigin::Bundled,
+                        None,
+                        |_, _| panic!("Rejected update must not run cleanup"),
+                    )
+                    .unwrap_err()
+                    .code,
+                ErrorCode::Conflict
+            );
+            assert_eq!(
+                fs::read(dir.path().join("extensions/registry.json")).unwrap(),
+                original
+            );
+        }
+    }
+
+    #[test]
+    fn bundled_catalog_describes_the_actual_shipped_packages() {
+        let catalog = bundled_catalog().unwrap();
+        assert_eq!(catalog.host_version, env!("CARGO_PKG_VERSION"));
+        let mut ids = HashSet::new();
+        for entry in catalog.entries {
+            let id = &entry.package.manifest.id;
+            assert!(ids.insert(id.clone()));
+            let actual = preview_package(&bundled_package(id).unwrap()).unwrap();
+            assert_eq!(
+                serde_json::to_value(entry.package).unwrap(),
+                serde_json::to_value(actual).unwrap()
+            );
+        }
+        assert!(ids.contains("starter.extension-lab"));
+    }
+
+    #[test]
+    fn bundled_origin_requires_the_complete_shipped_package() {
+        let content = bundled_package("starter.extension-lab").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let mut bundle = package(&serde_json::to_string_pretty(&value).unwrap()).unwrap();
+        assert!(matches!(
+            verified_package_origin(&bundle).unwrap(),
+            ExtensionOrigin::Bundled
+        ));
+        bundle.preview.manifest.description.push_str(" changed");
+        assert!(matches!(
+            verified_package_origin(&bundle).unwrap(),
+            ExtensionOrigin::Local
+        ));
+        bundle = package(&content).unwrap();
+        bundle.binary.push(0);
+        assert!(matches!(
+            verified_package_origin(&bundle).unwrap(),
+            ExtensionOrigin::Local
+        ));
+        bundle = package(&content).unwrap();
+        bundle
+            .ui_documents
+            .insert("main".into(), "Changed UI".into());
+        assert!(matches!(
+            verified_package_origin(&bundle).unwrap(),
+            ExtensionOrigin::Local
+        ));
     }
     #[test]
     fn market_trust_uses_repository_and_key_identity() {
@@ -3088,7 +3535,7 @@ mod tests {
         let hash = initial.items[0].package.sha256.clone();
         let active = store.prepare(&id, &hash).unwrap();
         let fail = || NativeError::new(ErrorCode::CredentialError, "Retry credential cleanup");
-        let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut content: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
         content["manifest"]["version"] = "1.0.1".into();
         assert!(
             store
@@ -3201,7 +3648,7 @@ mod tests {
             let initial = enable(&store, &install(&store));
             let id = initial.items[0].package.manifest.id.clone();
             let hash = initial.items[0].package.sha256.clone();
-            let mut update: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+            let mut update: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
             update["manifest"]["version"] = "1.0.1".into();
             let update = update.to_string();
             if action == "rollback" {
@@ -3210,7 +3657,7 @@ mod tests {
                     .unwrap();
                 enable(&store, &upgraded);
             }
-            let mut other: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+            let mut other: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
             other["manifest"]["id"] = "tests.other".into();
             let snapshot = store
                 .install(
@@ -3302,7 +3749,7 @@ mod tests {
     }
     #[test]
     fn command_execution_budgets_default_safely_and_gate_compute_on_the_host_version() {
-        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        let mut manifest = preview_package(&test_package()).unwrap().manifest;
         assert_eq!(
             manifest.commands[0].execution_budget,
             ExtensionExecutionBudget::Standard
@@ -3342,7 +3789,7 @@ mod tests {
 
     #[test]
     fn own_window_controls_require_a_current_host_and_a_declared_permission() {
-        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        let mut manifest = preview_package(&test_package()).unwrap().manifest;
         manifest
             .optional_permissions
             .push(ExtensionPermission::WindowControl);
@@ -3354,7 +3801,7 @@ mod tests {
 
     #[test]
     fn window_size_is_bounded_and_requires_a_declared_window_and_current_host() {
-        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        let mut manifest = preview_package(&test_package()).unwrap().manifest;
         manifest.min_host_version = "0.1.7".into();
         manifest.commands[0].input_format = ExtensionInputFormat::Json;
         manifest.commands[0].result_format = ExtensionResultFormat::View;
@@ -3401,7 +3848,7 @@ mod tests {
 
     #[test]
     fn manifest_supports_mixed_commands_and_rejects_ambiguous_network_or_host_versions() {
-        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        let mut manifest = preview_package(&test_package()).unwrap().manifest;
         manifest.optional_permissions = vec![
             ExtensionPermission::NetworkHttps,
             ExtensionPermission::NetworkLocal,
@@ -3449,7 +3896,7 @@ mod tests {
     }
     #[test]
     fn media_permissions_remain_optional_and_proxy_cannot_exist_without_public_network() {
-        let mut manifest = preview_package(&demo_package()).unwrap().manifest;
+        let mut manifest = preview_package(&test_package()).unwrap().manifest;
         manifest.optional_permissions = vec![ExtensionPermission::NetworkSystemProxy];
         assert!(manifest.validate().is_err());
         manifest.min_host_version = "0.1.6".into();
@@ -3540,7 +3987,7 @@ mod tests {
         let preview = preview_package(&content).unwrap();
         let mut snapshot = store.install(&content, 0, false, &preview.sha256).unwrap();
         // Capacity and default registration do not depend on each filler carrying the lab UI.
-        let filler = demo_package();
+        let filler = test_package();
         let filler_hash = preview_package(&filler).unwrap().sha256;
         for index in 1..MAX_EXTENSIONS {
             let mut value: serde_json::Value = serde_json::from_str(&filler).unwrap();
@@ -3664,9 +4111,8 @@ mod tests {
         assert!(store.prepare(id, "wrong hash").is_err());
         let run = store.prepare(id, hash).unwrap();
         assert_eq!(
-            crate::extension_runtime::run(&run.module, "uppercase", b"hello", run.stop.clone())
-                .unwrap(),
-            "HELLO"
+            crate::extension_runtime::run(&run.module, "echo", b"hello", run.stop.clone()).unwrap(),
+            "hello"
         );
         store.set_enabled(id, false, vec![], 2, false).unwrap();
         assert!(run.stop.load(Ordering::Relaxed));
@@ -3682,7 +4128,7 @@ mod tests {
         let id = &item.package.manifest.id;
         let hash = &item.package.sha256;
         let run = store.prepare(id, hash).unwrap();
-        let mut package: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut package: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
         assert!(store.install(&package.to_string(), 2, true, hash).is_err());
         package["manifest"]["version"] = "1.0.1".into();
         let upgraded = store.install(&package.to_string(), 2, true, hash).unwrap();
@@ -3846,7 +4292,7 @@ mod tests {
             fs::read(&stale_module).unwrap(),
             b"preserve external module"
         );
-        let content = demo_package();
+        let content = test_package();
         let preview = preview_package(&content).unwrap();
         assert!(store.install(&content, 0, false, &preview.sha256).is_err());
         assert_eq!(fs::read_dir(&target).unwrap().count(), 1);
@@ -4006,7 +4452,7 @@ mod tests {
     }
     #[test]
     fn package_validation_rejects_native_code_duplicate_commands_and_ambiguous_capabilities() {
-        let original: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&test_package()).unwrap();
         for (pointer, value) in [
             ("/manifest/formatVersion", serde_json::json!(1)),
             ("/wasm", serde_json::json!(STANDARD.encode(b"MZnot-wasm"))),
@@ -4058,33 +4504,112 @@ mod tests {
         assert!(!store.is_running());
     }
     #[test]
-    fn window_wait_holds_until_last_native_service_lease_is_released() {
+    fn window_and_global_wait_hold_until_the_last_ordinary_or_stop_lease_is_released() {
         let (_dir, store) = store();
-        let token = store.window_run_token("main".into()).unwrap();
-        let lease = store.begin_service(token).unwrap();
-        let clone = lease.clone();
-        store.wait_window_stopped("unrelated-window");
-        let waiter = store.clone();
-        let (started_tx, started_rx) = std::sync::mpsc::channel();
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || {
-            started_tx.send(()).unwrap();
-            waiter.wait_window_stopped("main");
-            done_tx.send(()).unwrap();
-        });
-        started_rx.recv().unwrap();
-        drop(lease);
-        assert!(
-            done_rx
-                .recv_timeout(std::time::Duration::from_millis(20))
-                .is_err()
-        );
-        drop(clone);
-        done_rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .unwrap();
-        thread.join().unwrap();
+        for kind in [ServiceActivityKind::Ordinary, ServiceActivityKind::LanStop] {
+            let token = store.window_run_token("main".into()).unwrap();
+            let lease = store.begin_service_kind(token, kind).unwrap();
+            let clone = lease.clone();
+            store.wait_window_stopped("unrelated-window");
+            let ready = Arc::new(std::sync::Barrier::new(3));
+            let (done_tx, done_rx) = std::sync::mpsc::channel();
+            let threads: Vec<_> = [false, true]
+                .into_iter()
+                .map(|global| {
+                    let waiter = store.clone();
+                    let ready = ready.clone();
+                    let done = done_tx.clone();
+                    std::thread::spawn(move || {
+                        ready.wait();
+                        if global {
+                            waiter.wait_stopped();
+                        } else {
+                            waiter.wait_window_stopped("main");
+                        }
+                        done.send(()).unwrap();
+                    })
+                })
+                .collect();
+            ready.wait();
+            drop(lease);
+            let premature = done_rx.recv_timeout(Duration::from_millis(20));
+            drop(clone);
+            assert!(matches!(
+                premature,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ));
+            for _ in 0..2 {
+                done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+        }
     }
+    #[test]
+    fn lan_stop_has_one_independent_slot_per_window_until_its_last_clone_finishes() {
+        let (_dir, store) = store();
+        let first = store.window_run_token("main".into()).unwrap();
+        let second = store.window_run_token("secondary".into()).unwrap();
+        let stop = store.begin_lan_stop_service(first.clone()).unwrap();
+        let clone = stop.clone();
+        // 此处只验证窗口计数；全局唯一停止容量由 ExtensionServices 准入约束。
+        let other_stop = store.begin_lan_stop_service(second.clone()).unwrap();
+        let ordinary: Vec<_> = (0..4)
+            .map(|_| store.begin_service(first.clone()).unwrap())
+            .collect();
+        assert_eq!(
+            store.begin_service(first.clone()).err().unwrap().code,
+            ErrorCode::ExtensionBusy
+        );
+        for token in [first.clone(), second] {
+            assert_eq!(
+                store.begin_lan_stop_service(token).err().unwrap().code,
+                ErrorCode::ExtensionBusy
+            );
+        }
+        drop(stop);
+        drop(other_stop);
+        drop(ordinary);
+        {
+            let activities = store.0.services.lock().unwrap();
+            let services = &activities.windows;
+            assert_eq!(services.len(), 1);
+            assert_eq!(services["main"].ordinary, 0);
+            assert_eq!(services["main"].lan_stop, 1);
+        }
+        assert!(store.is_running());
+        assert_eq!(
+            store
+                .begin_lan_stop_service(first.clone())
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ExtensionBusy
+        );
+        let pause = store.pause();
+        assert!(clone.check().is_err());
+        assert!(clone.commit(|| Ok(())).is_err());
+        drop(pause);
+        store.begin_window_close("main").unwrap();
+        store.reopen_window("main").unwrap();
+        assert!(clone.check().is_err());
+        drop(clone);
+        assert!(!store.is_running());
+        assert!(store.0.services.lock().unwrap().windows.is_empty());
+        assert_eq!(
+            store.begin_lan_stop_service(first).err().unwrap().code,
+            ErrorCode::ExtensionUnavailable
+        );
+        let next = store
+            .begin_lan_stop_service(store.window_run_token("main".into()).unwrap())
+            .unwrap();
+        next.commit(|| Ok(())).unwrap();
+        drop(next);
+        store.wait_window_stopped("main");
+        store.wait_stopped();
+    }
+
     #[test]
     fn service_admission_and_commits_obey_pause_shutdown_and_per_window_limits() {
         let (_dir, store) = store();

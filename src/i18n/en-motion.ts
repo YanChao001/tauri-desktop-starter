@@ -2,8 +2,7 @@ import type { MotionMessages } from "./zh-motion";
 export const enMotion = {
   "lab.eyebrow": "MOTION / INTERACTION LAB",
   "lab.title": "Give every interaction a little gravity.",
-  "lab.subtitle":
-    "Four hands-on experiments. Drag, reshape, and flip. Put your imagination in motion.",
+  "lab.subtitle": "Four interactive experiments: drag, reshape and flip.",
   "lab.scenes": "Choose a motion experiment",
   "lab.spring": "Spring physics",
   "lab.layout": "Shared space",
@@ -11,16 +10,15 @@ export const enMotion = {
   "lab.paths": "Stellar paths",
   "lab.springTitle": "Feel the spring in every landing",
   "lab.springHint":
-    "Drag the orb and let go, or choose a landing point. Tune the controls to feel its inertia and bounce.",
+    "Drag and release the orb or choose a landing point; tune its inertia and bounce.",
   "lab.layoutTitle": "Let the focus flow",
-  "lab.layoutHint":
-    "Choose a card. The highlight and its content share a continuous sense of space.",
+  "lab.layoutHint": "Choose a card to move focus and expand its content.",
   "lab.tiltTitle": "Hold a little light",
   "lab.tiltHint":
-    "Move your pointer or touch the card. You can also focus it, explore with arrow keys, and flip with Enter.",
+    "Use pointer or touch; when the card is focused, arrow keys tilt and Enter flips.",
   "lab.pathsTitle": "Let light follow the orbit",
   "lab.pathsHint":
-    "Watch the paths appear. Change their pace, add stardust, or unleash a stellar burst.",
+    "Change drawing speed and stardust count, or trigger a stellar burst.",
   "lab.pause": "Pause",
   "lab.resume": "Resume",
   "lab.replay": "Replay",
@@ -28,7 +26,7 @@ export const enMotion = {
   "lab.paused": "Paused",
   "lab.reduced": "Still experience",
   "lab.reducedHint":
-    "Your system or app requests reduced motion. Every interaction remains available.",
+    "Reduced motion is enabled by the system or app; all controls remain available.",
   "lab.controls": "Find your feel",
   "lab.stiffness": "Stiffness",
   "lab.damping": "Damping",
@@ -53,8 +51,7 @@ export const enMotion = {
   "lab.journalDetail": "Keep the small bright moments close.",
   "lab.discoverDetail": "Follow your curiosity somewhere new.",
   "lab.layoutChoice": "Choose the focused card",
-  "lab.layoutNote":
-    "A card keeps its place in the story as it opens to reveal more.",
+  "lab.layoutNote": "Cards keep their spatial relationship as they expand.",
   "lab.layoutSpeed": "Transition feel",
   "lab.smooth": "Unhurried",
   "lab.snappy": "Responsive",
@@ -68,14 +65,13 @@ export const enMotion = {
   "lab.flip": "Flip card",
   "lab.resetTilt": "Return to center",
   "lab.tiltNote":
-    "Explore by touch, pointer, or keyboard. Move away and the light gently settles.",
+    "Lift your finger or move the pointer away to recenter the card and light.",
   "lab.duration": "Drawing time",
   "lab.density": "Stardust count",
   "lab.loop": "Loop the drawing",
   "lab.burst": "Stellar burst",
   "lab.burstOff": "Gather the light",
-  "lab.pathNote":
-    "Paths draw themselves while stardust follows its orbit. Pause to hold the moment.",
+  "lab.pathNote": "Paths draw while stardust orbits; pause to hold the frame.",
   "lab.insight": "FIELD NOTES",
   "lab.interactive": "INTERACTIVE CANVAS",
   "lab.dragOrb":

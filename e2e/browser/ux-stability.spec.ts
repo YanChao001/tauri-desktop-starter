@@ -65,14 +65,12 @@ for (const width of [880, 1440]) {
       expect(normal.height).toBeGreaterThan(100);
 
       await page
-        .getByRole("button", { name: "Try error state", exact: true })
+        .getByRole("button", { name: "Simulate error", exact: true })
         .click();
       await expect(results.getByRole("alert")).toBeVisible();
       await expect(content).toHaveAttribute("inert", "");
       sameBounds(await bounds(results), normal, "failure");
-      await results
-        .getByRole("button", { name: "Retry loading", exact: true })
-        .click();
+      await results.getByRole("button", { name: "Retry", exact: true }).click();
       await expect(results.getByRole("progressbar")).toBeVisible();
       sameBounds(await bounds(results), normal, "retry loading");
       await expect(results.getByRole("progressbar")).toHaveCount(0);
@@ -80,7 +78,7 @@ for (const width of [880, 1440]) {
       sameBounds(await bounds(results), normal, "retry completed");
 
       await page
-        .getByRole("button", { name: "Try the loading state", exact: true })
+        .getByRole("button", { name: "Simulate loading", exact: true })
         .click();
       await expect(results.getByRole("progressbar")).toBeVisible();
       sameBounds(await bounds(results), normal, "loading");
@@ -94,12 +92,12 @@ for (const width of [880, 1440]) {
       await expect(results.locator(".resource-card, tbody tr")).toHaveCount(1);
       const filtered = await bounds(results);
       await page
-        .getByRole("button", { name: "Try error state", exact: true })
+        .getByRole("button", { name: "Simulate error", exact: true })
         .click();
       await expect(results.getByRole("alert")).toBeVisible();
       sameBounds(await bounds(results), filtered, "filtered failure");
       const retry = results.getByRole("button", {
-        name: "Retry loading",
+        name: "Retry",
         exact: true,
       });
       await expect(retry).toBeInViewport();
@@ -116,24 +114,20 @@ for (const width of [880, 1440]) {
     await seed(page);
     await page.goto("./#/components");
     const field = page.getByRole("textbox", {
-      name: "Sample title (required)",
+      name: "Title (required)",
       exact: true,
     });
     await field.scrollIntoViewIfNeeded();
     await page.evaluate(() => document.fonts.ready);
     const form = field.locator("xpath=ancestor::form");
     const normal = await bounds(form);
-    await form
-      .getByRole("button", { name: "Check input", exact: true })
-      .click();
+    await form.getByRole("button", { name: "Validate", exact: true }).click();
     await expect(form.getByRole("alert")).toContainText("Enter a title");
     sameBounds(await bounds(form), normal, "field validation");
     await field.fill("Keep this title");
-    await form
-      .getByRole("button", { name: "Check input", exact: true })
-      .click();
+    await form.getByRole("button", { name: "Validate", exact: true }).click();
     await expect(
-      page.getByText("Check passed. Content stays on this page only.", {
+      page.getByText("Valid input; content stays on this page.", {
         exact: true,
       }),
     ).toBeVisible();

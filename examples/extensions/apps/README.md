@@ -1,6 +1,6 @@
 # 本地工作台
 
-可安装的 Extism 应用示例，使用包格式 3、API 2 和视图 2；版本与最低宿主见 [extension.json](./extension.json)。[ui/main.html](./ui/main.html) 复用宿主默认控件与主题。协议和授权见 [扩展指南](../../../docs/extensions.md)，界面调用见 [SDK](../../../sdk/README.md)。
+可安装的 Extism 应用示例，版本、最低宿主和命令入口见 [extension.json](./extension.json)。本文维护工作台业务与导出格式；宿主协议和授权见 [扩展指南](../../../docs/extensions.md)，界面调用与主题接入见 [SDK](../../../sdk/README.md)。
 
 ## 交互工作台
 
@@ -8,9 +8,9 @@
 - **数据透镜**：通过图表和筛选探索本地样例，比较不同分类与时间的数据，导出当前可见结果。
 - **流程编排**：组合本地处理步骤并运行模拟，查看阶段与输出；模拟由当前界面驱动，不代表后台服务或原生任务。
 
-三个场景的编辑、筛选和切换都在隔离界面中处理，不为每次交互执行 Wasm。工作成果导出才调用 Wasm 校验并生成产物。场景模型通过 SDK 检查点恢复；检查点不是长期业务存储，宿主会话导出包含相应草稿。
+编辑、筛选和切换由隔离界面即时处理，成果导出才调用 Wasm 校验并生成产物。场景草稿通过 SDK 检查点恢复并随宿主会话导出；长期保存由用户导出成果或会话。
 
-普通工作区面板、属性区和页脚跟随宿主皮肤强度；画布对象、图表、输入与数据阅读区保留各自底色。主题规则复用 [SDK](../../../sdk/README.md#默认外观与动效) 的表面 token。
+普通面板、属性区与页脚跟随宿主皮肤，画布、图表和阅读区保留内容底色。场景切换保留模型；持续动效处理减少动效、隐藏、离屏与卸载，接入规则见 [SDK](../../../sdk/README.md#默认外观与动效)。
 
 数据透镜单独保留尚未应用的 JSON 原稿及编辑器展开状态，包括未完成或校验失败的内容；切换场景、成果导出和会话重建不会覆盖原稿。“应用数据”校验成功后替换当前数据，“放弃编辑”清除原稿并保留已应用的数据。输入最多 48000 个 UTF-8 字节，超出时明确提示并保留前段内容；登记失败继续保留页面输入。旧检查点缺少编辑元数据时仍可恢复，损坏或未来检查点保留原值并停止写入。
 
@@ -42,11 +42,9 @@
 | [src/studio.rs](./src/studio.rs) | 工作成果的有界校验、JSON / CSV 导出与通用视图入口                        |
 | [src/view.rs](./src/view.rs)     | 视图、翻译与 UTF-8 边界                                                  |
 
-场景切换保留各自模型；减少动效、隐藏或离屏时停止持续动效，卸载时清理监听与帧调度。
-
 ## 构建与验证
 
-从仓库根目录执行：
+从仓库根目录按改动选择：Rust 业务运行 Cargo 测试与格式检查，界面交互运行 HTML 测试；资源更新后核对回执与真实 Wasm fixture。
 
 ```sh
 cargo test --manifest-path examples/extensions/apps/Cargo.toml --locked
@@ -56,4 +54,4 @@ pnpm extension:demos:check
 pnpm extension:test --manifest examples/extensions/apps/extension.json --wasm resources/extensions/demo-apps.wasm --ui-dir examples/extensions/apps/ui --fixture examples/extensions/apps/smoke.json
 ```
 
-源码变更后先按 [内置资源流程](../../../docs/extensions.md#内置应用资源) 在参考平台重建，其他平台使用 `--compile`。单元测试覆盖会话拒写、已移除动作拒绝、导出边界及 CSV 公式防护，HTML 测试覆盖三个场景、草稿保持、键盘、导出和动效清理，真实 Wasm fixture 核对中英视图与产物；不访问外网，不代替真实效果往返或 WebView 验收。
+编译输入变化时按 [内置资源流程](../../../docs/extensions.md#内置应用资源) 在参考平台重建并提交资源 / 回执，其他平台使用 `--compile`。单元测试覆盖会话和导出边界及 CSV 公式防护，HTML 测试覆盖交互与草稿恢复，真实 Wasm fixture 核对中英视图和产物。宿主效果与 WebView 的检查按 [扩展验证入口](../../../docs/extensions.md#验证) 选择。

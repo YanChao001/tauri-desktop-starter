@@ -476,6 +476,7 @@ const ENTRY_POINTS = [
   ["src-tauri/src/bin/export-bindings.rs", "bindings::export("],
   ["src-tauri/src/bin/verify-updater.rs", "update_signature::verify_manifest("],
   ["src-tauri/src/bin/extension-tool.rs", "{"],
+  ["src-tauri/src/bin/device_tool.rs", "{"],
 ];
 const libraryReference = (library, suffix) =>
   new RegExp(

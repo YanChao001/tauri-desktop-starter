@@ -144,11 +144,11 @@ describe("设置页", () => {
     expect(document.getElementById("settings-networkMode")).toHaveFocus();
     const connection = screen.getByRole("combobox", { name: "网络连接" });
     expect(connection).toBeDisabled();
-    expect(connection).toHaveTextContent("跟随系统代理");
+    expect(connection).toHaveTextContent("系统代理");
     expect(screen.queryByText(/连接方式由浏览器控制/)).not.toBeInTheDocument();
     fireEvent.focus(screen.getByRole("button", { name: "了解网络连接" }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "连接方式由浏览器控制，请在桌面应用中修改此设置。",
+      "浏览器自行管理连接方式，仅桌面版可修改此项。",
     );
     expect(desktop.saveSettingsSnapshot).not.toHaveBeenCalled();
   });
@@ -168,16 +168,16 @@ describe("设置页", () => {
     );
     expect(connection).toHaveTextContent("直接连接");
     fireEvent.keyDown(connection, { key: "Enter" });
-    fireEvent.click(screen.getByRole("option", { name: "跟随系统代理" }));
+    fireEvent.click(screen.getByRole("option", { name: "系统代理" }));
     await waitFor(() =>
       expect(
         vi.mocked(desktop.saveSettingsSnapshot).mock.calls.at(-1)?.[0],
       ).toMatchObject({ networkMode: "system" }),
     );
-    expect(connection).toHaveTextContent("跟随系统代理");
+    expect(connection).toHaveTextContent("系统代理");
     fireEvent.focus(screen.getByRole("button", { name: "了解网络连接" }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "保存后用于后续网络请求。插件使用系统代理仍需单独授权。",
+      "保存后用于后续请求，插件使用系统代理仍需单独授权。",
     );
   });
 
@@ -188,9 +188,7 @@ describe("设置页", () => {
     expect(
       screen.getByRole("switch", { name: "启动时检查更新" }),
     ).toBeDisabled();
-    expect(
-      screen.getByText(/更新检查、安装和自动检查仅在桌面应用中可用/),
-    ).toBeVisible();
+    expect(screen.getByText(/检查、安装与自动检查仅限桌面版/)).toBeVisible();
     expect(desktop.checkForUpdate).not.toHaveBeenCalled();
     expect(desktop.downloadAndInstallUpdate).not.toHaveBeenCalled();
     expect(desktop.getUpdateSnapshot).not.toHaveBeenCalled();
@@ -199,16 +197,12 @@ describe("设置页", () => {
   it("把桌面选项放在窗口设置中，浏览器明确限制且别名定位可聚焦", () => {
     render(<SettingsView initial="/settings?section=desktop" />);
     expect(screen.getByRole("region", { name: "窗口与运行" })).toHaveFocus();
-    expect(
-      screen.getByText(/窗口大小和系统集成功能需要桌面应用/),
-    ).toBeVisible();
+    expect(screen.getByText(/窗口大小与系统集成仅桌面版可改/)).toBeVisible();
     expect(screen.getByRole("switch", { name: "登录时启动" })).toBeDisabled();
     expect(
-      screen.getByRole("switch", { name: "关闭窗口后在后台运行" }),
+      screen.getByRole("switch", { name: "关闭后后台运行" }),
     ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "打开第二个窗口" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "新窗口" })).toBeDisabled();
     expect(screen.getByRole("group", { name: "窗口大小" })).toBeVisible();
   });
 
@@ -323,13 +317,11 @@ describe("设置页", () => {
   it("皮肤说明保留无障碍关联，键盘聚焦后才显示补充文案", async () => {
     render(<SettingsView />);
     const skin = screen.getByRole("radio", { name: "云朵晴空" });
-    expect(skin).toHaveAccessibleDescription(
-      "蓬松云团与小太阳，像随手画下的好天气",
-    );
+    expect(skin).toHaveAccessibleDescription("云朵与小太阳线稿");
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.focus(skin);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "蓬松云团与小太阳，像随手画下的好天气",
+      "云朵与小太阳线稿",
     );
   });
 
@@ -343,7 +335,7 @@ describe("设置页", () => {
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
@@ -351,7 +343,7 @@ describe("设置页", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toBeEnabled();
   });
@@ -363,7 +355,7 @@ describe("设置页", () => {
       presets.getByRole("button", { name: "紧凑 960 × 640" }),
     ).toBeDisabled();
     expect(
-      presets.getByRole("button", { name: "标准 应用默认尺寸" }),
+      presets.getByRole("button", { name: "标准 默认尺寸" }),
     ).toBeDisabled();
     expect(
       presets.getByRole("button", { name: "舒适 1280 × 800" }),
@@ -378,12 +370,10 @@ describe("设置页", () => {
       screen.queryByRole("button", { name: "应用窗口大小" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText("窗口大小由桌面应用管理，浏览器预览中不可修改。"),
+      screen.queryByText("窗口大小仅桌面版可改，浏览器预览不支持。"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "窗口大小和系统集成功能需要桌面应用，浏览器中无法更改。",
-      ),
+      screen.getByText("窗口大小与系统集成仅桌面版可改，浏览器不支持。"),
     ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "了解窗口大小" }),
@@ -410,13 +400,13 @@ describe("设置页", () => {
     await waitFor(() =>
       expect(
         presets.getByRole("button", {
-          name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+          name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
         }),
       ).toBeEnabled(),
     );
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(
@@ -485,26 +475,26 @@ describe("设置页", () => {
     ).toBeDisabled();
     expect(
       presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
-    ).toHaveAccessibleDescription("不符合当前屏幕可用范围");
+    ).toHaveAccessibleDescription("超出当前屏幕可用范围");
     const disabledReason = presets.getByRole("group", { name: "舒适" });
     expect(disabledReason).toHaveAttribute("tabindex", "0");
     fireEvent.focus(disabledReason);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "不符合当前屏幕可用范围",
+      "超出当前屏幕可用范围",
     );
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toHaveTextContent("1000 × 700");
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toHaveTextContent("已适应当前屏幕");
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toBeEnabled();
     fireEvent.click(
@@ -526,7 +516,7 @@ describe("设置页", () => {
     render(<SettingsView />);
     const presets = within(screen.getByRole("group", { name: "窗口大小" }));
     const standard = presets.getByRole("button", {
-      name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+      name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
     });
     await waitFor(() => expect(standard).toBeEnabled());
     for (const name of [
@@ -556,7 +546,7 @@ describe("设置页", () => {
     await waitFor(() =>
       expect(
         presets.getByRole("button", {
-          name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+          name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
         }),
       ).toBeEnabled(),
     );
@@ -566,12 +556,12 @@ describe("设置页", () => {
     ).not.toBeInTheDocument();
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toHaveTextContent("1280 × 800");
     expect(
       presets.getByRole("button", {
-        name: /^标准 (?:\d+ × \d+|应用默认尺寸)(?: |$)/,
+        name: /^标准 (?:\d+ × \d+|默认尺寸)(?: |$)/,
       }),
     ).toHaveAttribute("aria-pressed", "true");
   });

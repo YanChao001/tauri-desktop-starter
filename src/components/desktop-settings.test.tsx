@@ -74,7 +74,7 @@ describe("desktop controls", () => {
     const opening = deferred<void>();
     vi.mocked(native.openSecondaryWindow).mockReturnValueOnce(opening.promise);
     const view = render(<DesktopSettings />);
-    const button = screen.getByRole("button", { name: "Open a second window" });
+    const button = screen.getByRole("button", { name: "New window" });
     await waitFor(() => expect(button).toBeEnabled());
     act(() => {
       fireEvent.click(button);
@@ -100,7 +100,7 @@ describe("desktop controls", () => {
     ).toBeDisabled();
     expect(
       screen.getByRole("switch", {
-        name: "Keep running after closing a window",
+        name: "Run in background after closing",
       }),
     ).toBeDisabled();
     expect(update).not.toHaveBeenCalled();
@@ -111,18 +111,16 @@ describe("desktop controls", () => {
     preferences.runInBackground = true;
     render(<DesktopSettings />);
     expect(
-      screen.getByText(
-        /require the desktop app and cannot be changed in the browser/,
-      ),
+      screen.getByText(/can only be changed in the desktop app/),
     ).toBeVisible();
     const background = screen.getByRole("switch", {
-      name: "Keep running after closing a window",
+      name: "Run in background after closing",
     });
     expect(background).toBeDisabled();
     expect(
       screen.getByRole("switch", { name: "Launch at login" }),
     ).toBeDisabled();
-    const open = screen.getByRole("button", { name: "Open a second window" });
+    const open = screen.getByRole("button", { name: "New window" });
     expect(open).toBeDisabled();
     fireEvent.click(background);
     fireEvent.click(open);
@@ -135,7 +133,7 @@ describe("desktop controls", () => {
   it("updates the shared background preference when a tray is available", async () => {
     render(<DesktopSettings />);
     const background = screen.getByRole("switch", {
-      name: "Keep running after closing a window",
+      name: "Run in background after closing",
     });
     await waitFor(() => expect(background).toBeEnabled());
     fireEvent.click(background);

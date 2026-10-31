@@ -133,20 +133,20 @@ pub(crate) fn render(fields: &Value, zh: bool) -> View {
         display: tr(zh, "交互工作台", "Interactive studio"),
         description: tr(
             zh,
-            "在创意画布、数据透镜和流程编排中探索本地交互，按需导出当前工作成果。",
-            "Explore local interactions in Creative canvas, Data lens and Flow builder, then export your work.",
+            "使用画布、图表与流程模拟，导出工作成果。",
+            "Work with canvases, charts and simulated pipelines, then export your results.",
         ),
         fields: vec![
-            json!({"id":"workspace","label":tr(zh,"工作台导出数据（JSON）","Workspace export data (JSON)"),"kind":"textarea","value":fields["workspace"].as_str().unwrap_or(""),"maxBytes":MAX_WORKSPACE}),
+            json!({"id":"workspace","label":tr(zh,"导出数据（JSON）","Export data (JSON)"),"kind":"textarea","value":fields["workspace"].as_str().unwrap_or(""),"maxBytes":MAX_WORKSPACE}),
             json!({"id":"workspace-format","label":tr(zh,"导出格式","Export format"),"kind":"select","value":fields["workspace-format"].as_str().unwrap_or("json"),"options":[{"value":"json","label":"JSON"},{"value":"csv","label":"CSV"}]}),
         ],
         groups: vec![
-            json!({"columns":1,"actions":[button("workspace-export",&tr(zh,"生成工作台导出文件","Generate workspace export"),true)]}),
+            json!({"columns":1,"actions":[button("workspace-export",&tr(zh,"生成导出文件","Generate export"),true)]}),
         ],
         blocks: vec![markdown(tr(
             zh,
-            "自定义界面提供创意画布、数据图表和流程模拟。此通用视图是工作台导出入口；导出文件生成后，点击产物保存。",
-            "The custom interface offers a creative canvas, data charts and flow simulation. This generic view provides workspace export. After generating an export, save its artifact.",
+            "此视图用于导出工作台数据。生成后点击文件保存；画布、图表与流程在自定义界面中使用。",
+            "Generate and save workspace exports here. Use the custom interface for canvases, charts and pipelines.",
         ))],
     }
 }

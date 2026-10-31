@@ -406,7 +406,7 @@ for (const fixture of [
     body: null,
     trigger: "Release notes",
     title: "Release notes · 2.0.0",
-    empty: "No release notes were provided for this version.",
+    empty: "No notes for this version.",
     close: "Close",
   },
   {
@@ -414,7 +414,7 @@ for (const fixture of [
     body: " \n\t ",
     trigger: "版本说明",
     title: "版本说明 · 2.0.0",
-    empty: "此版本未提供更新说明。",
+    empty: "此版本暂无说明。",
     close: "关闭",
   },
 ] as const) {

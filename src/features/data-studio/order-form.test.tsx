@@ -111,20 +111,17 @@ describe("complex demo form", () => {
     await waitFor(() => {
       expect(applicant).toHaveAttribute("aria-invalid", "true");
       expect(applicant).toHaveAccessibleDescription(
-        "Enter valid content (at least 2 characters).",
+        "Enter at least 2 characters.",
       );
-      expect(consent).toHaveAccessibleDescription(
-        "Confirm the demo-data statement.",
-      );
+      expect(consent).toHaveAccessibleDescription("Confirm this is demo data.");
     });
-    const error = screen.getByText(
-      "Enter valid content (at least 2 characters).",
-      { selector: "#order-customer-error" },
-    );
+    const error = screen.getByText("Enter at least 2 characters.", {
+      selector: "#order-customer-error",
+    });
     expect(error).toHaveAttribute("type", "button");
     fireEvent.focus(error);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "Enter valid content (at least 2 characters).",
+      "Enter at least 2 characters.",
     );
     fireEvent.change(applicant, { target: { value: "Ada Lovelace" } });
     await waitFor(() => {

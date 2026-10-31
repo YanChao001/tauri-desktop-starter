@@ -11,12 +11,15 @@ import { THEME_REVEAL_EVENT } from "@/hooks/use-theme-switch";
 import { ExtensionCustomUi } from "./extension-custom-ui";
 import { ExtensionActivityProvider } from "./extension-activity";
 import { UI_STYLES } from "@/lib/ui-theme";
+import { getLocale } from "@/i18n/registry";
+import { createTranslator } from "@/i18n/translate";
 
 const environment = vi.hoisted(() => ({
   language: "en" as "en" | "zh",
   inputWide: true,
   inputListeners: new Set<() => void>(),
   sharedStyles: null as string | null,
+  translateMessages: false,
 }));
 vi.mock("@/lib/ui-theme", async (original) => {
   const source = await original<typeof import("@/lib/ui-theme")>();
@@ -28,7 +31,12 @@ vi.mock("@/lib/ui-theme", async (original) => {
   };
 });
 vi.mock("@/providers/i18n", () => ({
-  useI18n: () => ({ t: (key: string) => key, language: environment.language }),
+  useI18n: () => ({
+    t: environment.translateMessages
+      ? createTranslator(getLocale(environment.language).messages)
+      : (key: string) => key,
+    language: environment.language,
+  }),
 }));
 vi.mock("@/providers/settings", () => ({
   useSettings: () => ({ settings: { motion: "full" } }),
@@ -66,6 +74,7 @@ afterEach(() => {
   environment.inputWide = true;
   environment.inputListeners.clear();
   environment.sharedStyles = null;
+  environment.translateMessages = false;
 });
 
 it("limits missing paint acknowledgements only after a visible first view, resetting for background and offscreen pauses", async () => {
@@ -253,6 +262,197 @@ const item: native.ExtensionInfo = {
     },
   },
 };
+
+function mockUiChannel() {
+  const port = {
+    postMessage: vi.fn(),
+    start() {},
+    close: vi.fn(),
+    onmessage: null,
+    onmessageerror: null as (() => void) | null,
+  };
+  vi.stubGlobal(
+    "MessageChannel",
+    class {
+      port1 = port;
+      port2 = {};
+    },
+  );
+  return port;
+}
+
+it.each([
+  {
+    failure: "initialization",
+    english: "Interface failed to load. Your session is retained.",
+    chinese: "界面加载失败，会话已保留。",
+  },
+  {
+    failure: "paint-timeout",
+    english: "Interface loading timed out. Your session is retained.",
+    chinese: "界面加载超时，会话已保留。",
+  },
+  {
+    failure: "connection-timeout",
+    english: "Interface connection timed out. Your session is retained.",
+    chinese: "界面连接超时，会话已保留。",
+  },
+])(
+  "localizes $failure without duplicate diagnostics and restores the draft on retry",
+  async ({ failure, english, chinese }) => {
+    vi.useFakeTimers();
+    environment.translateMessages = true;
+    const port = mockUiChannel();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    vi.spyOn(
+      HTMLIFrameElement.prototype,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, left: 0, right: 640, bottom: 400 } as DOMRect);
+    vi.mocked(native.openExtensionUi).mockResolvedValueOnce({
+      url: "about:blank",
+      token: "failed-document",
+    });
+    vi.mocked(native.openExtensionUi).mockResolvedValueOnce({
+      url: "about:blank",
+      token: "retried-document",
+    });
+    vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
+    const props = {
+      item,
+      commandId: "open",
+      view: {
+        version: 2,
+        state: "{}",
+        display: "Ready",
+        description: "",
+        fields: [],
+        groups: [],
+      },
+      fields: { draft: "kept" },
+      checkpoint: '{"draft":"saved checkpoint"}',
+      busy: true,
+      dirty: true,
+      execute: vi.fn(),
+    };
+    const mounted = render(<ExtensionCustomUi {...props} />);
+    await act(async () => {});
+    const frame = mounted.container.querySelector("iframe")!;
+    vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+    const notify = (target: HTMLIFrameElement, type: string) =>
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: target.contentWindow,
+            origin: "null",
+            data: { type, version: 1 },
+          }),
+        ),
+      );
+    if (failure !== "connection-timeout") notify(frame, "starter:ready");
+    if (failure === "initialization") notify(frame, "starter:failed");
+    else
+      act(() =>
+        vi.advanceTimersByTime(failure === "paint-timeout" ? 15000 : 10000),
+      );
+    const alert = mounted.getByRole("alert");
+    expect(alert.querySelectorAll("p")).toHaveLength(1);
+    expect(alert.querySelector("p")).toHaveTextContent(english);
+    expect(mounted.container.querySelector("iframe")).toBeNull();
+    expect(mounted.getByRole("button")).toBeDisabled();
+    if (failure !== "connection-timeout")
+      expect(port.close).toHaveBeenCalledOnce();
+    environment.language = "zh";
+    mounted.rerender(<ExtensionCustomUi {...props} busy={false} />);
+    expect(alert.querySelector("p")).toHaveTextContent(chinese);
+    expect(native.openExtensionUi).toHaveBeenCalledOnce();
+    expect(props.execute).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(mounted.getByRole("button")));
+    expect(native.closeExtensionUi).toHaveBeenCalledWith("failed-document");
+    expect(native.openExtensionUi).toHaveBeenCalledTimes(2);
+    expect(mounted.queryByRole("alert")).toBeNull();
+    const retried = mounted.container.querySelector("iframe")!;
+    vi.spyOn(retried.contentWindow!, "postMessage").mockImplementation(
+      () => {},
+    );
+    notify(retried, "starter:ready");
+    await act(async () => {});
+    expect(port.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "state",
+        value: expect.objectContaining({
+          fields: props.fields,
+          checkpoint: { draft: "saved checkpoint" },
+          dirty: true,
+        }),
+      }),
+    );
+    expect(props.execute).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps unexpected errors as diagnostics without recognizing lifecycle messages by text", async () => {
+  environment.translateMessages = true;
+  vi.mocked(native.openExtensionUi).mockRejectedValueOnce(
+    new Error("Extension UI did not connect"),
+  );
+  const mounted = render(
+    <ExtensionCustomUi
+      item={item}
+      commandId="open"
+      view={null}
+      fields={{}}
+      checkpoint={null}
+      busy={false}
+      dirty={false}
+      execute={vi.fn()}
+    />,
+  );
+  const alert = await mounted.findByRole("alert");
+  expect(alert).toHaveTextContent(
+    "Interface unavailable. Your session is retained.",
+  );
+  expect(alert).toHaveTextContent("Extension UI did not connect");
+  expect(alert.querySelectorAll("p")).toHaveLength(2);
+});
+
+it("keeps bridge protocol errors on the native diagnostic path and closes the channel", async () => {
+  const port = mockUiChannel();
+  vi.mocked(native.openExtensionUi).mockResolvedValueOnce({
+    url: "about:blank",
+    token: "bridge-error",
+  });
+  vi.mocked(native.closeExtensionUi).mockResolvedValue(undefined);
+  const mounted = render(
+    <ExtensionCustomUi
+      item={item}
+      commandId="open"
+      view={null}
+      fields={{}}
+      checkpoint={null}
+      busy={false}
+      dirty={false}
+      execute={vi.fn()}
+    />,
+  );
+  await act(async () => {});
+  const frame = mounted.container.querySelector("iframe")!;
+  vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+  act(() =>
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frame.contentWindow,
+        origin: "null",
+        data: { type: "starter:ready", version: 1 },
+      }),
+    ),
+  );
+  act(() => port.onmessageerror?.());
+  expect(port.close).toHaveBeenCalledOnce();
+  const alert = mounted.getByRole("alert");
+  expect(alert).toHaveTextContent("ext.uiUnavailable");
+  expect(alert).toHaveTextContent("errors.VALIDATION");
+  expect(alert.querySelectorAll("p")).toHaveLength(2);
+});
 
 it("keeps one shared page placeholder through lease, first-view and SDK-paint waits", async () => {
   vi.stubGlobal(

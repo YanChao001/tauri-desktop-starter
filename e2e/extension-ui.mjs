@@ -1369,9 +1369,7 @@ try {
               await page
                 .getByRole("menuitem", {
                   name:
-                    profile.language === "zh"
-                      ? "重新加载界面"
-                      : "Reload interface",
+                    profile.language === "zh" ? "重载界面" : "Reload interface",
                   exact: true,
                 })
                 .click();
@@ -1579,6 +1577,23 @@ try {
           await snapshot("scientific");
         }
         await openCalculatorGraph(frame);
+        await setCalculatorFunctions(frame, ["x^2"]);
+        await action("plot", "#graph-input-pane");
+        await expect(frame.locator("#ymin")).toHaveValue("-10");
+        await expect(frame.locator("#ymax")).toHaveValue("110");
+        await openCalculatorGraph(frame);
+        await frame.locator("#zoom-in").click();
+        await expect(frame.locator("#ymin")).toHaveValue("2");
+        await expect(frame.locator("#ymax")).toHaveValue("98");
+        await idle(page, frame);
+        await frame.locator("#fit").click();
+        await idle(page, frame);
+        await expect(frame.locator("#xmin")).toHaveValue("-8");
+        await expect(frame.locator("#xmax")).toHaveValue("8");
+        await expect(frame.locator("#ymin")).toHaveValue("-6.4");
+        await expect(frame.locator("#ymax")).toHaveValue("70.4");
+        await snapshot("graph-auto-fit");
+        await action("reset-plot");
         await setCalculatorFunctions(frame, ["sin(x)", "cos(x)", "x^2 / 10"]);
         await action("plot", "#graph-input-pane");
         await openCalculatorGraph(frame);
@@ -1678,8 +1693,7 @@ try {
                   .click();
                 await page
                   .getByRole("menuitem", {
-                    name:
-                      language === "zh" ? "重新加载界面" : "Reload interface",
+                    name: language === "zh" ? "重载界面" : "Reload interface",
                     exact: true,
                   })
                   .click();
@@ -1744,8 +1758,7 @@ try {
                   .click();
                 await page
                   .getByRole("menuitem", {
-                    name:
-                      language === "zh" ? "重新加载界面" : "Reload interface",
+                    name: language === "zh" ? "重载界面" : "Reload interface",
                     exact: true,
                   })
                   .click();
@@ -2727,7 +2740,7 @@ try {
         );
       });
       const importLabel =
-        profile.language === "zh" ? "导入会话 JSON" : "Import session JSON";
+        profile.language === "zh" ? "导入会话" : "Import session";
       const importInput = await page
         .getByLabel(importLabel, { exact: true })
         .elementHandle();
@@ -2767,10 +2780,7 @@ try {
       await page
         .getByRole("dialog")
         .getByRole("button", {
-          name:
-            profile.language === "zh"
-              ? "替换当前会话"
-              : "Replace current session",
+          name: profile.language === "zh" ? "替换会话" : "Replace session",
           exact: true,
         })
         .click();
@@ -2799,7 +2809,7 @@ try {
         .click();
       await page
         .getByRole("menuitem", {
-          name: profile.language === "zh" ? "重新加载界面" : "Reload interface",
+          name: profile.language === "zh" ? "重载界面" : "Reload interface",
           exact: true,
         })
         .click();

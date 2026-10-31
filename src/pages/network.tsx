@@ -119,9 +119,16 @@ function NetworkLab() {
     }
   }, [offline, client]);
   function errorText(reason: unknown) {
-    return reason instanceof NetworkLabError
-      ? latest(`labs.network.error.${reason.code}`)
-      : nativeErrorText(reason, latest);
+    if (reason instanceof NetworkLabError)
+      return latest(`labs.network.error.${reason.code}`);
+    if (
+      typeof reason === "object" &&
+      reason !== null &&
+      "name" in reason &&
+      reason.name === "TimeoutError"
+    )
+      return latest("labs.network.error.timeout");
+    return nativeErrorText(reason, latest);
   }
   function reportError(reason: unknown) {
     if (

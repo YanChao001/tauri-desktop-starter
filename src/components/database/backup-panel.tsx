@@ -111,7 +111,6 @@ export function BackupPanel({
           <TooltipTrigger asChild>
             <Button
               variant="outline"
-              aria-label={`${t("data.backupAction")} · ${t("data.createBackup")}`}
               disabled={busy || pending}
               onClick={() =>
                 void run(async () => {
@@ -144,7 +143,6 @@ export function BackupPanel({
           <TooltipTrigger asChild>
             <Button
               variant="outline"
-              aria-label={`${t("data.importBackupAction")} · ${t("data.importBackup")}`}
               disabled={busy}
               onClick={(event) => {
                 returnFocus.current = event.currentTarget;
@@ -176,7 +174,6 @@ export function BackupPanel({
           <DialogTrigger asChild>
             <Button
               variant="outline"
-              aria-label={`${t("data.backupHistory")} · ${t("data.backups")}`}
               disabled={busy}
               onClick={(event) => {
                 returnFocus.current = event.currentTarget;

@@ -303,6 +303,120 @@ describe("persisted application sidebar", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it.each(["navigation", "commands"] as const)(
+    "展开时为截断的 %s 名称提供鼠标和键盘可达的全文提示",
+    async (target) => {
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+      renderSidebar();
+      const control =
+        target === "navigation"
+          ? screen.getByRole("link", { name: zhCN["nav.overview"] })
+          : screen.getByRole("button", {
+              name: new RegExp(zhCN["navContext.commands"]),
+            });
+      const label = control.querySelector(".app-sidebar-label")!;
+      Object.defineProperties(label, {
+        clientWidth: { configurable: true, value: 101 },
+        scrollWidth: { configurable: true, value: 155 },
+      });
+
+      fireEvent.pointerEnter(control);
+      fireEvent.pointerMove(control, { pointerType: "mouse" });
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        zhCN[target === "navigation" ? "nav.overview" : "navContext.commands"],
+      );
+      fireEvent.pointerLeave(control);
+      fireEvent.focus(control);
+      expect(screen.getAllByRole("tooltip")).toHaveLength(1);
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        zhCN[target === "navigation" ? "nav.overview" : "navContext.commands"],
+      );
+      expect(control).not.toHaveAttribute("title");
+    },
+  );
+
+  it("展开时不为完整名称显示提示，滚动和调宽会清除旧的截断判断", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    renderSidebar();
+    const link = screen.getByRole("link", { name: zhCN["nav.overview"] });
+    const label = link.querySelector(".app-sidebar-label")!;
+    Object.defineProperties(label, {
+      clientWidth: { configurable: true, value: 101 },
+      scrollWidth: { configurable: true, value: 101 },
+    });
+    fireEvent.focus(link);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.blur(link);
+    Object.defineProperty(label, "scrollWidth", {
+      configurable: true,
+      value: 155,
+    });
+    fireEvent.focus(link);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+
+    fireEvent.scroll(document.getElementById("app-sidebar-navigation")!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(link);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    fireEvent.wheel(document.getElementById("app-sidebar-navigation")!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(link);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "End" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    Object.defineProperty(label, "clientWidth", {
+      configurable: true,
+      value: 200,
+    });
+    fireEvent.focus(link);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("展开过渡结束后移除已经能完整显示的名称提示", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    renderSidebar();
+    const link = screen.getByRole("link", { name: zhCN["nav.overview"] });
+    const label = link.querySelector(".app-sidebar-label")!;
+    Object.defineProperties(label, {
+      clientWidth: { configurable: true, value: 101 },
+      scrollWidth: { configurable: true, value: 155 },
+    });
+    fireEvent.focus(link);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    Object.defineProperty(label, "clientWidth", {
+      configurable: true,
+      value: 200,
+    });
+    const finished = new Event("transitionend", { bubbles: true });
+    Object.defineProperty(finished, "propertyName", { value: "width" });
+    fireEvent(screen.getByRole("complementary"), finished);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(link);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("拖动仅预览宽度，释放后只持久化最终宽度，并处理取消和捕获丢失", () => {
     vi.stubGlobal(
       "PointerEvent",

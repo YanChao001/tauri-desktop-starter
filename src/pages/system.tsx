@@ -106,9 +106,9 @@ export default function System() {
         <section className="divide-y rounded-xl border app-surface px-4">
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
             <h2 className="flex items-center gap-2 text-sm font-medium">
-              {t("system.notification")}
+              {t("system.notificationLabel")}
               <HelpTooltip
-                label={`${t("system.notification")} · ${t("title.help")}`}
+                label={`${t("system.notificationLabel")} · ${t("title.help")}`}
               >
                 {t("system.permission")}
               </HelpTooltip>

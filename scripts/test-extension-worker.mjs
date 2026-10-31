@@ -317,7 +317,10 @@ await test("CLI 取消回收宿主 worker 并核验错误，不继承 WASI 输�
   const directory = await mkdtemp(join(tmpdir(), "starter-extension-worker-"));
   try {
     const manifest = JSON.parse(
-      await readFile(join(ROOT, "examples/extensions/extension.json"), "utf8"),
+      await readFile(
+        join(ROOT, "src-tauri/test-fixtures/extension-runtime/extension.json"),
+        "utf8",
+      ),
     );
     manifest.commands = [
       { ...manifest.commands[0], id: "run", function: "run" },

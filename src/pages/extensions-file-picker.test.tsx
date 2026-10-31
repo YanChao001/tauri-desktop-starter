@@ -44,6 +44,9 @@ vi.mock("@/providers/i18n", async () => {
 vi.mock("@/lib/tauri", async (original) => ({
   ...(await original<typeof native>()),
   isTauri: () => true,
+  bundledExtensionCatalog: vi
+    .fn()
+    .mockResolvedValue({ hostVersion: "0.1.8", entries: [] }),
   previewExtension: vi.fn(),
   installExtension: vi.fn(),
 }));
@@ -84,7 +87,7 @@ function open(tab: "installed" | "discover" = "discover") {
       <Extensions />
     </MemoryRouter>,
   );
-  return screen.getByLabelText<HTMLInputElement>("Choose extension package");
+  return screen.getByLabelText<HTMLInputElement>("Choose package");
 }
 
 function packageFile(name: string, content: string) {
@@ -109,10 +112,10 @@ it("shows the local installation tools only in the discovery tab", async () => {
   const user = userEvent.setup();
   open("installed");
   expect(
-    screen.queryByRole("region", { name: "Install a local extension" }),
+    screen.queryByRole("region", { name: "Plugin market" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Open file" }),
+    screen.queryByRole("button", { name: "Install from file" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Restore bundled workbench" }),
@@ -123,20 +126,29 @@ it("shows the local installation tools only in the discovery tab", async () => {
 
   await user.click(screen.getByRole("tab", { name: "Discover plugins" }));
   const tools = screen.getByRole("region", {
-    name: "Install a local extension",
+    name: "Plugin market",
   });
   expect(tools).toBeVisible();
   expect(
-    within(tools).getByRole("button", { name: "Open file" }),
+    within(tools).getByRole("button", { name: "Install from file" }),
   ).toBeEnabled();
   expect(
-    within(tools).getByRole("button", { name: "Restore bundled workbench" }),
-  ).toBeEnabled();
+    within(tools).queryByRole("button", { name: "Restore bundled workbench" }),
+  ).not.toBeInTheDocument();
   expect(
     within(tools).getByRole("link", { name: "Developer docs" }),
   ).toBeVisible();
+  expect(
+    screen.queryByRole("region", { name: "Local installation" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(tools).getByRole("searchbox", { name: "Search plugins" }),
+  ).toBeEnabled();
+  expect(
+    within(tools).getByRole("combobox", { name: "Category" }),
+  ).toBeEnabled();
 
-  await user.click(screen.getByRole("tab", { name: "Installed extensions" }));
+  await user.click(screen.getByRole("tab", { name: "Installed" }));
   expect(tools).not.toBeVisible();
   expect(native.previewExtension).not.toHaveBeenCalled();
   expect(native.installExtension).not.toHaveBeenCalled();
@@ -147,8 +159,8 @@ it("opens the hidden file input from a keyboard-operable custom trigger", async 
   const input = open();
   expect(input).not.toBeVisible();
   expect(input).toHaveAttribute("accept", ".json,application/json");
-  expect(screen.getByText("Install a local extension")).toBeVisible();
-  const trigger = screen.getByRole("button", { name: "Open file" });
+  expect(screen.getByText("Install from file")).toBeVisible();
+  const trigger = screen.getByRole("button", { name: "Install from file" });
   const pick = vi.spyOn(input, "click");
   trigger.focus();
   await user.keyboard("{Enter}");
@@ -156,7 +168,7 @@ it("opens the hidden file input from a keyboard-operable custom trigger", async 
   expect(native.previewExtension).not.toHaveBeenCalled();
 });
 
-it("keeps the selected filename on cancellation, exposes the full name, and reviews replacements before installation", async () => {
+it("keeps the installation label through file selection, cancellation and installation while allowing another file", async () => {
   const user = userEvent.setup();
   const input = open();
   const name = `${"a-long-local-extension-name-".repeat(5)}.starter-extension.json`;
@@ -171,9 +183,9 @@ it("keeps the selected filename on cancellation, exposes the full name, and revi
     target: { files: [packageFile(name, "first package")] },
   });
   const trigger = screen.getByRole("button", {
-    name: `${name}; choose another file`,
+    name: "Install from file",
   });
-  expect(trigger).toHaveTextContent(name);
+  expect(trigger).toHaveTextContent(/^Install from file$/);
   expect(trigger).toBeDisabled();
   expect(input.value).toBe("");
   await waitFor(() =>
@@ -189,9 +201,11 @@ it("keeps the selected filename on cancellation, exposes the full name, and revi
     }),
   );
   await waitFor(() => expect(trigger).toHaveFocus());
-  expect(await screen.findByRole("tooltip")).toHaveTextContent(name);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    "Use .starter-extension.json",
+  );
   fireEvent.change(input, { target: { files: [] } });
-  expect(trigger).toHaveTextContent(name);
+  expect(trigger).toHaveTextContent(/^Install from file$/);
   expect(native.previewExtension).toHaveBeenCalledOnce();
 
   await user.click(trigger);
@@ -200,9 +214,7 @@ it("keeps the selected filename on cancellation, exposes the full name, and revi
   });
   const review = await screen.findByRole("dialog");
   expect(native.installExtension).not.toHaveBeenCalled();
-  await user.click(
-    within(review).getByRole("button", { name: "Install and enable" }),
-  );
+  await user.click(within(review).getByRole("button", { name: "Install" }));
   await waitFor(() =>
     expect(native.installExtension).toHaveBeenCalledExactlyOnceWith(
       "replacement package",
@@ -214,8 +226,12 @@ it("keeps the selected filename on cancellation, exposes the full name, and revi
   );
   expect(
     screen.getByRole("button", {
-      name: "replacement.json; choose another file",
+      name: "Install from file",
     }),
-  ).toHaveTextContent("replacement.json");
+  ).toHaveTextContent(/^Install from file$/);
+  expect(trigger).toBeEnabled();
+  const pick = vi.spyOn(input, "click");
+  await user.click(trigger);
+  expect(pick).toHaveBeenCalledOnce();
   expect(ui.reload).toHaveBeenCalledOnce();
 });

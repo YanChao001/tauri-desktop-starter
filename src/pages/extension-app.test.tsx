@@ -191,16 +191,14 @@ it("contributes a usable sidebar page in minimal mode, preserves edits across na
   expect(document.querySelector(".app-route-context")).toBeNull();
   expect(document.querySelector("[data-extension-surface] header")).toBeNull();
   expect(
-    screen.queryByRole("menuitem", { name: "Open in separate window" }),
+    screen.queryByRole("menuitem", { name: "New window" }),
   ).not.toBeInTheDocument();
   const trigger = screen.getByRole("button", { name: "Extension tools" });
   expect(trigger.closest("a")).toBeNull();
   expect(trigger.closest("[data-sidebar-extension]")).toBe(link.parentElement);
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
   expect(link).toHaveAttribute("aria-current", "page");
-  fireEvent.click(
-    screen.getByRole("menuitem", { name: "Open in separate window" }),
-  );
+  fireEvent.click(screen.getByRole("menuitem", { name: "New window" }));
   await waitFor(() =>
     expect(native.openExtensionWindow).toHaveBeenCalledWith(
       "example.lab",
@@ -222,7 +220,7 @@ it("keeps session tools available in standalone mode without a redundant return 
   expect(
     screen.getByRole("menuitem", { name: "Export session" }),
   ).toBeEnabled();
-  expect(screen.getByLabelText("Import session JSON")).toBeEnabled();
+  expect(screen.getByLabelText("Import session")).toBeEnabled();
   expect(screen.getByRole("menuitem", { name: "End session" })).toBeEnabled();
   expect(
     screen.queryByRole("button", { name: "Extensions" }),
@@ -231,7 +229,7 @@ it("keeps session tools available in standalone mode without a redundant return 
     screen.queryByRole("link", { name: "Extensions" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("menuitem", { name: "Open in separate window" }),
+    screen.queryByRole("menuitem", { name: "New window" }),
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: "Export session" }));
   await waitFor(() =>
@@ -264,7 +262,7 @@ it("starts a fresh view session when the installation changes without changing t
 it("closes an unavailable standalone entry without navigating into the host application", async () => {
   snapshot = { revision: 2, items: [], runs: [] };
   workspace(true);
-  await screen.findByText(/This extension is disabled/);
+  await screen.findByText(/Extension disabled/);
   expect(
     screen.queryByRole("link", { name: "Extensions" }),
   ).not.toBeInTheDocument();
@@ -287,9 +285,9 @@ it("revocation removes the sidebar contribution and stops exposing the applicati
     ).not.toBeInTheDocument(),
   );
   expect(screen.queryByLabelText("Draft")).not.toBeInTheDocument();
-  expect(screen.getByText(/This extension is disabled/)).toBeVisible();
+  expect(screen.getByText(/Extension disabled/)).toBeVisible();
   expect(
-    screen.queryByRole("menuitem", { name: "Open in separate window" }),
+    screen.queryByRole("menuitem", { name: "New window" }),
   ).not.toBeInTheDocument();
 });
 

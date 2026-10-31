@@ -53,7 +53,7 @@ it("retains imported data through filtered and cancelled exports, and clears dir
   );
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: "Import valid rows only and retain invalid rows in the report",
+      name: "Import valid rows only; keep invalid rows in the report",
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Import valid records" }));
@@ -105,7 +105,7 @@ it("keeps a completed export saved when lifecycle waiting is cancelled during th
   );
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: "Import valid rows only and retain invalid rows in the report",
+      name: "Import valid rows only; keep invalid rows in the report",
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Import valid records" }));
@@ -128,7 +128,7 @@ it("uses stable selection through filtering and retains failed bulk records", ()
   ).toBePartiallyChecked();
   fireEvent.click(screen.getByRole("button", { name: "Archive selected" }));
   expect(toast.error).toHaveBeenCalledWith(
-    expect.stringContaining("1 succeeded, 1 failed"),
+    expect.stringContaining("1 archived, 1 failed"),
   );
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByLabelText("Select record 7")).toBeChecked();

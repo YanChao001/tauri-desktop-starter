@@ -1,6 +1,6 @@
 [package]
 name = "tauri-desktop-starter"
-version = "0.1.8"
+version = "0.1.9"
 description = "A complete desktop application starter"
 authors = ["Tauri Desktop Starter contributors"]
 license = "MIT"
@@ -17,6 +17,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
 wat = "=1.258.3"
 
 [dependencies]
@@ -88,6 +90,10 @@ required-features = ["bindings"]
 [[bin]]
 name = "extension-tool"
 path = "src/bin/extension-tool.rs"
+
+[[bin]]
+name = "device-tool"
+path = "src/bin/device_tool.rs"
 
 # 默认优先程序体积；安装包与便携版可用 --optimize speed 切换为编译速度优先。
 [profile.release]

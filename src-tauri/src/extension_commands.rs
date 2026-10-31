@@ -7,9 +7,10 @@ use crate::{
     extension_market::{ExtensionMarket, MarketSource},
     extension_view::{ExtensionArtifact, ExtensionView, ExtensionViewInput, validate_artifact},
     extensions::{
-        self, ExtensionArchivePreview, ExtensionArchiveResult, ExtensionConsent,
-        ExtensionFileChoice, ExtensionOrigin, ExtensionPermission, ExtensionPreview,
-        ExtensionRunInput, ExtensionRunStatus, ExtensionSnapshot, ExtensionStore, InstallCondition,
+        self, BundledExtensionCatalog, ExtensionArchivePreview, ExtensionArchiveResult,
+        ExtensionConsent, ExtensionFileChoice, ExtensionOrigin, ExtensionPermission,
+        ExtensionPreview, ExtensionRunInput, ExtensionRunStatus, ExtensionSnapshot, ExtensionStore,
+        InstallCondition,
     },
     workbench,
 };
@@ -38,6 +39,36 @@ pub async fn save_extension_session(
 fn emit(app: &tauri::AppHandle) {
     let _ = app.emit(extensions::EXTENSIONS_EVENT, ());
 }
+
+async fn mutate_extension(
+    app: tauri::AppHandle,
+    id: String,
+    mutation: impl FnOnce(&ExtensionStore, &ExtensionHostStore) -> NativeResult<ExtensionSnapshot>
+    + Send
+    + 'static,
+) -> NativeResult<ExtensionSnapshot> {
+    let maintenance = app
+        .state::<crate::extension_services::ExtensionServices>()
+        .mutation(&id)
+        .await?;
+    blocking::run(move || {
+        app.state::<crate::extension_services::ExtensionServices>()
+            .commit_mutation(
+                app.state::<ExtensionStore>().inner(),
+                maintenance,
+                &app.state::<crate::extension_lan::ExtensionLan>(),
+                || {
+                    mutation(
+                        app.state::<ExtensionStore>().inner(),
+                        app.state::<ExtensionHostStore>().inner(),
+                    )
+                },
+                || emit(&app),
+            )
+    })
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn extension_snapshot(app: tauri::AppHandle) -> NativeResult<ExtensionSnapshot> {
@@ -89,8 +120,13 @@ pub async fn preview_extension(content: String) -> NativeResult<ExtensionPreview
 }
 #[tauri::command]
 #[specta::specta]
-pub async fn extension_demo(id: Option<String>) -> NativeResult<String> {
-    extensions::bundled_package(id.as_deref().unwrap_or("starter.text-tools"))
+pub async fn bundled_extension_package(id: String) -> NativeResult<String> {
+    extensions::bundled_package(&id)
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn bundled_extension_catalog() -> NativeResult<BundledExtensionCatalog> {
+    blocking::run(extensions::bundled_catalog).await
 }
 #[tauri::command]
 #[specta::specta]
@@ -100,35 +136,34 @@ pub async fn install_extension(
     expected_revision: i32,
     replace_existing: bool,
     expected_sha256: String,
-    consent: ExtensionConsent,
+    consent: Option<ExtensionConsent>,
 ) -> NativeResult<ExtensionSnapshot> {
-    let bundle = blocking::run(move || extensions::package(&content)).await?;
+    let (bundle, origin) = blocking::run(move || {
+        let bundle = extensions::package(&content)?;
+        let origin = extensions::verified_package_origin(&bundle)?;
+        Ok((bundle, origin))
+    })
+    .await?;
     let id = bundle.preview.manifest.id.clone();
-    let services = app.state::<crate::extension_services::ExtensionServices>();
-    let _service_gate = services.mutation(&id).await?;
-    let maintenance = _service_gate.clone();
-    let store = app.state::<ExtensionStore>().inner().clone();
-    let host = app.state::<ExtensionHostStore>().inner().clone();
-    let result = blocking::run(move || {
-        let _maintenance = maintenance;
-        store.install_prepared_reviewed(
+    mutate_extension(app, id, move |store, host| {
+        store.install_prepared(
             bundle,
             InstallCondition {
                 revision: expected_revision,
                 replace: replace_existing,
                 sha256: &expected_sha256,
             },
-            ExtensionOrigin::Local,
+            origin,
             consent,
-            |old, _| host.clear_credentials(&old.package.manifest),
+            |old, next| {
+                if !old.origin.same_trusted_source(next) {
+                    host.clear_credentials(&old.package.manifest)?;
+                }
+                Ok(())
+            },
         )
     })
-    .await;
-    if let Ok(snapshot) = &result {
-        crate::extension_services::reconcile(&app, &id, snapshot).await?;
-        emit(&app);
-    }
-    result
+    .await
 }
 #[tauri::command]
 #[specta::specta]
@@ -139,9 +174,9 @@ pub async fn install_market_extension(
     replace_existing: bool,
     expected_sha256: String,
     source: MarketSource,
-    consent: ExtensionConsent,
+    consent: Option<ExtensionConsent>,
 ) -> NativeResult<ExtensionSnapshot> {
-    let verified = app
+    let (bundle, verified) = app
         .state::<ExtensionMarket>()
         .verify_install_source(
             &content,
@@ -151,16 +186,9 @@ pub async fn install_market_extension(
                 .network_mode()?,
         )
         .await?;
-    let bundle = blocking::run(move || extensions::package(&content)).await?;
     let id = bundle.preview.manifest.id.clone();
-    let services = app.state::<crate::extension_services::ExtensionServices>();
-    let _service_gate = services.mutation(&id).await?;
-    let maintenance = _service_gate.clone();
-    let store = app.state::<ExtensionStore>().inner().clone();
-    let host = app.state::<ExtensionHostStore>().inner().clone();
-    let result = blocking::run(move || {
-        let _maintenance = maintenance;
-        store.install_prepared_reviewed(
+    mutate_extension(app, id, move |store, host| {
+        store.install_prepared(
             bundle,
             InstallCondition {
                 revision: expected_revision,
@@ -177,12 +205,7 @@ pub async fn install_market_extension(
             },
         )
     })
-    .await;
-    if let Ok(snapshot) = &result {
-        crate::extension_services::reconcile(&app, &id, snapshot).await?;
-        emit(&app);
-    }
-    result
+    .await
 }
 #[tauri::command]
 #[specta::specta]
@@ -194,13 +217,7 @@ pub async fn set_extension_enabled(
     expected_revision: i32,
     trusted: bool,
 ) -> NativeResult<ExtensionSnapshot> {
-    let services = app.state::<crate::extension_services::ExtensionServices>();
-    let _service_gate = services.mutation(&id).await?;
-    let maintenance = _service_gate.clone();
-    let changed_id = id.clone();
-    let store = app.state::<ExtensionStore>().inner().clone();
-    let result = blocking::run(move || {
-        let _maintenance = maintenance;
+    mutate_extension(app, id.clone(), move |store, _host| {
         store.set_enabled(
             &id,
             enabled,
@@ -209,12 +226,7 @@ pub async fn set_extension_enabled(
             trusted,
         )
     })
-    .await;
-    if let Ok(snapshot) = &result {
-        crate::extension_services::reconcile(&app, &changed_id, snapshot).await?;
-        emit(&app);
-    }
-    result
+    .await
 }
 #[tauri::command]
 #[specta::specta]
@@ -223,24 +235,12 @@ pub async fn rollback_extension(
     id: String,
     expected_revision: i32,
 ) -> NativeResult<ExtensionSnapshot> {
-    let services = app.state::<crate::extension_services::ExtensionServices>();
-    let _service_gate = services.mutation(&id).await?;
-    let maintenance = _service_gate.clone();
-    let changed_id = id.clone();
-    let store = app.state::<ExtensionStore>().inner().clone();
-    let host = app.state::<ExtensionHostStore>().inner().clone();
-    let result = blocking::run(move || {
-        let _maintenance = maintenance;
+    mutate_extension(app, id.clone(), move |store, host| {
         store.rollback_with_cleanup(&id, expected_revision, |old| {
             host.clear_credentials(&old.package.manifest)
         })
     })
-    .await;
-    if let Ok(snapshot) = &result {
-        crate::extension_services::reconcile(&app, &changed_id, snapshot).await?;
-        emit(&app);
-    }
-    result
+    .await
 }
 #[tauri::command]
 #[specta::specta]
@@ -249,24 +249,12 @@ pub async fn uninstall_extension(
     id: String,
     expected_revision: i32,
 ) -> NativeResult<ExtensionSnapshot> {
-    let services = app.state::<crate::extension_services::ExtensionServices>();
-    let _service_gate = services.mutation(&id).await?;
-    let maintenance = _service_gate.clone();
-    let changed_id = id.clone();
-    let store = app.state::<ExtensionStore>().inner().clone();
-    let host = app.state::<ExtensionHostStore>().inner().clone();
-    let result = blocking::run(move || {
-        let _maintenance = maintenance;
+    mutate_extension(app, id.clone(), move |store, host| {
         store.uninstall_with_cleanup(&id, expected_revision, |old| {
             host.clear_credentials(&old.package.manifest)
         })
     })
-    .await;
-    if let Ok(snapshot) = &result {
-        crate::extension_services::reconcile(&app, &changed_id, snapshot).await?;
-        emit(&app);
-    }
-    result
+    .await
 }
 #[tauri::command]
 #[specta::specta]
@@ -357,16 +345,13 @@ pub async fn clear_extension_storage(
     expected_revision: i32,
 ) -> NativeResult<()> {
     blocking::run(move || {
-        app.state::<ExtensionStore>().with_current_entry(
-            &id,
-            &expected_sha256,
-            expected_generation,
-            |_| {
-                app.state::<ExtensionHostStore>()
-                    .clear_storage(&id, expected_revision)?;
-                Ok(())
-            },
-        )
+        let store = app.state::<ExtensionStore>();
+        let _activity = store.begin_management()?;
+        store.with_current_entry(&id, &expected_sha256, expected_generation, |_| {
+            app.state::<ExtensionHostStore>()
+                .clear_storage(&id, expected_revision)?;
+            Ok(())
+        })
     })
     .await
 }

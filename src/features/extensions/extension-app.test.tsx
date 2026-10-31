@@ -25,14 +25,16 @@ import { ExtensionActivityProvider } from "./extension-activity";
 function render(ui: ReactNode) {
   return renderUi(ui, {
     wrapper: ({ children }) => (
-      <TooltipProvider>
-        <ExtensionChromeProvider scope="test-session">
-          <nav aria-label="Session navigation">
-            <ExtensionChromeSlot placement="navigation" />
-          </nav>
-          {children}
-        </ExtensionChromeProvider>
-      </TooltipProvider>
+      <ExtensionsProvider>
+        <TooltipProvider>
+          <ExtensionChromeProvider scope="test-session">
+            <nav aria-label="Session navigation">
+              <ExtensionChromeSlot placement="navigation" />
+            </nav>
+            {children}
+          </ExtensionChromeProvider>
+        </TooltipProvider>
+      </ExtensionsProvider>
     ),
   });
 }
@@ -342,7 +344,7 @@ it("keeps session tools out of the main workflow and preserves a draft when endi
     screen.queryByText("Export session", { selector: "button" }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByText("Request stop", { selector: "button" }),
+    screen.queryByText("Stop", { selector: "button" }),
   ).not.toBeInTheDocument();
   fireEvent.change(input, { target: { value: "Keep my progress" } });
   const end = sessionButton("End session");
@@ -537,14 +539,14 @@ it("retains progress when session export is cancelled and only ends after a succ
     name: "End this session?",
   });
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Export session and end" }),
+    within(dialog).getByRole("button", { name: "Export and end" }),
   );
   await within(dialog).findByRole("alert");
   expect(input).toHaveValue("Export before ending");
   expect(lifecycle.work?.dirty).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Export session and end" }),
+    within(dialog).getByRole("button", { name: "Export and end" }),
   );
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   expect(native.saveExtensionSession).toHaveBeenLastCalledWith(
@@ -565,7 +567,7 @@ it("cancels a pending export-and-end decision without clearing the session after
     name: "End this session?",
   });
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Export session and end" }),
+    within(dialog).getByRole("button", { name: "Export and end" }),
   );
   await waitFor(() =>
     expect(native.saveExtensionSession).toHaveBeenCalledOnce(),
@@ -636,11 +638,11 @@ it("announces a long action and offers its stop operation from the compact menu"
   const status = screen.getByRole("status", { name: "Execution status" });
   openSessionTools();
   expect(
-    screen.queryByRole("menuitem", { name: "Request stop" }),
+    screen.queryByRole("menuitem", { name: "Stop" }),
   ).not.toBeInTheDocument();
   fireEvent.click(submit);
   expect(status).toBeEmptyDOMElement();
-  const stop = await screen.findByRole("menuitem", { name: "Request stop" });
+  const stop = await screen.findByRole("menuitem", { name: "Stop" });
   expect(status).toHaveTextContent("Working…");
   fireEvent.click(stop);
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -650,7 +652,7 @@ it("announces a long action and offers its stop operation from the compact menu"
   expect(status).toBeEmptyDOMElement();
   openSessionTools();
   expect(
-    screen.queryByRole("menuitem", { name: "Request stop" }),
+    screen.queryByRole("menuitem", { name: "Stop" }),
   ).not.toBeInTheDocument();
 });
 it("does not flash a running announcement or stop menu item for a short action", async () => {
@@ -666,7 +668,7 @@ it("does not flash a running announcement or stop menu item for a short action",
   fireEvent.click(submit);
   expect(submit).toHaveAttribute("aria-disabled", "true");
   expect(
-    screen.queryByRole("menuitem", { name: "Request stop" }),
+    screen.queryByRole("menuitem", { name: "Stop" }),
   ).not.toBeInTheDocument();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(150);
@@ -674,7 +676,7 @@ it("does not flash a running announcement or stop menu item for a short action",
   });
   await act(async () => vi.advanceTimersByTimeAsync(500));
   expect(
-    screen.queryByRole("menuitem", { name: "Request stop" }),
+    screen.queryByRole("menuitem", { name: "Stop" }),
   ).not.toBeInTheDocument();
   expect(status).toBeEmptyDOMElement();
   expect(submit).toHaveAttribute("aria-disabled", "false");
@@ -753,23 +755,23 @@ it("refreshes the requested locale after a draft changed before the locale effec
       fields: [{ id: "query", label: "查询", value: "Canonical value" }],
     });
   function DraftPatch({ draft }: { draft?: string }) {
-    const { sessions } = useExtensions();
+    const { sessionCache } = useExtensions();
     useEffect(() => {
       if (draft !== undefined)
-        sessions.get(`${item.package.manifest.id}:open`)!.update({
+        sessionCache.sessions.get(`${item.package.manifest.id}:open`)!.update({
           fields: {
             query: draft,
           },
         });
-    }, [draft, sessions]);
+    }, [draft, sessionCache]);
     return null;
   }
   function workspace(draft?: string) {
     return (
-      <ExtensionsProvider>
+      <>
         <DraftPatch draft={draft} />
         {app()}
-      </ExtensionsProvider>
+      </>
     );
   }
   const mounted = render(workspace());
@@ -842,10 +844,10 @@ it("shows queued status for this window and lets the user cancel its waiting ope
   await waitFor(() =>
     expect(
       screen.getByRole("status", { name: "Execution status" }),
-    ).toHaveTextContent("Queued, waiting for a runtime slot…"),
+    ).toHaveTextContent("Queued…"),
   );
   openSessionTools();
-  fireEvent.click(screen.getByRole("menuitem", { name: "Request stop" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Stop" }));
   await waitFor(() =>
     expect(native.cancelExtension).toHaveBeenCalledWith(
       item.package.manifest.id,
@@ -915,10 +917,10 @@ it("restores the same view and edited fields when navigating away and back withi
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : <p>Other page</p>}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -949,10 +951,10 @@ it("keeps a session locked when returning while its export is still pending", as
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : <p>Other page</p>}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1028,20 +1030,20 @@ it("keeps select drafts in the generic form restricted to the current view optio
     ],
   });
   function DraftPatch({ value }: { value?: string }) {
-    const { sessions } = useExtensions();
+    const { sessionCache } = useExtensions();
     useEffect(() => {
       if (value !== undefined)
-        sessions
+        sessionCache.sessions
           .get(`${item.package.manifest.id}:open`)!
           .update({ fields: { query: value } });
-    }, [sessions, value]);
+    }, [sessionCache, value]);
     return null;
   }
   const workspace = (value?: string) => (
-    <ExtensionsProvider>
+    <>
       <DraftPatch value={value} />
       {app()}
-    </ExtensionsProvider>
+    </>
   );
   const mounted = render(workspace());
   await screen.findByRole("combobox", { name: "Category" });
@@ -1078,12 +1080,12 @@ it("exports and restores an over-limit draft separately from its valid view unti
     type: "application/json",
   });
   file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
-  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+  fireEvent.change(screen.getByLabelText("Import session"), {
     target: { files: [file] },
   });
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Replace current session" }),
+    within(dialog).getByRole("button", { name: "Replace session" }),
   );
   expect(input).toHaveValue(draft);
   expect(input).toBeInvalid();
@@ -1124,10 +1126,10 @@ it("preserves the draft and unlocks a remounted session when its export is cance
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : <p>Other page</p>}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1178,11 +1180,11 @@ it("transfers host data only on explicit send and omits it from ordinary actions
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "Explicit input" },
   });
-  fireEvent.change(screen.getByLabelText("URL for this run (optional)"), {
+  fireEvent.change(screen.getByLabelText("URL (optional)"), {
     target: { value: "https://httpbin.org/get" },
   });
   expect(native.viewExtension).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Send selected data" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send data" }));
   await waitFor(() => expect(native.viewExtension).toHaveBeenCalledTimes(2));
   expect(native.viewExtension).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -1220,14 +1222,12 @@ it("omits retained host-data drafts when their optional permissions are revoked"
   fireEvent.change(screen.getByLabelText("Input text"), {
     target: { value: "keep text" },
   });
-  fireEvent.change(screen.getByLabelText("URL for this run (optional)"), {
+  fireEvent.change(screen.getByLabelText("URL (optional)"), {
     target: { value: "https://service.example/data" },
   });
   mounted.rerender(view(["text:read"]));
-  expect(
-    screen.queryByLabelText("URL for this run (optional)"),
-  ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Send selected data" }));
+  expect(screen.queryByLabelText("URL (optional)")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Send data" }));
   expect(native.viewExtension).toHaveBeenLastCalledWith(
     expect.objectContaining({
       data: { inputText: "keep text", fileIds: [], url: null },
@@ -1246,7 +1246,7 @@ it("starts a fresh session for a higher package version even when the Wasm hash 
       },
     };
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVersion("1.1.0")}>Upgrade</button>
         <ExtensionApp
           key={version}
@@ -1256,7 +1256,7 @@ it("starts a fresh session for a higher package version even when the Wasm hash 
           onClose={onClose}
           onSettled={onSettled}
         />
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1283,7 +1283,7 @@ it("isolates retained sessions and late cancellation across same-hash installati
   function Workspace() {
     const [generation, setGeneration] = useState(1);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setGeneration(2)}>Replace installation</button>
         <ExtensionApp
           key={generation}
@@ -1293,7 +1293,7 @@ it("isolates retained sessions and late cancellation across same-hash installati
           onClose={onClose}
           onSettled={onSettled}
         />
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1327,10 +1327,10 @@ it("observes a retained run directly after remount and preserves its failure fee
   function Workspace() {
     const [visible, setVisible] = useState(true);
     return (
-      <ExtensionsProvider>
+      <>
         <button onClick={() => setVisible(!visible)}>Navigate</button>
         {visible ? app() : null}
-      </ExtensionsProvider>
+      </>
     );
   }
   render(<Workspace />);
@@ -1343,12 +1343,13 @@ it("observes a retained run directly after remount and preserves its failure fee
     "true",
   );
   expect(
-    screen.queryByRole("menuitem", { name: "Request stop" }),
+    screen.queryByRole("menuitem", { name: "Stop" }),
   ).not.toBeInTheDocument();
   await waitFor(() =>
-    expect(
-      screen.getByRole("menuitem", { name: "Request stop" }),
-    ).not.toHaveAttribute("aria-disabled", "true"),
+    expect(screen.getByRole("menuitem", { name: "Stop" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    ),
   );
   expect(lifecycle.work?.dirty).toBe(true);
   await act(async () => pending.reject({ code: "EXTENSION_RUN_FAILED" }));
@@ -1381,13 +1382,9 @@ it("preserves file choices on picker cancellation and waits for selection before
   await screen.findByRole("button", { name: "Submit" });
   openSessionTools();
   fireEvent.click(screen.getByRole("menuitem", { name: "Send data…" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Choose files for this run" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Files for this run" }));
   await screen.findByText("sample.txt");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Choose files for this run" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Files for this run" }));
   fireEvent.keyDown(screen.getByRole("dialog", { name: "Send data" }), {
     key: "Escape",
   });
@@ -1450,9 +1447,9 @@ it("requires confirmation before importing a version-bound session and never res
     type: "application/json",
   });
   file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
-  const input = screen.getByLabelText("Import session JSON");
+  const input = screen.getByLabelText("Import session");
   const click = vi.spyOn(input, "click").mockImplementation(() => {});
-  fireEvent.click(sessionButton("Import session JSON"));
+  fireEvent.click(sessionButton("Import session"));
   expect(click).toHaveBeenCalledOnce();
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(input).toBeInTheDocument();
@@ -1470,7 +1467,7 @@ it("requires confirmation before importing a version-bound session and never res
   expect(native.viewExtension).toHaveBeenCalledOnce();
   expect(dialog).toHaveTextContent("reselect.txt");
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Replace current session" }),
+    within(dialog).getByRole("button", { name: "Replace session" }),
   );
   expect(screen.getByLabelText("Query")).toHaveValue("Restored input");
   expect(native.viewExtension).toHaveBeenCalledOnce();
@@ -1547,7 +1544,7 @@ it("recreates the isolated document only after confirming a session import, reta
   });
   file.arrayBuffer = async () => new TextEncoder().encode(content).buffer;
   openSessionTools();
-  fireEvent.change(screen.getByLabelText("Import session JSON"), {
+  fireEvent.change(screen.getByLabelText("Import session"), {
     target: { files: [file] },
   });
   const dialog = await screen.findByRole("dialog");
@@ -1555,7 +1552,7 @@ it("recreates the isolated document only after confirming a session import, reta
   expect(native.openExtensionUi).toHaveBeenCalledOnce();
   expect(native.closeExtensionUi).not.toHaveBeenCalled();
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Replace current session" }),
+    within(dialog).getByRole("button", { name: "Replace session" }),
   );
   await waitFor(() => expect(native.openExtensionUi).toHaveBeenCalledTimes(2));
   await waitFor(() =>

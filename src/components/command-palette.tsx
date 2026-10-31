@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useContentSearch } from "@/features/content-search/use-content-search";
 import { SearchIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ export function CommandPalette() {
   const { t } = useI18n();
   const { commands, execute, paletteOpen, setPaletteOpen } = useCommands();
   const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const content = useContentSearch(query, paletteOpen);
   const { failed, retry } = content;
   const notifiedFailure = useRef(false);
@@ -67,38 +69,65 @@ export function CommandPalette() {
           <DialogDescription>{t("commands.description")}</DialogDescription>
         </DialogHeader>
         <Command loop label={t("commands.title")} className="flex flex-col">
-          <div className="flex items-center gap-2 border-b px-4 py-1.5 pr-12">
-            <SearchIcon
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Command.Input
-              value={query}
-              onValueChange={setQuery}
-              data-surface="transparent"
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-(--glass-muted-foreground)"
-              placeholder={t("commands.placeholder")}
-              aria-label={t("commands.title")}
-            />
+          <div className="flex items-center border-b px-4 py-1.5 pr-12">
+            <div className="relative flex min-w-0 flex-1">
+              <SearchIcon
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Command.Input
+                ref={inputRef}
+                value={query}
+                onValueChange={setQuery}
+                data-surface="transparent"
+                className="w-full min-w-0 bg-transparent pl-9 outline-none"
+                aria-label={t("commands.title")}
+              />
+            </div>
           </div>
           <p
-            className="mx-4 h-5 overflow-auto text-xs text-muted-foreground"
+            className="mx-4 flex h-5 items-center gap-2 overflow-auto text-xs text-muted-foreground"
             role="status"
             tabIndex={content.tooLong ? 0 : undefined}
           >
-            {content.tooLong
-              ? t("search.limit")
-              : content.loading
-                ? t("search.loading")
-                : ""}
+            {content.tooLong ? (
+              t("search.limit")
+            ) : content.loading ? (
+              t("search.loading")
+            ) : failed ? (
+              <>
+                <span className="min-w-0 overflow-auto whitespace-nowrap">
+                  {t("search.failed")}
+                </span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="h-5 shrink-0 px-1 py-0"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    inputRef.current?.focus();
+                    retry();
+                  }}
+                >
+                  {t("common.retry")}
+                </Button>
+              </>
+            ) : (
+              ""
+            )}
           </p>
           <Command.List
             data-surface="transparent"
             className="h-[min(60vh,24rem)] overflow-y-auto p-2"
           >
-            <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
-              {t("commands.empty")}
-            </Command.Empty>
+            {!failed ? (
+              <Command.Empty className="px-4 py-8 text-center text-sm text-muted-foreground">
+                {t("commands.empty")}
+              </Command.Empty>
+            ) : null}
             {GROUPS.map((group) => {
               const items = commands.filter(
                 (command) =>

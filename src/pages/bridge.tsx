@@ -88,8 +88,7 @@ export default function Bridge() {
       toast.success(t("bridge.success"));
     } catch (error) {
       if (!mounted.current || currentLanguage.current !== language) return;
-      const message = t("bridge.failed", { error: nativeErrorText(error, t) });
-      toast.error(message);
+      toast.error(nativeErrorText(error, t));
     } finally {
       inFlight.current = false;
       if (mounted.current) setPending(false);

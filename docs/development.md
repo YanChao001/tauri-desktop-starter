@@ -11,11 +11,11 @@
 | Windows SDK               | 兼容当前 Windows / Rust MSVC 工具链的版本                          | 链接系统库                        |
 | WebView2 Runtime          | 支持目标 Windows 版本的 Evergreen Runtime                          | 未安装时需按平台说明准备          |
 
-macOS 需要 Xcode Command Line Tools；Linux 需要 WebKitGTK、编译工具和对应发行版的开发库。Windows 构建 MSI 还需启用 VBScript 可选组件。各平台的安装步骤以 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/) 为准，CI 中的软件包列表只对应其 runner 环境。
+macOS 需要 Xcode Command Line Tools；Linux 需要 WebKitGTK、编译工具和对应发行版的开发库。Windows 构建 MSI 还需启用 VBScript 可选组件。各平台安装步骤见 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)，CI 的软件包列表只对应其 runner 环境。
 
-先安装 Node.js、与 `packageManager` 一致的 pnpm 和 rustup。仓库内运行 Rust 命令时，rustup 会按 `rust-toolchain.toml` 自动安装工具链与组件；CI 也读取该文件。升级版本后需验证三端构建。
+先安装 Node.js、指定版本的 pnpm 和 rustup。仓库内的 Rust 命令由 rustup 按 `rust-toolchain.toml` 选择工具链；升级工具链时通过 CI 检查受影响的平台。
 
-默认 Node.js 跟随 `.nvmrc` 固定的 LTS 版本；保留支持的其他版本线也须满足 `engines.node` 的安全补丁下限。Node.js 25 起，官方 Linux 二进制额外依赖 `libatomic`；若启动提示缺少 `libatomic.so.1`，Debian / Ubuntu 可安装 `libatomic1`，其他发行版使用对应运行库包。详见 [Node.js LTS 发布说明](https://nodejs.org/en/blog/release/v26.13.0)。
+Linux 上 Node.js 若提示缺少 `libatomic.so.1`，补齐发行版对应的 `libatomic` 运行库后重试。
 
 ## 首次启动
 
@@ -32,9 +32,22 @@ pnpm app:dev
 
 源码入口与两种运行环境见 [README · 从源码运行](../README.md#从源码运行)。`pnpm dev` 与在线演示共用桌面应用的 React 页面；`pnpm app:dev` 同时启动 Rust 和原生窗口。只开发或构建浏览器界面时，安装前端依赖即可，无需编译 Rust。
 
+## 开发流程
+
+先确定本次交付的行为和影响范围，再选择源码入口与验证方式：
+
+| 任务 | 工作路径                                                                                                                                               |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 功能 | 按 [模块指南](./demo-modules.md) 找到或新增入口，实现当前需求；只有达到 [设计门槛](./engineering-at-scale.md#设计评审与-adr-门槛) 时才先做提案或 ADR。 |
+| 修复 | 从 [排障手册](./troubleshooting.md) 定位问题，优先复现；能稳定复现的行为缺陷补针对性回归。                                                             |
+| 文档 | 更新事实所属的权威文档，核对实现、格式与链接，规则见 [维护规则](./README.md#维护规则)。                                                                |
+| 发布 | 按 [构建与发布](./build-release.md) 准备版本、产物和目标平台验收，保留实际验证结果。                                                                   |
+
+本地检查按 [日常验证范围](./testing.md#日常验证范围) 选择，完成后在 PR 说明行为、验证和未测范围。分支、提交与合并统一遵循 [Git 协作](./conventions/git-workflow.md)。
+
 ## 项目初始化
 
-应用身份集中在 [`app.config.json`](../app.config.json)，前端入口是 [`src/config/app.ts`](../src/config/app.ts)。准备一份品牌 JSON，使用完整字段或仅填写需要覆盖的字段；`updates` 和 `integration` 按字段合并。变更品牌时通过 `--config` 传入补丁，脚本才能识别并替换旧身份、保留额外注册项：
+应用身份集中在 [`app.config.json`](../app.config.json)，前端通过 [`src/config/app.ts`](../src/config/app.ts) 使用。准备只包含待覆盖字段的 JSON 补丁，通过 `--config` 传入，便于脚本识别旧身份并保留额外注册项：
 
 ```json
 {
@@ -42,18 +55,10 @@ pnpm app:dev
   "shortName": "Acme",
   "packageName": "acme-desk",
   "identifier": "io.acme.desk",
-  "description": "Acme desktop application",
-  "author": "Acme",
   "repositoryUrl": "https://github.com/acme/desk",
-  "docsUrl": "https://example.com/docs",
-  "homepageUrl": "https://example.com",
   "integration": {
     "deepLinkScheme": "acme-desk",
     "fileExtension": "acme-doc"
-  },
-  "updates": {
-    "endpoint": "https://github.com/acme/desk/releases/latest/download/latest.json",
-    "publicKey": ""
   }
 }
 ```
@@ -66,23 +71,18 @@ pnpm config:check
 
 `--dry-run` 只展示差异；`--minimal` 将默认模式设为精简，也可在 JSON 写 `"defaultMode": "demo"` 切回。未指定模式时保留当前值。精简模式仅过滤 `demoOnly` 展示与命令；真实删除模块或新增页面 / IPC 见 [模块指南](./demo-modules.md)。
 
-脚本在写入前检查配置、Cargo 清单 / 锁文件、版本、入口与路径，再同步品牌、npm / Cargo 身份、Tauri 平台配置、测试身份、README 品牌链接及安装关联。失败时回滚；若文件被并发编辑，则保留用户编辑和 `.update-*.bak` 原备份并报告恢复冲突，核对后再处理。
+脚本同步 npm / Cargo 身份、Tauri 平台配置、测试身份、README 品牌链接及安装关联，先审查 `--dry-run` 差异再写入。写入失败会回滚；发生并发编辑时保留用户内容和 `.update-*.bak` 备份，按报告核对恢复冲突。字段校验与同步目标以 [`scripts/init-lib.mjs`](../scripts/init-lib.mjs) 为准。
 
-包名使用小写 kebab-case，标识符使用唯一的至少三段反向域名；应用名须能作为 Windows 文件名。未知字段、含凭据的 URL、版本漂移或不支持的入口会在写入前拒绝。`homepageUrl` 用于 npm / 安装包主页，`docsUrl` 用于应用内文档入口，二者独立。
+初始化时关注以下产品决定：
 
-更换仓库时，未显式提供的主页和文档地址回退到新仓库；更换应用标识符或仓库时，清空继承的更新端点与公钥，显式提供的 `updates` 字段优先。单独更换更新端点也会清空旧公钥，须明确提供该源可信的公钥才能启用；脚本不猜测发布服务。端点或公钥为空时禁用更新请求。
+- 使用独立的包名和反向域名标识符。`integration` 同步深链、文件关联与界面示例；新增协议或文件格式仍需实现对应解析。
+- `homepageUrl` 是产品主页，`docsUrl` 是应用内文档入口；更换仓库且未显式提供时回退到新仓库地址。
+- 更换标识符或主仓库会清空继承的更新与市场配置；单独换源也会清除旧公钥。显式提供新源及可信公钥后才启用，详见 [更新通道](./security.md#更新通道) 与 [官方插件市场](./extensions.md#官方插件市场)。
+- `browserStorageNamespace` 隔离同域下的浏览器偏好、图库与广播，更换标识符时默认随之更换。只有承接同一产品数据时才复用旧值；原生存档路径由 Tauri 标识符决定。
 
-`integration.deepLinkScheme` 和 `fileExtension` 控制安装注册、原生解析和界面示例。二者限定为 1–64 位小写字母、数字或连字符，必须以字母开头，拒绝系统协议和常用文件格式。更换标识符时，未显式提供的值取本次新包名；包名未变则从新标识符转为小写并将点替换为连字符，超过长度时须显式提供短名称。保留额外协议、文件关联和同组其他后缀；新增的自定义协议及文件格式仍需实现各自解析。
+初始化不迁移或删除用户数据。发布后更换标识符、协议、扩展名或存储命名空间，应另行处理数据迁移与安装关联。`pnpm config:check` 只读核对配置与派生值，已纳入 `verify` 和 CI。
 
-浏览器持久化由 `browserStorageNamespace` 隔离设置、主题、壁纸 IndexedDB 和广播通道；原模板保留 `tauri-starter` 以兼容已有数据，更换标识符时默认改为新标识符。只有明确承接同一产品数据时才显式复用旧命名空间；同域名下的独立派生产品应使用不同值。初始化不读取、迁移或删除用户数据，原生存档路径仍由 Tauri 标识符决定。
-
-`pnpm config:check` 已纳入 `verify` 和 CI，只读比较解析后的配置与派生值，接受等价 JSON / TOML 排版；执行初始化时还需能安全定位待改字段，不支持的结构会在写入前拒绝。发布后更换标识符、协议、扩展名或存储命名空间，须设计迁移或重新关联，不能用重新初始化代替升级迁移。
-
-官方扩展市场由 `extensionMarket.repository` 与 `publicKey` 管理。更换应用标识符或主仓库时，默认清空继承的市场配置；单独更换市场仓库也会清除旧公钥，必须显式提供新源可信的公钥。两项均为空时禁用市场，配置不完整则初始化拒绝写入。协议与发布边界见 [官方插件市场](./extensions.md#官方插件市场)。
-
-另行处理 LICENSE 归属、安全私密报告渠道、代码签名与更新公钥；初始化不读取或修改签名私钥。启用 SignPath 时仍需核对 [签名策略](./code-signing-policy.md) 中的实际维护者、资格和范围，并同步门户配置；本地产品名同步不代表门户授权发生变化。README 之外的实际维护者声明不自动改写，GitHub About、Pages 和 Secrets 由派生仓库配置。
-
-品牌图标和安装器主视觉修改 `resources/branding/*.svg`，运行 `pnpm branding:generate`、`pnpm branding:check`，尺寸和映射见 [安装器外观](./build-release.md#安装器外观)。版本使用 `pnpm version:set x.y.z` 同步。初始化后按 [验证范围](./testing.md#日常验证范围) 检查；发布前用自己的安装包验收深链 / 文件关联的冷、热启动、平台配置及卸载登记。
+随后处理 LICENSE 归属、安全报告渠道、仓库 About、Pages 和 Secrets；签名身份按 [代码签名策略](./code-signing-policy.md) 配置，初始化不修改私钥或签名门户。品牌资源按 [安装器外观](./build-release.md#安装器外观) 生成，版本使用 `pnpm version:set x.y.z` 同步。首次发布用自己的安装包验证身份、深链 / 文件关联及卸载登记。
 
 ## 环境诊断
 
@@ -95,33 +95,24 @@ node scripts/doctor.mjs --json
 
 ## 常用命令
 
-以下命令由 [`package.json`](../package.json) 定义；测试选型与覆盖范围统一见 [测试规范](./testing.md#日常验证范围)。原生验收和截图会占用桌面，按 [桌面干扰边界](./testing.md#避免干扰本机桌面) 安排执行。
+完整脚本见 [`package.json`](../package.json)。以下保留常用入口；测试命令与选择见 [测试规范](./testing.md#日常验证范围)，扩展开发命令见 [扩展指南](./extensions.md#验证)。
 
-| 命令                                                                                                     | 用途                                                                                              |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `pnpm app:dev` / `pnpm dev`                                                                              | 完整桌面开发 / 仅 Vite 浏览器开发（端口 1420）                                                    |
-| `pnpm run doctor`                                                                                        | 只读环境诊断；未安装依赖时用 `node scripts/doctor.mjs`                                            |
-| `pnpm init:project` / `pnpm config:check`                                                                | [初始化](#项目初始化) / 只读配置一致性检查                                                        |
-| `pnpm bindings:generate` / `pnpm bindings:check`                                                         | 修改 Rust 命令或 DTO 后生成 / 检查 IPC 绑定，并同步独立 SDK 公共类型                              |
-| `pnpm extension:sdk:generate` / `pnpm extension:sdk:check`                                               | 从生成绑定提取 / 检查 SDK 公开 DTO，外部插件用法见 [界面 SDK](../sdk/README.md)                   |
-| `pnpm build` / `pnpm preview`                                                                            | 构建 / HTTP 预览桌面前端 `dist/`，预览不提供原生能力                                              |
-| `pnpm build:web` / `pnpm exec vite preview --outDir dist-web`                                            | 构建 / 预览浏览器演示                                                                             |
-| `pnpm app:build` / `pnpm app:portable`                                                                   | 构建并归档安装包 / Windows 便携包到版本化 `artifacts/`                                            |
-| `pnpm verify`                                                                                            | 运行 [前端与工程综合检查](./testing.md#日常验证范围)                                              |
-| `pnpm test` / `pnpm test:watch` / `pnpm test:coverage`                                                   | 单元测试 / 监听 / 按需生成覆盖率                                                                  |
-| `pnpm test:scripts`                                                                                      | `scripts/` 和 `e2e/` 的 Node 单元测试                                                             |
-| `pnpm typecheck` / `pnpm lint` / `pnpm lint:fix`                                                         | 类型检查 / ESLint / 自动修复                                                                      |
-| `pnpm format` / `pnpm format:check`                                                                      | 全仓库 Prettier 格式化 / 检查；局部修改用 `pnpm exec prettier --write <文件>`                     |
-| `pnpm test:ui` / `pnpm test:browser`                                                                     | 构建后运行无头浏览器检查 / 检查已构建的浏览器产物                                                 |
-| `pnpm e2e:build` / `pnpm test:e2e --interactive`                                                         | 构建隔离原生测试程序 / 运行真实桌面 E2E                                                           |
-| `pnpm test:installer --interactive`                                                                      | Windows NSIS 原生绘制回归，需已缓存 NSIS 工具链                                                   |
-| `pnpm docs:capture --interactive`                                                                        | Windows 原生截图采集并同步，见 [截图流程](./testing.md#readme-原生截图更新)                       |
-| `pnpm docs:previews` / `pnpm docs:previews:check`                                                        | 同步已采集截图 / 只检查已提交截图格式与尺寸，均不启动窗口                                         |
-| `pnpm extension:pack` / `pnpm extension:validate` / `pnpm extension:test`                                | 扩展打包 / Rust 预检 / 真实离线 worker fixture，参数见 [扩展指南](./extensions.md#构建-rust-示例) |
-| `pnpm extension:demos:check` / `pnpm extension:test:worker` / `pnpm test:extensions:ui`                  | 内置 Wasm 回执 / worker 协议 / 自定义界面检查，见 [扩展验证](./extensions.md#验证)                |
-| `pnpm test:extensions:styles`                                                                            | 无头对照真实宿主控件与 SDK 默认外观、Shadow DOM 和键盘语义                                        |
-| `pnpm clean:outputs` / `pnpm clean:temporary` / `pnpm clean:artifacts` / `pnpm clean` / `pnpm clean:all` | 删除范围见 [下节](#清理构建产物)，均支持 `--dry-run`                                              |
-| `pnpm version:set x.y.z` / `pnpm version:check`                                                          | 同步 / 检查配置、清单与锁文件版本                                                                 |
+| 命令                                                                                                     | 用途                                                                                        |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `pnpm app:dev` / `pnpm dev`                                                                              | 完整桌面开发 / 仅 Vite 浏览器开发（端口 1420）                                              |
+| `pnpm run doctor`                                                                                        | 只读环境诊断；未安装依赖时用 `node scripts/doctor.mjs`                                      |
+| `pnpm init:project` / `pnpm config:check`                                                                | [初始化](#项目初始化) / 只读配置一致性检查                                                  |
+| `pnpm bindings:generate` / `pnpm bindings:check`                                                         | 修改 Rust 命令或 DTO 后生成 / 检查 IPC 绑定，并同步独立 SDK 公共类型                        |
+| `pnpm build` / `pnpm preview`                                                                            | 构建 / HTTP 预览桌面前端 `dist/`，预览不提供原生能力                                        |
+| `pnpm build:web` / `pnpm exec vite preview --outDir dist-web`                                            | 构建 / 预览浏览器演示                                                                       |
+| `pnpm app:build` / `pnpm app:portable`                                                                   | 构建并归档安装包 / Windows 便携包到版本化 `artifacts/`                                      |
+| `pnpm verify`                                                                                            | 运行 [前端与工程综合检查](./testing.md#日常验证范围)                                        |
+| `pnpm typecheck` / `pnpm lint` / `pnpm lint:fix`                                                         | 类型检查 / ESLint / 自动修复                                                                |
+| `pnpm format` / `pnpm format:check`                                                                      | 全仓库 Prettier 格式化 / 检查；局部修改用 `pnpm exec prettier --write <文件>`               |
+| `pnpm test:ui` / `pnpm test:browser`                                                                     | 构建后运行无头浏览器检查 / 检查已构建的浏览器产物                                           |
+| `pnpm device:tool`                                                                                       | 虚拟数据采集与原始记录只读回放，通过无头 CLI 运行，见 [虚拟会话指南](./device-workbench.md) |
+| `pnpm clean:outputs` / `pnpm clean:temporary` / `pnpm clean:artifacts` / `pnpm clean` / `pnpm clean:all` | 删除范围见 [下节](#清理构建产物)，均支持 `--dry-run`                                        |
+| `pnpm version:set x.y.z` / `pnpm version:check`                                                          | 同步 / 检查配置、清单与锁文件版本                                                           |
 
 ## 清理构建产物
 
@@ -140,15 +131,9 @@ pnpm clean:outputs
 | `pnpm clean`           | `artifacts/`、`dist/`、`dist-web/`、`coverage/`、默认 `src-tauri/target/` 和生成 schema                          | `node_modules/`                                        |
 | `pnpm clean:all`       | `pnpm clean` 的范围，加上 `node_modules/`                                                                        | 项目源码、配置与锁文件                                 |
 
-临时模式的构建输出包含 `dist/`、`dist-web/` 和 `coverage/`；schema 为 `src-tauri/gen/schemas/`；依赖内缓存限于 `node_modules/.vite/`、`.vite-temp/` 和 `.cache/`。`clean:artifacts` 会整体删除 `artifacts/`，其中误放的历史编译缓存也会删除；要保留这些缓存应使用 `clean:outputs`。临时诊断目录与备份识别规则以脚本固定列表为准，不接受自定义待删路径。
+日常释放产物空间选择 `clean:outputs`：保留 Cargo 缓存、依赖及扩展编译工具，删除固定的生成目录；项目源码、`docs/assets/`、品牌图标和内置扩展资源均保留。`clean:artifacts` 整体删除根 `artifacts/`，其中混入的编译缓存也会被删除。具体目录和历史备份识别规则见 [`scripts/clean-lib.mjs`](../scripts/clean-lib.mjs)，以 `--dry-run` 的实际结果核对范围。
 
-`clean:outputs` 适合“只保留编译缓存”的日常清理：清理根目录 `artifacts/`、`.cache/` 中的生成内容，以及脚本固定的构建目录，包含 `examples/extensions/dist/`、`marketplace/artifacts/` 和旧 `marketplace/dist/`。该模式保留 `target/` 编译目录（只删除宿主 `target/release/bundle/` 的安装器暂存）、`node_modules/` 及其 Vite 缓存、包管理器缓存，以及 `.cache/extension-tools/` 的编译工具。根目录 `artifacts/`、`.cache/` 内曾混入的 Cargo 缓存按标准 Cargo `CACHEDIR.TAG` 识别并原地保留；不要继续把编译缓存放入产物目录。源码测试、`docs/assets/` 截图、品牌图标与内置扩展资源属于项目内容，不在清理范围。
-
-生成结果按仓库统一使用 `artifacts/`：宿主分发与测试报告位于根目录，独立市场仓库的发布包位于 `marketplace/artifacts/market-<revision>/`，详情见 [市场开发指南](../marketplace/docs/development.md)。市场包不再写入 `marketplace/dist/`，编译缓存留在市场 `target/`；独立检出市场仓库时规则相同。
-
-脚本在受控递归删除前检查项目路径、固定清理范围与链接边界，不跟随目录链接。Windows 上运行中的项目内程序会阻止清理其所在目标，脚本不会结束进程；文件占用、路径边界或权限失败会报告路径并以非零状态退出。执行前自行停止相关开发服务与测试进程。
-
-清理后构建可以重建输出，但删除 Rust 缓存会使下次完整编译更慢；需要保留缓存时选择 `clean:outputs`，不要使用 `clean:temporary`。固定范围以外的自定义 `CARGO_TARGET_DIR` 或 Cargo `target-dir` 由设置者管理。分发目录布局见 [README · 构建产物](../README.md#构建产物)。
+清理不跟随目录链接，也不会结束运行中的进程；执行前停止自己启动的开发或测试进程，遇到占用按报错路径处理。自定义 `CARGO_TARGET_DIR` / Cargo `target-dir` 由设置者管理。删除编译缓存会使下次构建更慢，正常编译等待无需清缓存。
 
 复制工程优先使用 Git clone 或模板仓库，避免携带本地依赖与缓存。
 
@@ -165,12 +150,7 @@ VITE_API_BASE=https://api.example.com
 const base = import.meta.env.VITE_API_BASE;
 ```
 
-注意事项：
-
-- 前端能读到的变量会被**打进 bundle**，任何人解包都能看到，不要放密钥。
-- 需要保密的值由 Rust 或服务端使用，只向界面返回操作结果；不要通过命令把密钥返回前端。桌面应用随包携带的凭据仍可被提取，用户令牌应按 [本地数据规范](./security.md#本地数据) 保存。
-- 新增的 `VITE_` 变量要在 `src/vite-env.d.ts` 里声明类型，并在使用处校验必填值和格式；类型声明不能保证部署时实际提供了变量。
-- 仓库里只提交 `.env.example`，写清需要哪些变量和用途，不写真实值。
+`VITE_` 值会进入前端 bundle，应仅放公开配置。新增变量在 `src/vite-env.d.ts` 声明类型，并在使用处校验实际值；仓库只提交写明用途的 `.env.example`。凭据与用户令牌按 [本地数据规范](./security.md#本地数据) 保存。
 
 ## 调试
 
@@ -224,38 +204,11 @@ Stop-Process -Id <pid>
 
 ## 依赖下载失败或缓慢
 
-需要镜像时，先确认镜像来源可信，再配置到用户级设置，不要修改已提交的锁文件来源：
-
-```toml
-# ~/.cargo/config.toml
-[source.crates-io]
-replace-with = "rsproxy-sparse"
-
-[source.rsproxy-sparse]
-registry = "sparse+https://rsproxy.cn/index/"
-```
-
-```bash
-pnpm config set --global registry https://registry.npmmirror.com
-```
-
-如果打包时卡在下载 NSIS / WiX 工具链，见 [排障手册](./troubleshooting.md#打包时卡在下载-nsis)。
+先根据报错区分 registry、GitHub 或安装器工具下载，检查当前终端的网络与代理。需要镜像时使用确认可信的来源，配置到用户级 pnpm / Cargo 设置，保留已提交的锁文件来源。NSIS / WiX 下载失败见 [排障手册](./troubleshooting.md#打包时卡在下载-nsis)。
 
 ## 编译耗时优化
 
-Rust 首次编译会构建依赖。重复构建较慢时，先确认是否命中缓存；需要共享编译缓存时可评估 `sccache`：
-
-```bash
-cargo install sccache
-```
-
-```toml
-# ~/.cargo/config.toml
-[build]
-rustc-wrapper = "sccache"
-```
-
-`src-tauri/target` 可能增长到数 GB。仅在需要释放磁盘或定位缓存问题时运行 `pnpm clean`，它会导致下一次完整编译。
+重复构建较慢时，先确认是否复用了相同工具链、目标目录与编译策略。日常前端迭代用 HMR，原生功能用 `app:dev`；需要分发产物时再执行完整打包。安装包的速度 / 体积取舍见 [编译策略](./build-release.md#编译策略)，正常等待与异常区分见 [Rust 构建停顿](./troubleshooting.md#rust-构建长时间停在-802805)。
 
 ## 重置环境
 
@@ -269,15 +222,15 @@ pnpm install --frozen-lockfile
 
 ## 新增依赖的评审标准
 
-新增前说明以下三项：
+在 PR 说明新增依赖的用途，并按实际影响检查：
 
-1. **体积**：前端依赖会不会显著增加 bundle？比较 `pnpm build` 前后的分块体积，较大的依赖考虑按需引入。
+1. **体积**：显著影响前端 bundle 时比较构建前后分块，较大的依赖考虑按需引入。
 2. **维护状态**：是否仍维护、能否兼容当前工具链、已知问题如何处理？成熟库不以发布频率单独判断。
 3. **许可证**：记录许可证、分发方式及需要履行的义务；有疑问时由项目负责人与相关专业人员确认，不能仅凭许可证名称认定可直接分发。
 
 Rust 依赖还需评估编译时间和目标平台兼容性。
 
-现有演示库的用途、许可证和加载边界见 [依赖与加载](./demo-modules.md#依赖与加载)，精确版本读取锁文件。升级时核对这些边界，构建体积与运行性能分别测量。
+现有演示库的用途、许可证和加载边界见 [依赖与加载](./demo-modules.md#依赖与加载)，精确版本读取锁文件。
 
 ## IDE 配置
 
@@ -287,9 +240,7 @@ VS Code 资源管理器默认隐藏 `dist/`、`dist-web/` 与 `src-tauri/target/
 
 ## 浏览器演示构建与部署
 
-网页直接展示占满视口的桌面界面，顶部只有应用标题栏；窄屏页面选择入口位于同一标题栏，不附加宣传、下载或演示说明外壳。
-
-在线演示直接构建根 `index.html` 与 `src/`，共用页面、样式、路由、词典和资源。浏览器可运行演示页面及本地 fixture；指定 HTTPS / WSS 示例依赖外部服务，原生能力仍受 `lib/tauri.ts` 环境检查。浏览器存储与桌面原生存档分别维护，范围见 [数据存储](./architecture.md#数据存储)。
+在线演示直接构建根 `index.html` 与 `src/`，共用桌面页面、样式、路由、词典和资源。浏览器可运行页面及本地 fixture，原生能力由门面进行环境检查，存储范围见 [数据存储](./architecture.md#数据存储)。
 
 ```bash
 pnpm build:web
@@ -298,10 +249,10 @@ pnpm exec vite preview --outDir dist-web
 
 发布前按 [浏览器生产构建冒烟](./testing.md#浏览器生产构建冒烟) 运行无头检查，覆盖子路径、键盘、偏好、fixture 与无障碍。
 
-`build:web` 运行类型检查，并以 Vite 的 `web-demo` 模式构建；[`vite.config.ts`](../vite.config.ts) 将资源基路径设为相对路径，输出到 `dist-web/`。桌面构建继续使用 `dist/`，两个输出分别维护。通过 HTTP 服务预览构建结果，不直接打开生成的 HTML。
+`build:web` 使用 Vite 的 `web-demo` 模式，输出到 `dist-web/`；桌面前端输出到 `dist/`。资源基路径由 [`vite.config.ts`](../vite.config.ts) 配置，通过 HTTP 服务预览构建结果。
 
 HashRouter 将页面路径保留在 `#` 后，静态服务只需提供首页与构建资源，适用于 `/tauri-desktop-starter/` 等项目子路径；部署后复核首页及 `#/components` 等页面的直接访问和刷新。
 
 [`pages.yml`](../.github/workflows/pages.yml) 安装锁定依赖、构建 `dist-web/` 并通过 Playwright 冒烟后，发布 GitHub Pages 在线演示，与桌面安装包发布分别执行。推送到 `develop` 且命中工作流路径时自动部署，也可从该分支手动触发。仓库 Pages 来源须选择 GitHub Actions，`github-pages` 环境须允许 `develop` 部署。
 
-派生项目在初始化补丁的 `homepageUrl` 填写实际演示或产品主页，`docsUrl` 指向真实文档入口，并同步仓库 About。界面和能力变化在同一份源码中维护，发布演示前同时复核浏览器边界与桌面行为。
+派生项目在初始化补丁的 `homepageUrl` 填写演示或产品主页，`docsUrl` 指向文档入口，并同步仓库 About。

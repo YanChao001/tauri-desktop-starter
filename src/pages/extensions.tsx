@@ -1,15 +1,9 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  ExternalLinkIcon,
-  FolderOpenIcon,
-  PackagePlusIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { FolderOpenIcon, RefreshCwIcon } from "lucide-react";
 import { NativePage, ResourceError } from "@/components/native-page";
 import { PageLoading } from "@/components/page-loading";
-import { ExternalLink } from "@/components/external-link";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -37,22 +31,26 @@ import { ExtensionRecovery } from "@/features/extensions/extension-recovery";
 import { ExtensionHelp } from "@/features/extensions/extension-help";
 import { ExtensionCard } from "@/features/extensions/extension-card";
 import { availableExtensionCommands } from "@/features/extensions/extension-model";
+import { canUpdateWithoutReview } from "@/features/extensions/extension-upgrade-policy";
+import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { ExtensionMarket } from "@/features/extensions/extension-market";
 import { useExtensionMarket } from "@/features/extensions/use-extension-market";
 import {
   compareExtensionVersions,
+  extensionCatalogEntries,
   marketUpdate,
 } from "@/features/extensions/market-model";
-import { repositoryFileUrl } from "@/features/catalog/model";
-import { APP_CONFIG } from "@/config/app";
+import { useNativeResource } from "@/hooks/use-native-resource";
 import {
   previewExtension,
   downloadMarketExtension,
-  extensionDemo,
+  bundledExtensionPackage,
+  bundledExtensionCatalog,
   installExtension,
   installMarketExtension,
   rollbackExtension,
-  type MarketSource,
+  type ExtensionConsent,
+  type ExtensionOrigin,
   type MarketDownloadProgress,
   setExtensionEnabled,
   uninstallExtension,
@@ -61,6 +59,7 @@ import {
   type ExtensionInfo,
   type ExtensionPermission,
   type ExtensionPreview,
+  type BundledExtension,
 } from "@/lib/tauri";
 
 type Review = {
@@ -68,7 +67,7 @@ type Review = {
   content: string;
   revision: number;
   previous: string | null;
-  source?: MarketSource;
+  origin: ExtensionOrigin;
 };
 type Decision = {
   item: ExtensionInfo;
@@ -78,21 +77,24 @@ type Decision = {
 
 export default function Extensions() {
   const { t } = useI18n();
+  const latest = useLatestTranslator();
   const [search, setSearch] = useSearchParams();
   const { data, loading, error, reload } = useExtensions();
   const market = useExtensionMarket();
+  const bundled = useNativeResource(bundledExtensionCatalog);
+  const catalog = extensionCatalogEntries(bundled.data, market.data);
+  const hostVersion =
+    bundled.data?.hostVersion ?? market.data?.hostVersion ?? "0.0.0";
   const navigate = useNavigate();
   const [actionError, setActionError] = useState<unknown>(null);
-  const [bundledStatus, setBundledStatus] = useState<
-    "current" | "newer" | "different" | null
-  >(null);
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
   const alive = useRef(false);
   const dialogTrigger = useRef<HTMLElement | null>(null);
+  const dialogAnchor = useRef<HTMLElement | null>(null);
+  const pendingInstallFocus = useRef<(() => void) | null>(null);
   const packageInput = useRef<HTMLInputElement>(null);
   const packageTrigger = useRef<HTMLButtonElement>(null);
-  const [packageFileName, setPackageFileName] = useState("");
   const [review, setReview] = useState<Review | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [grants, setGrants] = useState<ExtensionPermission[]>([]);
@@ -101,22 +103,15 @@ export default function Extensions() {
     useState<MarketDownloadProgress | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
   useEffect(() => {
+    if (busy || !pendingInstallFocus.current) return;
+    const restore = pendingInstallFocus.current;
+    pendingInstallFocus.current = null;
+    restore();
+  }, [busy]);
+  useEffect(() => {
     if (actionError)
       toast.error(nativeErrorText(actionError, t), { id: "extensions:action" });
   }, [actionError, t]);
-  useEffect(() => {
-    if (bundledStatus)
-      toast.info(
-        t(
-          bundledStatus === "current"
-            ? "ext.bundledCurrent"
-            : bundledStatus === "newer"
-              ? "ext.bundledNewerInstalled"
-              : "ext.bundledDifferent",
-        ),
-        { id: "extensions:action" },
-      );
-  }, [bundledStatus, t]);
   const tab = search.get("tab") === "discover" ? "discover" : "installed";
   const requestedExtension = search.get("extension") ?? "";
   const [runnerOpened, setRunnerOpened] = useState(!!requestedExtension);
@@ -141,7 +136,6 @@ export default function Extensions() {
     locked.current = true;
     setBusy(true);
     setActionError(null);
-    setBundledStatus(null);
     try {
       await action();
     } catch (reason) {
@@ -150,6 +144,10 @@ export default function Extensions() {
       locked.current = false;
       if (alive.current) setBusy(false);
     }
+  }
+  function rememberDialogTrigger(trigger: HTMLElement | null) {
+    dialogTrigger.current = trigger;
+    dialogAnchor.current = trigger?.closest<HTMLElement>("article") ?? null;
   }
   function reviewPackage(value: Review) {
     const current = data?.items.find(
@@ -173,13 +171,61 @@ export default function Extensions() {
       ],
     };
   }
-  async function inspect(file?: File) {
+  async function installPackage(value: Review, consent?: ExtensionConsent) {
+    if (!alive.current) return;
+    setInstallingId(value.preview.manifest.id);
+    try {
+      if (value.origin.kind === "market")
+        await installMarketExtension(
+          value.content,
+          value.revision,
+          value.previous !== null,
+          value.preview.sha256,
+          value.origin.source,
+          consent,
+        );
+      else
+        await installExtension(
+          value.content,
+          value.revision,
+          value.previous !== null,
+          value.preview.sha256,
+          consent,
+        );
+      if (!alive.current) return;
+      await reload();
+      if (!alive.current) return;
+      setReview(null);
+      if (!consent)
+        pendingInstallFocus.current = () => {
+          // 禁用按钮会失焦；用户已主动移到别处时，保留新的操作位置。
+          if (
+            document.activeElement === document.body ||
+            document.activeElement === dialogTrigger.current
+          )
+            restoreOperationFocus();
+        };
+      if (value.previous)
+        toast.success(
+          latest("ext.updated", {
+            name: value.preview.manifest.name,
+            version: value.preview.manifest.version,
+          }),
+        );
+    } finally {
+      if (alive.current) setInstallingId(null);
+    }
+  }
+  async function inspect(source: File | BundledExtension) {
     if (!data) return;
-    dialogTrigger.current = file
-      ? packageTrigger.current
-      : document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+    const file = source instanceof File ? source : null;
+    rememberDialogTrigger(
+      file
+        ? packageTrigger.current
+        : document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null,
+    );
     const snapshot = data;
     await act(async () => {
       let content: string = "";
@@ -194,8 +240,11 @@ export default function Extensions() {
           throw new Error(t("ext.packageError"));
         }
       }
-      if (!file) content = await extensionDemo("starter.extension-lab");
+      if (!(source instanceof File))
+        content = await bundledExtensionPackage(source.package.manifest.id);
+      if (!alive.current) return;
       const preview = await previewExtension(content);
+      if (!alive.current) return;
       const installed = snapshot.items.find(
         (item) => item.package.manifest.id === preview.manifest.id,
       );
@@ -205,42 +254,44 @@ export default function Extensions() {
           installed.package.manifest.version,
         );
         if (order <= 0) {
-          if (alive.current)
-            setBundledStatus(
-              order < 0
-                ? "newer"
-                : installed.package.sha256 === preview.sha256
-                  ? "current"
-                  : "different",
-            );
+          toast.info(
+            latest(
+              order < 0 ? "ext.market.newerInstalled" : "ext.market.installed",
+            ),
+          );
           return;
         }
       }
-      if (alive.current)
-        reviewPackage({
-          preview,
-          content,
-          revision: snapshot.revision,
-          previous: installed?.package.manifest.version ?? null,
-        });
+      const value: Review = {
+        preview,
+        content,
+        revision: snapshot.revision,
+        previous: installed?.package.manifest.version ?? null,
+        origin: file ? { kind: "local" } : { kind: "bundled" },
+      };
+      if (!file && canUpdateWithoutReview(installed, preview, value.origin))
+        await installPackage(value);
+      else reviewPackage(value);
     });
   }
   function decide(item: ExtensionInfo, action: Decision["action"]) {
     if (!data || busy) return;
-    dialogTrigger.current =
+    rememberDialogTrigger(
       document.activeElement instanceof HTMLElement
         ? document.activeElement
-        : null;
+        : null,
+    );
     setActionError(null);
     setGrants(action === "permissions" ? item.grantedPermissions : []);
     setDecision({ item, action, revision: data.revision });
   }
   async function inspectMarket(entry: import("@/lib/tauri").MarketEntry) {
     if (!data) return;
-    dialogTrigger.current =
+    rememberDialogTrigger(
       document.activeElement instanceof HTMLElement
         ? document.activeElement
-        : null;
+        : null,
+    );
     const snapshot = data;
     await act(async () => {
       setDownloadingId(entry.package.manifest.id);
@@ -254,18 +305,23 @@ export default function Extensions() {
             if (alive.current && receiving) setDownloadProgress(progress);
           },
         );
-        if (alive.current)
-          reviewPackage({
-            content: downloaded.content,
-            preview: downloaded.preview,
-            source: downloaded.source,
-            revision: snapshot.revision,
-            previous:
-              snapshot.items.find(
-                (item) =>
-                  item.package.manifest.id === entry.package.manifest.id,
-              )?.package.manifest.version ?? null,
-          });
+        receiving = false;
+        if (!alive.current) return;
+        setDownloadingId(null);
+        setDownloadProgress(null);
+        const installed = snapshot.items.find(
+          (item) => item.package.manifest.id === downloaded.preview.manifest.id,
+        );
+        const value: Review = {
+          content: downloaded.content,
+          preview: downloaded.preview,
+          origin: { kind: "market", source: downloaded.source },
+          revision: snapshot.revision,
+          previous: installed?.package.manifest.version ?? null,
+        };
+        if (canUpdateWithoutReview(installed, downloaded.preview, value.origin))
+          await installPackage(value);
+        else reviewPackage(value);
       } finally {
         receiving = false;
         if (alive.current) {
@@ -293,9 +349,26 @@ export default function Extensions() {
   }
   function restoreDialogFocus(event: Event) {
     event.preventDefault();
-    const trigger = dialogTrigger.current;
-    if (trigger?.isConnected && !trigger.matches(":disabled")) trigger.focus();
-    else packageTrigger.current?.focus();
+    restoreOperationFocus();
+  }
+  function restoreOperationFocus() {
+    const available = (target: HTMLElement | null) =>
+      target?.isConnected &&
+      !target.matches(":disabled") &&
+      !target.closest("[hidden], [inert]");
+    for (const target of [dialogTrigger.current, dialogAnchor.current]) {
+      if (target && available(target)) {
+        target.focus({ preventScroll: true });
+        return;
+      }
+    }
+    const main = [...document.querySelectorAll<HTMLElement>("main")].find(
+      available,
+    );
+    if (main) {
+      if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
+      main.focus({ preventScroll: true });
+    }
   }
   const disabledPermissions =
     decision?.action === "permissions" && !decision.item.enabled;
@@ -364,55 +437,58 @@ export default function Extensions() {
         >
           {!data && loading ? <PageLoading /> : null}
           <div className="extension-card-grid">
-            {data?.items.map((item) => (
-              <ExtensionCard
-                key={item.package.manifest.id}
-                item={item}
-                busy={busy}
-                update={
-                  marketUpdate(
-                    market.data?.catalog.entries ?? [],
-                    item,
-                    market.data?.hostVersion ?? "0.0.0",
-                  ) ?? null
-                }
-                onOpen={(commandId) => open(item, commandId)}
-                onWindow={(commandId) =>
-                  void act(() =>
-                    openExtensionWindow(
-                      item.package.manifest.id,
-                      commandId,
-                      item.package.sha256,
-                      item.generation,
-                    ),
-                  )
-                }
-                onEnable={() => decide(item, "enable")}
-                onPermissions={() => decide(item, "permissions")}
-                onUninstall={() => decide(item, "uninstall")}
-                onRollback={() => decide(item, "rollback")}
-                onUpdate={() => {
-                  const update = marketUpdate(
-                    market.data?.catalog.entries ?? [],
-                    item,
-                    market.data?.hostVersion ?? "0.0.0",
-                  );
-                  if (update) void inspectMarket(update);
-                }}
-                onDisable={() =>
-                  void act(async () => {
-                    await setExtensionEnabled(
-                      item.package.manifest.id,
-                      false,
-                      [],
-                      data.revision,
-                      false,
-                    );
-                    await reload();
-                  })
-                }
-              />
-            ))}
+            {data?.items
+              .slice()
+              .sort(
+                (a, b) =>
+                  Number(b.origin.kind === "bundled") -
+                    Number(a.origin.kind === "bundled") ||
+                  a.package.manifest.name.localeCompare(
+                    b.package.manifest.name,
+                  ),
+              )
+              .map((item) => (
+                <ExtensionCard
+                  key={item.package.manifest.id}
+                  item={item}
+                  busy={busy}
+                  update={marketUpdate(catalog, item, hostVersion) ?? null}
+                  onOpen={(commandId) => open(item, commandId)}
+                  onWindow={(commandId) =>
+                    void act(() =>
+                      openExtensionWindow(
+                        item.package.manifest.id,
+                        commandId,
+                        item.package.sha256,
+                        item.generation,
+                      ),
+                    )
+                  }
+                  onEnable={() => decide(item, "enable")}
+                  onPermissions={() => decide(item, "permissions")}
+                  onUninstall={() => decide(item, "uninstall")}
+                  onRollback={() => decide(item, "rollback")}
+                  onUpdate={() => {
+                    const update = marketUpdate(catalog, item, hostVersion);
+                    if (update) {
+                      if (update.kind === "bundled") void inspect(update);
+                      else void inspectMarket(update);
+                    }
+                  }}
+                  onDisable={() =>
+                    void act(async () => {
+                      await setExtensionEnabled(
+                        item.package.manifest.id,
+                        false,
+                        [],
+                        data.revision,
+                        false,
+                      );
+                      await reload();
+                    })
+                  }
+                />
+              ))}
           </div>
           {data && !data.items.length ? (
             <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
@@ -427,6 +503,17 @@ export default function Extensions() {
                 onSettled={reload}
                 requestedExtension={search.get("extension") ?? ""}
                 requestedCommand={search.get("command") ?? ""}
+                onSelectCommand={(extensionId, commandId) =>
+                  setSearch(
+                    (current) => {
+                      const next = new URLSearchParams(current);
+                      next.set("extension", extensionId);
+                      next.set("command", commandId);
+                      return next;
+                    },
+                    { replace: true },
+                  )
+                }
               />
             </div>
           ) : null}
@@ -437,111 +524,60 @@ export default function Extensions() {
           hidden={tab !== "discover"}
           className="space-y-4"
         >
-          <section
-            aria-labelledby="extension-install-title"
-            className="@container/install flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border app-surface p-4"
-          >
-            <h3 className="flex items-center gap-2 font-semibold">
-              <PackagePlusIcon className="size-5 shrink-0" aria-hidden="true" />
-              <span id="extension-install-title">{t("ext.installLocal")}</span>
-              <ExtensionHelp label={t("ext.installLocal")}>
-                {t("ext.packageHint")}
-              </ExtensionHelp>
-            </h3>
-            <TooltipProvider delayDuration={650} skipDelayDuration={0}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    ref={packageTrigger}
-                    type="button"
-                    variant="outline"
-                    className="max-w-[min(100%,16rem)] min-w-0 shrink justify-start"
-                    disabled={!data || busy}
-                    aria-label={
-                      packageFileName
-                        ? t("ext.selectedPackageFile", {
-                            name: packageFileName,
-                          })
-                        : t("ext.openPackageFile")
-                    }
-                    onClick={() => packageInput.current?.click()}
-                  >
-                    <FolderOpenIcon className="shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 truncate">
-                      {packageFileName || t("ext.openPackageFile")}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                {packageFileName ? (
-                  <TooltipContent
-                    side="bottom"
-                    collisionPadding={8}
-                    className="max-w-[min(22rem,var(--radix-tooltip-content-available-width))] whitespace-normal break-words leading-relaxed"
-                  >
-                    <span className="min-w-0 [overflow-wrap:anywhere]">
-                      {packageFileName}
-                    </span>
-                  </TooltipContent>
-                ) : null}
-              </Tooltip>
-            </TooltipProvider>
-            <input
-              ref={packageInput}
-              id="extension-package"
-              type="file"
-              hidden
-              aria-label={t("ext.installFile")}
-              accept=".json,application/json"
-              disabled={!data || busy}
-              onChange={(event) => {
-                const file = event.currentTarget.files?.[0];
-                event.currentTarget.value = "";
-                if (file) {
-                  setPackageFileName(file.name);
-                  void inspect(file);
-                }
-              }}
-            />
-            <Button
-              variant="outline"
-              disabled={!data || busy}
-              onClick={() => void inspect()}
-            >
-              {t(
-                data?.items.some(
-                  (item) =>
-                    item.package.manifest.id === "starter.extension-lab",
-                )
-                  ? "ext.checkBundledUpdate"
-                  : "ext.restoreLab",
-              )}
-            </Button>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button asChild variant="ghost">
-                    <ExternalLink
-                      href={repositoryFileUrl(
-                        APP_CONFIG.repositoryUrl,
-                        "docs/extensions.md",
-                      )}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={t("ext.docs")}
-                    >
-                      <ExternalLinkIcon aria-hidden="true" />
-                      <span className="hidden @2xl/install:inline">
-                        {t("ext.docs")}
-                      </span>
-                    </ExternalLink>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("ext.docs")}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </section>
           <ExtensionMarket
+            installActions={
+              <>
+                <TooltipProvider delayDuration={650} skipDelayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        ref={packageTrigger}
+                        type="button"
+                        variant="outline"
+                        className="max-w-48 min-w-0 shrink justify-start"
+                        disabled={!data || busy}
+                        onClick={() => packageInput.current?.click()}
+                      >
+                        <FolderOpenIcon
+                          className="shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 truncate">
+                          {t("ext.installLocal")}
+                        </span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      collisionPadding={8}
+                      className="max-w-[min(22rem,var(--radix-tooltip-content-available-width))] whitespace-normal break-words leading-relaxed"
+                    >
+                      <span className="min-w-0 [overflow-wrap:anywhere]">
+                        {t("ext.packageHint")}
+                      </span>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <input
+                  ref={packageInput}
+                  id="extension-package"
+                  type="file"
+                  hidden
+                  aria-label={t("ext.installFile")}
+                  accept=".json,application/json"
+                  disabled={!data || busy}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void inspect(file);
+                  }}
+                />
+              </>
+            }
             snapshot={market.data}
+            bundled={bundled.data}
+            bundledLoading={bundled.loading}
+            bundledError={bundled.error}
             loading={market.loading}
             error={market.error}
             busy={busy || !data}
@@ -549,8 +585,12 @@ export default function Extensions() {
             downloadProgress={downloadProgress}
             installingId={installingId}
             installed={data?.items ?? []}
-            onRefresh={() => void market.reload()}
+            onRefresh={() => {
+              void market.reload();
+              void bundled.reload();
+            }}
             onDownload={(entry) => void inspectMarket(entry)}
+            onInstallBundled={(entry) => void inspect(entry)}
           />
         </TabsContent>
       </Tabs>
@@ -570,18 +610,14 @@ export default function Extensions() {
         >
           <DialogHeader>
             <DialogTitle>{t("ext.review")}</DialogTitle>
-            <DialogDescription>{t("ext.packageHint")}</DialogDescription>
+            <DialogDescription>{t("ext.reviewDescription")}</DialogDescription>
           </DialogHeader>
           {review ? (
             <>
               <ExtensionDetails
                 value={review.preview}
                 consent={{ grants, disabled: busy, onChange: setGrants }}
-                origin={
-                  review.source
-                    ? { kind: "market", source: review.source }
-                    : { kind: "local" }
-                }
+                origin={review.origin}
               />
               <p className="text-sm text-muted-foreground">
                 {t("ext.installConsent")}
@@ -614,32 +650,9 @@ export default function Extensions() {
               aria-busy={installingId !== null}
               onClick={() => {
                 if (review)
-                  void act(async () => {
-                    setInstallingId(review.preview.manifest.id);
-                    try {
-                      if (review.source)
-                        await installMarketExtension(
-                          review.content,
-                          review.revision,
-                          review.previous !== null,
-                          review.preview.sha256,
-                          review.source,
-                          consentFor(review.preview),
-                        );
-                      else
-                        await installExtension(
-                          review.content,
-                          review.revision,
-                          review.previous !== null,
-                          review.preview.sha256,
-                          consentFor(review.preview),
-                        );
-                      if (alive.current) setReview(null);
-                      await reload();
-                    } finally {
-                      if (alive.current) setInstallingId(null);
-                    }
-                  });
+                  void act(() =>
+                    installPackage(review, consentFor(review.preview)),
+                  );
               }}
             >
               <span className="grid">

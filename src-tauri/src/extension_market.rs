@@ -3,7 +3,7 @@ use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult, bounded_text},
     extensions::{
-        ExtensionManifest, ExtensionPreview, PACKAGE_LIMIT, preview_package,
+        Bundle, ExtensionManifest, ExtensionPreview, PACKAGE_LIMIT, package,
         ui::{ExtensionUiDocument, UI_DOCUMENT_LIMIT, UI_TOTAL_LIMIT, valid_document_id},
         valid_id, version,
     },
@@ -644,32 +644,35 @@ fn entry_for(catalog: MarketCatalog, id: &str, expected_hash: &str) -> NativeRes
     entry.package.manifest.validate()?;
     Ok(entry)
 }
-fn verify_package(
-    bytes: &[u8],
-    entry: &MarketEntry,
-    source: MarketSource,
-) -> NativeResult<MarketDownload> {
-    if bytes.len() != entry.package_bytes as usize
-        || bytes.len() > PACKAGE_LIMIT
-        || digest(bytes) != entry.package_sha256
+fn verify_bundle(content: &str, entry: &MarketEntry) -> NativeResult<Bundle> {
+    if content.len() != entry.package_bytes as usize
+        || content.len() > PACKAGE_LIMIT
+        || digest(content.as_bytes()) != entry.package_sha256
     {
         return Err(failure(ErrorCode::MarketInvalid));
     }
-    let content =
-        String::from_utf8(bytes.to_vec()).map_err(|_| failure(ErrorCode::MarketInvalid))?;
-    let preview = preview_package(&content).map_err(|error| {
+    let bundle = package(content).map_err(|error| {
         if error.code == ErrorCode::ExtensionIncompatible {
             error
         } else {
             failure(ErrorCode::MarketInvalid)
         }
     })?;
-    if serde_json::to_value(&preview).ok() != serde_json::to_value(&entry.package).ok() {
+    if serde_json::to_value(&bundle.preview).ok() != serde_json::to_value(&entry.package).ok() {
         return Err(failure(ErrorCode::MarketInvalid));
     }
+    Ok(bundle)
+}
+fn verify_package(
+    bytes: &[u8],
+    entry: &MarketEntry,
+    source: MarketSource,
+) -> NativeResult<MarketDownload> {
+    let content = std::str::from_utf8(bytes).map_err(|_| failure(ErrorCode::MarketInvalid))?;
+    let bundle = verify_bundle(content, entry)?;
     Ok(MarketDownload {
-        content,
-        preview,
+        content: content.to_owned(),
+        preview: bundle.preview,
         source,
     })
 }
@@ -678,7 +681,7 @@ fn verify_install(
     content: &str,
     expected_sha256: &str,
     source: &MarketSource,
-) -> NativeResult<MarketSource> {
+) -> NativeResult<(Bundle, MarketSource)> {
     source.validate()?;
     let entry = catalog
         .catalog
@@ -692,8 +695,8 @@ fn verify_install(
     if source != &trusted_source {
         return Err(failure(ErrorCode::MarketChanged));
     }
-    verify_package(content.as_bytes(), entry, trusted_source.clone())?;
-    Ok(trusted_source)
+    let bundle = verify_bundle(content, entry)?;
+    Ok((bundle, trusted_source))
 }
 fn accept_catalog(old: Option<&VerifiedCatalog>, next: &VerifiedCatalog) -> NativeResult<()> {
     if old.is_some_and(|old| {
@@ -1140,13 +1143,13 @@ impl ExtensionMarket {
         catalog.require_current(Instant::now(), now_seconds()?)?;
         Ok(download)
     }
-    pub async fn verify_install_source(
+    pub(crate) async fn verify_install_source(
         &self,
         content: &str,
         expected_sha256: &str,
         source: &MarketSource,
         network_mode: NetworkMode,
-    ) -> NativeResult<MarketSource> {
+    ) -> NativeResult<(Bundle, MarketSource)> {
         if content.len() > PACKAGE_LIMIT || !valid_digest(expected_sha256) {
             return Err(failure(ErrorCode::MarketInvalid));
         }
@@ -1156,11 +1159,11 @@ impl ExtensionMarket {
         let expected_sha256 = expected_sha256.to_string();
         let source = source.clone();
         let current = catalog.clone();
-        let source =
+        let verified =
             blocking::run(move || verify_install(&current, &content, &expected_sha256, &source))
                 .await?;
         catalog.require_current(Instant::now(), now_seconds()?)?;
-        Ok(source)
+        Ok(verified)
     }
 }
 
@@ -1373,7 +1376,8 @@ mod tests {
                 &current.package.sha256,
                 &source,
             )
-            .unwrap_err()
+            .err()
+            .unwrap()
             .code,
             ErrorCode::MarketChanged
         );
@@ -1473,8 +1477,8 @@ mod tests {
                 "entry-field" => entry["unrecognized"] = true.into(),
                 "preview-field" => entry["package"]["unrecognized"] = true.into(),
                 "duplicate-id" => {
-                    entry["package"]["manifest"]["id"] = "market.text-tools".into();
-                    entry["asset"] = "market.text-tools-1.0.0.starter-extension.json".into();
+                    entry["package"]["manifest"]["id"] = "market.registry-fixture".into();
+                    entry["asset"] = "market.registry-fixture-1.0.0.starter-extension.json".into();
                 }
                 _ => unreachable!(),
             }
@@ -1587,7 +1591,7 @@ mod tests {
                 .preview
                 .manifest
                 .id,
-            "market.text-tools"
+            "market.registry-fixture"
         );
         let mut tampered = PACKAGE.to_vec();
         tampered.push(b' ');
@@ -1607,9 +1611,12 @@ mod tests {
         let entry = &catalog.catalog.entries[0];
         let source = catalog.source(entry);
         let content = std::str::from_utf8(PACKAGE).unwrap();
+        let (bundle, verified_source) =
+            verify_install(&catalog, content, &entry.package.sha256, &source).unwrap();
+        assert_eq!(verified_source, source);
         assert_eq!(
-            verify_install(&catalog, content, &entry.package.sha256, &source).unwrap(),
-            source
+            serde_json::to_value(bundle.preview).unwrap(),
+            serde_json::to_value(&entry.package).unwrap()
         );
         let mut forged = source.clone();
         forged.repository = "other/repository".into();

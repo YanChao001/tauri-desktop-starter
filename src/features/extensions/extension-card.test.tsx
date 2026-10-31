@@ -118,13 +118,13 @@ it("keeps all actions in a named keyboard menu with open as its first item", asy
     screen.getByRole("heading", { name: "Local Workbench" }),
   ).toBeVisible();
   expect(
-    screen.queryByRole("button", { name: "Manage permissions" }),
+    screen.queryByRole("button", { name: "Permissions" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Uninstall" }),
   ).not.toBeInTheDocument();
   const more = screen.getByRole("button", {
-    name: "More actions for Local Workbench",
+    name: "Actions for Local Workbench",
   });
   more.focus();
   await user.keyboard("{ArrowDown}");
@@ -133,7 +133,7 @@ it("keeps all actions in a named keyboard menu with open as its first item", asy
   expect(props.onOpen).toHaveBeenCalledOnce();
   await user.keyboard("{ArrowDown}");
   expect(
-    await screen.findByRole("menuitem", { name: "Manage permissions" }),
+    await screen.findByRole("menuitem", { name: "Permissions" }),
   ).toBeVisible();
   await user.keyboard("{Escape}");
   await waitFor(() =>
@@ -149,12 +149,10 @@ it("preserves callbacks and a lasting focus target for permission and destructiv
   const onUninstall = vi.fn(() => focused.push(document.activeElement));
   renderCard({ onPermissions, onUninstall });
   const more = screen.getByRole("button", {
-    name: "More actions for Local Workbench",
+    name: "Actions for Local Workbench",
   });
   await user.click(more);
-  await user.click(
-    screen.getByRole("menuitem", { name: "Manage permissions" }),
-  );
+  await user.click(screen.getByRole("menuitem", { name: "Permissions" }));
   expect(onPermissions).toHaveBeenCalledOnce();
   await user.click(more);
   const uninstall = screen.getByRole("menuitem", { name: "Uninstall" });
@@ -171,12 +169,12 @@ it("keeps window, update, rollback and disable actions available without bypassi
     update,
   });
   const more = screen.getByRole("button", {
-    name: "More actions for Local Workbench",
+    name: "Actions for Local Workbench",
   });
   for (const [name, callback] of [
-    ["Open in separate window", props.onWindow],
+    ["New window", props.onWindow],
     ["Update to 1.1.0", props.onUpdate],
-    ["Restore version 1.0.0", props.onRollback],
+    ["Roll back to 1.0.0", props.onRollback],
     ["Disable", props.onDisable],
   ] as const) {
     await user.click(more);
@@ -202,7 +200,7 @@ it("offers enable for disabled extensions and locks its entry points during an o
     screen.queryByRole("button", { name: "Enable" }),
   ).not.toBeInTheDocument();
   await user.click(
-    screen.getByRole("button", { name: "More actions for Local Workbench" }),
+    screen.getByRole("button", { name: "Actions for Local Workbench" }),
   );
   expect(screen.getAllByRole("menuitem")[0]).toHaveTextContent("Enable");
   expect(screen.getByRole("menuitem", { name: "Enable" })).toBeVisible();
@@ -213,7 +211,7 @@ it("offers enable for disabled extensions and locks its entry points during an o
   expect(props.onEnable).toHaveBeenCalledOnce();
   rerender(<ExtensionCard {...props} busy />);
   expect(
-    screen.getByRole("button", { name: "More actions for Local Workbench" }),
+    screen.getByRole("button", { name: "Actions for Local Workbench" }),
   ).toBeDisabled();
 });
 
@@ -221,14 +219,14 @@ it("lazily opens named advanced settings and preserves its draft across dialog c
   const user = userEvent.setup();
   const view = renderCard({}, true);
   expect(ExtensionResources).not.toHaveBeenCalled();
-  await user.click(screen.getByText("About and permissions"));
-  expect(screen.getByText("Author (self-reported)")).toBeVisible();
+  await user.click(screen.getByText("Details"));
+  expect(screen.getByText("Author")).toBeVisible();
   expect(screen.getAllByText(item.package.manifest.description)).toHaveLength(
     1,
   );
   expect(ExtensionResources).not.toHaveBeenCalled();
   const more = screen.getByRole("button", {
-    name: "More actions for Local Workbench",
+    name: "Actions for Local Workbench",
   });
   await user.click(more);
   await user.click(screen.getByRole("menuitem", { name: "Advanced settings" }));
@@ -236,7 +234,7 @@ it("lazily opens named advanced settings and preserves its draft across dialog c
     name: "Local Workbench · Advanced settings",
   });
   expect(dialog).toHaveAccessibleDescription(
-    "Manage this extension’s saved local data or service connections when needed.",
+    "Manage local plugin data and service connections.",
   );
   const setup = await screen.findByRole("textbox", { name: "Service setup" });
   await user.type(setup, "Keep my setup");

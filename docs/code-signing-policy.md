@@ -22,13 +22,9 @@
 
 ## 构建与签名流程
 
-发布触发、草稿、任务条件和失败恢复统一见 [CI 多平台构建](./build-release.md#ci-多平台构建)。SignPath 另须满足：
+发布触发、任务顺序、归档和失败恢复统一见 [CI 多平台构建](./build-release.md#ci-多平台构建)。SignPath 通过 GitHub connector 约束本仓库、工作流与 commit，仅接受本次 Actions 构建的 artifact ID；本地包不进入该签名流程。
 
-1. 通过 GitHub connector 约束本仓库、工作流与 commit，只接受本仓库 Actions 构建产物，不接受本地提交的包。
-2. `sign-windows` 使用本次运行的 artifact ID 请求签名并等待人工审批；校验签名后重建清单，上传 `signed-installers-x86_64-pc-windows-msvc`，并仅替换同 tag 的 draft 资产。
-3. 所有必要任务成功后自动公开 Release；签名失败 / 取消保留草稿，已公开版本拒绝覆盖。
-
-`build-installers-<target>` 是 SignPath 前的归档，最终签名文件以签名 job 归档和完成签名后的 Release 为准。自动公开不替代门户签名审批，也不代表正式安装和升级已在所有平台验收；实际证据与限制随发布说明记录。
+`sign-windows` 等待门户人工审批，验证签名后重建清单，仅替换同 tag 的 draft 资产。最终文件以签名 job 归档和完成签名后的 Release 为准；自动公开不替代门户审批，目标平台安装 / 升级的实测范围随发布说明记录。
 
 ## 元数据约束
 
@@ -36,7 +32,7 @@
 
 ## 隐私
 
-应用没有遥测上传，日志只写本地，位置见 [排障手册](./troubleshooting.md#先看日志)；诊断由用户主动复制，反馈前须复核脱敏。外链交给系统浏览器。网络演示、市场和获授权插件可访问对应来源，LAN 为明文服务，范围与限制见 [扩展指南](./extensions.md#网络凭据与私有数据) 和 [安全规范](./security.md)。
+应用没有遥测上传，日志只写本地；诊断由用户主动复制，反馈前复核脱敏，见 [日志](./security.md#日志)。外链交给系统浏览器；网络演示、市场和获授权插件访问对应来源，LAN 为明文服务，范围见 [安全规范](./security.md#能力最小化) 与 [扩展指南](./extensions.md#网络凭据与私有数据)。
 
 更新使用独立密钥，与 Windows 发布者签名分别配置。默认启用启动检查，由主窗口就绪后请求 GitHub Releases；可在设置关闭，端点 / 公钥缺失或受控部署禁用时不联网，下载 / 安装须用户确认，详见 [自动更新](./build-release.md#自动更新)。服务数据处理见 [GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)；WebView2 由 Microsoft 提供，见 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
 

@@ -2,10 +2,10 @@
   "formatVersion": 3,
   "apiVersion": 2,
   "id": "starter.extension-lab",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "name": "本地工作台",
   "author": "Tauri Desktop Starter",
-  "description": "用创意画布组织灵感，用数据透镜探索图表，用流程编排运行本地模拟；支持离线交互、草稿检查点和工作成果导出。",
+  "description": "组织创意画布、探索数据图表和模拟处理流程，支持草稿恢复与成果导出。",
   "icon": "notebook",
   "commands": [
     {

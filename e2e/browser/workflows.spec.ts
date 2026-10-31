@@ -33,7 +33,7 @@ test("CSV errors require consent, exported data can be imported again, and repla
   ).toBeVisible();
   await page
     .getByRole("checkbox", {
-      name: "Import valid rows only and retain invalid rows in the report",
+      name: "Import valid rows only; keep invalid rows in the report",
     })
     .check();
   await page.getByRole("button", { name: "Import valid records" }).click();
@@ -47,7 +47,7 @@ test("CSV errors require consent, exported data can be imported again, and repla
   expect(csv).toContain('"Lin, Mei"');
   expect(csv).toContain("alex@example.test");
   expect(csv.trim().split(/\r?\n/)).toHaveLength(3);
-  await page.getByLabel("CSV source (edit and check again)").fill(csv);
+  await page.getByLabel("CSV source").fill(csv);
   await page.getByRole("button", { name: "Check and preview" }).click();
   await expect(
     page.getByText("2 valid rows, 0 invalid rows", { exact: false }),
@@ -63,9 +63,9 @@ test("CSV errors require consent, exported data can be imported again, and repla
     .getByRole("dialog")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
-  await expect(
-    page.getByLabel("CSV source (edit and check again)"),
-  ).toHaveValue(csv.replaceAll("\r\n", "\n"));
+  await expect(page.getByLabel("CSV source")).toHaveValue(
+    csv.replaceAll("\r\n", "\n"),
+  );
 });
 
 for (const locale of [

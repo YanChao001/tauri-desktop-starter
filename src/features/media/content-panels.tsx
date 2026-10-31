@@ -1,5 +1,5 @@
 import { SafeMarkdown } from "@/components/safe-markdown";
-import { useEffect, useId, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import { markdownExample, mediaKind } from "./model";
 export function MarkdownPanel() {
   const { t, language } = useI18n();
   const [content, setContent] = useState(() => markdownExample(language));
+  const deferredContent = useDeferredValue(content);
   const previewLabel = useId();
   return (
     <Card className="@container/markdown">
@@ -56,9 +57,10 @@ export function MarkdownPanel() {
           </h3>
           <section
             aria-labelledby={previewLabel}
+            aria-busy={content !== deferredContent}
             className="min-w-0 flex-1 rounded-md border p-4"
           >
-            <SafeMarkdown content={content} />
+            <SafeMarkdown content={deferredContent} />
           </section>
         </div>
       </CardContent>

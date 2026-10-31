@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { downloadMarketExtension, type MarketDownloadProgress } from "./tauri";
+import {
+  bundledExtensionPackage,
+  downloadMarketExtension,
+  type MarketDownloadProgress,
+} from "./tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -20,6 +24,16 @@ beforeEach(() => {
 afterEach(() => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   vi.resetAllMocks();
+});
+
+it("reads a bundled package only by its explicit plugin ID", async () => {
+  vi.mocked(invoke).mockResolvedValue("bundled-package");
+  await expect(bundledExtensionPackage("starter.extension-lab")).resolves.toBe(
+    "bundled-package",
+  );
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("bundled_extension_package", {
+    id: "starter.extension-lab",
+  });
 });
 
 it.each(["success", "failure"])(

@@ -497,7 +497,7 @@ test("数据源 UTF-8 超限显式截取并登记，登记失败仍保留页面�
   );
   assert.match(
     unavailable.document.getElementById("studio-error").textContent,
-    /still on this page/,
+    /remains on this page/,
   );
 });
 

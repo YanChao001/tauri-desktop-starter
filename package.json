@@ -2,7 +2,7 @@
   "name": "tauri-desktop-starter",
   "private": true,
   "license": "MIT",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "packageManager": "pnpm@12.16.1",
   "engines": {
@@ -61,7 +61,8 @@
     "app:portable": "node scripts/portable.mjs",
     "extension:validate": "node scripts/extension-package.mjs validate",
     "extension:test": "node scripts/extension-package.mjs test",
-    "extension:test:worker": "node scripts/test-extension-worker.mjs"
+    "extension:test:worker": "node scripts/test-extension-worker.mjs",
+    "device:tool": "cargo run --locked --manifest-path src-tauri/Cargo.toml --bin device-tool --"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

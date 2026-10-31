@@ -87,8 +87,7 @@ describe("Real Tauri desktop", () => {
     const errorToast = await $('[data-sonner-toast][data-type="error"]');
     await errorToast.waitForDisplayed();
     const rejected = await errorToast.getText();
-    assert.match(rejected, /Call failed:/);
-    assert.match(rejected, /check the input|Name cannot be empty/);
+    assert.equal(rejected, "Invalid input. Check and retry.");
     assert.doesNotMatch(rejected, /\[object Object\]/);
     assert.equal(await $("main [role=status]").getText(), previousResult);
   });
@@ -341,6 +340,209 @@ describe("Real Tauri desktop", () => {
     }
   });
 
+  (process.platform === "win32" ? it : it.skip)(
+    "fills the Windows monitor in immersive fullscreen and restores normal and maximized windows",
+    async () => {
+      const measure = () =>
+        browser.execute(async () => {
+          const win = window.__TAURI__.window.getCurrentWindow();
+          const [fullscreen, maximized, inner, outer, position, scale] =
+            await Promise.all([
+              win.isFullscreen(),
+              win.isMaximized(),
+              win.innerSize(),
+              win.outerSize(),
+              win.outerPosition(),
+              win.scaleFactor(),
+            ]);
+          const main = document
+            .querySelector(".app-main")
+            .getBoundingClientRect();
+          return {
+            fullscreen,
+            maximized,
+            inner,
+            outer,
+            position,
+            scale,
+            immersive: document
+              .querySelector(".app-shell")
+              .classList.contains("app-shell-immersive"),
+            viewport: {
+              width: innerWidth * devicePixelRatio,
+              height: innerHeight * devicePixelRatio,
+            },
+            main: {
+              left: main.left * devicePixelRatio,
+              top: main.top * devicePixelRatio,
+              right: main.right * devicePixelRatio,
+              bottom: main.bottom * devicePixelRatio,
+            },
+          };
+        });
+      // 原生尺寸是物理像素，CSS 视口按 DPR 换算；只容忍像素舍入误差。
+      const near = (actual, expected) => Math.abs(actual - expected) <= 2;
+      const sameGeometry = (actual, expected) =>
+        near(actual.inner.width, expected.inner.width) &&
+        near(actual.inner.height, expected.inner.height) &&
+        near(actual.outer.width, expected.outer.width) &&
+        near(actual.outer.height, expected.outer.height) &&
+        near(actual.position.x, expected.position.x) &&
+        near(actual.position.y, expected.position.y);
+      const waitFor = async (matches, message) => {
+        let actual;
+        try {
+          await browser.waitUntil(
+            async () => {
+              actual = await measure();
+              return matches(actual);
+            },
+            { timeoutMsg: message },
+          );
+        } catch (error) {
+          throw new Error(`${message}: ${JSON.stringify(actual)}`, {
+            cause: error,
+          });
+        }
+        return actual;
+      };
+      const setMaximized = async (value) => {
+        if ((await measure()).maximized !== value) {
+          const toggled = await invoke("plugin:window|toggle_maximize", {
+            label: "main",
+          });
+          assert.equal(toggled.ok, true);
+        }
+        await waitFor(
+          (state) => !state.fullscreen && state.maximized === value,
+          `Window did not reach maximized=${value}`,
+        );
+      };
+      const original = await measure();
+      assert.equal(original.fullscreen, false);
+      const geometry = await invoke("get_window_geometry");
+      assert.equal(geometry.ok, true);
+      let normal;
+      try {
+        await setMaximized(false);
+        normal = await waitFor(
+          (state) =>
+            near(state.inner.width, geometry.value.width * state.scale) &&
+            near(state.inner.height, geometry.value.height * state.scale) &&
+            near(state.viewport.width, state.inner.width) &&
+            near(state.viewport.height, state.inner.height),
+          "Normal window did not restore its client area and WebView viewport",
+        );
+        const monitors = await browser.execute(() =>
+          window.__TAURI__.window.availableMonitors(),
+        );
+        for (const maximized of [false, true]) {
+          await setMaximized(maximized);
+          const before = await measure();
+          // 使用完整显示器边界；workArea 已扣除任务栏，会漏掉底部黑条。
+          const overlap = ({ position, size }) =>
+            Math.max(
+              0,
+              Math.min(
+                before.position.x + before.outer.width,
+                position.x + size.width,
+              ) - Math.max(before.position.x, position.x),
+            ) *
+            Math.max(
+              0,
+              Math.min(
+                before.position.y + before.outer.height,
+                position.y + size.height,
+              ) - Math.max(before.position.y, position.y),
+            );
+          const monitor = monitors.reduce(
+            (best, candidate) =>
+              !best || overlap(candidate) > overlap(best) ? candidate : best,
+            null,
+          );
+          assert.ok(
+            monitor && overlap(monitor) > 0,
+            "Window has no visible monitor",
+          );
+          await browser.execute(() =>
+            document.querySelector(".app-main").focus(),
+          );
+          await browser.keys(Key.F11);
+          // 原生物理边界精确比较，自动隐藏任务栏留下的 1px 缺口也应失败。
+          await waitFor(
+            (state) =>
+              state.fullscreen &&
+              state.immersive &&
+              state.position.x === monitor.position.x &&
+              state.position.y === monitor.position.y &&
+              state.outer.width === monitor.size.width &&
+              state.outer.height === monitor.size.height &&
+              state.inner.width === monitor.size.width &&
+              state.inner.height === monitor.size.height &&
+              near(state.viewport.width, monitor.size.width) &&
+              near(state.viewport.height, monitor.size.height) &&
+              near(state.main.left, 0) &&
+              near(state.main.top, 0) &&
+              near(state.main.right, monitor.size.width) &&
+              near(state.main.bottom, monitor.size.height),
+            `Fullscreen from maximized=${maximized} did not fill ${JSON.stringify(monitor)}`,
+          );
+          await browser.keys(maximized ? Key.F11 : Key.Escape);
+          await waitFor(
+            (state) =>
+              !state.fullscreen &&
+              !state.immersive &&
+              state.maximized === before.maximized &&
+              sameGeometry(state, before) &&
+              near(state.viewport.width, before.viewport.width) &&
+              near(state.viewport.height, before.viewport.height),
+            `Exiting fullscreen did not restore maximized=${maximized} geometry`,
+          );
+          await setMaximized(false);
+          await waitFor(
+            (state) => sameGeometry(state, normal),
+            "Fullscreen changed the remembered normal window geometry",
+          );
+        }
+      } finally {
+        if ((await measure()).fullscreen) {
+          const exited = await invoke("plugin:window|set_fullscreen", {
+            label: "main",
+            value: false,
+          });
+          assert.equal(exited.ok, true);
+          await waitFor(
+            (state) => !state.fullscreen,
+            "Cleanup could not exit fullscreen",
+          );
+        }
+        await setMaximized(false);
+        const restored = await invoke("set_window_size", {
+          width: geometry.value.width,
+          height: geometry.value.height,
+        });
+        assert.equal(restored.ok, true);
+        if (normal) {
+          await browser.execute(async (position) => {
+            await window.__TAURI__.window
+              .getCurrentWindow()
+              .setPosition(
+                new window.__TAURI__.dpi.PhysicalPosition(
+                  position.x,
+                  position.y,
+                ),
+              );
+          }, normal.position);
+          await waitFor(
+            (state) => sameGeometry(state, normal),
+            "Cleanup did not restore normal window geometry",
+          );
+        }
+        await setMaximized(original.maximized);
+      }
+    },
+  );
+
   it("recovers an oversized off-screen window into an available work area", async () => {
     const original = await browser.execute(async () => {
       const win = window.__TAURI__.window.getCurrentWindow();
@@ -524,7 +726,7 @@ describe("Real Tauri desktop", () => {
 
   it("renders diagnostic JSON as highlighted inert text", async () => {
     await navigate("/diagnostics");
-    await $("summary=View detailed report and logs").click();
+    await $("details:has([data-testid=diagnostics-report]) > summary").click();
     await browser.waitUntil(async () =>
       (await $("[data-testid=diagnostics-report]").getText()).includes(
         "appVersion",

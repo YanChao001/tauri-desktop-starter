@@ -52,13 +52,13 @@ test("guided routes follow real pages, keep same-page state and can be dismissed
   await page.getByRole("link", { name: /Start exploring/ }).click();
   const guide = page.getByRole("region", { name: "Guided experience" });
   await expect(guide).toContainText("1/4");
-  await guide.getByRole("link", { name: "Next step" }).click();
+  await guide.getByRole("link", { name: "Next" }).click();
   await expect(page).toHaveURL(/#\/data-studio\?journey=interface&step=1$/);
-  await guide.getByRole("link", { name: "Next step" }).click();
+  await guide.getByRole("link", { name: "Next" }).click();
   await expect(
     page.getByRole("tab", { name: "Content & attachments" }),
   ).toHaveAttribute("aria-selected", "true");
-  await guide.getByRole("link", { name: "Next step" }).click();
+  await guide.getByRole("link", { name: "Next" }).click();
   await expect(page).toHaveURL(
     /#\/components\?journey=interface&step=3&stage=motion$/,
   );
@@ -75,13 +75,13 @@ test("guided routes follow real pages, keep same-page state and can be dismissed
   ).toBeVisible();
   await page
     .getByRole("region", { name: "Guided experience" })
-    .getByRole("link", { name: "Next step" })
+    .getByRole("link", { name: "Next" })
     .click();
   await expect(page).toHaveURL(/workbench\?journey=files&step=1$/);
   await expect(guide).toContainText("2/4");
   await expect(
     page.getByRole("heading", {
-      name: "Try it in the desktop app",
+      name: "Desktop workflow",
       exact: true,
     }),
   ).toBeVisible();
@@ -163,12 +163,10 @@ test("data tabs retain input; columns resize, hide and reveal a real record deta
 }) => {
   await seed(page);
   await page.goto("./#/data-studio");
-  await page.getByRole("button", { name: "Show or hide columns" }).click();
+  await page.getByRole("button", { name: "Columns" }).click();
   await page.getByRole("checkbox", { name: "Email", exact: true }).uncheck();
   await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("button", { name: "Show or hide columns" }),
-  ).toBeFocused();
+  await expect(page.getByRole("button", { name: "Columns" })).toBeFocused();
   await expect(page.getByRole("columnheader", { name: "Email" })).toHaveCount(
     0,
   );
