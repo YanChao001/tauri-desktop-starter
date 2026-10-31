@@ -1,6 +1,6 @@
 # 排障手册
 
-按现象定位；环境或首次启动失败先运行 `node scripts/doctor.mjs`，按检测结果修复。它不需要 npm 依赖，见 [环境诊断](./development.md#环境诊断)。
+按现象定位，保留首个错误和复现条件，再验证对应修复。环境或首次启动失败先运行不依赖 npm 包的 `node scripts/doctor.mjs`，见 [环境诊断](./development.md#环境诊断)；数据问题先保留原件，避免用重置或清缓存替代定位。
 
 ## 先看日志
 
@@ -12,9 +12,7 @@
 | macOS   | `~/Library/Logs/com.starter.desktop/app.log`      |
 | Linux   | `~/.local/share/com.starter.desktop/logs/app.log` |
 
-以上是默认用户目录的示例；标识符来源为 `app.config.json`，同步到 `tauri.conf.json`。更换标识符、Linux XDG 设置或目录覆盖后，按 Tauri `appLogDir` 的实际结果查找。
-默认记 `Info` 级；临时要看细节，把 `lib.rs` 里的 `.level(log::LevelFilter::Info)` 调成 `Debug`。
-日志时间戳是**本地时区**，单份上限 1 MB、保留 3 份历史归档及当前日志（见 `lib.rs` 的日志配置）。
+路径随应用标识符、XDG 设置或目录覆盖变化，以 Tauri `appLogDir` 为准。日志使用本地时区，级别与轮转见 [`lib.rs`](../src-tauri/src/lib.rs)；需要细节时在本地调试构建临时启用 `Debug`。
 
 > 日志文件是 UTF-8 无 BOM。Windows PowerShell 5.1 默认按系统 ANSI 编码读取此类文件，中文 Windows 上通常为 GBK，可能显示乱码：
 > 用 `Get-Content app.log -Encoding UTF8`，或者直接用 VS Code / 记事本打开。
@@ -23,12 +21,9 @@
 
 ## 窗口不出现 / 白屏
 
-**现象**：进程在跑，但看不到窗口；或者窗口出现了但一片白。
-
 排查顺序：
 
-1. 查看 [启动阶段日志](#启动慢或重复启动后卡死)。窗口默认不自动创建，原生状态就绪后创建隐藏窗口，前端两次动画帧回调后通过 IPC 握手显示；Rust 在窗口创建成功后安排 3 秒显示兜底。
-   兜底不包含此前的原生初始化或 WebView 创建耗时，也不能解除事件循环死锁。不能以“双击后三秒应出现”或窗口已经可见来判断启动是否正常。
+1. 查看 [启动阶段日志](#启动慢或重复启动后卡死)。原生状态就绪后创建隐藏窗口，前端首帧握手后显示；窗口创建后的显示兜底不覆盖初始化耗时，也不能解除事件循环死锁。
 2. `pnpm dev` 打开 `http://localhost:1420`，看浏览器里是否正常。
    浏览器正常只能排除部分界面问题；应用还需检查资源路径、CSP、原生 IPC、WebView 创建与窗口事件循环。
 3. 在开发构建打开 WebView 调试工具查看 Console。仅在 release 出现时，保留日志与复现条件，再用 debug 构建定位；不要把调试入口发布给用户。
@@ -54,9 +49,9 @@
 | `frontend-ready`         | 前端发出首帧握手，Rust 随后尝试显示窗口；不代表所有懒加载页面和业务数据均已完成        |
 | `window-reveal-fallback` | 窗口创建后的显示兜底触发，应继续检查为何没有正常握手，不能当成性能达标                 |
 
-重复启动在 Windows 上通过同步单实例消息通知已有进程；事件循环卡住时，后续进程可能等待约十秒超时。因此持续点击会放大现场进程数，十秒等待不一定是每次都重新加载前端。当前实现让唤醒回调立即返回、合并请求并后台创建窗口，初始化期间不提前显示空白 WebView。
+Windows 重复启动通过同步单实例消息通知已有进程；事件循环卡住时后续进程会等待超时，连续点击可能增加等待进程。唤醒回调应及时返回，合并请求后异步创建窗口。
 
-扩展窗口插件时，不在持有插件锁的窗口就绪回调里同步设置尺寸或位置；Win32 事件重入会再次访问插件锁并可能死锁。几何修正等待回调返回后调度，普通几何存档也不应同步阻塞 UI 线程。检查实际阶段日志与复现条件，再按 [安装版与启动验收](./testing.md#安装版与启动验收) 验证修复；单元测试或浏览器预览通过不能代替正式安装版的连续激活测试。
+曾出现窗口就绪回调持有插件锁时同步设置几何，引起 Win32 事件重入死锁；几何修正应在回调返回后调度，存档避免阻塞 UI 线程。定位后按 [安装版与启动验收](./testing.md#安装版与启动验收) 复测连续激活。
 
 ## 启动时反复打印 libpng / iCCP 警告
 
@@ -64,13 +59,13 @@
 libpng warning: iCCP: known incorrect sRGB profile
 ```
 
-PNG 解码器发现异常 ICC 色彩配置时会输出此警告，见 [libpng 校验](https://github.com/pnggroup/libpng/blob/v1.6.43/png.c#L2179-L2187)。它不是 Rust 编译告警；重复输出不代表同等数量的业务错误。先对照启动阶段：若随后已有 `window-created` 和 `frontend-ready`，应继续排查后续异常，不能仅凭警告判断启动失败。
+这是 PNG 解码器对异常 ICC 配置的警告，见 [libpng 校验](https://github.com/pnggroup/libpng/blob/v1.6.43/png.c#L2179-L2187)。先对照启动阶段和实际异常，警告本身不足以判断启动失败。
 
 1. 检查项目 PNG 与 ICO 内嵌 PNG 的 `iCCP` 块；品牌资源有问题时从 SVG 按 [品牌流程](./build-release.md#安装器外观) 重建。
 2. 项目资源正常时，对比创建窗口时加载的环境组件。Windows 输入法组件可载入应用进程，见 [Microsoft 文本服务说明](https://learn.microsoft.com/en-us/windows/win32/tsf/64-bit-platform-considerations)。可先用 `Win + Space` 切换微软拼音或英文键盘，再重新启动；第三方输入法仅切为英文模式未必卸载其图形库。
-3. 必要时只读检查已加载 DLL 或调用栈。DLL 中含告警文本只能证明有打印能力，仍需启动对比确认来源。若来源是输入法资源，向其官方渠道反馈；修改项目图片库不能修复 DLL 自带资源。
+3. 必要时检查已加载 DLL 和调用栈，并用启动对比确认来源；输入法资源问题向其维护方反馈。
 
-libpng 默认写标准错误，调整 Rust 日志级别无法过滤，见 [上游警告处理](https://github.com/pnggroup/libpng/blob/v1.6.43/pngerror.c#L721-L767)。保留现场，不修改输入法安装文件、不禁用 IME、不清空应用数据或丢弃全部标准错误。
+libpng 写标准错误，调整 Rust 日志级别无法过滤，见 [上游处理](https://github.com/pnggroup/libpng/blob/v1.6.43/pngerror.c#L721-L767)。保留日志和系统输入法，不通过清空数据或丢弃全部标准错误处理。
 
 `ELIFECYCLE ... exit code -1` 应独立排查：记录是关闭 / Ctrl+C 后退出还是应用自行退出；后者保留同一时间的日志、panic / WebView 错误和 Windows 应用事件。首帧握手不代表后续功能都正常。
 
@@ -139,9 +134,7 @@ failed to bundle project: `CONNECT proxy failed: proxy server responded 502`
 
 ## Linux CI 安装依赖耗时过长
 
-先区分 `apt-get update`、包下载和解包耗时。日志若在 `azure.archive.ubuntu.com` 出现大量 `Ign`，随后切到 `archive.ubuntu.com` 才迅速下载，说明时间消耗在首选镜像等待和重试，而非应用编译。每个 GitHub 托管 job 使用新虚拟机，pnpm / Rust 缓存不包含这些系统包。
-
-[CI](../.github/workflows/ci.yml) 与 [发布工作流](../.github/workflows/release.yml) 使用官方 HTTPS 镜像，并限制连接 / 数据等待、重试及安装步骤总时长。Rust 检查使用 Ubuntu 24.04，桌面 E2E 与 Linux 分发保留 22.04；调整 runner 后复核源配置，按具体下载错误处理，保留签名校验。
+区分 `apt-get update`、下载和解包耗时；大量 `Ign` 后换源才下载通常是镜像等待，pnpm / Rust 缓存不包含系统包。按 [CI](../.github/workflows/ci.yml) / [发布工作流](../.github/workflows/release.yml) 的实际 runner 检查官方 HTTPS 源、超时与重试，保留包签名校验。
 
 ## cargo 报 linker not found
 
@@ -181,24 +174,21 @@ Vite 开启 `strictPort`，不会自动改端口。先确认占用进程归属�
 
 **现象**：`tauri.conf.json` 里配了 `"decorations": false`，运行时窗口顶部仍然有原生标题栏，和自绘标题栏叠成两层。
 
-- 检查 `tauri-plugin-window-state`：其默认 `StateFlags::all()` 含 `DECORATIONS`，可能把旧存档的 `decorated: true` 恢复回来，覆盖配置；是否复现取决于存档与插件初始化方式。
-- 排查：看 `%APPDATA%\<identifier>\.window-state.json` 里有没有 `"decorated": true`。
-- 修复：装饰是设计决策而非用户状态，初始化插件时剔除该 flag——
-  `with_state_flags(StateFlags::all().difference(StateFlags::SIZE | StateFlags::DECORATIONS | StateFlags::VISIBLE))`（本项目已配置）。
-- 同时剔除 `VISIBLE`，避免插件提前显示窗口，绕过前端首帧与 Rust 的 3 秒兜底。
-- macOS 的 `titleBarStyle: "Overlay"` 依赖 `decorations: true`，由 `tauri.macos.conf.json` 平台配置控制，不受此影响。
+检查配置目录的 `.window-state.json` 是否保存了 `decorated: true`，以及窗口状态插件是否恢复了该值。本项目在 [`lib.rs`](../src-tauri/src/lib.rs) 排除 `DECORATIONS`、`VISIBLE` 和 `SIZE`，分别交给平台设计、首帧显示和逻辑几何服务管理。保留这些排除项；macOS 的 Overlay 标题栏由平台配置保留原生装饰。
+
+## 从最大化进入全屏后底部留下任务栏高度的黑条
+
+Windows 无装饰窗口在旧版 Tao 中会出现外框已铺满显示器、客户区仍被限制为工作区的情况，因此 WebView 下方留下任务栏高度的空白；任务栏位于其他边时，空白也会出现在对应边。根因与修复见 [Tao 上游说明](https://github.com/tauri-apps/tao/pull/1353)。
+
+本项目锁定的 Tao 已更新到包含修复的 `0.37.2`。保留锁文件，重新构建并启动原生程序；仅刷新页面或重建前端不能替换旧二进制中的窗口实现。验收应分别从普通和最大化窗口进入全屏，确认原生客户区与 WebView 视口覆盖完整显示器，退出后恢复此前状态，具体见[全屏验收](./testing.md#体验与动效验收)。
 
 ## 远程桌面断开后窗口过大或落在屏幕外
 
-旧窗口状态插件保存物理像素，无法独立恢复跨 DPI 的视觉大小。项目由 `window-geometry` 在配置目录的 `window-geometry.json` 保存逻辑尺寸；启动、DPI 或显示器布局变化时按可用工作区约束，必要时临时降低最小尺寸，保留原首选尺寸。首次迁移缺少历史 DPI，只能按当前缩放换算。
+先在设置页选择逻辑尺寸预设或拖动边缘。保留 `.window-state.json` 和 `window-geometry.json`，记录变化前后的分辨率、缩放、任务栏位置与显示器数量；项目的逻辑几何服务在启动 / 显示器变化时约束到可用工作区，普通拖动只保证标题栏可操作。
 
-普通拖动允许局部超出屏幕，只要标题栏可操作；显示器变化、窗口过大或标题栏不可达时才完整移入工作区。Windows 拖动期间暂缓修正，运行中的最大化、全屏和最小化窗口不主动改位置。
+「记住上次位置 / 居中」在下次创建窗口时生效，切换偏好和重复激活不会移动当前窗口；居中问题先确认保存成功且窗口重新创建。首次从物理尺寸存档迁移时没有历史 DPI，只能按当前缩放换算。
 
-先在设置页选择可用的逻辑尺寸预设，或拖动窗口边缘。启动位置的「记住上次位置 / 居中」只在下次创建窗口时生效，切换偏好与重复激活不移动当前窗口；居中使用有效显示器工作区，原显示器不可用时选择最近的工作区。恢复默认设置重置已打开与已记忆窗口的尺寸及启动位置策略，并保留当前位置。
-
-排查时保留 `.window-state.json` 和 `window-geometry.json`，记录前后分辨率、缩放、任务栏位置和显示器数量；居中问题还需确认偏好保存成功且窗口确实重新创建。自动化只模拟超大 / 屏外窗口，真实 RDP 断开与多屏热插拔仍需对应设备验收。
-
-GTK / macOS 可能异步应用尺寸与位置，API 返回后的暂态坐标不能覆盖恢复目标。检查日志中的目标、实际客户端 / 外框尺寸与显示状态；初始修正采用原生事件和有限复核，不在主线程阻塞等待，也不持续定位覆盖后续用户移动。
+GTK / macOS 异步几何的暂态值不应覆盖恢复目标；比较日志中的目标、客户区 / 外框尺寸与显示状态。Windows 拖动与最大化 / 全屏期间避免主动修正。自动化模拟屏外 / 超大窗口，真实 RDP 断开和多屏热插拔在对应设备验收，场景见 [窗口验收](./testing.md#体验与动效验收)。
 
 ## 深色窗口四周出现白色细线
 
@@ -256,19 +246,16 @@ try {
 
 ## pnpm 锁文件冲突
 
-先合并依赖清单，再从合并目标分支恢复锁文件作为基线，安装 / 检查后审查差异。以下是普通特性分支同步 `origin/develop` 的示例：
+先合并 `package.json`，以目标分支锁文件为基线解析冲突，保留未受影响的依赖版本。普通特性分支同步 `origin/develop` 的示例：
 
 ```bash
-git restore --source=origin/develop -- pnpm-lock.yaml src-tauri/Cargo.lock
+git restore --source=origin/develop -- pnpm-lock.yaml
 pnpm install
-pnpm build
-cargo check --manifest-path src-tauri/Cargo.toml
-pnpm version:check
-git diff -- pnpm-lock.yaml src-tauri/Cargo.lock
+git diff -- package.json pnpm-lock.yaml
 # 确认没有无关升级后再 git add，并继续 merge / rebase
 ```
 
-`pnpm build` 先准备原生编译所需的 `dist/`。不要删除整个 `Cargo.lock` 来处理单个冲突，否则会重新解析全部依赖。`--ours` / `--theirs` 在 rebase 中的含义容易误读，使用明确的来源分支更便于核对。
+只恢复发生冲突的锁文件，先保留其中需继续承接的改动，再审查解析结果是否有无关升级。Cargo 锁文件冲突同理先合并 `Cargo.toml`，基于现有锁文件解析受影响依赖，不删除整份锁文件。使用明确来源可避免误读 rebase 中的 `--ours` / `--theirs`；完成后按 [改动范围](./testing.md#日常验证范围) 验证。
 
 ## 编译内存不足
 
@@ -288,12 +275,11 @@ try {
 
 ## 更新包下载后装不上
 
-**原因**：签名校验失败，或 `latest.json` 里的平台标识与实际不符。
+先查看更新错误码，再核对本次产物：
 
-- 确认构建时设置了 `TAURI_SIGNING_PRIVATE_KEY`，且与客户端安装包从 `app.config.json` 编译内置的 `updates.publicKey` 配对。`deployment.json` 只能覆盖更新端点；若保留 `publicKey` 字段，其值必须与内置公钥完全相同，不能通过修改部署文件换钥。换钥与禁用规则见 [更新通道](./security.md#更新通道)。
-- 检查 `platforms` 的 key 是否为 `windows-x86_64` 这类准确标识。
-- 不支持旧版兼容 ZIP 更新；发布流程使用 v2 原生包，签名后不得再修改安装包。元数据版本必须与签名覆盖的版本一致。
-- 默认更新器只接受更高版本，Windows 安装器还有独立的降级限制；回滚策略见 [构建与发布](./build-release.md#回滚)。
+1. 签名私钥与客户端编译内置的公钥配对；部署文件不能换钥，规则见 [更新通道](./security.md#更新通道)。
+2. `latest.json` 的版本、平台标识和下载包匹配；使用签名后的 v2 原生包，签名后没有再修改。
+3. 目标版本满足更新器及安装器的版本规则；降级恢复按 [回滚](./build-release.md#回滚) 执行。
 
 ## 设置保存失败或版本不兼容
 
@@ -305,17 +291,17 @@ try {
 
 笔记更新使用 `expectedVersion`；其他窗口已保存时会拒绝旧版本，刷新后核对内容再保存。数据库位于应用数据目录的 `starter.sqlite3`，不要通过删除数据库处理普通编辑冲突。
 
-未来 `PRAGMA user_version` 会被旧程序拒绝，不能强行调低版本号；保留数据库、使用对应新版本并检查日志。迁移、事务与原生错误码均由 Rust 服务负责，页面不会获得通用 SQL 或文件访问权限。
+未来 `PRAGMA user_version` 会被旧程序拒绝；保留数据库，使用能读取该格式的新版本，不强行调低版本号。
 
-正常笔记页可创建完整逻辑备份并预览 / 恢复。「诊断与恢复」集中显示诊断报告与恢复状态；旧 `/recovery` 路径仍兼容。启动故障进入隔离恢复时，当前数据库和设置是临时工作区，不代表原始数据被清空；保留原件和恢复日志，先选备份、核对数量与样本，再明确安排下次启动替换。恢复失败检查磁盘空间、目录权限、备份格式 / 16MiB 上限和未来版本保护，不删除原数据库、WAL / SHM 或 `recovery-*` 归档来强制启动。流程见 [恢复说明](./architecture.md#恢复诊断与更新)。
+笔记页可创建、预览和恢复逻辑备份，「诊断与恢复」显示恢复状态。进入隔离恢复时界面使用临时工作区，原件仍保留；先核对备份数量与样本，再安排下次启动替换。失败时检查空间、权限和备份格式，保留原数据库、WAL / SHM 及 `recovery-*` 归档，流程见 [恢复说明](./architecture.md#恢复诊断与更新)。
 
 ## 文件无法保存或后台任务没有完成
 
 Windows 深层缓存目录中的小附件也可能因旧构建的长路径原子替换失败而收不到保存回执，尤其是内网通信的本机回环助手。当前宿主在创建临时文件前规范化父目录，使临时文件和目标都使用支持长路径的地址；更新时需重新构建并重启原生宿主，保留原历史与附件，无需修改系统长路径策略。附件额度和其他失败类型见 [局域网通信](./extensions.md#局域网通信)。
 
-工作台仅打开已由原生选择、关联或拖入授权的文件。旧最近记录失效、目录被移动或变成链接时重新选择；文本须为 UTF-8 且不超过 2MiB，图片只读且不超过 8MiB。JSON 或配置的应用专属扩展名文档不合法时先修正文档。外部冲突时草稿仍保留，查看磁盘版本或另存副本，不用重复覆盖来处理冲突；取消另存不会清除草稿。
+最近记录失效、文件移动或变成链接时重新选择授权；编码、大小或文档格式不合法时按错误修正。外部冲突保留草稿，查看磁盘版本或另存副本，取消另存也保留草稿。体验与入口见 [模块指南](./demo-modules.md#体验现有模块)。
 
-任务最多两项执行、十项排队；等待中的任务可取消，执行取消需等待 worker 到达检查点，不能立即释放执行位置。离页 / 隐藏窗口不停止任务；重启后 `interrupted` 需显式重试。部分文件不可读、扫描达到上限或文件变化时查看结果和导出报告，不能将局部完成当成完整目录清单。退出选择等待时仍有长任务，可以取消退出后回任务页查看。
+排队任务可取消，执行取消需等 worker 检查点，实际结束前仍占执行位。离页 / 隐藏不停止任务，重启后的 `interrupted` 需显式重试；局部不可读、超限或文件变化时查看结果与导出报告。退出等待过久时可取消退出，回任务页查看。
 
 ## 系统能力或外部演示不可用
 
@@ -325,9 +311,9 @@ HTTPS / WSS 示例依赖指定外部服务，可能受网络或服务状态影�
 
 ## E2E 无法连接或窗口操作超时
 
-日常界面回归使用 `pnpm test:ui`，不显示测试窗口。真实桌面验收需显式运行 `pnpm test:e2e --interactive`；它会激活和切换窗口，应安排在独立 CI / 虚拟机或可占用桌面的时段，见 [桌面干扰边界](./testing.md#避免干扰本机桌面)。不要直接把正式 exe 交给驱动。测试构建必须包含 `e2e` feature、独立 `.e2e` 标识和测试 overlay；runner 等内嵌服务 `/status` 就绪后才连接动态端口。源码 / 配置改动后重新 `pnpm e2e:build`，不要继续复用旧收据。
+先查看 `artifacts/e2e/` 日志和截图，确认使用本轮 `e2e:build` 的测试程序、`.e2e` 标识及测试配置；源码 / 配置变化后重建，正式 exe 不提供测试驱动。runner 等内嵌 `/status` 就绪后才连动态端口，Linux 还需 DBus、Xvfb 与窗口管理器，步骤见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。
 
-先查看 `artifacts/e2e/` 的截图和日志。Linux 无图形会话时需要 Xvfb、DBus 和窗口管理器，macOS 使用内嵌 provider；具体环境与命令见 [真实桌面 E2E](./testing.md#真实桌面-e2e)。只管理本次测试进程和临时目录，勿用清理真实用户数据解决测试隔离问题。
+原生 runner 显式要求 `--interactive` 并遵守 [前台时段与隔离规则](./testing.md#避免干扰本机桌面)。日常改用 `pnpm test:ui`；清理只处理本次受控进程和临时目录。
 
 ## 问题升级与反馈
 

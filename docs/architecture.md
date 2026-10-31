@@ -1,6 +1,6 @@
 # 架构说明
 
-本文记录当前运行方式、模块职责与数据边界。体验、扩展和裁剪步骤见 [模块指南](./demo-modules.md)，插件协议见 [扩展指南](./extensions.md)。多人、多业务域的演进方式见 [规模化开发指南](./engineering-at-scale.md)，其中的示例不代表当前已实现。
+本文记录当前运行链、模块职责与数据归属。操作步骤见 [模块指南](./demo-modules.md)，扩展和虚拟会话的契约分别由所属指南维护；跨模块取舍见 [设计与演进](./engineering-at-scale.md)。
 
 ## 运行时结构
 
@@ -57,19 +57,17 @@ Rust 表项未写完整路径时均位于 `src-tauri/src/`。小领域继续放�
 
 路由、导航与页面命令复用 [`routes.tsx`](../src/routes.tsx)。完整 demo、`minimal` 的展示范围、各页数据生命周期及兼容入口统一见 [体验现有模块](./demo-modules.md#体验现有模块)；隐藏入口不会移除原生能力。
 
-页面按需加载，静态与动态插件侧栏入口的悬停、键盘聚焦只预载模块，不挂载页面、运行 Wasm 或执行 IPC。普通页面的 Suspense 按 pathname 重建，未加载页面显示共用 PageLoading 骨架；路由错误边界随导航清除已捕获的错误，重复导航当前页面或改变查询参数时保留正常页面的状态，不因错误边界重建而重复加载数据。插件结果仅在出现 Markdown 块时加载对应解析器，HTML 插件与普通表单首屏不等待该依赖。外壳提供标题栏、可调宽侧栏、位置提示和独立滚动区，布局与焦点规则见 [界面规范](./conventions/ui-guidelines.md#布局常量)。
+页面按需加载，悬停和键盘聚焦只预载模块；挂载页面后才建立其会话与原生调用。路由错误边界保留外壳，随导航清除错误，正常页面状态不因重复导航而重建。布局、焦点与加载反馈见 [界面规范](./conventions/ui-guidelines.md)。
 
-`features/journeys/` 用 URL 的 `journey` / `step` 参数表示跨页导览，校验路线、步骤和页面是否匹配；只提示与导航，不执行操作、推断完成或持久化流程。演示表单、CSV 和 fixture 不写原生数据库；原生页面在浏览器显示环境说明，通信页保留可提交表单，实际调用仍由门面拒绝不支持的环境。
+`features/journeys/` 用 URL 参数表示跨页导览，只提示与导航。演示表单、CSV 和 fixture 使用局部数据；原生页面在浏览器说明环境限制，实际系统调用由门面检查。
 
 DemoMotion / useDemoMotion 协调用户偏好、系统减少动效、文档可见性和场景离屏状态；CSS 与命令式循环仍须消费活动状态并清理资源，见 [动效规范](./conventions/ui-guidelines.md#动效)。文件和笔记的差异合并只更新编辑器及已审阅版本，保存仍由原服务执行条件写入，见 [数据工作流与冲突比较](./demo-modules.md#数据工作流与冲突比较)。
 
-扩展由 ExtensionsProvider 汇集安装快照、每窗口会话和动态入口，命令复用 CommandsProvider。Rust 在启用提交前仅编译模块，应用重启后也可后台预热已启用模块；编译不创建实例或调用导出。实际调用仍复核安装身份、授权和窗口，再通过固定无界面 worker 创建独立实例，编译缓存与队列有界；方案见 [ADR 0017](./adr/0017-precompile-enabled-extensions.md)。声明式结果由共用渲染器呈现，随包 HTML 在隔离框架内通过受限消息桥交互，可信宿主窗口负责系统能力。安装替换 / 回退更换 generation，身份相关调用同时复核 generation 与模块哈希；旧会话不能继续操作新安装。预热预算、取消、服务租约、界面会话及环境同步细节统一见 [扩展指南](./extensions.md#执行存储与生命周期)。
+ExtensionsProvider 汇集安装快照、当前窗口的会话和动态入口，命令复用 CommandsProvider。Rust 校验安装身份、授权与窗口后，通过固定无界面 worker 创建独立 Wasm 实例；启用前预编译只准备编译代码。预算、预热、取消、管理收尾和服务租约由 [扩展生命周期](./extensions.md#执行存储与生命周期) 定义。
 
-AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留最近使用的最多 3 个插件页面；容器按稳定 DOM 顺序挂载，非当前页面使用 `hidden` / `inert`，避免重排 iframe 导致重建。活动状态控制隐藏页面的请求、轮询、语言刷新、尺寸观察和首屏计时；LRU 移出只释放界面与端口，会话缓存仍保护未保存草稿和在途操作。包身份失效、禁用或必需授权撤销立即释放旧界面，可选授权变化同步最新快照。限额、兼容与取舍见 [ADR 0016](./adr/0016-retain-extension-surfaces.md)，具体契约见 [自定义界面](./extensions.md#自定义界面)。
+[ExtensionOutlets](../src/layouts/extension-outlets.tsx) 管理有界的已挂载插件页面，保持 iframe 的稳定 DOM 顺序；会话缓存独立保护草稿和在途工作。隐藏、移出或包身份失效各自释放对应资源，见 [自定义界面](./extensions.md#自定义界面) 与 [ADR 0016](./adr/0016-retain-extension-surfaces.md)。
 
-会话缓存只回收非活动的干净工作，凭据系统调用按插件协调，不持全局注册表锁等待外部服务。宿主与隔离 HTML 共用原生 CSS 的材质配置和完整控件规则；[ui-theme.ts](../src/lib/ui-theme.ts) 装配同一原文，`ExtensionCustomUi` 在嵌入页与独立窗口中将样式及自动收集的主题变量经现有主题快照发送。SDK 不维护另一份控件 CSS，不按当前 DOM 裁剪；Shadow DOM 由作者显式接入，不共享宿主组件实例。内置和市场插件的普通 UI 一致性、布局职责与明确设计例外由 [共同外观规范](./conventions/ui-guidelines.md#宿主与插件的共同外观) 维护，运行时同步及注入边界见 [界面 SDK](../sdk/README.md#默认外观与动效)，取舍见 [ADR 0022](./adr/0022-shared-control-materials.md)。SDK 公共 DTO 从 Rust 生成绑定提取闭合依赖，独立插件开发无需引用宿主源码树。
-
-命令清单可选择标准或计算预算；原生执行、效果往返、离线 CLI 与预编译均使用已校验清单的档位，编译缓存按预算区分。选择只改变有界 Wasm fuel，不新增权限或延长墙钟；版本与限额见[扩展指南](./extensions.md#执行存储与生命周期)，取舍见 [ADR 0019](./adr/0019-bounded-extension-compute.md)。
+宿主与隔离 HTML 共用控件 CSS，由 [ui-theme.ts](../src/lib/ui-theme.ts) 和界面快照同步主题；SDK 公共 DTO 从 Rust 生成绑定提取，独立插件无需引用宿主源码。共同外观见 [界面规范](./conventions/ui-guidelines.md#宿主与插件的共同外观)，作者接入见 [SDK](../sdk/README.md#默认外观与动效)，选择理由见 [ADR 0022](./adr/0022-shared-control-materials.md)。
 
 ## 虚拟数据流示例
 
@@ -77,7 +75,7 @@ AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留�
 
 `device-tool` 通过显式虚拟输入与文件参数组合两模块，不初始化桌面，不访问用户应用存档；记录创建不覆盖既有文件，回放不会执行历史 TX。
 
-当前未把该模块注册成桌面 state、IPC 或插件服务，也没有自动后台线程或外部资源授权。模块级独立不等于从当前宿主 crate 的编译依赖或基础包移除；[实施计划](./plans/device-workbench-foundation.md) 中的后续方向按实际示例需求评估。当前身份、容量与失败语义统一见 [虚拟会话指南](./device-workbench.md)，长期取舍见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
+当前入口是无头 CLI，模块仍与宿主处于同一 crate；桌面接入等后续方向按 [实施计划](./plans/device-workbench-foundation.md) 的需求触发。身份、容量与失败语义见 [虚拟会话指南](./device-workbench.md)，选择理由见 [ADR 0024](./adr/0024-device-session-capture-boundaries.md)。
 
 ## 命令与桌面交互
 
@@ -85,13 +83,13 @@ AppShell 通过 [ExtensionOutlets](../src/layouts/extension-outlets.tsx) 保留�
 
 主 / 次窗口固定为 `main` / `secondary`，重复打开次窗口会聚焦已有实例；扩展窗口使用宿主生成的 `extension-*` 标签。窗口共用原生设置与数据库，各自保留渲染状态。单实例插件先初始化，重复启动请求异步交给激活流程；主窗口配置 `create: false`，待原生状态就绪后从阻塞任务池创建。
 
-窗口初始隐藏，App 的 [`useRevealWindow`](../src/hooks/use-reveal-window.ts) 等两次动画帧后握手显示，Rust 提供三秒兜底。显示握手不等待路由或数据完成，不能作为页面可交互的性能证据。窗口状态插件恢复位置和显示状态，`window_geometry.rs` 独立持久化逻辑尺寸；旧物理尺寸仅供首次迁移，避免重复恢复。DPI 与工作区变化触发有界适配，不在持有插件锁时同步修改几何；存档由后台 worker 写入。未来或无法读取的既有尺寸存档只在内存中回落，普通窗口事件和退出不覆盖原件；明确恢复默认尺寸成功落盘后，才恢复自动持久化。
+窗口初始隐藏，由 [`useRevealWindow`](../src/hooks/use-reveal-window.ts) 握手显示，Rust 提供兜底；显示不等于路由与数据已就绪。窗口状态插件恢复位置和显示状态，`window_geometry.rs` 持久化逻辑尺寸并适配 DPI / 工作区。未来或不可读的尺寸存档保留原件，明确恢复默认且成功落盘后才恢复自动写入。
 
 启动位置 `remember` / `center` 仅用于新建窗口，重复激活与切换偏好不重新定位当前窗口。初始化按可用工作区调整，临时缩小保留首选尺寸，普通移动不持续吸附边缘。尺寸预设使用 DIP，应用前还原最大化 / 最小化 / 全屏，持久化完成后命令才返回。相关平台限制与排查见 [窗口排障](./troubleshooting.md#远程桌面断开后窗口过大或落在屏幕外)。
 
 主 / 次窗口启用后台运行且托盘可用时关闭改为隐藏，扩展窗口仍正常关闭。关闭、退出、重启和安装更新共用 `lifecycle.rs`：收集相关窗口的脏工作，保存 / 放弃成功后继续，失败或取消则保留窗口。生命周期操作从协商到实际执行保持互斥，与窗口创建协调，防止新窗口绕过协商快照；关闭获准后拒绝该窗口的晚到扩展调用，并等待在途执行结束。
 
-UnsavedWorkProvider 保留离页后的保存回调；主窗口登记后台任务，“保存”表示等待完成，“放弃”表示合作取消并等待 worker 退出。任务结算等待最多两分钟，超时保留未完成状态并允许稍后重试，不继续轮询或宣称原生任务已经取消。前端停止等待不能回滚已写入或已取消的工作。浏览器保留 `beforeunload` 提醒，但不能控制全部外部关闭方式。
+UnsavedWorkProvider 保留离页后的保存回调；主窗口登记后台任务，“保存”表示等待完成，“放弃”表示合作取消并等待 worker 退出。等待超时保留未完成状态和重试入口；前端停止等待不回滚原生工作。浏览器使用 `beforeunload` 提醒，行为受浏览器限制。
 
 工作区仅恢复主 / 次窗口的非隐藏静态路由及次窗口打开状态，不持久化动态扩展会话路径。文件关联在原生授权与读取验证后发布资源 ID、文件名及错误，不缓存正文；主窗口先订阅再读激活快照，通过 ID 去重，既有文件加载 IPC 完成交接。接收、读取和缓存均有界，旧结果不能覆盖较新导航或用户编辑，授权淘汰后需重新选择。限制与具体协议以 [`system_commands.rs`](../src-tauri/src/system_commands.rs) 和 [`use-workspace.ts`](../src/hooks/use-workspace.ts) 为准。
 
@@ -99,7 +97,7 @@ UnsavedWorkProvider 保留离页后的保存回调；主窗口登记后台任务
 
 ## 通信机制
 
-Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[specta::specta]` 并在 `bindings.rs` 注册后，运行 `pnpm bindings:generate` 与 `pnpm bindings:check`，提交生成的 [`bindings.ts`](../src/lib/generated/bindings.ts)。完整跟做示例见 [新增页面到 IPC 与测试](./demo-modules.md#新增页面到-ipc-与测试)。
+Rust 命令和 DTO 是 IPC 类型来源，命令在 `bindings.rs` 注册。签名、DTO 或绑定注册变化时生成并检查 [`bindings.ts`](../src/lib/generated/bindings.ts)，流程见 [新增页面到 IPC 与测试](./demo-modules.md#新增页面到-ipc-与测试)。
 
 页面、组件和 Hook 仅依赖 `lib/tauri.ts`，由门面加载生成命令、检查环境并归一化结果；不手改生成文件、不拼命令字符串、不再写一套 DTO。命令返回 `NativeResult<T>`，错误包含 `code`、`message`、`retryable`；前端按稳定 code 分支，不解析错误文本或直接 `String(error)`。生成类型不能替代 Rust 的入参、大小和路径校验；阻塞 I/O 通过 `blocking::run` / `spawn_blocking` 移出异步线程。
 
@@ -115,17 +113,15 @@ Rust 命令和 DTO 是 IPC 类型来源。命令标注 `#[tauri::command]` / `#[
 
 页面状态留在组件；跨页偏好由 SettingsProvider 管理，命令由 CommandsProvider 管理，文件草稿使用当前 WebView 的外部 store。TanStack Query 与 React Hook Form 只服务各自领域示例，不取代原生设置、数据库或任务服务的权威状态。
 
-设置 schema 与迁移由 [`settings-model.ts`](../src/lib/settings-model.ts) 定义，读取旧扁平格式、schema 1 包装格式与后续兼容版本，按白名单规范化字段；未来 schema 阻止自动覆盖，明确重置后才可替换。首次语言匹配系统偏好，已保存选择优先，重置保留语言。主题进入同一模型；只有模板原命名空间兼容通用旧 `theme` 键，避免派生应用继承其他站点偏好。
+设置 schema、支持的迁移来源和字段规范化由 [`settings-model.ts`](../src/lib/settings-model.ts) 定义；未来 schema 阻止自动覆盖，明确重置后才可替换。语言与主题进入同一模型，保存的语言优先于系统偏好，重置保留语言；模板旧主题键仅在原命名空间中迁移。
 
-自定义强调色与预设 ID 同属设置快照，只保存规范化的原色，不保存派生的明暗色值。`accent-colors.ts` 负责输入边界和可读变体，`applySettings` 提交专用 CSS 变量，业务组件和插件继续消费已有语义 token；切换预设保留已记忆的自定义原色，不直接覆盖 inline `--primary`。新增颜色与其他偏好共用 revision 合并和多窗口同步。
-
-皮肤强度在当前设置中保存为数值档位，原三档分别迁移为相近的 30%、50%、70%，不改变背景图片等其他偏好；取值和默认值由设置模型维护，呈现规则见 [界面规范](./conventions/ui-guidelines.md#外观设置)。原生未来版本判断与壁纸服务写入共用同一 schema 上限，避免应用图片时将新结构降回旧版本。
+外观偏好共用设置快照、revision 合并和多窗口同步；只保存规范化原值，派生色与 CSS 变量由模型和呈现逻辑生成。默认值与旧档位迁移留在设置模型，呈现规则见 [外观设置](./conventions/ui-guidelines.md#外观设置)；壁纸服务写入沿用同一未来版本保护。
 
 桌面以 `settings.json` 为权威快照，使用原子替换与 revision compare-and-swap。Rust 校验结构、额度及原生使用字段，普通保存也会拒绝覆盖已加载的未来 schema；前端负责迁移与未来版本提示，显式重置沿用独立入口。SettingsSync 分离未提交与在途字段，冲突后重读并有限重试，失败保留修改；跨窗口只接受新 revision。浏览器独立使用 localStorage，各标签页维持自己的已加载偏好，刷新后读取最后保存的设置。两种环境均不以其他窗口的主题缓存事件直接改色，避免绕过设置模型或形成反复回写；桌面的本地缓存仅供首屏与旧设置迁移。
 
 宿主“设置 → 网络”的 `networkMode` 统一管理后续原生 HTTP：默认 `system` 跟随系统 / 环境代理，`direct` 禁用代理。市场、应用更新、网络演示和扩展请求读取已保存偏好，不修改进程代理环境，也不重启或改写已开始的操作；单次市场操作的目录刷新和包下载共用开始时的模式。更新下载前重新读取，检查后切换连接方式仍可生效。浏览器 fetch、WebView WSS、系统浏览器外链和 LAN 连接由各自环境管理，浏览器预览禁用该选项。
 
-该字段是现有设置 schema 的可选增量，旧存档缺失时采用默认值，无需升级 schema 或新增授权。扩展缺省继承宿主，但代理仍受独立授权约束；旧显式模式和环回请求的兼容规则集中在 [来源与授权](./extensions.md#来源与授权)。连接选择不放宽已有 URL、来源、DNS、TLS 和签名边界；设置迁移、切换生效与扩展授权矩阵的验收入口见 [Rust 测试](./testing.md#rust-测试)。
+扩展缺省继承宿主网络偏好，代理的独立授权与环回请求规则见 [来源与授权](./extensions.md#来源与授权)。连接选择保持 URL、DNS、TLS 和签名校验，验证范围见 [Rust 测试](./testing.md#rust-测试)。
 
 读取原生设置时，只有可读、未超限但内容损坏的文件才能先备份为 `settings-corrupt-*.json` 再恢复空快照；读取、超限或备份失败交给启动隔离处理，保留原件。浏览器读取 / 解析失败时保留原存档，修改暂留内存；重试先成功读取，再合并期间明确修改的字段，明确重置才可直接替换。
 
