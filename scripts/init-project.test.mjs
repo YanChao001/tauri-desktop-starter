@@ -190,6 +190,8 @@ function fixture(t) {
       "fn main() { old_app_lib::update_signature::verify_manifest() }\n",
     "src-tauri/src/bin/extension-tool.rs":
       "use old_app_lib::{extension_runtime, extensions::ExtensionManifest};\nfn main() {}\n",
+    "src-tauri/src/bin/device_tool.rs":
+      "use old_app_lib::{capture::CaptureReader, device::DeviceEngine};\nfn main() {}\n",
     "index.html": "<html><head><title>Starter</title></head></html>\n",
     "README.md":
       "# Starter\n\n[主页](https://example.com) · [文档](https://example.com/docs) · [发行记录](https://github.com/example/app/releases)\n",
@@ -246,6 +248,10 @@ test("dry-run plans consistent identities without writing or changing version/si
     read("src-tauri/src/bin/extension-tool.rs"),
     /use acme_desk_lib::\{/,
   );
+  assert.match(
+    read("src-tauri/src/bin/device_tool.rs"),
+    /use acme_desk_lib::\{/,
+  );
   const launches = JSON.parse(read(".vscode/launch.json")).configurations;
   assert.deepEqual(launches[0].cargo.args, ["build", "--bin", "acme-desk"]);
   assert.deepEqual(launches[1].cargo.args, ["build"]);
@@ -283,21 +289,26 @@ test("dry-run plans consistent identities without writing or changing version/si
   assert.equal(prepareInitialization(root).changes.length, 0);
 });
 
-test("configuration checks detect a stale library import in the extension tool", (t) => {
+test("configuration checks detect stale imports in each renamed native tool", (t) => {
   const { root } = fixture(t);
   applyInitialization(
     prepareInitialization(root, { packageName: "acme-desk" }),
   );
-  assert.deepEqual(checkInitialization(root), []);
-  const path = "src-tauri/src/bin/extension-tool.rs";
-  writeFileSync(
-    join(root, path),
-    readFileSync(join(root, path), "utf8").replace(
-      "acme_desk_lib::",
-      "old_app_lib::",
-    ),
-  );
-  assert.deepEqual(checkInitialization(root), [path]);
+  for (const path of [
+    "src-tauri/src/bin/extension-tool.rs",
+    "src-tauri/src/bin/device_tool.rs",
+  ]) {
+    assert.deepEqual(checkInitialization(root), []);
+    const valid = readFileSync(join(root, path), "utf8");
+    writeFileSync(
+      join(root, path),
+      valid.replace("acme_desk_lib::", "old_app_lib::"),
+    );
+    assert.deepEqual(checkInitialization(root), [path]);
+    writeFileSync(join(root, path), valid);
+    assert.deepEqual(checkInitialization(root), []);
+  }
+  assert.equal(prepareInitialization(root).changes.length, 0);
 });
 
 test("configuration checks detect and repair an ambiguous desktop debug target", (t) => {

@@ -1,9 +1,20 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderUi,
+  waitFor,
+} from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as native from "@/lib/tauri";
 import type { ExtensionUiRequest } from "./extension-ui-bridge";
 import { ExtensionApp } from "./extension-app";
 import { ExtensionActivityProvider } from "./extension-activity";
+import { ExtensionsProvider } from "./extensions-provider";
+
+function render(ui: ReactNode) {
+  return renderUi(ui, { wrapper: ExtensionsProvider });
+}
 
 const surface = vi.hoisted(() => ({
   execute: null as ((request: ExtensionUiRequest) => Promise<unknown>) | null,

@@ -659,7 +659,8 @@ mod tests {
         id: &str,
     ) -> crate::extensions::ExtensionInfo {
         use crate::extensions::{ExtensionConsent, ExtensionOrigin, InstallCondition};
-        let mut content: Value = serde_json::from_str(&crate::extensions::demo_package()).unwrap();
+        let mut content: Value =
+            serde_json::from_str(&crate::extension_test_support::package()).unwrap();
         content["manifest"]["id"] = id.into();
         content["manifest"]["optionalPermissions"] = serde_json::json!(["network:https"]);
         content["manifest"]["network"] = serde_json::json!([

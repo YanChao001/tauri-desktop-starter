@@ -24,12 +24,6 @@ export const enExtensions = {
   "ext.uiConnectionTimeout":
     "Interface connection timed out. Your session is retained.",
   "ext.recovery.title": "Extension archive recovery",
-  "ext.checkBundledUpdate": "Built-in updates",
-  "ext.bundledCurrent": "The bundled workbench is already up to date.",
-  "ext.bundledNewerInstalled":
-    "The installed version is newer and was retained.",
-  "ext.bundledDifferent":
-    "The installed package differs from the bundled package at the same version. It was retained; replacement requires a higher version.",
   "ext.recovery.checking": "Checking the extension archive…",
   "ext.recovery.checkHint":
     "Check for an archivable development-era registry without changing data.",
@@ -57,7 +51,7 @@ export const enExtensions = {
   "ext.market.discover": "Discover plugins",
   "ext.market.title": "Plugin market",
   "ext.market.hint":
-    "Plugins are reviewed by the market maintainer. First installs require permission review; updates from the same source with unchanged permissions do not.",
+    "Built-in plugins come with the app; online plugins are reviewed by the market maintainer. First installs require permission review; updates from the same source with unchanged permissions do not.",
   "ext.market.repository": "Market source",
   "ext.market.refresh": "Refresh",
   "ext.market.loading": "Loading market…",
@@ -71,7 +65,7 @@ export const enExtensions = {
   "ext.market.category.data": "Data",
   "ext.market.category.tools": "Utilities",
   "ext.market.category.games": "Games",
-  "ext.market.featured": "Featured",
+  "ext.market.bundled": "Built-in",
   "ext.market.currentVersion": "Installed {version}",
 
   "ext.market.download": "Install",
@@ -86,7 +80,6 @@ export const enExtensions = {
   "ext.market.newerInstalled": "Newer version installed",
   "ext.market.noMatches": "No matching plugins.",
   "ext.market.empty": "No plugins are currently listed.",
-  "ext.market.revision": "Verified market catalog · revision {revision}",
   "ext.market.notConfigured": "No market configured. Install a local package.",
   "ext.market.unavailable":
     "Market unavailable. Check your connection and refresh. Installed extensions remain available.",
@@ -149,9 +142,7 @@ export const enExtensions = {
   "ext.boundary":
     "Files are shared only after confirmation, network access is limited to declared services, and local data is isolated per plugin.",
   "ext.installFile": "Choose package",
-  "ext.installLocal": "Local installation",
-  "ext.openPackageFile": "Choose file",
-  "ext.selectedPackageFile": "{name}; choose another file",
+  "ext.installLocal": "Install from file",
   "ext.packageHint":
     "Use .starter-extension.json, up to 24 MiB. Review permissions before installing. Preview, installation and enabling do not execute the plugin.",
   "ext.docs": "Developer docs",
@@ -259,7 +250,6 @@ export const enExtensions = {
     "This window has its own session; the main window remains available.",
   "ext.entryUnavailable":
     "Extension disabled, uninstalled or command unavailable. Check Extensions.",
-  "ext.restoreLab": "Restore bundled workbench",
   "ext.minHostVersion": "Minimum host version",
   "ext.requiredPermissions": "Required permissions",
   "ext.optionalPermissions": "Optional permissions",

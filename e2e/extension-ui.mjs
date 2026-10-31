@@ -1577,6 +1577,23 @@ try {
           await snapshot("scientific");
         }
         await openCalculatorGraph(frame);
+        await setCalculatorFunctions(frame, ["x^2"]);
+        await action("plot", "#graph-input-pane");
+        await expect(frame.locator("#ymin")).toHaveValue("-10");
+        await expect(frame.locator("#ymax")).toHaveValue("110");
+        await openCalculatorGraph(frame);
+        await frame.locator("#zoom-in").click();
+        await expect(frame.locator("#ymin")).toHaveValue("2");
+        await expect(frame.locator("#ymax")).toHaveValue("98");
+        await idle(page, frame);
+        await frame.locator("#fit").click();
+        await idle(page, frame);
+        await expect(frame.locator("#xmin")).toHaveValue("-8");
+        await expect(frame.locator("#xmax")).toHaveValue("8");
+        await expect(frame.locator("#ymin")).toHaveValue("-6.4");
+        await expect(frame.locator("#ymax")).toHaveValue("70.4");
+        await snapshot("graph-auto-fit");
+        await action("reset-plot");
         await setCalculatorFunctions(frame, ["sin(x)", "cos(x)", "x^2 / 10"]);
         await action("plot", "#graph-input-pane");
         await openCalculatorGraph(frame);

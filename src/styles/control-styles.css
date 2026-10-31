@@ -1093,7 +1093,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius, 0.625rem);
   padding: 0.75rem;
-  padding-block-start: 0.5rem;
 }
 :where(legend) {
   margin-block: 0;
@@ -1480,7 +1479,8 @@
   line-height: 1rem;
 }
 :where([data-slot="tooltip-arrow"]) {
-  background: var(--surface-reading);
+  /* 原生三角形只填充一次，并停在正文边缘，避免透明材质叠加变深。 */
+  background: transparent;
   fill: var(--surface-reading);
 }
 :where([data-slot="dialog-overlay"]),

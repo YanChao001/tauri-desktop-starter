@@ -143,6 +143,22 @@ test("a wide Markdown table remains readable through local keyboard scrolling", 
   await expect(
     page.getByRole("columnheader", { name: "Column11" }),
   ).toBeInViewport();
+  const previousTable = await table.elementHandle();
+  const scrollLeft = await table.evaluate((element) => element.scrollLeft);
+  await page
+    .locator("#markdown-source")
+    .fill(
+      `|${columns.join("|")}|\n|${columns.map(() => "---").join("|")}|\n|${columns.map((_, index) => `value${index}`).join("|")}|\n\nUpdated preview`,
+    );
+  await expect(
+    page.getByText("Updated preview", { exact: true }),
+  ).toBeVisible();
+  expect(await previousTable?.evaluate((element) => element.isConnected)).toBe(
+    true,
+  );
+  expect(await table.evaluate((element) => element.scrollLeft)).toBe(
+    scrollLeft,
+  );
   expect(
     await page
       .locator("main")

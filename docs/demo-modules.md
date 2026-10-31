@@ -4,9 +4,7 @@
 
 ## 演示目标与验收边界
 
-默认保留完整、可操作的功能样本，按产品需求评估和裁剪。新增展示补齐实际工作流和缺失状态，复用已有服务与控件，并区分页面样本、原生存储和外部服务；不把演示描述为已实现账户、云同步或通用后台能力。
-
-验证成功、空、加载、错误 / 重试、取消与输入保留。浏览器交互、原生 IPC / 多窗口 / 恢复、最终安装包的系统集成分层验收，检查范围见 [测试规范](./testing.md#日常验证范围)。退出协商、版本冲突、合作取消与未来版本拒写的实现边界见 [架构说明](./architecture.md)。
+默认保留完整、可操作的功能样本。新增演示围绕实际工作流补齐成功与失败反馈，复用已有服务和控件，并说明数据属于页面样本、原生存储还是外部服务。按 [改动范围](./testing.md#日常验证范围) 选择验证层；浏览器交互、原生 IPC 和安装后的系统集成各自提供不同证据。
 
 ## 体验现有模块
 
@@ -45,30 +43,15 @@
 
 ## 依赖与加载
 
-精确版本以 [pnpm-lock.yaml](../pnpm-lock.yaml) / [Cargo.lock](../src-tauri/Cargo.lock) 为准，声明范围见 [package.json](../package.json) / [Cargo.toml](../src-tauri/Cargo.toml)。下表只维护用途与许可；分发时按实际包含内容核对义务。
+依赖及精确版本直接查阅 [package.json](../package.json)、[Cargo.toml](../src-tauri/Cargo.toml) 和对应锁文件；新增或移除依赖按 [评审标准](./development.md#新增依赖的评审标准) 核对调用方、许可和平台影响。
 
-| 依赖                              | 许可                                                | 用途                                                     |
-| --------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
-| TanStack Query / Table / Virtual  | MIT                                                 | 缓存、表格状态与虚拟滚动                                 |
-| React Hook Form / resolvers / Zod | MIT                                                 | 复杂表单与运行时 schema                                  |
-| react-markdown / remark-gfm       | MIT                                                 | 安全 Markdown / GFM                                      |
-| lowlight / highlight.js           | MIT / BSD-3-Clause                                  | TypeScript 文本高亮                                      |
-| Recharts                          | MIT                                                 | 本地指标图表                                             |
-| Tauri 系统插件                    | MIT OR Apache-2.0                                   | 原生文件、通知、剪贴板、快捷键、深链、HTTP 与固定 worker |
-| walkdir / sha2 / keyring          | Unlicense/MIT；MIT OR Apache-2.0；MIT OR Apache-2.0 | 遍历、哈希与凭据                                         |
-| Playwright / axe Playwright       | Apache-2.0 / MPL-2.0                                | 浏览器及无障碍检查                                       |
+页面懒加载和导航预载统一维护于 [routes.tsx](../src/routes.tsx)。表格 / 表单、Query、Markdown 和图表随页面加载，门面中的 JS 插件按调用动态导入；Rust 插件仍在启动时组装，前端懒加载不会减少原生编译或安装包体积。WSS 使用标准 WebSocket，边界由门面与 CSP 定义。
 
-页面在 `routes.tsx` 中使用 `lazy`；表格 / 表单、Query、Markdown 和图表跟随对应页面加载，门面中的 JS 插件按调用动态导入。Rust 插件仍在应用启动组装，前端懒加载不会减少原生依赖编译或安装包体积。WSS 使用标准 WebSocket，由门面和 CSP 限制，没有额外安装 websocket 插件。
+需要区分三种插件优化：导航悬停只预载前端模块；[界面保留](./extensions.md#自定义界面) 复用最近使用的文档与草稿；[原生预编译](./extensions.md#执行存储与生命周期) 只准备 Wasm 代码，不执行初始化。工作台场景编辑留在界面，成果导出才运行 Wasm，数据格式见 [工作台说明](../examples/extensions/apps/README.md)。
 
-动态插件入口与静态侧栏共用纯模块预载；悬停或聚焦不启动插件、读取私有数据或提前请求原生能力。AppShell 对最近使用插件保留有界页面，隐藏期间暂停新 SDK 请求和宿主观察，LRU 移出通过已有会话与检查点恢复；界面和会话的不同预算见 [自定义界面](./extensions.md#自定义界面)。本地工作台的场景编辑、筛选与导航在界面内完成，需要导出时才调用 Wasm；功能与数据格式归 [工作台说明](../examples/extensions/apps/README.md) 维护。
+文件工作台按需加载预览与差异合并；TypeScript 的 lowlight / highlight.js 仅在 `CodeBlock` 展示该语言时加载，等待或失败时保留原文。语法树转换为 React 文本 token，许可随 [前端资源](../public/licenses/code-highlighting.txt) 分发。
 
-原生模块预编译另由启用流程和应用启动后台触发，只准备代码、不执行插件初始化；它不属于导航悬停的预载，也不恢复 Wasm 实例。预算、淘汰和失败重试统一见 [执行与生命周期](./extensions.md#执行存储与生命周期)。
-
-文件工作台在选中文档后加载预览，审阅磁盘版本时加载差异合并；这些视图使用局部加载状态，等待期间仍可操作编辑区。
-
-TypeScript 高亮使用 lowlight / highlight.js，仅注册 TypeScript 语法，在 `CodeBlock` 实际展示 TypeScript 时按需加载；加载期间或失败时保留完整原文，JSON、Rust 与纯文本不等待该语法库，不自动扫描 DOM。它们只处理本地文本，没有原生权限或平台依赖；输出语法树转换为 React 文本 token。许可证原文保存在 [代码高亮许可](../public/licenses/code-highlighting.txt)，由 Vite 复制到网页与桌面内嵌前端资源中。
-
-比较体积时执行同一配置的 `pnpm build` / `pnpm build:web`，区分入口、路由块、共享块、原始与 gzip 大小；不能把各块总和当作首屏下载量，也不能由压缩体积推导常驻内存或启动耗时。性能采样方法见 [安装版与启动验收](./testing.md#安装版与启动验收)。
+比较体积时使用同一配置的 `pnpm build` / `pnpm build:web`，区分入口、路由块、共享块和原始 / gzip 大小；首屏下载、常驻内存和启动耗时分别测量，方法见 [安装版与启动验收](./testing.md#安装版与启动验收)。
 
 ## 新增页面到 IPC 与测试
 
@@ -76,7 +59,7 @@ TypeScript 高亮使用 lowlight / highlight.js，仅注册 TypeScript 语法，
 
 ### 1. 服务、DTO 与边界测试
 
-新增 `src-tauri/src/text_tools.rs`。输入上限按 UTF-8 字节计算，字符数按 Unicode scalar value 计算，行数沿用 Rust `lines()`，不是字节数或屏幕行数。
+新增 `src-tauri/src/text_summary.rs`。输入上限按 UTF-8 字节计算，字符数按 Unicode scalar value 计算，行数沿用 Rust `lines()`，不是字节数或屏幕行数。
 
 ```rust
 use serde::Serialize;
@@ -111,15 +94,15 @@ mod tests {
 }
 ```
 
-新增 `src-tauri/src/text_tools_commands.rs`：
+新增 `src-tauri/src/text_summary_commands.rs`：
 
 ```rust
-use crate::{error::NativeResult, text_tools::{self, TextSummary}};
+use crate::{error::NativeResult, text_summary::{self, TextSummary}};
 
 #[tauri::command]
 #[specta::specta]
 pub fn summarize_text(text: String) -> NativeResult<TextSummary> {
-    text_tools::summarize(&text)
+    text_summary::summarize(&text)
 }
 ```
 
@@ -127,7 +110,7 @@ pub fn summarize_text(text: String) -> NativeResult<TextSummary> {
 
 ### 2. 注册、生成与门面
 
-在 `lib.rs` 添加 `mod text_tools; mod text_tools_commands;`；在 `bindings.rs` 的 `collect_commands!` 添加 `crate::text_tools_commands::summarize_text`。DTO 已被命令返回类型引用，无需再手写一份 TypeScript。
+在 `lib.rs` 添加 `mod text_summary; mod text_summary_commands;`；在 `bindings.rs` 的 `collect_commands!` 添加 `crate::text_summary_commands::summarize_text`。DTO 已被命令返回类型引用，无需再手写一份 TypeScript。
 
 ```bash
 pnpm bindings:generate
@@ -146,161 +129,41 @@ export function summarizeText(
 
 ### 3. 页面、语言与路由
 
-在中英词典入口分别补齐这些键；新增较大领域时按现有 `zh-*.ts` / `en-*.ts` 模式拆词典并在两入口组合。
+新增 `src/pages/text-summary.tsx`，默认导出页面组件，通过 `@/lib/tauri` 调用 `summarizeText`。复用 `NativePage`、`Button`、`Textarea`、`nativeErrorText` 和 toast；中英词典加入标题、输入、运行与结果文案。页面在调用期间防止重复提交，失败保留输入，异步回执只更新仍挂载的页面。可参考 [通信页](../src/pages/bridge.tsx) 和相邻测试。
 
-| 键                      | 中文                                 | English                                        |
-| ----------------------- | ------------------------------------ | ---------------------------------------------- |
-| `textTools.title`       | 文本统计                             | Text summary                                   |
-| `textTools.description` | 通过 Rust 统计本地文本，不上传内容。 | Count local text in Rust without uploading it. |
-| `textTools.input`       | 文本内容                             | Text                                           |
-| `textTools.run`         | 统计文本                             | Count text                                     |
-| `textTools.counts`      | {characters} 个字符，{lines} 行      | {characters} characters, {lines} lines         |
-
-新增 `src/pages/text-tools.tsx`：
-
-```tsx
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { NativePage } from "@/components/native-page";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useLatestTranslator } from "@/hooks/use-latest-translator";
-import { nativeErrorText } from "@/lib/native-error";
-import { summarizeText, type TextSummary } from "@/lib/tauri";
-import { useI18n } from "@/providers/i18n";
-
-export default function TextTools() {
-  const { t } = useI18n();
-  const latest = useLatestTranslator();
-  const [text, setText] = useState("");
-  const [result, setResult] = useState<TextSummary | null>(null);
-  const [pending, setPending] = useState(false);
-  const mounted = useRef(false);
-  const running = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  async function run() {
-    if (running.current) return;
-    running.current = true;
-    setPending(true);
-    try {
-      const next = await summarizeText(text);
-      if (mounted.current) setResult(next);
-    } catch (reason) {
-      if (mounted.current) toast.error(nativeErrorText(reason, latest));
-    } finally {
-      running.current = false;
-      if (mounted.current) setPending(false);
-    }
-  }
-  return (
-    <NativePage
-      title={t("textTools.title")}
-      description={t("textTools.description")}
-    >
-      <form
-        className="space-y-3"
-        aria-busy={pending}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void run();
-        }}
-      >
-        <Label htmlFor="summary-text">{t("textTools.input")}</Label>
-        <Textarea
-          id="summary-text"
-          rows={6}
-          value={text}
-          disabled={pending}
-          onChange={(event) => setText(event.target.value)}
-        />
-        <Button type="submit" disabled={pending}>
-          {t("textTools.run")}
-        </Button>
-        <output className="block min-h-6" aria-live="polite">
-          {result ? t("textTools.counts", result) : null}
-        </output>
-      </form>
-    </NativePage>
-  );
-}
-```
-
-在 `routes.tsx` 的 `APP_ROUTES` 添加下项，复用已有 `lazyPage` 与 `TerminalIcon`，同时获得按需加载和导航预载：
+在 [routes.tsx](../src/routes.tsx) 的 `APP_ROUTES` 添加入口，复用 `lazyPage` 与图标：
 
 ```tsx
 {
-  path: "/text-tools",
-  labelKey: "textTools.title",
+  path: "/text-summary",
+  labelKey: "textSummary.title",
   group: "capabilities",
   icon: TerminalIcon,
-  ...lazyPage(() => import("@/pages/text-tools")),
+  ...lazyPage(() => import("@/pages/text-summary")),
   demoOnly: true,
 },
 ```
 
-导航和页面命令自动从注册表产生。在 `features/catalog/model.ts` 补能力描述、源码与文档链接；在 `native-page.tsx` 的 `PREVIEWS` 补 `/text-tools` 对应的三步中英说明，避免浏览器沿用默认桌面流程。如支持原生激活导航，再同步 `system_commands::allowed_route`。动作快捷键通过 `useRegisterCommands` 复用 `run`，不另装全局键盘监听。
+导航与页面命令由注册表产生。在 [能力目录](../src/features/catalog/model.ts) 补用途、源码与文档链接，在 [原生页面预览](../src/components/native-page.tsx) 的 `PREVIEWS` 补浏览器说明。需要从原生激活此页时，再补 `system_commands::allowed_route`；动作快捷键通过 `useRegisterCommands` 复用页面动作。
 
 ### 4. 页面失败回归与验证
 
-新增 `src/pages/text-tools.test.tsx`，mock 原生门面与展示上下文，验证输入和失败反馈：
+为此示例新增 `src/pages/text-summary.test.tsx`，mock `@/lib/tauri`，验证原生失败后输入仍在且用户能再次操作；Rust 测试负责 Unicode 统计及输入字节上限。这样分别覆盖业务边界与页面恢复，不在组件测试重写原生规则。
 
-```tsx
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
-import { toast } from "sonner";
-import { summarizeText } from "@/lib/tauri";
-import TextTools from "./text-tools";
-
-vi.mock("@/lib/tauri", () => ({ summarizeText: vi.fn() }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
-vi.mock("@/components/native-page", () => ({
-  NativePage: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-vi.mock("@/providers/i18n", () => ({
-  useI18n: () => ({ t: (key: string) => key }),
-}));
-afterEach(cleanup);
-
-it("keeps input and exposes a recoverable native failure", async () => {
-  vi.mocked(summarizeText).mockRejectedValue({ code: "STORAGE_IO" });
-  render(<TextTools />);
-  const input = screen.getByLabelText("textTools.input");
-  fireEvent.change(input, { target: { value: "keep this text" } });
-  fireEvent.click(screen.getByRole("button", { name: "textTools.run" }));
-  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("errors.IO"));
-  expect(input).toHaveValue("keep this text");
-  expect(summarizeText).toHaveBeenCalledExactlyOnceWith("keep this text");
-});
-```
-
-```bash
+```sh
 cargo fmt --manifest-path src-tauri/Cargo.toml --all
-cargo test --manifest-path src-tauri/Cargo.toml --locked text_tools::tests --lib
-pnpm test src/pages/text-tools.test.tsx
+cargo test --manifest-path src-tauri/Cargo.toml --locked text_summary::tests --lib
+pnpm test src/pages/text-summary.test.tsx
+pnpm bindings:check
 pnpm typecheck
 pnpm lint
-pnpm bindings:check
-pnpm build:web
 ```
 
-在独立环境或安排的前台时段运行桌面 `pnpm app:dev` 验证实际 IPC、输入保留、中英与键盘；日常先用无头浏览器确认环境说明。共享路由、Provider 或事件变化时按 [验证范围](./testing.md#日常验证范围) 扩大检查。不要把 mock 成功当作原生能力实测。
+随后按 [日常验证范围](./testing.md#日常验证范围) 检查受影响的浏览器界面或实际 IPC。路由、Provider、权限和窗口生命周期的改动才扩大相应检查；前台原生操作遵循 [桌面干扰边界](./testing.md#避免干扰本机桌面)。
 
 ## 实际裁剪模块
 
-在独立分支操作，先说明现有用户数据如何导出 / 迁移，再删调用方、原生命令和依赖；不要通过清理脚本删除用户目录。对每个模块执行同一闭环：路由 / 菜单 / 命令与能力目录 → 门面 / DTO / 事件 → Rust 注册 / 状态 / 服务 → Cargo / npm 依赖 → capability / CSP / 系统关联 → 词典 / 文档 / 测试 / CI；重新生成绑定和锁文件，检查没有未调用导出或失效入口。
+在功能分支中先搜索调用方与共享服务；已有用户数据受影响时明确导出或迁移方式，保留用户目录。按调用链清理：路由 / 菜单 / 命令与能力目录 → 门面 / DTO / 事件 → Rust 注册 / 状态 / 服务 → 依赖 → capability / CSP / 系统关联 → 词典 / 文档 / 相关测试与 CI。IPC 改动后重新生成绑定，依赖改动后更新现有锁文件；两者各自检查。
 
 ### 删除 SQLite 笔记
 
@@ -308,7 +171,7 @@ pnpm build:web
 2. 删除页面和笔记草稿状态 / 未保存工作注册；从 `tauri.ts`、`bindings.rs` 清理旧 CRUD、分页、批量、草稿与备份命令、Note DTO；移除 `data_commands.rs` 和 `database.rs` 的实际引用。
 3. **先处理恢复依赖再删数据库状态。** `recovery.rs` 的初始化、临时工作区、备份验证、归档和重启替换依赖 SQLite；若整个移除，需替换 `lib.rs` 中的初始化流程并保留设置错误处理，再清理 RecoveryGate、恢复页面、门面 / 绑定和诊断中的数据库字段。若产品仍需要恢复，按新存储重写这条链路。
 4. 在确认无调用方后移除 `rusqlite`，保留其他服务仍使用的 `serde`、`tempfile` 等共享依赖。数据库通过自定义命令访问，没有一项可简单删除的“SQL 插件权限”。同步备份 / 草稿词典及数据库、恢复、诊断和 E2E 的相关断言，不跳过无关测试。
-5. 执行绑定生成 / 检查、类型与 lint、前端 / Rust / 脚本测试、桌面与浏览器构建，验证首次启动、已有设置、工作区、诊断、窗口退出及移除页面的旧链接回落；已有数据库文件如何处置属于明确的数据迁移方案。
+5. 按实际删除范围检查绑定、相关前端 / Rust 测试与构建，重点验证首次启动、已有设置、工作区、诊断及旧链接回落；若调整恢复或退出链路，再验证对应原生流程。已有数据库文件的处置按数据迁移方案执行。
 
 ### 删除自动更新器
 
@@ -324,4 +187,4 @@ pnpm build:web
 
 `app.config.json` 的 `integration` 统一管理深链协议与应用专属扩展名，初始化脚本同步安装注册和 MIME，原生解析、文件工作台及界面示例直接消费配置，见 [项目初始化](./development.md#项目初始化)。专属文件仍使用 UTF-8 JSON；更改文件内容格式时同步工作台校验与回归。发布后更改协议或扩展名会影响已有系统登记与用户文件，需设计迁移或重新关联。
 
-正式签名、远程 OAuth / 服务端权限、生产数据恢复、平台安装关联和性能均按实际验收记录；此处的可操作演示与自动测试不替代这些证据。
+派生项目的签名、外部服务、生产数据恢复和平台安装关联按产品范围验收，记录实际结果。

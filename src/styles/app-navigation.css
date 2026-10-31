@@ -318,6 +318,25 @@
 .settings-studio {
   container: settings / inline-size;
 }
+.settings-list > * {
+  position: relative;
+  padding-block: 0.75rem;
+}
+.settings-list > :first-child {
+  padding-block-start: 0;
+}
+.settings-list > :last-child {
+  padding-block-end: 0;
+}
+/* 分隔线独立绘制，避免随设置项的焦点圆角弯曲。 */
+.settings-list > * + *::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  border-block-start: 1px solid var(--border);
+  pointer-events: none;
+}
 @container settings (min-width: 60rem) {
   .window-preset-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -334,6 +353,10 @@
   min-width: min(100%, 9rem);
 }
 .settings-row-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 2rem;
   min-width: 0;
   max-width: 100%;
   margin-inline-start: auto;

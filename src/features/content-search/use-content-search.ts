@@ -9,6 +9,7 @@ import type { AppCommand } from "@/commands/types";
 type Hit = { id: string; label: string; path: string; kind: "note" | "file" };
 type SearchRequest = { term: string; attempt: number; eligible: boolean };
 const EMPTY: Hit[] = [];
+const EMPTY_COMMANDS: AppCommand[] = [];
 
 export function useContentSearch(query: string, open: boolean) {
   const { t } = useI18n();
@@ -88,21 +89,20 @@ export function useContentSearch(query: string, open: boolean) {
   }, [request]);
   const current = eligible && snapshot.request === request;
   const hits = current ? snapshot.hits : EMPTY;
-  const commands = useMemo<AppCommand[]>(
-    () =>
-      hits.map((hit) => ({
-        id: hit.id,
-        labelKey: "search.open",
-        label: hit.label,
-        description: t(hit.kind === "note" ? "search.note" : "search.file"),
-        group: "content",
-        icon: hit.kind === "note" ? NotebookIcon : FileTextIcon,
-        keywords: [term, hit.label],
-        available: isTauri,
-        run: () => navigate(hit.path),
-      })),
-    [hits, term, navigate, t],
-  );
+  const commands = useMemo<AppCommand[]>(() => {
+    if (!hits.length) return EMPTY_COMMANDS;
+    return hits.map((hit) => ({
+      id: hit.id,
+      labelKey: "search.open",
+      label: hit.label,
+      description: t(hit.kind === "note" ? "search.note" : "search.file"),
+      group: "content",
+      icon: hit.kind === "note" ? NotebookIcon : FileTextIcon,
+      keywords: [term, hit.label],
+      available: isTauri,
+      run: () => navigate(hit.path),
+    }));
+  }, [hits, term, navigate, t]);
   useRegisterCommands(commands);
   const ids = useMemo(
     () => new Set(commands.map((command) => command.id)),

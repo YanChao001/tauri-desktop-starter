@@ -15,11 +15,6 @@ export const zhExtensions = {
   "ext.uiInitializationTimeout": "界面加载超时，会话已保留。",
   "ext.uiConnectionTimeout": "界面连接超时，会话已保留。",
   "ext.recovery.title": "扩展存档恢复",
-  "ext.checkBundledUpdate": "内置更新",
-  "ext.bundledCurrent": "内置工作台已是当前版本。",
-  "ext.bundledNewerInstalled": "本机版本较新，已保留。",
-  "ext.bundledDifferent":
-    "同版本的本机包与内置包内容不同，已保留本机包。替换需使用更高版本。",
   "ext.recovery.checking": "正在检查扩展存档…",
   "ext.recovery.checkHint": "检查是否为可归档的开发期旧存档，不会修改数据。",
   "ext.recovery.checkAgain": "重新检查",
@@ -43,7 +38,7 @@ export const zhExtensions = {
   "ext.market.discover": "发现插件",
   "ext.market.title": "插件市场",
   "ext.market.hint":
-    "插件由市场维护者审核上架。首次安装需审阅权限；同来源、同权限更新无需再次确认。",
+    "内置插件随应用提供，在线插件由市场维护者审核上架。首次安装需审阅权限；同来源、同权限更新无需再次确认。",
   "ext.market.repository": "市场源码",
   "ext.market.refresh": "刷新",
   "ext.market.loading": "正在加载市场…",
@@ -56,7 +51,7 @@ export const zhExtensions = {
   "ext.market.category.data": "数据处理",
   "ext.market.category.tools": "实用工具",
   "ext.market.category.games": "游戏",
-  "ext.market.featured": "推荐",
+  "ext.market.bundled": "内置",
   "ext.market.currentVersion": "本机 {version}",
 
   "ext.market.download": "安装",
@@ -71,7 +66,6 @@ export const zhExtensions = {
   "ext.market.newerInstalled": "本机版本较新",
   "ext.market.noMatches": "没有匹配的插件。",
   "ext.market.empty": "市场暂未上架插件。",
-  "ext.market.revision": "已验证市场目录 · 修订 {revision}",
   "ext.market.notConfigured": "未配置插件市场，请从本地安装。",
   "ext.market.unavailable":
     "市场不可用，请检查网络并刷新。已安装扩展仍可使用。",
@@ -129,8 +123,6 @@ export const zhExtensions = {
     "文件仅在确认后发送；联网限于声明的服务；各插件的本机数据相互隔离。",
   "ext.installFile": "选择扩展包",
   "ext.installLocal": "本地安装",
-  "ext.openPackageFile": "选择文件",
-  "ext.selectedPackageFile": "{name}，点击更换文件",
   "ext.packageHint":
     "支持 .starter-extension.json，最多 24 MiB。安装前审阅权限；预览、安装和启用不执行插件。",
   "ext.docs": "开发文档",
@@ -221,7 +213,6 @@ export const zhExtensions = {
   "ext.openWindow": "新窗口",
   "ext.windowHint": "此窗口使用独立会话，主窗口仍可继续使用。",
   "ext.entryUnavailable": "扩展未启用、已卸载或命令失效，请在扩展中心检查。",
-  "ext.restoreLab": "恢复内置工作台",
   "ext.minHostVersion": "最低宿主版本",
   "ext.requiredPermissions": "必需权限",
   "ext.optionalPermissions": "可选权限",

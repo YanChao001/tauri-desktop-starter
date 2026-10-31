@@ -433,9 +433,10 @@ mod tests {
     fn fixture() -> (tempfile::TempDir, ExtensionStore, ExtensionInfo, String) {
         let dir = crate::extension_paths::temporary_directory();
         let store = ExtensionStore::new(dir.path().join("extensions"), false);
-        let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut content: serde_json::Value =
+            serde_json::from_str(&crate::extension_test_support::package()).unwrap();
         content["manifest"]["commands"] = serde_json::json!([{
-            "id":"open", "title":"Open", "function":"uppercase", "inputFormat":"json", "resultFormat":"view", "permissions":[],
+            "id":"open", "title":"Open", "function":"echo", "inputFormat":"json", "resultFormat":"view", "permissions":[],
             "ui":{"sidebar":true,"window":true,"document":"main"}
         }]);
         content["uiDocuments"] = serde_json::json!({"main":"<main><h1>My UI</h1><script>window.example=true</script></main>"});

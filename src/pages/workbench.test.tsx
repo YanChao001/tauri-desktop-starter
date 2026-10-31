@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import type { UnsavedWork } from "@/providers/unsaved-work";
 import * as native from "@/lib/tauri";
 import { workbenchEditor } from "@/components/workbench/editor-store";
@@ -67,6 +67,85 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("file workbench", () => {
+  it.each(["success", "failure"] as const)(
+    "keeps the refreshed recent files when an older read finishes with %s",
+    async (outcome) => {
+      type RecentFiles = Awaited<
+        ReturnType<typeof native.recentWorkbenchFiles>
+      >;
+      let finish!: (files: RecentFiles) => void;
+      let fail!: (reason: unknown) => void;
+      const latestFile = {
+        id: "recent-new",
+        name: "latest.txt",
+        path: "C:/selected/latest.txt",
+        directory: false,
+      };
+      vi.mocked(native.recentWorkbenchFiles)
+        .mockReturnValueOnce(
+          new Promise((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          }),
+        )
+        .mockResolvedValueOnce([latestFile]);
+      render(
+        <MemoryRouter>
+          <Workbench />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "workbench.open" }));
+      expect(
+        await screen.findByRole("button", { name: "latest.txt" }),
+      ).toBeVisible();
+      await act(async () => {
+        if (outcome === "success")
+          finish([{ ...latestFile, id: "recent-old", name: "outdated.txt" }]);
+        else fail({ code: "STORAGE_IO" });
+      });
+
+      expect(screen.getByRole("button", { name: "latest.txt" })).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "outdated.txt" }),
+      ).not.toBeInTheDocument();
+      expect(toast.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores a recent-files response from the discarded StrictMode effect", async () => {
+    let finish!: (
+      files: Awaited<ReturnType<typeof native.recentWorkbenchFiles>>,
+    ) => void;
+    const latestFile = {
+      id: "recent-new",
+      name: "latest.txt",
+      path: "C:/selected/latest.txt",
+      directory: false,
+    };
+    vi.mocked(native.recentWorkbenchFiles)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([latestFile]);
+    render(
+      <StrictMode>
+        <MemoryRouter>
+          <Workbench />
+        </MemoryRouter>
+      </StrictMode>,
+    );
+    expect(
+      await screen.findByRole("button", { name: "latest.txt" }),
+    ).toBeVisible();
+
+    await act(async () => finish([]));
+
+    expect(screen.getByRole("button", { name: "latest.txt" })).toBeVisible();
+  });
+
   it("shows one draft status with the current UTF-8 size and switches to the real path after saving", async () => {
     workbenchEditor.open([
       { ...selected, id: "draft", path: "", content: "", bytes: 0 },

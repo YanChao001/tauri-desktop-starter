@@ -32,9 +32,9 @@ async function fixture(t) {
     writeFile(
       options.fixturePath,
       JSON.stringify({
-        command: "uppercase",
+        command: "echo",
         input: "Hello",
-        expectOutput: "HELLO",
+        expectOutput: "Hello",
       }),
     ),
   ]);
@@ -164,7 +164,7 @@ test("validate 和 test 传递离线测试快照并返回 Rust 报告", async (t
   });
   expectedFixture = [
     expectedFixture,
-    { command: "uppercase", input: "world", expectOutput: "WORLD" },
+    { command: "echo", input: "world", expectOutput: "world" },
   ];
   await writeFile(options.fixturePath, JSON.stringify(expectedFixture));
   await testExtension(options, dependency);

@@ -94,7 +94,7 @@ export function DesktopSettings() {
           {t("desktop.browserOnly")}
         </p>
       ) : null}
-      <div className="divide-y [&>.settings-row]:py-2 [&>.settings-row:first-child]:pt-0 [&>.settings-row:last-child]:pb-0">
+      <div className="settings-list">
         <SettingRow
           id="settings-autostart"
           icon={PowerIcon}

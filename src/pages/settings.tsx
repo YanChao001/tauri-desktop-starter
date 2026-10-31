@@ -49,7 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -309,11 +308,11 @@ export default function Settings() {
         <SkinPicker />
       </section>
 
-      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+      <fieldset data-surface="panel" className="min-w-0">
         <legend className="text-sm font-medium">
           {t("settings.appearance")}
         </legend>
-        <div className="space-y-3 [&>.settings-row]:py-0">
+        <div className="settings-list">
           <SettingRow
             id="settings-language"
             icon={LanguagesIcon}
@@ -353,8 +352,6 @@ export default function Settings() {
           </div>
 
           <AccentPicker />
-
-          <Separator />
 
           <SettingRow
             id="settings-radius"
@@ -463,12 +460,12 @@ export default function Settings() {
         data-surface="panel"
         id="settings-layout"
         tabIndex={-1}
-        className="min-w-0 space-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <legend className="text-sm font-medium">
           {t("studio.settingsWorkspace")}
         </legend>
-        <div className="divide-y [&>.settings-row]:py-2 [&>.settings-row:first-child]:pt-0 [&>.settings-row:last-child]:pb-0">
+        <div className="settings-list">
           <SettingRow
             id="settings-menuBar"
             icon={MenuIcon}
@@ -537,137 +534,137 @@ export default function Settings() {
         data-surface="panel"
         id="settings-window"
         tabIndex={-1}
-        className="min-w-0 space-y-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <legend className="text-sm font-medium">
           {t("desktop.settingsTitle")}
         </legend>
-        <div className="space-y-3 [&>.settings-row]:py-0">
+        <div className="settings-list">
           <DesktopSettings />
-          <Separator />
-          <div
-            role="group"
-            aria-label={t("settings.windowSize")}
-            className="window-preset-grid grid grid-cols-2 gap-2"
-          >
-            {visiblePresets.map((preset) => {
-              const unavailable =
-                windowGeometry !== null &&
-                preset.width !== null &&
-                preset.height !== null &&
-                (preset.width < windowGeometry.minWidth ||
-                  preset.width > windowGeometry.maxWidth ||
-                  preset.height < windowGeometry.minHeight ||
-                  preset.height > windowGeometry.maxHeight);
-              const active =
-                windowGeometry !== null &&
-                preset.width === windowGeometry.width &&
-                preset.height === windowGeometry.height;
-              const reasonId = `window-${preset.id}-unavailable`;
-              const control = (
-                <button
-                  key={preset.id}
-                  data-surface="control"
-                  data-window-preset={preset.id}
-                  type="button"
-                  aria-pressed={active}
-                  aria-describedby={unavailable ? reasonId : undefined}
-                  disabled={
-                    !native || pending || !windowGeometry || unavailable
-                  }
-                  onClick={() => {
-                    if (preset.width !== null && preset.height !== null)
-                      void applyWindowSize(preset.width, preset.height);
-                  }}
-                  className={cn(
-                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-                    active
-                      ? "border-primary bg-(--surface-state-selected)"
-                      : "hover:bg-(--surface-state-hover)",
-                    unavailable && "pointer-events-none h-full w-full",
-                  )}
-                >
-                  <span className="text-sm">{t(preset.label)}</span>{" "}
-                  <span className="text-xs text-muted-foreground">
-                    {preset.width !== null && preset.height !== null
-                      ? `${preset.width} × ${preset.height}`
-                      : t("settings.windowDefaultSize")}
-                  </span>{" "}
-                  {preset.id === "standard" && fittedDefault ? (
-                    <span className="sr-only">
-                      {t("settings.windowSizeFitted")}
-                    </span>
-                  ) : null}
-                  {unavailable ? (
-                    <span id={reasonId} className="sr-only">
-                      {t("settings.windowPresetUnavailable")}
-                    </span>
-                  ) : null}
-                </button>
-              );
-              return unavailable ? (
-                <TooltipProvider
-                  key={preset.id}
-                  delayDuration={650}
-                  skipDelayDuration={0}
-                >
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        role="group"
-                        aria-label={t(preset.label)}
-                        aria-describedby={reasonId}
-                        tabIndex={0}
-                        className="block min-w-0 cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {control}
+          <div className="space-y-3">
+            <div
+              role="group"
+              aria-label={t("settings.windowSize")}
+              className="window-preset-grid grid grid-cols-2 gap-2"
+            >
+              {visiblePresets.map((preset) => {
+                const unavailable =
+                  windowGeometry !== null &&
+                  preset.width !== null &&
+                  preset.height !== null &&
+                  (preset.width < windowGeometry.minWidth ||
+                    preset.width > windowGeometry.maxWidth ||
+                    preset.height < windowGeometry.minHeight ||
+                    preset.height > windowGeometry.maxHeight);
+                const active =
+                  windowGeometry !== null &&
+                  preset.width === windowGeometry.width &&
+                  preset.height === windowGeometry.height;
+                const reasonId = `window-${preset.id}-unavailable`;
+                const control = (
+                  <button
+                    key={preset.id}
+                    data-surface="control"
+                    data-window-preset={preset.id}
+                    type="button"
+                    aria-pressed={active}
+                    aria-describedby={unavailable ? reasonId : undefined}
+                    disabled={
+                      !native || pending || !windowGeometry || unavailable
+                    }
+                    onClick={() => {
+                      if (preset.width !== null && preset.height !== null)
+                        void applyWindowSize(preset.width, preset.height);
+                    }}
+                    className={cn(
+                      "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                      active
+                        ? "border-primary bg-(--surface-state-selected)"
+                        : "hover:bg-(--surface-state-hover)",
+                      unavailable && "pointer-events-none h-full w-full",
+                    )}
+                  >
+                    <span className="text-sm">{t(preset.label)}</span>{" "}
+                    <span className="text-xs text-muted-foreground">
+                      {preset.width !== null && preset.height !== null
+                        ? `${preset.width} × ${preset.height}`
+                        : t("settings.windowDefaultSize")}
+                    </span>{" "}
+                    {preset.id === "standard" && fittedDefault ? (
+                      <span className="sr-only">
+                        {t("settings.windowSizeFitted")}
                       </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      {t("settings.windowPresetUnavailable")}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                control
-              );
-            })}
-          </div>
-          {native ? (
-            <div className="flex min-h-8 min-w-0 items-center justify-between gap-2 text-xs">
-              {windowError ? (
-                <>
-                  <span
-                    role="alert"
-                    className="min-w-0 break-words text-destructive"
+                    ) : null}
+                    {unavailable ? (
+                      <span id={reasonId} className="sr-only">
+                        {t("settings.windowPresetUnavailable")}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+                return unavailable ? (
+                  <TooltipProvider
+                    key={preset.id}
+                    delayDuration={650}
+                    skipDelayDuration={0}
                   >
-                    {nativeErrorText(windowError, t)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => void refreshWindow()}
-                  >
-                    {t("common.retry")}
-                  </Button>
-                </>
-              ) : (
-                <span
-                  className="truncate text-muted-foreground"
-                  aria-live="polite"
-                >
-                  {windowGeometry
-                    ? t("settings.windowCurrentSize", {
-                        width: windowGeometry.width,
-                        height: windowGeometry.height,
-                      })
-                    : t("common.loading")}
-                </span>
-              )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          role="group"
+                          aria-label={t(preset.label)}
+                          aria-describedby={reasonId}
+                          tabIndex={0}
+                          className="block min-w-0 cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {control}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {t("settings.windowPresetUnavailable")}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  control
+                );
+              })}
             </div>
-          ) : null}
-          <Separator />
+            {native ? (
+              <div className="flex min-h-8 min-w-0 items-center justify-between gap-2 text-xs">
+                {windowError ? (
+                  <>
+                    <span
+                      role="alert"
+                      className="min-w-0 break-words text-destructive"
+                    >
+                      {nativeErrorText(windowError, t)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => void refreshWindow()}
+                    >
+                      {t("common.retry")}
+                    </Button>
+                  </>
+                ) : (
+                  <span
+                    className="truncate text-muted-foreground"
+                    aria-live="polite"
+                  >
+                    {windowGeometry
+                      ? t("settings.windowCurrentSize", {
+                          width: windowGeometry.width,
+                          height: windowGeometry.height,
+                        })
+                      : t("common.loading")}
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
           <SettingRow
             id="settings-windowPosition"
             icon={LocateIcon}
@@ -697,9 +694,9 @@ export default function Settings() {
 
       <UpdateSettings />
 
-      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+      <fieldset data-surface="panel" className="min-w-0">
         <legend className="text-sm font-medium">{t("settings.network")}</legend>
-        <div className="[&>.settings-row]:py-0">
+        <div className="settings-list">
           <SettingRow
             id="settings-networkMode"
             icon={GlobeIcon}
@@ -752,7 +749,7 @@ export default function Settings() {
             <CardHeader>
               <CardTitle className="text-sm">{t("settings.runtime")}</CardTitle>
             </CardHeader>
-            <CardContent className="divide-y">
+            <CardContent className="settings-list">
               <SettingRow label={t("settings.appVersion")}>
                 <span className="font-mono text-xs">{version}</span>
               </SettingRow>

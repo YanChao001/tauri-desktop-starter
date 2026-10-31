@@ -13,12 +13,13 @@ fn storage_run() -> (
     let temp = crate::extension_paths::temporary_directory();
     let store = ExtensionStore::new(temp.path().join("extensions"), false);
     // 宿主 effect 测试独立声明所需能力，不依赖内置工作台当前提供哪些业务功能。
-    let mut content: Value = serde_json::from_str(&crate::extensions::demo_package()).unwrap();
+    let mut content: Value =
+        serde_json::from_str(&crate::extension_test_support::package()).unwrap();
     content["manifest"] = json!({
         "formatVersion":3,"apiVersion":2,"minHostVersion":"0.1.4",
         "id":"tests.effect-driver","version":"1.0.0","name":"Effect driver",
         "author":"Tests","description":"Exercises the host effect protocol",
-        "commands":[{"id":"fixture","title":"Fixture","function":"uppercase",
+        "commands":[{"id":"fixture","title":"Fixture","function":"echo",
             "inputFormat":"json","resultFormat":"view","permissions":["storage"]}],
         "permissions":["storage"],"optionalPermissions":[],"network":[]
     });

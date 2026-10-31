@@ -12,6 +12,7 @@ import type {
   ExtensionArchivePreview,
   ExtensionArchiveResult,
   ExtensionPreview,
+  BundledExtensionCatalog,
   ExtensionRunInput,
   ExtensionRunStatus,
   ExtensionSnapshot,
@@ -37,6 +38,8 @@ import type {
 } from "./generated/bindings";
 
 export type {
+  BundledExtension,
+  BundledExtensionCatalog,
   ExtensionConsent,
   ExtensionOrigin,
   ExtensionArchivePreview,
@@ -135,8 +138,11 @@ export async function downloadMarketExtension(
 export function previewExtension(content: string): Promise<ExtensionPreview> {
   return callNative((commands) => commands.previewExtension(content));
 }
-export function extensionDemo(id = "starter.text-tools"): Promise<string> {
-  return callNative((commands) => commands.extensionDemo(id));
+export function bundledExtensionPackage(id: string): Promise<string> {
+  return callNative((commands) => commands.bundledExtensionPackage(id));
+}
+export function bundledExtensionCatalog(): Promise<BundledExtensionCatalog> {
+  return callNative((commands) => commands.bundledExtensionCatalog());
 }
 export function viewExtension(
   input: ExtensionViewInput,

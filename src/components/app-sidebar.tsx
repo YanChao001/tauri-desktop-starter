@@ -46,6 +46,9 @@ export function AppSidebar({
   const [previewWidth, setPreviewWidth] = useState<number | null>(null);
   const [tooltip, setTooltip] = useState<string | null>(null);
   const tooltipIntent = useRef<string | null>(null);
+  const tooltipTarget = useRef<{ id: string; element: HTMLElement } | null>(
+    null,
+  );
   const preloadTimer = useRef<number | null>(null);
   const cancelPreload = useCallback(() => {
     if (preloadTimer.current !== null)
@@ -72,21 +75,28 @@ export function AppSidebar({
   );
   const collapsed = settings.sidebarCollapsed;
   const width = previewWidth ?? settings.sidebarWidth;
-  // 展开时的隐藏 Tooltip 不积累 open 状态；折叠、切页和调宽先清空提示。
+  // 折叠、切页和调宽先清空提示，新的悬停或聚焦再判断标签是否截断。
   useLayoutEffect(() => {
     tooltipIntent.current = null;
+    tooltipTarget.current = null;
     setTooltip(null);
     return cancelPreload;
   }, [collapsed, pathname, width, cancelPreload]);
   const tooltipChanged = (id: string, open: boolean) => {
-    if (open && (!collapsed || tooltipIntent.current !== id)) return;
+    if (open && tooltipIntent.current !== id) return;
     setTooltip((current) => (open ? id : current === id ? null : current));
   };
-  const trackTooltip = (id: string) => {
-    if (collapsed) tooltipIntent.current = id;
+  const trackTooltip = (id: string, target: HTMLElement) => {
+    // 同一轮指针移动只读取一次布局，完整名称也缓存为无需提示。
+    if (tooltipTarget.current?.id === id) return;
+    tooltipTarget.current = { id, element: target };
+    const label = target.querySelector<HTMLElement>(".app-sidebar-label");
+    tooltipIntent.current =
+      collapsed || (label && label.scrollWidth > label.clientWidth) ? id : null;
   };
   const leaveTooltip = (id: string) => {
     if (tooltipIntent.current === id) tooltipIntent.current = null;
+    if (tooltipTarget.current?.id === id) tooltipTarget.current = null;
   };
   const boundedWidth = (value: number) =>
     Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, value)));
@@ -122,6 +132,20 @@ export function AppSidebar({
       data-motion={settings.motion}
       style={{ width: collapsed ? 56 : width }}
       className="app-sidebar flex shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground"
+      onTransitionEnd={(event) => {
+        if (
+          event.target !== event.currentTarget ||
+          event.propertyName !== "width" ||
+          collapsed
+        )
+          return;
+        const target = tooltipTarget.current;
+        if (!target) return;
+        // 展开期间的临时截断不应在宽度稳定后继续保留提示。
+        tooltipTarget.current = null;
+        trackTooltip(target.id, target.element);
+        if (tooltipIntent.current !== target.id) setTooltip(null);
+      }}
     >
       <div className="app-sidebar-top relative flex shrink-0 items-center">
         {firstGroup ? (
@@ -153,10 +177,12 @@ export function AppSidebar({
         className="app-sidebar-navigation app-scroll-region min-h-0 flex-1 overflow-y-auto"
         onWheel={() => {
           tooltipIntent.current = null;
+          tooltipTarget.current = null;
           setTooltip(null);
         }}
         onScroll={() => {
           tooltipIntent.current = null;
+          tooltipTarget.current = null;
           setTooltip(null);
         }}
       >
@@ -192,7 +218,7 @@ export function AppSidebar({
                       }
                     >
                       <Tooltip
-                        open={collapsed && tooltip === path}
+                        open={tooltip === path}
                         onOpenChange={(open) => tooltipChanged(path, open)}
                       >
                         <TooltipTrigger asChild>
@@ -201,9 +227,11 @@ export function AppSidebar({
                             end={exact}
                             className="app-sidebar-link flex h-9 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-sm"
                             onPointerEnter={() => schedulePreload(preload)}
-                            onPointerMove={() => trackTooltip(path)}
-                            onFocus={() => {
-                              trackTooltip(path);
+                            onPointerMove={(event) =>
+                              trackTooltip(path, event.currentTarget)
+                            }
+                            onFocus={(event) => {
+                              trackTooltip(path, event.currentTarget);
                               cancelPreload();
                               preload?.();
                             }}
@@ -225,7 +253,7 @@ export function AppSidebar({
                             </span>
                           </NavLink>
                         </TooltipTrigger>
-                        {collapsed && tooltip === path ? (
+                        {tooltip === path ? (
                           <TooltipContent side="right" className="space-y-0.5">
                             <p className="text-[10px] opacity-65">
                               {t(group.labelKey)}
@@ -250,7 +278,7 @@ export function AppSidebar({
       </nav>
       <div className="app-sidebar-tools shrink-0">
         <Tooltip
-          open={collapsed && tooltip === "commands"}
+          open={tooltip === "commands"}
           onOpenChange={(open) => tooltipChanged("commands", open)}
         >
           <TooltipTrigger asChild>
@@ -261,8 +289,10 @@ export function AppSidebar({
               aria-label={`${t("navContext.commands")} ${formatShortcut({ key: "k", primary: true })}`}
               aria-keyshortcuts={isMacOS() ? "Meta+K" : "Control+K"}
               onClick={() => void execute("command-palette")}
-              onPointerMove={() => trackTooltip("commands")}
-              onFocus={() => trackTooltip("commands")}
+              onPointerMove={(event) =>
+                trackTooltip("commands", event.currentTarget)
+              }
+              onFocus={(event) => trackTooltip("commands", event.currentTarget)}
               onPointerLeave={() => leaveTooltip("commands")}
               onBlur={() => leaveTooltip("commands")}
             >
@@ -275,7 +305,7 @@ export function AppSidebar({
               </kbd>
             </button>
           </TooltipTrigger>
-          {collapsed && tooltip === "commands" ? (
+          {tooltip === "commands" ? (
             <TooltipContent side="right">
               {t("navContext.commands")} ·{" "}
               {formatShortcut({ key: "k", primary: true })}

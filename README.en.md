@@ -4,7 +4,7 @@
 
 An open source Tauri 2, React 19 and TypeScript desktop starter with a complete example application, including a Wasm extension host and marketplace. **Minimal mode changes visibility; it does not remove code, dependencies or permissions.** Derived projects must manually remove modules outside their product scope; see the [module removal guide](./docs/demo-modules.md#实际裁剪模块).
 
-Explore SQLite, drafts and recovery; file editing and Rust scan / SHA-256 jobs; desktop integration; Wasm extensions; and data, form and media labs. Browser previews share the React source; native storage and system features require the desktop app.
+Explore SQLite and recovery, file editing and Rust jobs, desktop integration, Wasm extensions, and data / media labs. Browser previews share the React source; native storage and system features require the desktop app.
 
 ## Desktop windows
 
@@ -34,7 +34,7 @@ pnpm exec playwright install --only-shell chromium
 pnpm test:ui
 ```
 
-`pnpm verify` checks the frontend and scripts. Generated bindings, Rust, browser and native desktop checks are covered separately in the [testing guide](./docs/testing.md). `pnpm app:build` produces installers and `pnpm app:portable` a Windows executable distribution under `artifacts/<version>/<target-triple>/`. Portable builds use the current user's data directories and require WebView2; see [build and release](./docs/build-release.md).
+Choose checks for the changed behavior using the [testing guide](./docs/testing.md#日常验证范围). `pnpm verify` covers frontend and engineering checks; bindings, Rust, browser and native desktop checks have separate scopes. `pnpm app:build` produces installers and `pnpm app:portable` a Windows executable distribution under `artifacts/<version>/<target-triple>/`. Portable builds use the current user's data directories and require WebView2; see [build and release](./docs/build-release.md).
 
 ## Make it yours
 
@@ -42,4 +42,4 @@ Use `pnpm init:project --config ../my-app.json --dry-run`, review the changes, t
 
 The [module guide](./docs/demo-modules.md) covers workflows, adding a page and Rust IPC, and removing modules. Extension installation, host compatibility and plugin development are covered in the [extension guide](./docs/extensions.md).
 
-Check the [signing policy](./docs/code-signing-policy.md) for distribution trust and verification. The Chinese documentation is the detailed engineering reference.
+Daily contribution steps are in [CONTRIBUTING](./CONTRIBUTING.md). The Chinese documentation is the detailed engineering reference.

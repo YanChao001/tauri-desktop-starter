@@ -157,10 +157,10 @@ export function UpdateSettings() {
       onFocusCapture={() => setEngaged(true)}
       onPointerDownCapture={() => setEngaged(true)}
     >
-      <fieldset data-surface="panel" className="min-w-0 space-y-3">
+      <fieldset data-surface="panel" className="min-w-0">
         <legend className="text-sm font-medium">{t("updates.title")}</legend>
-        <div className="space-y-3">
-          <div className="relative pb-1.5">
+        <div className="settings-list">
+          <div>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <div className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-x-3 gap-y-1">
                 <h3
@@ -247,29 +247,27 @@ export function UpdateSettings() {
               />
             ) : null}
           </div>
-          <div className="border-t pt-2 [&>.settings-row]:py-0">
-            <SettingRow
-              id="settings-updates-auto"
-              icon={RefreshCwIcon}
-              label={
-                <label htmlFor="auto-check-updates">
-                  {t("updates.autoCheck")}
-                </label>
-              }
-              hint={t("updates.autoCheckHint")}
-              helpLabel={`${t("updates.autoCheck")} · ${t("title.help")}`}
-            >
-              <Switch
-                id="auto-check-updates"
-                checked={settings.autoCheckUpdates}
-                disabled={!native}
-                onCheckedChange={(autoCheckUpdates) => {
-                  if (native) update({ autoCheckUpdates });
-                }}
-              />
-            </SettingRow>
-          </div>
-          <div className="border-t pt-2">
+          <SettingRow
+            id="settings-updates-auto"
+            icon={RefreshCwIcon}
+            label={
+              <label htmlFor="auto-check-updates">
+                {t("updates.autoCheck")}
+              </label>
+            }
+            hint={t("updates.autoCheckHint")}
+            helpLabel={`${t("updates.autoCheck")} · ${t("title.help")}`}
+          >
+            <Switch
+              id="auto-check-updates"
+              checked={settings.autoCheckUpdates}
+              disabled={!native}
+              onCheckedChange={(autoCheckUpdates) => {
+                if (native) update({ autoCheckUpdates });
+              }}
+            />
+          </SettingRow>
+          <div>
             <details className="min-w-0 text-xs text-muted-foreground">
               <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {t("updates.endpoint")}

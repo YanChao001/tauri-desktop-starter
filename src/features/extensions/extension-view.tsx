@@ -20,7 +20,6 @@ import { useI18n } from "@/providers/i18n";
 import { LOCKED_CONTROL_CLASS, LOCKED_INPUT_CLASS } from "./control-styles";
 import { extensionFieldBytes } from "./extension-model";
 
-export const EXTENSION_FORM_BYTES = 1024 * 1024;
 const ExtensionChart = lazy(() =>
   import("./extension-chart").then((module) => ({
     default: module.ExtensionChart,

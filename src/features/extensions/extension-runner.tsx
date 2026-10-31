@@ -72,9 +72,11 @@ export function ExtensionRunner({
   onSettled,
   requestedExtension = "",
   requestedCommand = "",
+  onSelectCommand,
 }: {
   requestedExtension?: string;
   requestedCommand?: string;
+  onSelectCommand?: (extensionId: string, commandId: string) => void;
   items: ExtensionInfo[];
   runs: ExtensionSnapshot["runs"];
   onSettled: () => Promise<void>;
@@ -166,6 +168,12 @@ export function ExtensionRunner({
     setSelected(key);
     setNextSelected(null);
   }, []);
+  function selectManualCommand(key: string) {
+    const next = choices.find((choice) => choice.key === key);
+    if (!next) return;
+    selectCommand(key);
+    onSelectCommand?.(next.item.package.manifest.id, next.command.id);
+  }
   useEffect(() => {
     // 命令面板的导航请求等待未保存工作和在途操作，切换时复用完整会话重置。
     const request = requestedExtension + ":" + requestedCommand;
@@ -443,7 +451,7 @@ export function ExtensionRunner({
               onValueChange={(key) => {
                 if (key === choice?.key) return;
                 if (dirty) setNextSelected(key);
-                else selectCommand(key);
+                else selectManualCommand(key);
               }}
             >
               <SelectTrigger
@@ -718,7 +726,7 @@ export function ExtensionRunner({
             </Button>
             <Button
               onClick={() => {
-                if (nextSelected) selectCommand(nextSelected);
+                if (nextSelected) selectManualCommand(nextSelected);
               }}
             >
               {t("ext.switchCommand")}

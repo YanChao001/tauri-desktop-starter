@@ -66,7 +66,7 @@ export function SettingRow({
     <div
       id={id}
       tabIndex={id ? -1 : undefined}
-      className="settings-row rounded-md py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="settings-row rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <SettingLabel
         icon={icon}
