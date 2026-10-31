@@ -13,7 +13,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const DEMO_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/text-tools.wasm"));
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const IO_LIMIT: usize = 4 * 1024 * 1024;
 pub(crate) const MODULE_LIMIT: usize = 16 * 1024 * 1024;
@@ -568,16 +567,14 @@ mod tests {
     }
     #[test]
     fn standard_extism_exports_run_without_application_specific_abi() {
+        let module = crate::extension_test_support::module();
         assert_eq!(
-            run(DEMO_WASM, "uppercase", "Hello 世界".as_bytes(), stop()).unwrap(),
-            "HELLO 世界"
+            run(&module, "echo", "Hello 世界".as_bytes(), stop()).unwrap(),
+            "Hello 世界"
         );
-        assert_eq!(
-            run(DEMO_WASM, "lowercase", b"Hello", stop()).unwrap(),
-            "hello"
-        );
-        assert!(run(DEMO_WASM, "missing", b"", stop()).is_err());
-        assert!(run(DEMO_WASM, "uppercase", &vec![b'a'; IO_LIMIT + 1], stop()).is_err());
+        assert_eq!(run(&module, "repeat", b"Hello", stop()).unwrap(), "Hello");
+        assert!(run(&module, "missing", b"", stop()).is_err());
+        assert!(run(&module, "echo", &vec![b'a'; IO_LIMIT + 1], stop()).is_err());
     }
     #[test]
     fn compiled_code_reuse_never_preserves_instance_state_or_old_budgets() {
@@ -786,7 +783,11 @@ mod tests {
         ] {
             assert!(validate(module, &["run"]).is_err());
         }
-        validate(DEMO_WASM, &["uppercase", "lowercase"]).unwrap();
+        validate(
+            &crate::extension_test_support::module(),
+            &["echo", "repeat"],
+        )
+        .unwrap();
     }
     #[test]
     fn compilation_cache_is_a_bounded_lru() {

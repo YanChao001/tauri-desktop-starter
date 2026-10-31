@@ -66,8 +66,14 @@ export const commands = {
     typedError<ExtensionPreview_Serialize, NativeError>(
       __TAURI_INVOKE("preview_extension", { content }),
     ),
-  extensionDemo: (id: string | null) =>
-    typedError<string, NativeError>(__TAURI_INVOKE("extension_demo", { id })),
+  bundledExtensionPackage: (id: string) =>
+    typedError<string, NativeError>(
+      __TAURI_INVOKE("bundled_extension_package", { id }),
+    ),
+  bundledExtensionCatalog: () =>
+    typedError<BundledExtensionCatalog_Serialize, NativeError>(
+      __TAURI_INVOKE("bundled_extension_catalog"),
+    ),
   installExtension: (
     content: string,
     expectedRevision: number,
@@ -618,6 +624,32 @@ export type BackupPreview = {
   info: BackupInfo;
   schemaVersion: number;
   sampleTitles: string[];
+};
+
+export type BundledExtension =
+  BundledExtension_Serialize | BundledExtension_Deserialize;
+
+export type BundledExtensionCatalog =
+  BundledExtensionCatalog_Serialize | BundledExtensionCatalog_Deserialize;
+
+export type BundledExtensionCatalog_Deserialize = {
+  hostVersion: string;
+  entries: BundledExtension_Deserialize[];
+};
+
+export type BundledExtensionCatalog_Serialize = {
+  hostVersion: string;
+  entries: BundledExtension_Serialize[];
+};
+
+export type BundledExtension_Deserialize = {
+  package: ExtensionPreview_Deserialize;
+  category: MarketCategory;
+};
+
+export type BundledExtension_Serialize = {
+  package: ExtensionPreview_Serialize;
+  category: MarketCategory;
 };
 
 export type DemoWorkerOutput = {

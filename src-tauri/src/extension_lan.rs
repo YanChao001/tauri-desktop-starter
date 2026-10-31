@@ -397,6 +397,34 @@ enum Frame {
         attachment: Attachment,
     },
 }
+// 整帧和附件正文须独占 writer；锁外轮询让旧窗口不必等待另一窗口的长附件。
+fn lock_writer<'a>(
+    writer: &'a Mutex<TcpStream>,
+    permit: Option<&ServicePermit>,
+    stop: &AtomicBool,
+    deadline: Instant,
+) -> NativeResult<std::sync::MutexGuard<'a, TcpStream>> {
+    loop {
+        check_permit(permit)?;
+        if stop.load(Ordering::Acquire) {
+            return Err(unavailable("LAN session was stopped"));
+        }
+        if Instant::now() >= deadline {
+            return Err(NativeError::new(
+                ErrorCode::ExtensionTimeout,
+                "LAN sender remained busy beyond its send deadline",
+            ));
+        }
+        match writer.try_lock() {
+            Ok(stream) => return Ok(stream),
+            Err(std::sync::TryLockError::WouldBlock) => thread::sleep(Duration::from_millis(5)),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(unavailable("LAN sender is unavailable"));
+            }
+        }
+    }
+}
+
 fn write_frame(stream: &mut TcpStream, frame: &Frame) -> NativeResult<()> {
     write_frame_permitted(stream, frame, None, Instant::now() + Duration::from_secs(2))
 }
@@ -438,7 +466,8 @@ fn write_frame_permitted(
         }
         Ok(())
     })();
-    if result.is_err() {
+    // 尚未写出字节可安全放弃；半帧失败必须断开，避免后续内容被误解码。
+    if result.is_err() && offset > 0 {
         let _ = stream.shutdown(Shutdown::Both);
     }
     result
@@ -1507,14 +1536,21 @@ impl Node {
             }
             times.push_back(tick);
         }
-        let (writer, connection_id) = self
-            .runtime
-            .lock()
-            .map_err(|_| unavailable("LAN session is unavailable"))?
-            .connections
-            .get(peer_id)
-            .map(|connection| (connection.stream.clone(), connection.id.clone()))
-            .ok_or_else(|| unavailable("This LAN contact is not connected"))?;
+        let (writer, stop, connection_id) = {
+            let runtime = self
+                .runtime
+                .lock()
+                .map_err(|_| unavailable("LAN session is unavailable"))?;
+            let connection = runtime
+                .connections
+                .get(peer_id)
+                .ok_or_else(|| unavailable("This LAN contact is not connected"))?;
+            (
+                connection.stream.clone(),
+                runtime.stop.clone(),
+                connection.id.clone(),
+            )
+        };
         let id = token()?;
         self.mutate_permitted(permit, |data| {
             let _runtime = self.current_connection(peer_id, &connection_id)?;
@@ -1537,27 +1573,24 @@ impl Node {
             Ok(())
         })?;
         let deadline = Instant::now() + Duration::from_secs(2);
-        let result = writer
-            .lock()
-            .map_err(|_| unavailable("LAN sender is unavailable"))
-            .and_then(|mut stream| {
-                write_frame_permitted(
-                    &mut stream,
-                    &if kind == "sticker" {
-                        Frame::Sticker {
-                            id: id.clone(),
-                            text: content.into(),
-                        }
-                    } else {
-                        Frame::Message {
-                            id: id.clone(),
-                            text: content.into(),
-                        }
-                    },
-                    permit,
-                    deadline,
-                )
-            });
+        let result = lock_writer(&writer, permit, &stop, deadline).and_then(|mut stream| {
+            write_frame_permitted(
+                &mut stream,
+                &if kind == "sticker" {
+                    Frame::Sticker {
+                        id: id.clone(),
+                        text: content.into(),
+                    }
+                } else {
+                    Frame::Message {
+                        id: id.clone(),
+                        text: content.into(),
+                    }
+                },
+                permit,
+                deadline,
+            )
+        });
         if result.is_err() && check_permit(permit).is_ok() {
             let _ = self.mutate_permitted(permit, |data| {
                 if let Some(message) = data.messages.iter_mut().find(|message| message.id == id) {
@@ -1642,28 +1675,25 @@ impl Node {
             });
             Ok(())
         })?;
-        let result = writer
-            .lock()
-            .map_err(|_| unavailable("LAN sender is unavailable"))
-            .and_then(|mut stream| {
-                let result = (|| {
-                    write_frame_permitted(
-                        &mut stream,
-                        &Frame::Attachment {
-                            id: id.clone(),
-                            media_kind: cached.kind.clone(),
-                            attachment: cached.attachment.clone(),
-                        },
-                        permit,
-                        Instant::now() + Duration::from_secs(2),
-                    )?;
-                    attachment_io::write_cached(&mut stream, cached, permit, &stop)
-                })();
-                if result.is_err() {
-                    let _ = stream.shutdown(Shutdown::Both);
-                }
-                result
-            });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let result = lock_writer(&writer, permit, &stop, deadline).and_then(|mut stream| {
+            write_frame_permitted(
+                &mut stream,
+                &Frame::Attachment {
+                    id: id.clone(),
+                    media_kind: cached.kind.clone(),
+                    attachment: cached.attachment.clone(),
+                },
+                permit,
+                deadline,
+            )?;
+            // 完整头已声明正文长度，正文失败须关闭通道，不能接着发送其他帧。
+            let result = attachment_io::write_cached(&mut stream, cached, permit, &stop);
+            if result.is_err() {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+            result
+        });
         let result =
             if result.is_err() && stop.load(Ordering::Acquire) && check_permit(permit).is_ok() {
                 Err(attachment_io::interrupted("LAN transfer was stopped"))
@@ -1741,14 +1771,20 @@ impl Node {
             data.nickname = name.clone();
             Ok(())
         })?;
-        let writers: Vec<_> = self
-            .runtime
-            .lock()
-            .map_err(|_| unavailable("LAN session is unavailable"))?
-            .connections
-            .values()
-            .map(|connection| connection.stream.clone())
-            .collect();
+        let (writers, stop) = {
+            let runtime = self
+                .runtime
+                .lock()
+                .map_err(|_| unavailable("LAN session is unavailable"))?;
+            (
+                runtime
+                    .connections
+                    .values()
+                    .map(|connection| connection.stream.clone())
+                    .collect::<Vec<_>>(),
+                runtime.stop.clone(),
+            )
+        };
         let deadline = Instant::now() + Duration::from_secs(2);
         for writer in writers {
             check_permit(permit)?;
@@ -1758,9 +1794,7 @@ impl Node {
                 );
                 break;
             }
-            if writer
-                .lock()
-                .map_err(|_| unavailable("LAN sender is unavailable"))
+            if lock_writer(&writer, permit, &stop, deadline)
                 .and_then(|mut stream| {
                     write_frame_permitted(
                         &mut stream,
@@ -2229,9 +2263,6 @@ pub(crate) async fn request(
 pub fn close_window(app: &tauri::AppHandle, owner: &str) {
     app.state::<ExtensionLan>().close_window(owner);
 }
-pub fn stop_extension(app: &tauri::AppHandle, id: &str) {
-    app.state::<ExtensionLan>().stop_extension(id);
-}
 pub fn shutdown(app: &tauri::AppHandle) {
     app.state::<ExtensionLan>().shutdown();
 }
@@ -2459,6 +2490,136 @@ mod tests {
         worker.join().unwrap();
         store.wait_stopped();
     }
+    #[test]
+    fn queued_text_send_stops_when_its_window_closes_without_interrupting_the_active_writer() {
+        let first_root = directory();
+        let second_root = directory();
+        let service = Arc::new(ExtensionLan::new(first_root.path().join("lan"), false));
+        service
+            .dispatch("other-window", ID, Request::Status {})
+            .unwrap();
+        let first = ActiveNode(service.inner.entries.lock().unwrap()[ID].node.clone());
+        first
+            .0
+            .start("发送方", Ipv4Addr::LOCALHOST.into(), 0)
+            .unwrap();
+        let second = node(second_root.path(), "接收方");
+        let peer = second.0.data.lock().unwrap().node_id.clone();
+        let port = second.0.runtime.lock().unwrap().port;
+        first.0.connect("127.0.0.1", port).unwrap();
+        wait(|| first.0.data.lock().unwrap().contacts.contains_key(&peer));
+        let writer = first.0.runtime.lock().unwrap().connections[&peer]
+            .stream
+            .clone();
+        let active_send = writer.lock().unwrap();
+        let store =
+            crate::extensions::ExtensionStore::new(first_root.path().join("extensions"), false);
+        let activity = store
+            .begin_service(store.window_run_token("closing".into()).unwrap())
+            .unwrap();
+        let owner = activity.owner();
+        let permit = ServicePermit::for_test(activity);
+        let sender = service.clone();
+        let sending_peer = peer.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let sending = thread::spawn(move || {
+            let result = sender.dispatch_permitted(
+                &owner,
+                ID,
+                Request::Send {
+                    peer_id: sending_peer,
+                    text: "关闭后不能发送".into(),
+                    kind: None,
+                },
+                &permit,
+            );
+            done_tx.send(result).unwrap();
+        });
+        // 已落下本地发送记录，固定请求正等待另一传输持有 writer 的阶段。
+        wait(|| !first.0.data.lock().unwrap().messages.is_empty());
+        store.begin_window_close("closing").unwrap();
+        let cancelled = done_rx.recv_timeout(Duration::from_secs(1));
+        drop(active_send);
+        sending.join().unwrap();
+        assert_eq!(
+            cancelled
+                .expect("A queued send must observe window close while the writer stays occupied")
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionUnavailable
+        );
+        store.wait_window_stopped("closing");
+        service
+            .dispatch(
+                "other-window",
+                ID,
+                Request::Send {
+                    peer_id: peer,
+                    text: "另一窗口的连接仍可继续使用".into(),
+                    kind: None,
+                },
+            )
+            .unwrap();
+        wait(|| {
+            second
+                .0
+                .data
+                .lock()
+                .unwrap()
+                .messages
+                .iter()
+                .any(|message| message.text == "另一窗口的连接仍可继续使用")
+        });
+        assert_eq!(second.0.data.lock().unwrap().messages.len(), 1);
+    }
+
+    #[test]
+    fn queued_text_send_times_out_without_closing_another_active_writer() {
+        let first_root = directory();
+        let second_root = directory();
+        let first = node(first_root.path(), "发送方");
+        let second = node(second_root.path(), "接收方");
+        let peer = second.0.data.lock().unwrap().node_id.clone();
+        let port = second.0.runtime.lock().unwrap().port;
+        first.0.connect("127.0.0.1", port).unwrap();
+        wait(|| first.0.data.lock().unwrap().contacts.contains_key(&peer));
+        let writer = first.0.runtime.lock().unwrap().connections[&peer]
+            .stream
+            .clone();
+        let active_send = writer.lock().unwrap();
+        let sender = first.0.clone();
+        let sending_peer = peer.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let sending = thread::spawn(move || {
+            done_tx
+                .send(sender.send(&sending_peer, "排队超时不应断开其他传输"))
+                .unwrap();
+        });
+        wait(|| !first.0.data.lock().unwrap().messages.is_empty());
+        let timed_out = done_rx.recv_timeout(Duration::from_secs(5));
+        drop(active_send);
+        sending.join().unwrap();
+        assert_eq!(
+            timed_out
+                .expect("Waiting for a writer must obey the send deadline")
+                .unwrap_err()
+                .code,
+            ErrorCode::ExtensionTimeout
+        );
+        first.0.send(&peer, "原连接仍然可用").unwrap();
+        wait(|| {
+            second
+                .0
+                .data
+                .lock()
+                .unwrap()
+                .messages
+                .iter()
+                .any(|message| message.text == "原连接仍然可用")
+        });
+        assert_eq!(second.0.data.lock().unwrap().messages.len(), 1);
+    }
+
     #[test]
     fn maximal_escaped_text_fits_both_service_requests_and_protocol_frames() {
         let peer_id = token().unwrap();

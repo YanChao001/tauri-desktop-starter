@@ -32,6 +32,8 @@ mod extension_resources;
 pub mod extension_runtime;
 mod extension_services;
 mod extension_storage;
+#[cfg(test)]
+mod extension_test_support;
 pub mod extension_view;
 mod extension_wallpaper;
 mod extension_windows;

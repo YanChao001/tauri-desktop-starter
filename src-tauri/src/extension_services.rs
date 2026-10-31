@@ -124,6 +124,43 @@ impl ExtensionServices {
         }))
     }
 
+    /// 已准入的阻塞任务内完成变更、资源撤回与通知；清理失败不撤销已提交的事实。
+    pub(crate) fn commit_mutation(
+        &self,
+        store: &ExtensionStore,
+        maintenance: Arc<ServiceMutation>,
+        lan: &crate::extension_lan::ExtensionLan,
+        mutation: impl FnOnce() -> NativeResult<ExtensionSnapshot>,
+        notify: impl FnOnce(),
+    ) -> NativeResult<ExtensionSnapshot> {
+        let _activity = store.begin_management()?;
+        let snapshot = mutation()?;
+        let cleanup = self.reconcile(&maintenance.id, &snapshot, lan);
+        notify();
+        cleanup?;
+        Ok(snapshot)
+    }
+
+    fn reconcile(
+        &self,
+        id: &str,
+        snapshot: &ExtensionSnapshot,
+        lan: &crate::extension_lan::ExtensionLan,
+    ) -> NativeResult<()> {
+        let ids = {
+            let mut identities = self.identities.lock().map_err(|_| {
+                NativeError::new(ErrorCode::Internal, "Service identities unavailable")
+            })?;
+            retain_authorized_services(&mut identities, id, &snapshot.items)
+        };
+        let resources = crate::extension_resources::retain_authorized(id, &snapshot.items);
+        // 沿用当前执行位完成清理，不在提交后重新竞争阻塞容量。
+        for id in ids {
+            lan.stop_extension(&id);
+        }
+        resources
+    }
+
     async fn admit(
         &self,
         store: &ExtensionStore,
@@ -442,30 +479,6 @@ pub async fn request_extension_service(
     Ok(result)
 }
 
-/// 在对应插件的写门闩内，只撤回本次变更的身份，避免旧快照影响其他插件。
-pub async fn reconcile(
-    app: &tauri::AppHandle,
-    id: &str,
-    snapshot: &ExtensionSnapshot,
-) -> NativeResult<()> {
-    let ids = {
-        let state = app.state::<ExtensionServices>();
-        let mut identities = state
-            .identities
-            .lock()
-            .map_err(|_| NativeError::new(ErrorCode::Internal, "Service identities unavailable"))?;
-        retain_authorized_services(&mut identities, id, &snapshot.items)
-    };
-    let resources = crate::extension_resources::retain_authorized(id, &snapshot.items);
-    let app = app.clone();
-    blocking::run(move || {
-        for id in ids {
-            crate::extension_lan::stop_extension(&app, &id);
-        }
-        resources
-    })
-    .await
-}
 pub fn take_window_owners(app: &tauri::AppHandle, owner: &str) -> Vec<String> {
     app.state::<ExtensionServices>()
         .owners
@@ -482,7 +495,7 @@ pub fn take_window_owners(app: &tauri::AppHandle, owner: &str) -> Vec<String> {
 pub async fn close_window(app: tauri::AppHandle, owners: Vec<String>) {
     // 调用方已使旧窗口 epoch 失效；按 owner 清理不会触及重开后的窗口。
     let handle = app.clone();
-    if let Err(error) = blocking::run(move || {
+    if let Err(error) = blocking::run_cleanup(move || {
         let resources = crate::extension_resources::close_owners(&owners);
         for owner in owners {
             crate::extension_lan::close_window(&handle, &owner);
@@ -534,12 +547,11 @@ mod tests {
     }
 
     fn installed_lan() -> (tempfile::TempDir, ExtensionStore, ExtensionInfo) {
-        use crate::extensions::{
-            ExtensionConsent, InstallCondition, demo_package, preview_package,
-        };
+        use crate::extensions::{ExtensionConsent, InstallCondition, preview_package};
         let directory = crate::extension_paths::temporary_directory();
         let store = ExtensionStore::new(directory.path().join("extensions"), false);
-        let mut content: serde_json::Value = serde_json::from_str(&demo_package()).unwrap();
+        let mut content: serde_json::Value =
+            serde_json::from_str(&crate::extension_test_support::package()).unwrap();
         content["manifest"]["id"] = "test.services".into();
         content["manifest"]["minHostVersion"] = "0.1.7".into();
         content["manifest"]["optionalPermissions"] = json!(["messaging:lan"]);
@@ -1244,6 +1256,279 @@ mod tests {
         drop(unrelated);
         drop(active);
         same_extension.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_mutation_keeps_service_identities_and_does_not_notify() {
+        let (directory, store, item) = installed_lan();
+        let services = ExtensionServices::default();
+        *services.identities.lock().unwrap() = tracked(&item);
+        let lan = crate::extension_lan::ExtensionLan::new(directory.path().join("lan"), false);
+        let id = &item.package.manifest.id;
+        let before = store.snapshot().unwrap();
+        let maintenance = services.mutation(id).await.unwrap();
+        let mut notified = false;
+
+        let result = services.commit_mutation(
+            &store,
+            maintenance,
+            &lan,
+            || store.set_enabled(id, false, vec![], before.revision + 1, false),
+            || notified = true,
+        );
+
+        assert_eq!(result.unwrap_err().code, ErrorCode::Conflict);
+        assert!(!notified);
+        let current = store.snapshot().unwrap();
+        assert_eq!(current.revision, before.revision);
+        assert!(current.items[0].enabled);
+        assert_eq!(services.identities.lock().unwrap().len(), 2);
+        assert_idle(&services, &store);
+    }
+
+    #[tokio::test]
+    async fn cleanup_failure_still_notifies_the_committed_snapshot() {
+        let (directory, store, item) = installed_lan();
+        let services = Arc::new(ExtensionServices::default());
+        let poisoned = services.clone();
+        assert!(
+            std::thread::spawn(move || {
+                let _guard = poisoned.identities.lock().unwrap();
+                panic!("Service identity failure injection");
+            })
+            .join()
+            .is_err()
+        );
+        let lan = crate::extension_lan::ExtensionLan::new(directory.path().join("lan"), false);
+        let id = &item.package.manifest.id;
+        let revision = store.snapshot().unwrap().revision;
+        let maintenance = services.mutation(id).await.unwrap();
+        let mut notification = None;
+
+        let result = services.commit_mutation(
+            &store,
+            maintenance,
+            &lan,
+            || store.set_enabled(id, false, vec![], revision, false),
+            || notification = Some(store.snapshot().unwrap()),
+        );
+
+        assert_eq!(result.unwrap_err().code, ErrorCode::Internal);
+        let notified =
+            notification.expect("A committed mutation must notify despite cleanup failure");
+        assert_eq!(notified.revision, revision + 1);
+        assert!(!notified.items[0].enabled);
+        assert_idle(&services, &store);
+    }
+
+    #[tokio::test]
+    async fn registry_management_cannot_start_after_pause_or_shutdown() {
+        for shutdown in [false, true] {
+            let (directory, store, item) = installed_lan();
+            let services = ExtensionServices::default();
+            let lan = crate::extension_lan::ExtensionLan::new(directory.path().join("lan"), false);
+            let before = store.snapshot().unwrap();
+            let id = &item.package.manifest.id;
+            let maintenance = services.mutation(id).await.unwrap();
+            let pause = if shutdown {
+                assert!(store.begin_shutdown());
+                None
+            } else {
+                Some(store.pause())
+            };
+            let mut invoked = false;
+            let mut notified = false;
+            let result = services.commit_mutation(
+                &store,
+                maintenance,
+                &lan,
+                || {
+                    invoked = true;
+                    store.set_enabled(id, false, vec![], before.revision, false)
+                },
+                || notified = true,
+            );
+            assert_eq!(result.unwrap_err().code, ErrorCode::ExtensionUnavailable);
+            assert!(!invoked);
+            assert!(!notified);
+            assert_eq!(store.snapshot().unwrap().revision, before.revision);
+            assert_idle(&services, &store);
+            drop(pause);
+        }
+    }
+
+    #[tokio::test]
+    async fn external_credential_management_remains_active_until_the_system_call_finishes() {
+        for shutdown in [false, true] {
+            let (_directory, store, item) = installed_lan();
+            let services = ExtensionServices::default();
+            let maintenance = services.mutation(&item.package.manifest.id).await.unwrap();
+            let worker_store = store.clone();
+            let worker_item = item.clone();
+            let worker_maintenance = maintenance.clone();
+            let (entered_send, entered_recv) = tokio::sync::oneshot::channel();
+            let (release_send, release_recv) = mpsc::channel();
+            let worker = tokio::task::spawn_blocking(move || {
+                worker_store.with_current_entry_external(
+                    &worker_maintenance,
+                    &worker_item.package.manifest.id,
+                    &worker_item.package.sha256,
+                    worker_item.generation,
+                    |_| {
+                        entered_send.send(()).unwrap();
+                        release_recv.recv_timeout(Duration::from_secs(5)).unwrap();
+                        Ok(())
+                    },
+                )
+            });
+            entered_recv.await.unwrap();
+            assert!(
+                store.is_running(),
+                "A pending system credential call must participate in extension lifecycle waits"
+            );
+            assert!(store.run_status().unwrap().is_empty());
+            let pause = if shutdown {
+                assert!(store.begin_shutdown());
+                None
+            } else {
+                Some(store.pause())
+            };
+            let waiting_store = store.clone();
+            let (stopped_send, stopped_recv) = mpsc::channel();
+            let waiting = std::thread::spawn(move || {
+                waiting_store.wait_stopped();
+                stopped_send.send(()).unwrap();
+            });
+            let waited = stopped_recv
+                .recv_timeout(Duration::from_millis(30))
+                .is_err();
+            let mut invoked = false;
+            let rejected = store.with_current_entry_external(
+                &maintenance,
+                &item.package.manifest.id,
+                &item.package.sha256,
+                item.generation,
+                |_| {
+                    invoked = true;
+                    Ok(())
+                },
+            );
+            release_send.send(()).unwrap();
+            worker.await.unwrap().unwrap();
+            waiting.join().unwrap();
+            assert!(
+                waited,
+                "Lifecycle wait returned while credential management was still active"
+            );
+            assert_eq!(rejected.unwrap_err().code, ErrorCode::ExtensionUnavailable);
+            assert!(!invoked);
+            assert_idle(&services, &store);
+            drop(pause);
+        }
+    }
+
+    #[tokio::test]
+    async fn committed_mutation_finishes_cleanup_and_notification_after_waiter_cancellation() {
+        let (directory, store, item) = installed_lan();
+        let services = Arc::new(ExtensionServices::default());
+        *services.identities.lock().unwrap() = tracked(&item);
+        let lan = crate::extension_lan::ExtensionLan::new(directory.path().join("lan"), false);
+        let id = item.package.manifest.id.clone();
+        let revision = store.snapshot().unwrap().revision;
+        let maintenance = services.mutation(&id).await.unwrap();
+        let tasks = Arc::new(tokio::sync::Semaphore::new(1));
+        let worker_tasks = tasks.clone();
+        let worker_services = services.clone();
+        let worker_store = store.clone();
+        let worker_id = id.clone();
+        let (committed_send, committed_recv) = tokio::sync::oneshot::channel();
+        let (cleanup_send, cleanup_recv) = mpsc::channel();
+        let (notified_send, notified_recv) = tokio::sync::oneshot::channel();
+        let (finish_send, finish_recv) = mpsc::channel();
+        let (done_send, done_recv) = tokio::sync::oneshot::channel();
+        let waiter = tokio::spawn(async move {
+            blocking::run_limited(&worker_tasks, move || {
+                let result = worker_services.commit_mutation(
+                    &worker_store,
+                    maintenance,
+                    &lan,
+                    || {
+                        let snapshot =
+                            worker_store.set_enabled(&worker_id, false, vec![], revision, false)?;
+                        committed_send.send(()).unwrap();
+                        cleanup_recv.recv_timeout(Duration::from_secs(5)).unwrap();
+                        Ok(snapshot)
+                    },
+                    || {
+                        assert!(worker_services.identities.lock().unwrap().is_empty());
+                        notified_send.send(()).unwrap();
+                        finish_recv.recv_timeout(Duration::from_secs(5)).unwrap();
+                    },
+                );
+                done_send.send(result).unwrap();
+                Ok(())
+            })
+            .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), committed_recv)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            store.is_running(),
+            "Committed maintenance must remain active until cleanup and notification finish"
+        );
+        assert_eq!(
+            blocking::run_limited(&tasks, || Ok(()))
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::NativeBusy
+        );
+        waiter.abort();
+        assert!(waiter.await.unwrap_err().is_cancelled());
+        assert!(!store.snapshot().unwrap().items[0].enabled);
+        let pause = store.pause();
+        let waiting_store = store.clone();
+        let (stopped_send, stopped_recv) = mpsc::channel();
+        let waiting = std::thread::spawn(move || {
+            waiting_store.wait_stopped();
+            stopped_send.send(()).unwrap();
+        });
+        let mut queued = Box::pin(services.mutation(&id));
+        assert_pending(&mut queued).await;
+
+        cleanup_send.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), notified_recv)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_pending(&mut queued).await;
+        assert_eq!(tasks.available_permits(), 0);
+        assert!(store.is_running());
+        assert!(
+            stopped_recv
+                .recv_timeout(Duration::from_millis(30))
+                .is_err()
+        );
+        finish_send.send(()).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(5), done_recv)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.revision, revision + 1);
+        stopped_recv.recv_timeout(Duration::from_secs(2)).unwrap();
+        waiting.join().unwrap();
+        assert_idle(&services, &store);
+        drop(pause);
+        drop(
+            tokio::time::timeout(Duration::from_secs(2), queued)
+                .await
+                .unwrap()
+                .unwrap(),
+        );
     }
 
     #[tokio::test]
