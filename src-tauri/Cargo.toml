@@ -29,7 +29,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-http = "2"
+tauri-plugin-http = { version = "2", features = ["gzip"] }
 tauri-plugin-window-state = "2"
 # 正式构建默认不显示控制台，文件日志用于定位运行问题
 tauri-plugin-log = "2"
@@ -53,6 +53,8 @@ sha2 = "0.10"
 keyring = "4.2"
 tokio = { version = "1", features = ["sync", "time"] }
 getrandom = "0.3"
+# 跨平台枚举 LAN 接口，避免 VPN 的非私有默认路由隐藏可用局域网。
+if-addrs = "=0.15.0"
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # 单实例只在桌面端有意义，移动端不编译这个 crate
@@ -73,6 +75,9 @@ wasmtime-internal-cache = { path = "vendor/wasmtime-internal-cache" }
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.6"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# Reuse Tauri/Wry's locked COM bindings to separate pinch input from page zoom.
+webview2-com = "=0.39.1"
+windows-core = "=0.62.2"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2"
@@ -94,6 +99,17 @@ path = "src/bin/extension-tool.rs"
 [[bin]]
 name = "device-tool"
 path = "src/bin/device_tool.rs"
+
+# 图片重采样和编解码需要优化，避免开发模式下逐像素循环拖慢图库和预览。
+# 业务代码仍沿用默认 dev 配置，保留增量编译和调试体验。
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.image-webp]
+opt-level = 3
+
+[profile.dev.package.zune-jpeg]
+opt-level = 3
 
 # 默认优先程序体积；安装包与便携版可用 --optimize speed 切换为编译速度优先。
 [profile.release]

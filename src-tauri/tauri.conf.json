@@ -49,7 +49,11 @@
     "resources": {
       "../resources/third-party/extism.LICENSE": "third-party/extism.LICENSE",
       "../resources/third-party/wasmtime.LICENSE": "third-party/wasmtime.LICENSE",
-      "../resources/third-party/tauri.LICENSE": "third-party/tauri.LICENSE"
+      "../resources/third-party/tauri.LICENSE": "third-party/tauri.LICENSE",
+      "../resources/third-party/webview2-com.LICENSE": "third-party/webview2-com.LICENSE",
+      "../resources/third-party/windows-core.LICENSE": "third-party/windows-core.LICENSE",
+      "../resources/third-party/async-compression.LICENSE": "third-party/async-compression.LICENSE",
+      "../resources/third-party/if-addrs.LICENSE": "third-party/if-addrs.LICENSE"
     },
     "fileAssociations": [
       {
