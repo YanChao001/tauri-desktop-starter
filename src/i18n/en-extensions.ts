@@ -212,6 +212,8 @@ export const enExtensions = {
     "Extensions are unavailable during startup recovery, update installation or shutdown.",
   "ext.packageError":
     "Cannot read the extension package. Check UTF-8 encoding and the 24 MiB limit.",
+  "ext.packageVersionMustIncrease":
+    "Package version {version} must be higher than the installed version {installedVersion}.",
   "experience.extensions": "Use extensions",
   "experience.extensionsHint":
     "Review permissions, install and run, then disable or uninstall as needed.",

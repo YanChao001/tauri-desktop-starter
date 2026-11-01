@@ -1,10 +1,33 @@
-/* Injected only into opaque extension frames. No native API or host DOM is exposed. */
+/* 原生文档交互策略与隔离扩展 SDK，不暴露原生 API。 */
 (() => {
   "use strict";
-  if (window === window.top) return;
   // Replaced only by the native all-frame initializer. It controls document UI
   // policy, never bridge access; browser fixtures keep the unreplaced source.
   const nativeContextMenu = "__STARTER_NATIVE_CONTEXT_MENU__" === "true";
+  if (nativeContextMenu) {
+    // 保留业务控件的捏合输入，取消 WebView 整页缩放；捕获阶段也覆盖作者停止局部传播的情况。
+    const options = { capture: true, passive: false };
+    const preventZoom = (event) => event.preventDefault();
+    window.addEventListener(
+      "wheel",
+      (event) => {
+        if (event.ctrlKey) event.preventDefault();
+      },
+      options,
+    );
+    for (const type of ["gesturestart", "gesturechange", "gestureend"])
+      window.addEventListener(type, preventZoom, options);
+    // WebView2 设置可能在下次导航生效；首个文档也取消默认缩放，作者快捷键仍可继续处理。
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.ctrlKey && ["+", "=", "-", "0"].includes(event.key))
+          event.preventDefault();
+      },
+      options,
+    );
+  }
+  if (window === window.top) return;
   function installDesktopContextMenu() {
     const packagedDocument =
       location.protocol === "extension-ui:" ||
