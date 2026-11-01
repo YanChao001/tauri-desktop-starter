@@ -24,6 +24,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+      actions: read
     outputs:
       release-id: ${{ steps.release.outputs.release-id }}
     steps:
@@ -32,13 +33,20 @@ jobs:
           fetch-depth: 0
       - name: 验证发布代码属于主分支
         run: node scripts/hosting/github-actions.mjs verify-release-source
+      - name: 复用相同文件树已通过的 CI
+        id: verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci-verified-tree.mjs
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
+      - name: 无可复用结果时执行综合检查
+        if: steps.verified.outputs.reused_run == ''
+        run: pnpm verify
       - name: 创建或复用唯一的发布草稿
         id: release
         env:

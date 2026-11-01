@@ -321,13 +321,15 @@ pnpm docs:previews --check  # 只比较文档图片与本轮采集结果
 
 [`ci.yml`](../.github/workflows/ci.yml) 定义当前检查范围：
 
-- `changes`：由 [`ci-scope.mjs`](../scripts/ci-scope.mjs) 比较改动。纯文档跳过浏览器与原生矩阵；已知前端路径跳过 Rust 矩阵，保留浏览器与三平台桌面 E2E。生成绑定、依赖、SDK、构建脚本和未知路径采用完整检查；比较失败、空差异、首次推送或手动触发同样完整检查。
+CI 在面向 `develop` / `main` 的 PR 和手动运行时触发，受保护分支合并后的 push 不重复触发。`changes` 先由 [`ci-verified-tree.mjs`](../scripts/ci-verified-tree.mjs) 按实际检出合并结果的 Git tree 查找成功记录；内容完全相同时，后续发布 PR、回流 PR 和 tag 发布复用已有 CI，并在任务摘要记录来源链接。记录只在质量门禁通过后生成，保留 30 天，复用不会延长有效期；只接受本仓库分支产生、`ci.yml` 已完成且成功的运行，fork 产生的记录不作为复用来源。文件内容变化、记录过期、API 不可用或没有记录时执行适用检查；手动运行始终重新检查。PR 源分支的 SHA 不能代替实际受测的合并结果；artifact 名称筛选使用 [GitHub Artifacts API](https://docs.github.com/en/rest/actions/artifacts#list-artifacts-for-a-repository)。
+
+- `changes`：由 [`ci-scope.mjs`](../scripts/ci-scope.mjs) 比较改动。纯文档跳过浏览器与原生矩阵；已知前端路径跳过 Rust 矩阵，保留浏览器与三平台桌面 E2E。生成绑定、依赖、构建脚本和未知路径保留原生检查。SDK 另按扩展运行时 / 工具、JS / TS 示例及 SDK、相关依赖 / 编译配置和验收脚本选择，具体路径以分类脚本为准；普通数据库、设置和页面改动不触发 SDK 优化构建。比较失败、空差异或手动触发采用完整检查。
 - `frontend` / `browser-smoke`：分别运行 `verify` 与生产浏览器检查，失败上传日志 / trace；纯文档仍执行 `verify`。
-- `rust`：三平台原生检查、内置 Wasm 真编译、ABI / fixture、worker 和缓存补丁回归；Windows 参考平台另查提交模块一致性。无 GUI 检查关闭 dev / test 调试符号，减少链接与缓存体积。Linux 另构建 release `extension-tool`，按 Cargo 实际产物的优化配置、源码 SHA 和文件 SHA-256 生成收据，供独立 SDK job 使用。
+- `rust`：三平台原生检查、内置 Wasm 真编译、ABI / fixture、worker 和缓存补丁回归；Windows 参考平台另查提交模块一致性。无 GUI 检查关闭 dev / test 调试符号，减少链接与缓存体积。仅 SDK 输入变化时，Linux 另构建 release `extension-tool`，按 Cargo 实际产物的优化配置、源码 SHA 和文件 SHA-256 生成收据，供独立 SDK job 使用。
 - `extension-sdk`：复核同次运行的优化工具收据，编译固定版本 JS / TS SDK 模块；JS、TS 和 notebook fixture 各执行三次独立冷进程，保留工具 / 模块哈希和耗时报告。正常目标为完整 CLI 检查 ≤5 秒，超过 7.5 秒判定余量不足；worker 原有每次 15 秒总预算、fuel、内存和取消约束保持不变。未优化宿主会拖慢 JIT 编译，不能为省一次构建而复用 debug 工具作此项验收。
 - `bindings`：在独立 Ubuntu 24.04 runner 上检查生成的 IPC 类型，与 Rust 矩阵并行；使用自己的 Cargo target 和缓存，不与原生检查争用锁。
 - `desktop-e2e`：三平台隔离构建和三阶段 E2E，Windows 成功时保留 README 截图。
-- `quality-gate`：通过 [`ci-quality-gate.mjs`](../scripts/ci-quality-gate.mjs) 汇总全部结果，包含独立 SDK job；仅接受分类允许的跳过，失败、取消、缺失和非预期跳过继续阻止合入。
+- `quality-gate`：通过 [`ci-quality-gate.mjs`](../scripts/ci-quality-gate.mjs) 汇总全部结果，包含独立 SDK job；接受分类允许的跳过及已确认相同文件树的复用，失败、取消、缺失和非预期跳过继续阻止合入。
 
 Rust / SDK 的 Linux 检查使用 Ubuntu 24.04，以满足固定 `extism-js` 编译器的 glibc 2.39 要求；真实桌面 E2E 与 Linux 分发构建仍保留 Ubuntu 22.04 基线。
 

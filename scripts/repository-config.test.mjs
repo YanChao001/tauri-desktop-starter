@@ -49,7 +49,7 @@ function fixture(t) {
   );
   write(
     ".github/workflows/ci.yml",
-    "on:\n  push:\n    branches: [develop, main]\n  pull_request:\n    branches: [develop, main]\n",
+    "on:\n  pull_request:\n    branches: [develop, main]\n",
   );
   return { root, write, app, config };
 }

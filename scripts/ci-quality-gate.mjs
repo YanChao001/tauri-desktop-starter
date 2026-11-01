@@ -4,9 +4,13 @@ import { pathToFileURL } from "node:url";
 export function qualityGateFailures(needs) {
   const docsOnly = needs.changes?.outputs?.docs_only === "true";
   const rustRequired = needs.changes?.outputs?.rust_required !== "false";
+  const sdkRequired = needs.changes?.outputs?.sdk_required !== "false";
+  const reused = /^[1-9]\d*$/.test(needs.changes?.outputs?.reused_run ?? "");
   const allowedSkips = new Set([
-    ...(docsOnly ? ["browser-smoke", "desktop-e2e"] : []),
-    ...(!rustRequired ? ["rust", "bindings", "extension-sdk"] : []),
+    ...(reused ? ["frontend"] : []),
+    ...(reused || docsOnly ? ["browser-smoke", "desktop-e2e"] : []),
+    ...(reused || !rustRequired ? ["rust", "bindings"] : []),
+    ...(reused || !sdkRequired ? ["extension-sdk"] : []),
   ]);
   return [
     "changes",
