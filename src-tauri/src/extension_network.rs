@@ -8,11 +8,11 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     future::Future,
     net::{IpAddr, SocketAddr, ToSocketAddrs},
     sync::{
-        Arc, OnceLock,
+        Arc, LazyLock, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -28,6 +28,8 @@ pub const HTTP_URL_LIMIT: usize = 4096;
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const IMAGE_RESPONSE_LIMIT: usize = 16 * 1024 * 1024;
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(20);
+const IMAGE_CLIENT_TTL: Duration = Duration::from_secs(60);
+const IMAGE_CLIENT_CACHE_LIMIT: usize = 16;
 const HEADER_LIMIT: usize = 16 * 1024;
 const HEADER_COUNT: usize = 32;
 const MAX_DNS_WORKERS: usize = 4;
@@ -427,7 +429,7 @@ fn validate_resolution(
     if host.eq_ignore_ascii_case(target_host) {
         validate_addresses(addresses, false)
     } else if !addresses.is_empty() && addresses.len() <= 32 {
-        // 每个 client 只服务一个已校验 URL 且禁止重定向；其他域名仅可能是系统选定的代理。
+        // 每个 client 只服务一个已校验 origin 且禁止重定向；其他域名仅可能是系统选定的代理。
         // CONNECT 的远端 DNS 由代理完成，宿主不能据此断言最终目标 IP。
         Ok(())
     } else {
@@ -584,16 +586,28 @@ async fn response_bytes(
 }
 
 /// 固定公网图片下载；来源与传输边界归此模块，解码和资源租约由调用服务维护。
-const IMAGE_USER_AGENT: &str = concat!(
-    "TauriDesktopStarter/",
-    env!("CARGO_PKG_VERSION"),
-    " (https://github.com/YanChao001/tauri-desktop-starter)"
-);
+static IMAGE_USER_AGENT: LazyLock<String> =
+    LazyLock::new(|| image_user_agent(include_str!("../../app.config.json")));
+
+fn image_user_agent(config: &str) -> String {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AppConfig {
+        repository_url: String,
+    }
+    let config = serde_json::from_str::<AppConfig>(config)
+        .expect("app.config.json must contain an application repository URL");
+    format!(
+        "TauriDesktopStarter/{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        config.repository_url
+    )
+}
 
 fn image_request(client: &reqwest::Client, url: url::Url) -> reqwest::RequestBuilder {
     client
         .get(url)
-        .header(reqwest::header::USER_AGENT, IMAGE_USER_AGENT)
+        .header(reqwest::header::USER_AGENT, IMAGE_USER_AGENT.as_str())
 }
 
 async fn image_transport(
@@ -607,6 +621,79 @@ async fn image_transport(
         .retry(reqwest::retry::never())
         .build()
         .map_err(|_| failed("Cannot prepare extension image transport"))
+}
+
+#[derive(Default)]
+struct ImageClientCache {
+    entries: VecDeque<ImageClientEntry>,
+}
+
+struct ImageClientEntry {
+    origin: String,
+    mode: ExtensionNetworkMode,
+    created: Instant,
+    client: reqwest::Client,
+}
+
+impl ImageClientCache {
+    fn get(
+        &mut self,
+        url: &url::Url,
+        mode: ExtensionNetworkMode,
+        now: Instant,
+    ) -> Option<reqwest::Client> {
+        // 不按访问续期，已固定的 DNS / 代理配置最多缓存创建后的 60 秒。
+        self.entries
+            .retain(|entry| now.saturating_duration_since(entry.created) < IMAGE_CLIENT_TTL);
+        let origin = url.origin().ascii_serialization();
+        self.entries
+            .iter()
+            .find(|entry| entry.origin == origin && entry.mode == mode)
+            .map(|entry| entry.client.clone())
+    }
+
+    fn insert(
+        &mut self,
+        url: &url::Url,
+        mode: ExtensionNetworkMode,
+        client: reqwest::Client,
+        now: Instant,
+    ) -> reqwest::Client {
+        // 首对并发请求允许分别构造，随后复用先完成插入的 client，不延长其 TTL。
+        if let Some(existing) = self.get(url, mode, now) {
+            return existing;
+        }
+        while self.entries.len() >= IMAGE_CLIENT_CACHE_LIMIT {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(ImageClientEntry {
+            origin: url.origin().ascii_serialization(),
+            mode,
+            created: now,
+            client: client.clone(),
+        });
+        client
+    }
+}
+
+async fn cached_image_transport(
+    cache: &Mutex<ImageClientCache>,
+    url: &url::Url,
+    local: bool,
+    mode: ExtensionNetworkMode,
+) -> NativeResult<reqwest::Client> {
+    let cached = cache
+        .lock()
+        .ok()
+        .and_then(|mut cache| cache.get(url, mode, Instant::now()));
+    if let Some(client) = cached {
+        return Ok(client);
+    }
+    let client = image_transport(url, local, mode).await?;
+    Ok(match cache.lock() {
+        Ok(mut cache) => cache.insert(url, mode, client, Instant::now()),
+        Err(_) => client,
+    })
 }
 
 /// 调用方以同一个总 deadline 包裹 DNS、两次发送、退避和读体。
@@ -632,14 +719,31 @@ async fn send_image(client: &reqwest::Client, url: &url::Url) -> NativeResult<re
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn fetch_public_image(
     source: &str,
     mode: ExtensionNetworkMode,
 ) -> NativeResult<(Vec<u8>, String)> {
-    let url = approved_public_url(source)?;
     let stop = AtomicBool::new(false);
-    cancellable(&stop, Instant::now() + IMAGE_TIMEOUT, async move {
-        let client = image_transport(&url, false, mode).await?;
+    fetch_public_image_cancellable(source, mode, &stop).await
+}
+
+pub(crate) async fn fetch_public_image_cancellable(
+    source: &str,
+    mode: ExtensionNetworkMode,
+    stop: &AtomicBool,
+) -> NativeResult<(Vec<u8>, String)> {
+    // URL 每次都先验证；缓存只共享同 origin / 模式的受控传输，不缓存响应或凭据。
+    let url = approved_public_url(source)?;
+    static CLIENTS: OnceLock<Mutex<ImageClientCache>> = OnceLock::new();
+    cancellable(stop, Instant::now() + IMAGE_TIMEOUT, async move {
+        let client = cached_image_transport(
+            CLIENTS.get_or_init(|| Mutex::new(ImageClientCache::default())),
+            &url,
+            false,
+            mode,
+        )
+        .await?;
         let response = send_image(&client, &url).await?;
         image_response(response).await
     })
@@ -1297,8 +1401,9 @@ mod tests {
         });
     }
 
-    fn fixture(response: &'static [u8]) -> (String, std::thread::JoinHandle<String>) {
+    fn fixture(response: &[u8]) -> (String, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
+        let response = response.to_vec();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
@@ -1327,7 +1432,7 @@ mod tests {
                 }
                 assert!(bytes.len() <= HTTP_BODY_LIMIT + HEADER_LIMIT);
             }
-            stream.write_all(response).unwrap();
+            stream.write_all(&response).unwrap();
             String::from_utf8(bytes).unwrap()
         });
         (origin, server)
@@ -1417,6 +1522,176 @@ mod tests {
     }
 
     #[test]
+    fn image_client_cache_reuses_only_the_same_origin_and_network_mode() {
+        let mut cache = ImageClientCache::default();
+        let url = url::Url::parse("https://images.example.com/first?token=one").unwrap();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let now = Instant::now();
+        cache.insert(&url, ExtensionNetworkMode::Direct, client, now);
+        let same_origin = url::Url::parse("https://images.example.com/second?token=two").unwrap();
+        assert!(
+            cache
+                .get(&same_origin, ExtensionNetworkMode::Direct, now)
+                .is_some()
+        );
+        assert!(
+            cache
+                .get(&same_origin, ExtensionNetworkMode::System, now)
+                .is_none()
+        );
+        for other in [
+            "https://other.example.com/first",
+            "https://images.example.com:8443/first",
+            "http://images.example.com/first",
+        ] {
+            assert!(
+                cache
+                    .get(
+                        &url::Url::parse(other).unwrap(),
+                        ExtensionNetworkMode::Direct,
+                        now
+                    )
+                    .is_none(),
+                "different origin must not reuse a pinned client: {other}",
+            );
+        }
+    }
+
+    #[test]
+    fn image_client_cache_expires_after_sixty_seconds_without_renewing_on_hits() {
+        let mut cache = ImageClientCache::default();
+        let url = url::Url::parse("https://images.example.com/image").unwrap();
+        let now = Instant::now();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        cache.insert(&url, ExtensionNetworkMode::Direct, client.clone(), now);
+        let later = now + Duration::from_secs(59);
+        assert!(
+            cache
+                .get(&url, ExtensionNetworkMode::Direct, later)
+                .is_some()
+        );
+        // 并发冷启动的晚到 client 也不能延长已缓存 DNS / 代理配置的寿命。
+        cache.insert(&url, ExtensionNetworkMode::Direct, client, later);
+        assert!(
+            cache
+                .get(
+                    &url,
+                    ExtensionNetworkMode::Direct,
+                    now + Duration::from_secs(60)
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn image_client_cache_evicts_the_oldest_origin_at_capacity() {
+        let mut cache = ImageClientCache::default();
+        let now = Instant::now();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        for index in 0..17 {
+            let url =
+                url::Url::parse(&format!("https://images-{index}.example.com/image")).unwrap();
+            cache.insert(&url, ExtensionNetworkMode::Direct, client.clone(), now);
+        }
+        let oldest = url::Url::parse("https://images-0.example.com/image").unwrap();
+        let retained = url::Url::parse("https://images-1.example.com/image").unwrap();
+        let latest = url::Url::parse("https://images-16.example.com/image").unwrap();
+        assert!(
+            cache
+                .get(&oldest, ExtensionNetworkMode::Direct, now)
+                .is_none()
+        );
+        assert!(
+            cache
+                .get(&retained, ExtensionNetworkMode::Direct, now)
+                .is_some()
+        );
+        assert!(
+            cache
+                .get(&latest, ExtensionNetworkMode::Direct, now)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn cached_image_transport_reuses_keep_alive_connections_across_image_paths() {
+        use std::io::{Read, Write};
+        const REQUEST_COUNT: usize = 8;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(4);
+            let mut streams: Vec<(std::net::TcpStream, Vec<u8>)> = Vec::new();
+            let mut requests = 0;
+            while requests < REQUEST_COUNT {
+                assert!(Instant::now() < deadline, "expected all image GETs");
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
+                        stream
+                            .set_read_timeout(Some(Duration::from_millis(25)))
+                            .unwrap();
+                        streams.push((stream, Vec::new()));
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(error) => panic!("cannot accept image connection: {error}"),
+                }
+                for (stream, request) in &mut streams {
+                    let mut buffer = [0_u8; 4096];
+                    match stream.read(&mut buffer) {
+                        Ok(0) => continue,
+                        Ok(length) => request.extend_from_slice(&buffer[..length]),
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::WouldBlock
+                                    | std::io::ErrorKind::TimedOut
+                                    | std::io::ErrorKind::ConnectionReset
+                                    | std::io::ErrorKind::ConnectionAborted
+                            ) =>
+                        {
+                            continue;
+                        }
+                        Err(error) => panic!("cannot read image GET: {error}"),
+                    }
+                    if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                        assert!(request.starts_with(b"GET /image-"));
+                        request.drain(..end + 4);
+                        requests += 1;
+                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: image/png\r\nConnection: keep-alive\r\n\r\nok").unwrap();
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            (streams.len(), requests)
+        });
+        tauri::async_runtime::block_on(async {
+            let cache = Mutex::new(ImageClientCache::default());
+            // HTTP/1 连接异步归还连接池；连续短请求可能先新建连接，整段请求仍应实际复用。
+            for index in 0..REQUEST_COUNT {
+                let url = url::Url::parse(&format!("{origin}/image-{index}")).unwrap();
+                // 测试只在独立缓存使用环回 HTTP；生产入口仍先校验公网 HTTPS。
+                let client =
+                    cached_image_transport(&cache, &url, true, ExtensionNetworkMode::Direct)
+                        .await
+                        .unwrap();
+                let (bytes, mime) = image_response(send_image(&client, &url).await.unwrap())
+                    .await
+                    .unwrap();
+                assert_eq!(bytes, b"ok");
+                assert_eq!(mime, "image/png");
+            }
+        });
+        let (connections, requests) = server.join().unwrap();
+        assert_eq!(requests, REQUEST_COUNT);
+        assert!(
+            connections < requests,
+            "cached image requests must reuse a TCP connection"
+        );
+    }
+
+    #[test]
     fn trusted_dns_rejections_keep_their_native_code_without_retrying() {
         struct RejectingResolver(Arc<std::sync::atomic::AtomicUsize>);
         impl reqwest::dns::Resolve for RejectingResolver {
@@ -1497,6 +1772,19 @@ mod tests {
             assert_eq!(error.code, expected);
             assert_eq!(server.join().unwrap(), 1);
         }
+    }
+
+    #[test]
+    fn image_user_agent_tracks_the_configured_application_repository() {
+        let configured =
+            image_user_agent(r#"{"repositoryUrl":"https://code.example.com/apps/custom-desktop"}"#);
+        assert_eq!(
+            configured,
+            format!(
+                "TauriDesktopStarter/{} (https://code.example.com/apps/custom-desktop)",
+                env!("CARGO_PKG_VERSION")
+            )
+        );
     }
 
     #[test]
@@ -1616,6 +1904,50 @@ mod tests {
         assert!(received.starts_with("post /items http/1.1"));
         assert!(received.contains("authorization: bearer fixture-secret"));
         assert!(received.ends_with("{\"name\":\"test\"}"));
+    }
+
+    fn fetch_gzip_fixture(compressed: &[u8]) -> NativeResult<ExtensionHttpResponse> {
+        let mut wire = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n",
+            compressed.len()
+        ).into_bytes();
+        wire.extend_from_slice(compressed);
+        let (origin, server) = fixture(&wire);
+        let manifest = manifest(&origin, true);
+        let request = request(&format!("{origin}/items"));
+        let validated = validate_request(
+            &manifest,
+            &[ExtensionPermission::NetworkLocal],
+            &request,
+            NetworkMode::Direct,
+        )
+        .unwrap();
+        let result = tauri::async_runtime::block_on(fetch(
+            validated,
+            None,
+            None,
+            Arc::new(AtomicBool::new(false)),
+            Instant::now() + HTTP_TIMEOUT,
+        ));
+        server.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn broker_decodes_gzip_before_reading_utf8() {
+        // 固定 gzip fixture 来自 Node zlib.gzipSync，不依赖被测解码器生成期望。
+        let compressed = include_bytes!("../test-fixtures/extension-network/html.gz");
+        let response = fetch_gzip_fixture(compressed).unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "<html><body>wallpaper</body></html>");
+    }
+
+    #[test]
+    fn broker_rejects_gzip_that_expands_past_the_body_limit() {
+        // 解压为 2 MiB + 1 字节的 x；线上压缩体积很小也不能绕过响应预算。
+        let compressed = include_bytes!("../test-fixtures/extension-network/oversized-text.gz");
+        let error = fetch_gzip_fixture(compressed).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InputTooLong);
     }
 
     #[test]

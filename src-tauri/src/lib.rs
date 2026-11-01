@@ -45,6 +45,7 @@ mod network;
 mod network_commands;
 mod recovery;
 mod redaction;
+mod repository_config;
 mod storage;
 mod system_commands;
 pub mod update_signature;

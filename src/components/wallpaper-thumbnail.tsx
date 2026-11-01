@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
 /** 卡片按显示尺寸生成平滑预览；壁纸原图和存档内容保持独立。 */
-export function WallpaperThumbnail({ dataUrl }: { dataUrl: string }) {
+export function WallpaperThumbnail({
+  dataUrl,
+  className,
+}: {
+  dataUrl: string;
+  className?: string;
+}) {
   const element = useRef<HTMLImageElement>(null);
   const [preview, setPreview] = useState<{ source: string; dataUrl: string }>();
 
@@ -83,6 +89,7 @@ export function WallpaperThumbnail({ dataUrl }: { dataUrl: string }) {
   return (
     <img
       ref={element}
+      className={className}
       src={preview?.source === dataUrl ? preview.dataUrl : dataUrl}
       alt=""
       draggable={false}

@@ -168,7 +168,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 pnpm bindings:check
 ```
 
-服务测试注入临时路径，验证入参、稳定错误码、事务和并发冲突，无需启动图形界面。新增 feature 单独编译；E2E feature 与正式安装包的验证作用不同。
+服务测试注入临时路径，验证入参、稳定错误码、事务和并发冲突，无需启动图形界面。涉及祖先目录链接检查的正向 fixture 复用 `extension_paths::temporary_directory`，避免 macOS 的 `/var` 别名误触安全拒绝；链接拒绝的负向用例保留原始路径。新增 feature 单独编译；E2E feature 与正式安装包的验证作用不同。
 
 虚拟会话与记录示例可通过无头测试验证：
 
@@ -321,12 +321,16 @@ pnpm docs:previews --check  # 只比较文档图片与本轮采集结果
 
 [`ci.yml`](../.github/workflows/ci.yml) 定义当前检查范围：
 
-- `changes`：明确的纯文档路径跳过原生矩阵；未知范围、比较失败或手动触发采用完整检查。
-- `frontend` / `browser-smoke`：分别运行 `verify` 与生产浏览器检查，失败上传日志 / trace。
-- `rust`：三平台原生检查、内置 Wasm 真编译、ABI / fixture、worker 和缓存补丁回归；参考平台另查生成绑定和提交模块一致性。
+- `changes`：由 [`ci-scope.mjs`](../scripts/ci-scope.mjs) 比较改动。纯文档跳过浏览器与原生矩阵；已知前端路径跳过 Rust 矩阵，保留浏览器与三平台桌面 E2E。生成绑定、依赖、SDK、构建脚本和未知路径采用完整检查；比较失败、空差异、首次推送或手动触发同样完整检查。
+- `frontend` / `browser-smoke`：分别运行 `verify` 与生产浏览器检查，失败上传日志 / trace；纯文档仍执行 `verify`。
+- `rust`：三平台原生检查、内置 Wasm 真编译、ABI / fixture、worker 和缓存补丁回归；Windows 参考平台另查提交模块一致性。无 GUI 检查关闭 dev / test 调试符号，减少链接与缓存体积。Linux 另构建 release `extension-tool`，按 Cargo 实际产物的优化配置、源码 SHA 和文件 SHA-256 生成收据，供独立 SDK job 使用。
+- `extension-sdk`：复核同次运行的优化工具收据，编译固定版本 JS / TS SDK 模块；JS、TS 和 notebook fixture 各执行三次独立冷进程，保留工具 / 模块哈希和耗时报告。正常目标为完整 CLI 检查 ≤5 秒，超过 7.5 秒判定余量不足；worker 原有每次 15 秒总预算、fuel、内存和取消约束保持不变。未优化宿主会拖慢 JIT 编译，不能为省一次构建而复用 debug 工具作此项验收。
+- `bindings`：在独立 Ubuntu 24.04 runner 上检查生成的 IPC 类型，与 Rust 矩阵并行；使用自己的 Cargo target 和缓存，不与原生检查争用锁。
 - `desktop-e2e`：三平台隔离构建和三阶段 E2E，Windows 成功时保留 README 截图。
-- `quality-gate`：汇总结果，仅接受分类允许的跳过；失败、取消和非预期跳过继续阻止合入。
+- `quality-gate`：通过 [`ci-quality-gate.mjs`](../scripts/ci-quality-gate.mjs) 汇总全部结果，包含独立 SDK job；仅接受分类允许的跳过，失败、取消、缺失和非预期跳过继续阻止合入。
 
 Rust / SDK 的 Linux 检查使用 Ubuntu 24.04，以满足固定 `extism-js` 编译器的 glibc 2.39 要求；真实桌面 E2E 与 Linux 分发构建仍保留 Ubuntu 22.04 基线。
 
-纯文档 CI 当前仍运行前端和浏览器任务，这不增加本地文档修改的验证要求。Pages 和桌面发布各自保留本次来源与验收链；CI 平台配置不等于本机实测，测试构建也不代替正式安装、签名和升级验收。
+SDK 失败优先重跑独立 job，保留其余已通过结果；工具 artifact 保留三天，过期后须先重跑生成工具的 Linux Rust job。需要定位阶段耗时时，先准备可信的 JavaScript 示例模块，再显式设置 `STARTER_SDK_TIMING_WASM` 为模块绝对路径，执行 `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib sdk_cold_start_phase_timing -- --ignored --nocapture`。该诊断分别记录校验、编译、实例化与调用，只说明所测设备和构建配置；真实 worker 的冷启动与安全预算仍由 SDK / worker 回归验证。
+
+范围判断与质量门禁的回归包含未知输入、比较失败、源码移入文档目录和非预期跳过，避免漏检。桌面 E2E 保留调试信息与崩溃取证。以上 CI 范围不增加本地文档修改的验证要求。Pages 和桌面发布各自保留本次来源与验收链；CI 平台配置不等于本机实测，测试构建也不代替正式安装、签名和升级验收。

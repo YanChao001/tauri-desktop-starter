@@ -6,33 +6,39 @@ import { patchSettings, screenshot, settledAppearance } from "./appearance.mjs";
 import { invoke, navigate } from "./helpers.mjs";
 
 async function settledSettingsViewport(width) {
-  // 截图缩放后，等待实际列数匹配设置区宽度，不能只等待原生窗口尺寸。
+  // 截图等待实际几何稳定；列数的产品要求由浏览器断点用例独立验收。
   let first;
   let current;
   try {
     await browser.waitUntil(
       async () => {
+        const previous = current;
         current = await browser.execute(() => {
           const preset = document.querySelector("[data-window-preset]");
           const grid = preset?.parentElement;
           const containerWidth = document
             .querySelector(".settings-studio")
             .getBoundingClientRect().width;
-          const rootFont = parseFloat(
-            getComputedStyle(document.documentElement).fontSize,
-          );
           const buttons = [...(grid?.children ?? [])].map((element) =>
             element.getBoundingClientRect(),
           );
           return {
             width: innerWidth,
             containerWidth,
-            rootFont,
-            expectedColumns: containerWidth >= 60 * rootFont ? 4 : 2,
             columns: grid
               ? getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length
               : 0,
             buttons: buttons.length,
+            visibleButtons: buttons.filter(
+              (rect) => rect.width > 0 && rect.height > 0,
+            ).length,
+            geometry: buttons
+              .map(({ x, y, width, height }) =>
+                [x, y, width, height]
+                  .map((value) => Math.round(value * 100) / 100)
+                  .join(","),
+              )
+              .join(";"),
             firstRow: buttons.filter(
               (rect) => Math.abs(rect.y - buttons[0].y) < 0.5,
             ).length,
@@ -41,10 +47,12 @@ async function settledSettingsViewport(width) {
         first ??= current;
         return (
           Math.abs(current.width - width) <= 1 &&
-          current.columns === current.expectedColumns &&
+          current.containerWidth > 0 &&
+          current.columns > 0 &&
           current.buttons > 0 &&
-          current.firstRow ===
-            Math.min(current.expectedColumns, current.buttons)
+          current.visibleButtons === current.buttons &&
+          current.firstRow === Math.min(current.columns, current.buttons) &&
+          JSON.stringify(previous) === JSON.stringify(current)
         );
       },
       {

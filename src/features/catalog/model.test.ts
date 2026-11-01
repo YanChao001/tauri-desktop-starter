@@ -22,6 +22,24 @@ it("distinguishes local fixtures from native or externally configured capabiliti
   ]);
   expect(capabilityFor("/unknown").kinds).toEqual(["inspect"]);
   expect(
-    repositoryFileUrl("https://github.com/acme/app.git", "docs/README.md"),
+    repositoryFileUrl("https://github.com/acme/app.git", "docs/README.md", {
+      defaultBranch: "develop",
+      links: { file: "{repositoryUrl}/blob/{ref}/{path}" },
+    }),
   ).toBe("https://github.com/acme/app/blob/develop/docs/README.md");
+});
+
+it("uses the configured source layout and branch for documentation links", () => {
+  expect(
+    repositoryFileUrl(
+      "https://code.example/acme/desk.git/",
+      "docs/getting started.md#setup",
+      {
+        defaultBranch: "release/docs",
+        links: { file: "{repositoryUrl}/-/blob/{ref}/{path}" },
+      },
+    ),
+  ).toBe(
+    "https://code.example/acme/desk/-/blob/release%2Fdocs/docs/getting%20started.md#setup",
+  );
 });

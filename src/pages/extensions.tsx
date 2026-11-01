@@ -248,12 +248,21 @@ export default function Extensions() {
       const installed = snapshot.items.find(
         (item) => item.package.manifest.id === preview.manifest.id,
       );
-      if (!file && installed) {
+      if (installed) {
         const order = compareExtensionVersions(
           preview.manifest.version,
           installed.package.manifest.version,
         );
         if (order <= 0) {
+          if (file) {
+            toast.info(
+              latest("ext.packageVersionMustIncrease", {
+                version: preview.manifest.version,
+                installedVersion: installed.package.manifest.version,
+              }),
+            );
+            return;
+          }
           toast.info(
             latest(
               order < 0 ? "ext.market.newerInstalled" : "ext.market.installed",

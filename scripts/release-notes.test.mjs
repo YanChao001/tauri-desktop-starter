@@ -4,11 +4,23 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import {
-  generateReleaseNotes,
+  generateReleaseNotes as generateNotes,
   readReleaseCommits,
-  updaterReleaseNotes,
+  updaterReleaseNotes as updaterNotes,
 } from "./release-notes.mjs";
+
+const githubConfig = JSON.parse(
+  readFileSync(
+    new URL("./test-fixtures/repository-github.json", import.meta.url),
+    "utf8",
+  ),
+);
+const generateReleaseNotes = (options, ...args) =>
+  generateNotes({ config: githubConfig, ...options }, ...args);
+const updaterReleaseNotes = (body, options) =>
+  updaterNotes(body, { config: githubConfig, ...options });
 
 const sourceSha = "a".repeat(40);
 const previousSha = "b".repeat(40);

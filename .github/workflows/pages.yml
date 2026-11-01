@@ -8,7 +8,9 @@ on:
       - public/**
       - resources/branding/app-icon.svg
       - resources/skins/**
+      - resources/wallpapers/**
       - app.config.json
+      - repository.config.json
       - index.html
       - package.json
       - pnpm-lock.yaml

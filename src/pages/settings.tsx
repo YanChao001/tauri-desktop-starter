@@ -28,7 +28,6 @@ import { SettingsPersistence } from "@/components/settings-persistence";
 import { DesktopSettings } from "@/components/desktop-settings";
 import { UpdateSettings } from "@/components/update-settings";
 import { SettingLabel, SettingRow } from "@/components/setting-row";
-import { HelpTooltip } from "@/components/help-tooltip";
 import { ExternalLink } from "@/components/external-link";
 import { useThemeSwitch } from "@/hooks/use-theme-switch";
 import { Badge } from "@/components/ui/badge";
@@ -191,7 +190,6 @@ export default function Settings() {
       const geometry = await setWindowSize(width, height);
       if (mounted.current) {
         acceptGeometry(geometry);
-        toast.success(translateLatest("settings.windowSizeApplied"));
       }
     } catch (error) {
       if (mounted.current)
@@ -218,7 +216,6 @@ export default function Settings() {
       await reset();
       if (mounted.current) {
         setConfirmReset(false);
-        toast.success(translateLatest("common.resetDone"));
       }
     } catch (error) {
       if (mounted.current) toast.error(nativeErrorText(error, translateLatest));
@@ -669,7 +666,6 @@ export default function Settings() {
             id="settings-windowPosition"
             icon={LocateIcon}
             label={t("settings.windowPosition")}
-            hint={t("settings.windowPositionHint")}
           >
             <ToggleGroup
               type="single"
@@ -701,11 +697,7 @@ export default function Settings() {
             id="settings-networkMode"
             icon={GlobeIcon}
             label={t("settings.networkMode")}
-            hint={t(
-              native
-                ? "settings.networkModeHint"
-                : "settings.networkModeBrowserHint",
-            )}
+            hint={!native ? t("settings.networkModeBrowserHint") : undefined}
           >
             <Select
               value={settings.networkMode}
@@ -791,12 +783,7 @@ export default function Settings() {
       </details>
 
       <Card className="flex-row items-center justify-between gap-4 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <p className="text-sm">{t("common.reset")}</p>
-          <HelpTooltip label={t("common.helpFor", { name: t("common.reset") })}>
-            {t("settings.resetHint")}
-          </HelpTooltip>
-        </div>
+        <p className="min-w-0 text-sm">{t("common.reset")}</p>
         <Button
           variant="outline"
           size="sm"

@@ -70,7 +70,6 @@ export const zhComponents = {
   "playground.detailedNotification": "附加说明",
   "playground.notificationDetail": "本地演示通知。",
   "playground.sendNotification": "发送通知",
-  "playground.notificationTooltip": "在窗口右下角显示通知。",
   "playground.libraryTitle": "好想法，值得收藏。",
   "playground.libraryDescription": "搜索、筛选并收藏六份内置示例资料。",
   "playground.search": "搜索示例资料",

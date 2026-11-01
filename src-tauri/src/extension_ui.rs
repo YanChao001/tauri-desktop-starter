@@ -364,6 +364,45 @@ fn sdk_initialization_script() -> String {
     SDK.replacen("__STARTER_NATIVE_CONTEXT_MENU__", "true", 1)
 }
 
+#[cfg(windows)]
+fn configure_native_zoom(webview: tauri::Webview<tauri::Wry>) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings5;
+    use windows_core::{BOOL, Interface};
+
+    let label = webview.label().to_owned();
+    let result = webview.with_webview(move |platform| {
+        let configured = (|| -> windows_core::Result<(bool, bool)> {
+            // Tauri 在 WebView 所属 UI 线程执行此回调，控制器和设置接口在回调内保持有效。
+            unsafe {
+                let settings = platform.controller().CoreWebView2()?.Settings()?;
+                // 窗口构建器已在首次导航前启用捏合；这里只单独关闭整页缩放，避免重载破坏作者状态。
+                settings.SetIsZoomControlEnabled(false)?;
+                let settings5 = settings.cast::<ICoreWebView2Settings5>()?;
+                settings5.SetIsPinchZoomEnabled(true)?;
+                let mut browser_zoom = BOOL::default();
+                let mut pinch_zoom = BOOL::default();
+                settings.IsZoomControlEnabled(&mut browser_zoom)?;
+                settings5.IsPinchZoomEnabled(&mut pinch_zoom)?;
+                Ok((browser_zoom.as_bool(), pinch_zoom.as_bool()))
+            }
+        })();
+        match configured {
+            Ok((false, true)) => {
+                log::info!("Native gesture settings for {label}: pinch=true, browser-zoom=false");
+            }
+            Ok((browser_zoom, pinch_zoom)) => {
+                log::warn!(
+                    "Native gesture settings differ for {label}: pinch={pinch_zoom}, browser-zoom={browser_zoom}"
+                );
+            }
+            Err(error) => log::warn!("Cannot configure native gesture settings for {label}: {error}"),
+        }
+    });
+    if let Err(error) = result {
+        log::warn!("Cannot access native gesture settings: {error}");
+    }
+}
+
 pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     // Tauri documents main-frame-only initialization as unsupported on WebView2.
     // Use its supported custom transport hook to withhold the invoke key from all
@@ -377,6 +416,10 @@ pub fn register_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<
         .plugin(
             tauri::plugin::Builder::<tauri::Wry, ()>::new("extension-ui")
                 .js_init_script_on_all_frames(sdk_initialization_script())
+                .on_webview_ready(|_webview| {
+                    #[cfg(windows)]
+                    configure_native_zoom(_webview);
+                })
                 .build(),
         )
         .register_asynchronous_uri_scheme_protocol("extension-ui", |context, request, responder| {

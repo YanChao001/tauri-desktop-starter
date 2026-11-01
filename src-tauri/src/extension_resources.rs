@@ -1,20 +1,28 @@
 //! 通用图片资源只以短期句柄共享；插件不获得原生路径或任意文件访问能力。
+#[cfg(test)]
+use crate::extension_network::fetch_public_image;
 use crate::{
     blocking,
     error::{ErrorCode, NativeError, NativeResult},
-    extension_network::{ExtensionNetworkMode, fetch_public_image, resolve_network_mode},
+    extension_network::{
+        ExtensionNetworkMode, check_cancelled, fetch_public_image_cancellable, resolve_network_mode,
+    },
     extension_services::ServicePermit,
     extensions::{ExtensionInfo, ExtensionPermission, valid_id},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use image::{ImageFormat, ImageReader, codecs::jpeg::JpegEncoder, imageops::FilterType};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use specta::Type;
 use std::{
     collections::{HashSet, VecDeque},
     io::Cursor,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use tauri::Manager;
@@ -29,6 +37,7 @@ const OWNER_COUNT_LIMIT: usize = 8;
 const OWNER_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 const CACHE_COUNT_LIMIT: usize = 32;
 const CACHE_BYTES_LIMIT: usize = 64 * 1024 * 1024;
+const MAX_IMAGE_DOWNLOADS: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResourceIdentity {
@@ -47,6 +56,14 @@ impl From<&ExtensionInfo> for ResourceIdentity {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExtensionResourcePreviewSize {
+    #[default]
+    Thumbnail,
+    Large,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Request {
@@ -54,10 +71,24 @@ enum Request {
         url: String,
         #[serde(default, rename = "networkMode")]
         network_mode: Option<ExtensionNetworkMode>,
+        #[serde(default, deserialize_with = "deserialize_present")]
+        preview: Option<ExtensionResourcePreviewSize>,
+        #[serde(
+            default,
+            rename = "requestId",
+            deserialize_with = "deserialize_present"
+        )]
+        request_id: Option<String>,
+    },
+    CancelFetch {
+        #[serde(rename = "requestId")]
+        request_id: String,
     },
     Preview {
         #[serde(rename = "resourceId")]
         resource_id: String,
+        #[serde(default)]
+        size: ExtensionResourcePreviewSize,
     },
     Save {
         #[serde(rename = "resourceId")]
@@ -69,6 +100,14 @@ enum Request {
         #[serde(rename = "resourceId")]
         resource_id: String,
     },
+}
+
+fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone)]
@@ -87,6 +126,166 @@ struct Resource {
 #[derive(Default)]
 struct ResourceCache {
     entries: VecDeque<Resource>,
+}
+
+struct FetchActivity {
+    owner: String,
+    identity: ResourceIdentity,
+    request_id: Option<String>,
+    stop: AtomicBool,
+    finished: AtomicBool,
+}
+
+#[derive(Default)]
+struct FetchRegistry {
+    entries: Vec<Arc<FetchActivity>>,
+}
+
+struct FetchLease {
+    registry: Arc<Mutex<FetchRegistry>>,
+    activity: Arc<FetchActivity>,
+}
+
+struct DownloadLease {
+    // 字段按声明顺序析构：先退出登记，再归还下载位，未启动的任务也保持相同顺序。
+    fetch: FetchLease,
+    _capacity: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl Drop for FetchLease {
+    fn drop(&mut self) {
+        if let Ok(mut registry) = self.registry.lock() {
+            registry
+                .entries
+                .retain(|entry| !Arc::ptr_eq(entry, &self.activity));
+        }
+    }
+}
+
+impl FetchLease {
+    fn check(&self) -> NativeResult<()> {
+        check_cancelled(&self.activity.stop)
+    }
+
+    fn commit<T>(&self, action: impl FnOnce() -> NativeResult<T>) -> NativeResult<T> {
+        // 取消与缓存提交共用短临界区，避免确认取消后仍插入一个新句柄。
+        let _registry = self
+            .registry
+            .lock()
+            .map_err(|_| failed("图片下载登记不可用"))?;
+        self.check()?;
+        let result = action();
+        self.activity.finished.store(true, Ordering::Release);
+        result
+    }
+}
+
+fn validate_request_id(request_id: &str) -> NativeResult<()> {
+    if request_id.is_empty()
+        || request_id.len() > 80
+        || !request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err(invalid(
+            "图片请求 ID 必须为 1–80 个字母、数字、下划线或连字符",
+        ));
+    }
+    Ok(())
+}
+
+fn begin_fetch(
+    registry: &Arc<Mutex<FetchRegistry>>,
+    owner: &str,
+    identity: ResourceIdentity,
+    request_id: Option<String>,
+) -> NativeResult<FetchLease> {
+    if let Some(request_id) = &request_id {
+        validate_request_id(request_id)?;
+    }
+    let mut active = registry.lock().map_err(|_| failed("图片下载登记不可用"))?;
+    if let Some(request_id) = &request_id
+        && active.entries.iter().any(|entry| {
+            entry.owner == owner
+                && entry.identity == identity
+                && entry.request_id.as_ref() == Some(request_id)
+        })
+    {
+        return Err(invalid("图片请求 ID 正在使用"));
+    }
+    if active.entries.len() >= MAX_IMAGE_DOWNLOADS {
+        return Err(busy());
+    }
+    let activity = Arc::new(FetchActivity {
+        owner: owner.to_owned(),
+        identity,
+        request_id,
+        stop: AtomicBool::new(false),
+        finished: AtomicBool::new(false),
+    });
+    active.entries.push(activity.clone());
+    Ok(FetchLease {
+        registry: registry.clone(),
+        activity,
+    })
+}
+
+impl FetchRegistry {
+    fn cancel(
+        &self,
+        owner: &str,
+        identity: &ResourceIdentity,
+        request_id: &str,
+    ) -> NativeResult<bool> {
+        validate_request_id(request_id)?;
+        if let Some(activity) = self.entries.iter().find(|entry| {
+            entry.owner == owner
+                && entry.identity == *identity
+                && entry.request_id.as_deref() == Some(request_id)
+                && !entry.finished.load(Ordering::Acquire)
+        }) {
+            activity.stop.store(true, Ordering::Release);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn close_owners(&self, owners: &[String]) {
+        for entry in &self.entries {
+            if owners.contains(&entry.owner) {
+                entry.stop.store(true, Ordering::Release);
+            }
+        }
+    }
+
+    fn retain_authorized(&self, id: &str, items: &[ExtensionInfo]) {
+        for entry in &self.entries {
+            if entry.identity.id == id && !image_identity_authorized(&entry.identity, items) {
+                entry.stop.store(true, Ordering::Release);
+            }
+        }
+    }
+}
+
+fn fetches() -> &'static Arc<Mutex<FetchRegistry>> {
+    static ACTIVE: OnceLock<Arc<Mutex<FetchRegistry>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Arc::new(Mutex::new(FetchRegistry::default())))
+}
+
+fn image_identity_authorized(identity: &ResourceIdentity, items: &[ExtensionInfo]) -> bool {
+    items.iter().any(|item| {
+        item.enabled
+            && item.package.manifest.id == identity.id
+            && item.generation == identity.generation
+            && item.package.sha256 == identity.sha256
+            && item
+                .package
+                .manifest
+                .has_permission(ExtensionPermission::NetworkImages)
+            && item
+                .granted_permissions
+                .contains(&ExtensionPermission::NetworkImages)
+    })
 }
 
 fn invalid(message: &str) -> NativeError {
@@ -215,19 +414,7 @@ impl ResourceCache {
             if entry.identity.id != id {
                 return true;
             }
-            items.iter().any(|item| {
-                item.enabled
-                    && item.package.manifest.id == entry.identity.id
-                    && item.generation == entry.identity.generation
-                    && item.package.sha256 == entry.identity.sha256
-                    && item
-                        .package
-                        .manifest
-                        .has_permission(ExtensionPermission::NetworkImages)
-                    && item
-                        .granted_permissions
-                        .contains(&ExtensionPermission::NetworkImages)
-            })
+            image_identity_authorized(&entry.identity, items)
         });
     }
 }
@@ -259,6 +446,34 @@ fn acquire_image_capacity(
 
 fn image_capacity() -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
     acquire_image_capacity(image_workers())
+}
+
+async fn wait_image_capacity(
+    workers: &Arc<tokio::sync::Semaphore>,
+    mut check: impl FnMut() -> NativeResult<()>,
+) -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
+    // 每轮借用同一个等待任务，短暂轮询生命周期不会丢失公平队列位置。
+    let mut pending = Box::pin(workers.clone().acquire_owned());
+    loop {
+        check()?;
+        match tokio::time::timeout(Duration::from_millis(25), &mut pending).await {
+            Ok(result) => {
+                let capacity = result.map_err(|_| failed("图片处理队列不可用"))?;
+                check()?;
+                return Ok(capacity);
+            }
+            Err(_) => continue,
+        }
+    }
+}
+
+fn image_download_capacity() -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
+    static ACTIVE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    ACTIVE
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_IMAGE_DOWNLOADS)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| NativeError::new(ErrorCode::ExtensionBusy, "图片下载繁忙，请稍后重试"))
 }
 
 pub(crate) fn decode_image(bytes: &[u8], mime: &str) -> NativeResult<image::DynamicImage> {
@@ -349,11 +564,48 @@ fn render_decoded(decoded: &image::DynamicImage, thumbnail: bool) -> NativeResul
     } else {
         &[82, 64, 46][..]
     };
-    for edge in if thumbnail {
+    let edges = if thumbnail {
         &[320, 240, 160, 96, 64][..]
     } else {
         &[1600, 1200, 900, 675, 506, 379, 284, 213, 159, 119, 89, 64][..]
-    } {
+    };
+    let limit = if thumbnail { 24 * 1024 } else { 96 * 1024 };
+    render_decoded_with_budget(decoded, edges, qualities, limit)
+}
+
+fn render_resource_preview(
+    bytes: &[u8],
+    mime: &str,
+    size: ExtensionResourcePreviewSize,
+) -> NativeResult<String> {
+    let decoded = decode_image(bytes, mime)?;
+    render_decoded_preview(&decoded, size)
+}
+
+fn render_decoded_preview(
+    decoded: &image::DynamicImage,
+    size: ExtensionResourcePreviewSize,
+) -> NativeResult<String> {
+    match size {
+        ExtensionResourcePreviewSize::Thumbnail => render_decoded(decoded, true),
+        ExtensionResourcePreviewSize::Large => render_decoded_with_budget(
+            decoded,
+            &[
+                2560, 1920, 1440, 1080, 810, 607, 455, 341, 255, 191, 143, 107, 80, 64,
+            ],
+            &[90, 82, 72, 60, 46],
+            256 * 1024,
+        ),
+    }
+}
+
+fn render_decoded_with_budget(
+    decoded: &image::DynamicImage,
+    edges: &[u32],
+    qualities: &[u8],
+    limit: usize,
+) -> NativeResult<String> {
+    for edge in edges {
         // 使用平滑重采样，先调编码质量再缩小尺寸，避免复杂壁纸过早丢失细节。
         let resized = decoded
             .resize(
@@ -368,7 +620,7 @@ fn render_decoded(decoded: &image::DynamicImage, thumbnail: bool) -> NativeResul
                 .encode_image(&resized)
                 .map_err(|_| failed("无法编码图片预览"))?;
             let data = format!("data:image/jpeg;base64,{}", STANDARD.encode(output));
-            if data.len() <= if thumbnail { 24 * 1024 } else { 96 * 1024 } {
+            if data.len() <= limit {
                 return Ok(data);
             }
         }
@@ -420,9 +672,18 @@ fn prepare_resource(
     mime: String,
 ) -> NativeResult<Resource> {
     let decoded = decode_image(&bytes, &mime)?;
+    resource_from_decoded(owner, identity, bytes, mime, &decoded)
+}
+
+fn resource_from_decoded(
+    owner: String,
+    identity: ResourceIdentity,
+    bytes: Vec<u8>,
+    mime: String,
+    decoded: &image::DynamicImage,
+) -> NativeResult<Resource> {
     let width = decoded.width();
     let height = decoded.height();
-    drop(decoded);
     let mut nonce = [0_u8; 32];
     getrandom::fill(&mut nonce).map_err(|_| failed("无法创建图片资源句柄"))?;
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
@@ -437,6 +698,30 @@ fn prepare_resource(
         height,
         sha256,
     })
+}
+
+fn prepare_resource_with_preview(
+    owner: String,
+    identity: ResourceIdentity,
+    bytes: Vec<u8>,
+    mime: String,
+    size: ExtensionResourcePreviewSize,
+) -> NativeResult<(Resource, String)> {
+    prepare_with_decoder(owner, identity, bytes, mime, size, decode_image)
+}
+
+fn prepare_with_decoder(
+    owner: String,
+    identity: ResourceIdentity,
+    bytes: Vec<u8>,
+    mime: String,
+    size: ExtensionResourcePreviewSize,
+    decode: impl FnOnce(&[u8], &str) -> NativeResult<image::DynamicImage>,
+) -> NativeResult<(Resource, String)> {
+    let decoded = decode(&bytes, &mime)?;
+    let data_url = render_decoded_preview(&decoded, size)?;
+    let resource = resource_from_decoded(owner, identity, bytes, mime, &decoded)?;
+    Ok((resource, data_url))
 }
 
 fn save_name(resource: &Resource, name: Option<&str>) -> NativeResult<String> {
@@ -488,7 +773,12 @@ pub(crate) async fn request(
         serde_json::from_value(value).map_err(|_| invalid("图片资源请求无效"))?;
     permit.check()?;
     match request {
-        Request::FetchImage { url, network_mode } => {
+        Request::FetchImage {
+            url,
+            network_mode,
+            preview,
+            request_id,
+        } => {
             let network_mode = resolve_network_mode(
                 &item.package.manifest,
                 &item.granted_permissions,
@@ -497,28 +787,63 @@ pub(crate) async fn request(
                 network_mode,
                 false,
             )?;
-            let capacity = image_capacity()?;
-            let (bytes, mime) = fetch_public_image(&url, network_mode).await?;
+            // 慢网络只占下载名额，本机图库仍可使用图像处理名额。
+            let download_capacity = image_download_capacity()?;
+            let fetch = begin_fetch(fetches(), owner, identity.clone(), request_id)?;
+            let download = DownloadLease {
+                fetch,
+                _capacity: download_capacity,
+            };
+            let (bytes, mime) =
+                fetch_public_image_cancellable(&url, network_mode, &download.fetch.activity.stop)
+                    .await?;
             permit.check()?;
+            let capacity = wait_image_capacity(image_workers(), || {
+                permit.check()?;
+                download.fetch.check()
+            })
+            .await?;
             let owner = owner.to_owned();
             blocking::run(move || {
-                // 实际解码结束前保留处理名额和原生生命周期租约。
+                // 实际解码和提交结束前保留下载、处理名额与原生生命周期租约。
                 let _capacity = capacity;
+                let active_download = download;
                 permit.check()?;
-                let resource = prepare_resource(owner, identity, bytes, mime)?;
-                let result = metadata(&resource);
-                permit.commit(|| lock_cache()?.insert(resource, Instant::now()))?;
+                active_download.fetch.check()?;
+                // 校验取得的像素直接重绘，省去独立 preview 请求的第二次完整解码。
+                let (resource, data_url) = match preview {
+                    Some(size) => {
+                        let (resource, preview) =
+                            prepare_resource_with_preview(owner, identity, bytes, mime, size)?;
+                        (resource, Some(preview))
+                    }
+                    None => (prepare_resource(owner, identity, bytes, mime)?, None),
+                };
+                let mut result = metadata(&resource);
+                if let Some(data_url) = data_url {
+                    result["dataUrl"] = json!(data_url);
+                }
+                permit.commit(|| {
+                    active_download
+                        .fetch
+                        .commit(|| lock_cache()?.insert(resource, Instant::now()))
+                })?;
                 Ok(result)
             })
             .await
         }
-        Request::Preview { resource_id } => {
+        Request::CancelFetch { request_id } => permit.commit(|| {
+            let registry = fetches().lock().map_err(|_| failed("图片下载登记不可用"))?;
+            let cancelled = registry.cancel(owner, &identity, &request_id)?;
+            Ok(json!({ "cancelled": cancelled }))
+        }),
+        Request::Preview { resource_id, size } => {
             let resource = lock_cache()?.lookup(owner, &identity, &resource_id, Instant::now())?;
-            let capacity = image_capacity()?;
+            let capacity = wait_image_capacity(image_workers(), || permit.check()).await?;
             blocking::run(move || {
                 let _capacity = capacity;
                 permit.check()?;
-                let data_url = render_image(&resource.bytes, &resource.mime, true)?;
+                let data_url = render_resource_preview(&resource.bytes, &resource.mime, size)?;
                 permit.check()?;
                 Ok(json!({ "dataUrl": data_url }))
             })
@@ -569,11 +894,19 @@ pub(crate) fn gallery_image(
 }
 
 pub(crate) fn close_owners(owners: &[String]) -> NativeResult<()> {
+    fetches()
+        .lock()
+        .map_err(|_| failed("图片下载登记不可用"))?
+        .close_owners(owners);
     lock_cache()?.close_owners(owners);
     Ok(())
 }
 
 pub(crate) fn retain_authorized(id: &str, items: &[ExtensionInfo]) -> NativeResult<()> {
+    fetches()
+        .lock()
+        .map_err(|_| failed("图片下载登记不可用"))?
+        .retain_authorized(id, items);
     lock_cache()?.retain_authorized(id, items);
     Ok(())
 }
@@ -585,6 +918,8 @@ mod tests {
         ExtensionCommand, ExtensionInputFormat, ExtensionManifest, ExtensionOrigin,
         ExtensionPreview, ExtensionResultFormat,
     };
+
+    static DOWNLOAD_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn identity() -> ResourceIdentity {
         ResourceIdentity {
@@ -874,9 +1209,11 @@ mod tests {
                             .unwrap().origin().ascii_serialization();
                         let started = Instant::now();
                         let result = async {
-                            let capacity = image_capacity()?;
+                            let download_capacity = image_download_capacity()?;
                             let (bytes, mime) = fetch_public_image(&sample.url, mode).await?;
+                            let capacity = image_capacity()?;
                             blocking::run(move || {
+                                let _download_capacity = download_capacity;
                                 let _capacity = capacity;
                                 let resource = prepare_resource("live@1".into(), identity(), bytes, mime)?;
                                 let resource_id = resource.resource_id.clone();
@@ -1040,6 +1377,389 @@ mod tests {
     }
 
     #[test]
+    fn preview_requests_accept_an_explicit_large_size() {
+        let request = serde_json::from_value::<Request>(json!({
+            "action": "preview",
+            "resourceId": "a".repeat(64),
+            "size": "large",
+        }));
+        assert!(
+            request.is_ok(),
+            "large preview request was rejected: {request:?}"
+        );
+        assert!(matches!(
+            request.unwrap(),
+            Request::Preview {
+                size: ExtensionResourcePreviewSize::Large,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn fetch_requests_accept_a_combined_preview_and_cancellable_request_id() {
+        let request = serde_json::from_value::<Request>(json!({
+            "action": "fetch-image",
+            "url": "https://images.example.net/image.png",
+            "preview": "large",
+            "requestId": "preview-17",
+        }));
+        assert!(request.is_ok(), "combined fetch was rejected: {request:?}");
+        assert!(
+            serde_json::from_value::<Request>(json!({
+                "action": "cancel-fetch",
+                "requestId": "preview-17",
+            }))
+            .is_ok()
+        );
+        for value in [json!(null), json!("original"), json!(3), json!(true)] {
+            assert!(
+                serde_json::from_value::<Request>(json!({
+                    "action": "fetch-image",
+                    "url": "https://images.example.net/image.png",
+                    "preview": value,
+                }))
+                .is_err()
+            );
+        }
+        for request_id in ["", "../image", "with space", "图片", &"a".repeat(81)] {
+            assert_eq!(
+                validate_request_id(request_id).unwrap_err().code,
+                ErrorCode::InvalidArgument
+            );
+        }
+        for request_id in ["preview-17", "a_A-0", &"x".repeat(80)] {
+            validate_request_id(request_id).unwrap();
+        }
+        for request in [
+            json!({"action":"fetch-image","url":"https://images.example.net/a.png","requestId":null}),
+            json!({"action":"cancel-fetch","requestId":"preview-17","owner":"other"}),
+            json!({"action":"cancel-fetch","requestId":"preview-17","generation":2}),
+            json!({"action":"cancel-fetch","requestId":"preview-17","all":true}),
+        ] {
+            assert!(serde_json::from_value::<Request>(request).is_err());
+        }
+    }
+
+    #[test]
+    fn foreground_download_has_capacity_while_two_background_downloads_are_waiting() {
+        let _guard = DOWNLOAD_TEST_LOCK.lock().unwrap();
+        let first = image_download_capacity().unwrap();
+        let second = image_download_capacity().unwrap();
+        let foreground = image_download_capacity();
+        assert!(
+            foreground.is_ok(),
+            "selected image must not wait for background downloads"
+        );
+        assert_eq!(
+            image_download_capacity().unwrap_err().code,
+            ErrorCode::ExtensionBusy
+        );
+        drop(foreground);
+        drop(second);
+        drop(first);
+    }
+
+    #[test]
+    fn combined_fetch_reuses_the_validated_pixels_for_preview_and_original_metadata() {
+        for size in [
+            ExtensionResourcePreviewSize::Thumbnail,
+            ExtensionResourcePreviewSize::Large,
+        ] {
+            let bytes = png(2, 3);
+            let decodes = std::cell::Cell::new(0);
+            let (resource, data_url) = prepare_with_decoder(
+                "main@1".into(),
+                identity(),
+                bytes.clone(),
+                "image/png".into(),
+                size,
+                |bytes, mime| {
+                    decodes.set(decodes.get() + 1);
+                    decode_image(bytes, mime)
+                },
+            )
+            .unwrap();
+            assert_eq!(decodes.get(), 1);
+            assert_eq!((resource.width, resource.height), (2, 3));
+            assert_eq!(&*resource.bytes, &bytes);
+            assert_eq!(resource.sha256, format!("{:x}", Sha256::digest(&bytes)));
+            assert_eq!(
+                data_url,
+                render_resource_preview(&bytes, "image/png", size).unwrap()
+            );
+            assert!(data_url.starts_with("data:image/jpeg;base64,"));
+        }
+        assert_eq!(
+            prepare_resource_with_preview(
+                "main@1".into(),
+                identity(),
+                png(2, 3),
+                "image/jpeg".into(),
+                ExtensionResourcePreviewSize::Thumbnail,
+            )
+            .err()
+            .unwrap()
+            .code,
+            ErrorCode::ExtensionImageInvalid
+        );
+    }
+
+    #[test]
+    fn active_fetch_cancellation_is_bound_to_owner_installation_and_request_id() {
+        let registry = Arc::new(Mutex::new(FetchRegistry::default()));
+        let first = begin_fetch(&registry, "main@1", identity(), Some("preview-1".into())).unwrap();
+        let other_owner =
+            begin_fetch(&registry, "other@1", identity(), Some("preview-1".into())).unwrap();
+        let mut replacement_identity = identity();
+        replacement_identity.generation += 1;
+        let replacement = begin_fetch(
+            &registry,
+            "main@1",
+            replacement_identity.clone(),
+            Some("preview-1".into()),
+        )
+        .unwrap();
+        assert_eq!(
+            begin_fetch(&registry, "main@1", identity(), Some("preview-1".into()))
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::InvalidArgument
+        );
+        {
+            let active = registry.lock().unwrap();
+            assert!(
+                !active
+                    .cancel("missing@1", &identity(), "preview-1")
+                    .unwrap()
+            );
+            assert!(!active.cancel("main@1", &identity(), "preview-2").unwrap());
+            let mut different_hash = identity();
+            different_hash.sha256 = "c".repeat(64);
+            assert!(
+                !active
+                    .cancel("main@1", &different_hash, "preview-1")
+                    .unwrap()
+            );
+            assert!(active.cancel("main@1", &identity(), "preview-1").unwrap());
+        }
+        assert_eq!(first.check().unwrap_err().code, ErrorCode::UserCancelled);
+        other_owner.check().unwrap();
+        replacement.check().unwrap();
+        let committed = std::cell::Cell::new(false);
+        assert_eq!(
+            first
+                .commit(|| {
+                    committed.set(true);
+                    Ok(())
+                })
+                .unwrap_err()
+                .code,
+            ErrorCode::UserCancelled
+        );
+        assert!(!committed.get());
+        assert_eq!(registry.lock().unwrap().entries.len(), 3);
+        drop(first);
+        let same_id_again =
+            begin_fetch(&registry, "main@1", identity(), Some("preview-1".into())).unwrap();
+        same_id_again.commit(|| Ok(())).unwrap();
+        assert!(
+            !registry
+                .lock()
+                .unwrap()
+                .cancel("main@1", &identity(), "preview-1")
+                .unwrap()
+        );
+        drop((same_id_again, other_owner, replacement));
+        assert!(registry.lock().unwrap().entries.is_empty());
+    }
+
+    #[test]
+    fn closing_and_reauthorizing_active_fetches_only_stop_matching_identities() {
+        let registry = Arc::new(Mutex::new(FetchRegistry::default()));
+        let first = begin_fetch(&registry, "main@1", identity(), Some("preview-1".into())).unwrap();
+        let second =
+            begin_fetch(&registry, "other@1", identity(), Some("preview-2".into())).unwrap();
+        registry.lock().unwrap().close_owners(&["main@1".into()]);
+        assert_eq!(first.check().unwrap_err().code, ErrorCode::UserCancelled);
+        second.check().unwrap();
+        registry
+            .lock()
+            .unwrap()
+            .retain_authorized("tests.unrelated", &[]);
+        second.check().unwrap();
+        registry
+            .lock()
+            .unwrap()
+            .retain_authorized("tests.images", &[installed()]);
+        second.check().unwrap();
+        registry
+            .lock()
+            .unwrap()
+            .retain_authorized("tests.images", &[]);
+        assert_eq!(second.check().unwrap_err().code, ErrorCode::UserCancelled);
+        assert_eq!(
+            registry.lock().unwrap().entries.len(),
+            2,
+            "cleanup must retain leases until real work exits"
+        );
+        drop((first, second));
+        assert!(registry.lock().unwrap().entries.is_empty());
+    }
+
+    #[test]
+    fn waiting_for_image_processing_is_cancellable_without_releasing_running_jobs() {
+        tauri::async_runtime::block_on(async {
+            let workers = Arc::new(tokio::sync::Semaphore::new(2));
+            let first = acquire_image_capacity(&workers).unwrap();
+            let second = acquire_image_capacity(&workers).unwrap();
+            let stop = AtomicBool::new(false);
+            let mut waiting = Box::pin(wait_image_capacity(&workers, || check_cancelled(&stop)));
+            assert!(
+                tokio::time::timeout(Duration::from_millis(1), &mut waiting)
+                    .await
+                    .is_err()
+            );
+            stop.store(true, Ordering::Release);
+            assert_eq!(waiting.await.unwrap_err().code, ErrorCode::UserCancelled);
+            assert_eq!(workers.available_permits(), 0);
+            drop(second);
+            let acquired = wait_image_capacity(&workers, || Ok(())).await.unwrap();
+            assert_eq!(workers.available_permits(), 0);
+            drop((acquired, first));
+            assert_eq!(workers.available_permits(), 2);
+        });
+    }
+
+    #[test]
+    fn cancelled_running_decode_keeps_real_capacity_until_the_worker_exits() {
+        let registry = Arc::new(Mutex::new(FetchRegistry::default()));
+        let activity =
+            begin_fetch(&registry, "main@1", identity(), Some("preview-1".into())).unwrap();
+        let downloads = Arc::new(tokio::sync::Semaphore::new(3));
+        let workers = Arc::new(tokio::sync::Semaphore::new(2));
+        let download = downloads.clone().try_acquire_owned().unwrap();
+        let worker = acquire_image_capacity(&workers).unwrap();
+        let committed = Arc::new(AtomicBool::new(false));
+        let observed = committed.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let waiter = tauri::async_runtime::spawn(async move {
+            blocking::run(move || {
+                let _download = download;
+                let _worker = worker;
+                let active = activity;
+                started_tx.send(()).unwrap();
+                finish_rx.recv().unwrap();
+                active.commit(|| {
+                    committed.store(true, Ordering::Release);
+                    Ok(())
+                })
+            })
+            .await
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            registry
+                .lock()
+                .unwrap()
+                .cancel("main@1", &identity(), "preview-1")
+                .unwrap()
+        );
+        waiter.abort();
+        assert_eq!(downloads.available_permits(), 2);
+        assert_eq!(workers.available_permits(), 1);
+        assert_eq!(registry.lock().unwrap().entries.len(), 1);
+        finish_tx.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while (downloads.available_permits() != 3
+            || workers.available_permits() != 2
+            || !registry.lock().unwrap().entries.is_empty())
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(downloads.available_permits(), 3);
+        assert_eq!(workers.available_permits(), 2);
+        assert!(registry.lock().unwrap().entries.is_empty());
+        assert!(!observed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn preview_requests_keep_the_thumbnail_default_and_reject_unknown_sizes() {
+        for request in [
+            json!({ "action": "preview", "resourceId": "a".repeat(64) }),
+            json!({ "action": "preview", "resourceId": "a".repeat(64), "size": "thumbnail" }),
+        ] {
+            assert!(matches!(
+                serde_json::from_value::<Request>(request).unwrap(),
+                Request::Preview {
+                    size: ExtensionResourcePreviewSize::Thumbnail,
+                    ..
+                }
+            ));
+        }
+        for size in [json!("original"), json!(null), json!(2560), json!(true)] {
+            assert!(
+                serde_json::from_value::<Request>(json!({
+                    "action": "preview", "resourceId": "a".repeat(64), "size": size,
+                }))
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn large_resource_previews_preserve_display_resolution_without_upscaling() {
+        let source = png(3200, 1800);
+        for (size, dimensions, budget) in [
+            (
+                ExtensionResourcePreviewSize::Thumbnail,
+                (320, 180),
+                24 * 1024,
+            ),
+            (
+                ExtensionResourcePreviewSize::Large,
+                (2560, 1440),
+                256 * 1024,
+            ),
+        ] {
+            let rendered = render_resource_preview(&source, "image/png", size).unwrap();
+            assert!(rendered.len() <= budget);
+            let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
+            let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+            assert_eq!((decoded.width(), decoded.height()), dimensions);
+        }
+        let small =
+            render_resource_preview(&png(2, 3), "image/png", ExtensionResourcePreviewSize::Large)
+                .unwrap();
+        let encoded = small.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (2, 3));
+    }
+
+    #[test]
+    fn noisy_large_resource_previews_fit_the_complete_data_url_budget() {
+        let mut state = 19_u32;
+        let source = image::RgbImage::from_fn(1920, 1080, |_, _| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            image::Rgb([(state >> 24) as u8, (state >> 16) as u8, (state >> 8) as u8])
+        });
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgb8(source)
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        let rendered =
+            render_resource_preview(&bytes, "image/png", ExtensionResourcePreviewSize::Large)
+                .unwrap();
+        assert!(rendered.len() <= 256 * 1024);
+        let encoded = rendered.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert!(decoded.width() <= 1920 && decoded.height() <= 1080);
+    }
+
+    #[test]
     fn filenames_and_requests_reject_paths_unknown_fields_and_format_mismatches() {
         let entry = resource("main@1", 1, Arc::from([1_u8].as_slice()), Instant::now());
         assert_eq!(save_name(&entry, None).unwrap(), "image-bbbbbbbbbbbb.png");
@@ -1100,6 +1820,28 @@ mod tests {
         cache.retain_authorized("tests.images", &[]);
         assert_eq!(cache.entries.len(), 1);
         assert_eq!(cache.entries[0].identity.id, "tests.other");
+    }
+
+    #[test]
+    fn local_gallery_preview_remains_available_while_two_remote_jobs_are_waiting_for_network() {
+        let _guard = DOWNLOAD_TEST_LOCK.lock().unwrap();
+        // 与 fetch-image 的网络等待阶段相同：保留两个下载准入，但尚未取得图片字节。
+        let first = image_download_capacity().unwrap();
+        let second = image_download_capacity().unwrap();
+        let foreground = image_download_capacity().unwrap();
+        assert_eq!(
+            image_download_capacity().unwrap_err().code,
+            ErrorCode::ExtensionBusy
+        );
+        let preview = bounded_render_image(&png(2, 3), "image/png", true)
+            .expect("remote network waits must not prevent local gallery previews");
+        let encoded = preview.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let decoded = decode_image(&STANDARD.decode(encoded).unwrap(), "image/jpeg").unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (2, 3));
+        drop(second);
+        assert!(image_download_capacity().is_ok());
+        drop(foreground);
+        drop(first);
     }
 
     #[test]

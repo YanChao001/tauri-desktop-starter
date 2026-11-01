@@ -337,7 +337,7 @@
   border-block-start: 1px solid var(--border);
   pointer-events: none;
 }
-@container settings (min-width: 60rem) {
+@container settings (min-width: 48rem) {
   .window-preset-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

@@ -55,7 +55,6 @@ export function DesktopSettings() {
       await setAutostartEnabled(enabled);
       if (mounted.current) {
         await reload();
-        if (mounted.current) toast.success(latest("desktop.changed"));
       }
     } catch (reason) {
       if (mounted.current) toast.error(nativeErrorText(reason, latest));
@@ -72,7 +71,6 @@ export function DesktopSettings() {
       await openSecondaryWindow();
       if (mounted.current) {
         await reload();
-        if (mounted.current) toast.success(latest("desktop.windowOpen"));
       }
     } catch (reason) {
       if (mounted.current) toast.error(nativeErrorText(reason, latest));
@@ -99,8 +97,6 @@ export function DesktopSettings() {
           id="settings-autostart"
           icon={PowerIcon}
           label={t("desktop.autostart")}
-          hint={t("desktop.autostartDescription")}
-          helpLabel={`${t("desktop.autostart")} · ${t("title.help")}`}
         >
           <Switch
             checked={data?.autostart ?? false}
@@ -115,15 +111,10 @@ export function DesktopSettings() {
           id="settings-background"
           icon={PanelTopIcon}
           label={t("desktop.background")}
-          helpLabel={`${t("desktop.background")} · ${t("title.help")}`}
           hint={
-            <>
-              {t("desktop.backgroundDescription")}
-              <br />
-              {data?.trayAvailable
-                ? t("desktop.trayReady")
-                : t("desktop.trayUnavailable")}
-            </>
+            native && data && !data.trayAvailable
+              ? t("desktop.trayUnavailable")
+              : undefined
           }
         >
           <Switch
@@ -143,18 +134,6 @@ export function DesktopSettings() {
           id="settings-windows"
           icon={MonitorIcon}
           label={t("desktop.windows")}
-          helpLabel={`${t("desktop.windows")} · ${t("title.help")}`}
-          hint={
-            <>
-              {t("desktop.windowsDescription")}
-              {data?.secondaryOpen ? (
-                <>
-                  <br />
-                  {t("desktop.windowOpen")}
-                </>
-              ) : null}
-            </>
-          }
         >
           <Button
             onClick={() => void openWindow()}

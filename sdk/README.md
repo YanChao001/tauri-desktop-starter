@@ -53,6 +53,8 @@ SDK 编译进 Rust：修改后须重新构建并重启桌面进程，前端 HMR 
 
 隔离文档禁止表单提交、直接网络、跳转、弹窗、直接下载和浏览器存储；使用 `type="button"`、显式键盘事件和 SDK，不依赖默认 submit 或 `requestSubmit()`。外部字符串使用 `textContent` 或框架文本节点。自定义右键菜单须阻止默认行为，并处理键盘、Esc 和焦点恢复；默认右键与文本编辑行为遵循 [组件约定](../docs/conventions/ui-guidelines.md#组件选择顺序)。
 
+原生宿主允许图片 / 画布控件消费捏合输入，同时在所有原生文档的捕获阶段取消 Ctrl + `wheel`、`gesturestart` / `gesturechange` / `gestureend` 与页面缩放快捷键的默认动作。作者仍收到这些事件，可用自己的比例模型缩放局部内容；不要仅因 `defaultPrevented` 已为 `true` 就忽略手势。普通 `wheel` 滚动不受影响，业务通道关闭后页面默认缩放仍被禁止；浏览器 fixture 保留浏览器默认动作。Windows 的创建与设置时序、重建要求和硬件验收边界见 [宿主自定义界面](../docs/extensions.md#自定义界面)。
+
 语言变化时，快照更新 `locale`，SDK 同步文档 `lang`；在 `onChange` 中重绘固定文案。宿主等待当前动作完成，再以 `action: null` 携带已有 state / fields 刷新活动页面的 Wasm 视图；隐藏页面延后到恢复时刷新。插件应纯渲染，不清空会话、写入或重复上次动作；字段和检查点继续保留。
 
 ## 活动状态与页面保留
@@ -97,19 +99,44 @@ root.append(button);
 
 ## 注册的宿主服务
 
-`starter.services.request(service, request)` 调用固定注册的服务。图片资源、外链和自身窗口有具体返回类型；`lan` / `wallpaper` 返回 `unknown`，须自行收窄。完整能力矩阵、动作、授权和额度见 [受控桌面服务](../docs/extensions.md#受控桌面服务)。
+`starter.services.request(service, request)` 调用固定注册的服务。图片资源、图库单图预览、应用背景设置回执、外链和自身窗口有具体返回类型；`lan` 及其他 `wallpaper` 动作返回 `unknown`，须自行收窄。完整能力矩阵、动作、授权和额度见 [受控桌面服务](../docs/extensions.md#受控桌面服务)。
 
-| 服务        | 调用方式与界面责任                                                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------------------ |
-| `resources` | `fetch-image` 传 `url` 和可选 `networkMode`；返回图片元数据与 `resourceId`，供 `preview` / `save` / `release` 使用 |
-| `wallpaper` | 管理应用背景图库：`list`、本机 `import`、`import-resource`、`apply`、`rename`、`remove`、`open-settings`           |
-| `links`     | `{ url }` 请求打开 HTTPS 来源页，成功返回 `null`                                                                   |
-| `lan`       | 手动连接、消息与受控附件传输、真实本机回环测试；多个窗口共享服务，明确停止会影响其他窗口                           |
-| `window`    | `get-state` 读取自身独立原生窗口状态；`set-always-on-top` 传 `enabled` 切换置顶，均返回 `{ alwaysOnTop }`          |
+| 服务        | 调用方式与界面责任                                                                                                                                       |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resources` | `fetch-image` 传 `url` 和可选 `networkMode` / `preview` / `requestId`；返回元数据与句柄，供 `preview` / `save` / `release` 使用；`cancel-fetch` 合作取消 |
+| `wallpaper` | 管理应用背景图库：元数据 `list`、按项 `preview`、本机 `import`、`import-resource`、`apply`、`rename`、`remove`、`open-settings`                          |
+| `links`     | `{ url }` 请求打开 HTTPS 来源页，成功返回 `null`                                                                                                         |
+| `lan`       | 局域网公告发现、手动连接、消息与受控附件传输、真实本机回环测试；多个窗口共享服务，明确停止会影响其他窗口                                                 |
+| `window`    | `get-state` 读取自身独立原生窗口状态；`set-always-on-top` 传 `enabled` 切换置顶，均返回 `{ alwaysOnTop }`                                                |
 
-图片 `preview` 返回 `{ dataUrl }`；`save` 可传建议文件名 `name`，系统对话框决定路径，返回 `{ cancelled: true }` 或 `{ cancelled: false, name }`。另存保留已验证原图，`wallpaper` 的 `{ action: "import-resource", resourceId, name }` 会重绘压缩后加入图库。图库缩略图可能为 `dataUrl: null`，不能把缩略图缺失当作列表或写入失败。
+应用背景使用宿主 0.1.10 的轻量回执接口，返回类型从 Rust DTO 生成：
+
+```ts
+const result = await starter.services.request("wallpaper", {
+  action: "apply",
+  id: selected.id,
+  expectedRevision: gallery.revision,
+  fit: "cover",
+});
+// 使用 result.activeId 与 result.revision 更新已有图库的当前项，保留缩略图。
+// 通过独立的 list 动作按需读取图库，回执自身不触发预览加载。
+```
+
+请求类型为 `ExtensionWallpaperApplyRequest`，返回 `ExtensionWallpaperApplyResult`；无效 fit、缺少 ID / revision 的静态已知 apply 请求不能绕过类型重载。完整回执、并发与兼容要求见 [壁纸服务契约](../docs/extensions.md#壁纸图库与图片搜索)。
+
+宿主 0.1.11 的图库 `list` 只返回元数据。按可见卡片传 `{ action: "preview", id, previewKey }`，返回类型 `ExtensionWallpaperPreviewResult`，核对 ID / 封面摘要后逐项更新；图库缩略图可能为 `dataUrl: null`，不能把缩略图缺失当作列表或写入失败。
+
+图片 `preview` 返回 `{ dataUrl }`；默认缩略图，用户主动查看大图时传 `{ action: "preview", resourceId, size: "large" }`。也可在 `fetch-image` 传 `preview: "thumbnail"` / `"large"`，在同一次校验解码中返回元数据、句柄及必需的 `dataUrl`，减少往返和重复解码。可选 `requestId` 配合 `{ action: "cancel-fetch", requestId }` 停止旧下载；`cancelled: true` 表示标记了匹配任务，已开始的同步 CPU 工作仍需真实结束。具体额度与归属见[图片资源契约](../docs/extensions.md#壁纸图库与图片搜索)。`save` 可传建议文件名 `name`，系统对话框决定路径，返回 `{ cancelled: true }` 或 `{ cancelled: false, name }`。另存保留已验证原图，`wallpaper` 的 `{ action: "import-resource", resourceId, name }` 会重绘压缩后加入图库。
 
 按 [服务能力矩阵](../docs/extensions.md#受控桌面服务) 声明并取得授权。`window` 只控制当前插件的独立窗口；`lan` 附件通过原生对话框选择 / 另存，传消息 ID 与元数据，不经 SDK 传文件字节。LAN 连接由原生窗口持有，切页或重建 iframe 不停止接收；多个窗口共享服务，明确停止会影响其他窗口。
+
+LAN `status` 的 `discoveredPeers` 返回临时附近设备 `{ id, nickname, address, port, lastSeen }`，`discoveryError` 为独立发现错误或 `null`。局域网 `start` 同时启动有界 UDP 公告，附近设备不会自动建立 TCP 连接或写入联系人；用户选择设备后仍调用 `connect`。仅有 `messaging:lan` 授权和 `status` 不启动监听，回环模式不公告；发现失败时保留手动 IP 连接。
+
+LAN 消息列表按可见范围请求 `{ action: "thumbnailAttachment", messageId }`，主动查看大图再使用 `previewAttachment`；两者返回 `{ dataUrl }`，缩略图缺失可为 `null`。校验和缩略图缓存由宿主管理，UI 不在状态轮询中请求完整大图。
+
+LAN 附件进度通过 `{ action: "transferStatus" }` 独立查询，返回 `{ transfers: [{ id, peerId, direction, kind, name, bytes, phase, completedBytes, totalBytes, startedAt }] }`。`direction` 为 `outgoing` / `incoming`，`id` 与后续消息 ID 相同；`phase` 为 `preparing`、`verifying`、`sending`、`receiving`、`awaitingReceipt`、`completed` 或 `failed`。字节进度来自当前复制、散列或 TCP 读写阶段，阶段切换后重新计数，`totalBytes` 为文件大小；写入 TCP 完成不代表已送达。轮询不等待历史、缓存和发送锁，可与待完成的 `sendAttachment` 并行，但仍占普通服务请求容量；使用独立在途标记并限制为一个进度查询。快照和终态保留、停止清理的精确规则见 [LAN 契约](../docs/extensions.md#局域网通信)。
+
+`{ action: "clearHistory", peerId }` 清空本机指定会话全部消息、未读和不再被其他消息引用的图片 / 文件缓存；省略 `peerId` 时清空所有会话。保留联系人、其他会话共享附件、在途引用、原始源文件、另存输出和对方记录；在途传输不会被取消，其进度在后续所有窗口快照中隐藏，完成或回执不会让已清空的附件气泡再次出现。后续实际写入历史的新接收消息仍正常显示。界面应在用户确认清理范围后调用。
 
 图片句柄应及时 `release`，到期、关闭、撤权或重启后重新获取；句柄不是持久下载资格。搜索文本走 Wasm 的精确 origin HTTP 效果，图片来源和许可由插件解释。HTTP 与图片请求通常省略 `networkMode`，继承宿主网络偏好，代理授权及模式规则见 [网络契约](../docs/extensions.md#来源与授权)。
 

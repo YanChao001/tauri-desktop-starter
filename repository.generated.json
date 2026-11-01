@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "app": {
+    "repositoryUrl": "https://github.com/YanChao001/tauri-desktop-starter",
+    "docsUrl": "https://github.com/YanChao001/tauri-desktop-starter/blob/develop/docs/README.md",
+    "homepageUrl": "https://yanchao001.github.io/tauri-desktop-starter/"
+  },
+  "config": {
+    "schemaVersion": 1,
+    "hosting": {
+      "provider": "github",
+      "repositoryUrlTemplate": "https://github.com/{repository}",
+      "defaultBranch": "develop",
+      "releaseBranch": "main",
+      "links": {
+        "file": "{repositoryUrl}/blob/{ref}/{path}",
+        "commit": "{repositoryUrl}/commit/{ref}",
+        "commits": "{repositoryUrl}/commits/{ref}",
+        "compare": "{repositoryUrl}/compare/{base}...{ref}",
+        "releases": "{repositoryUrl}/releases",
+        "release": "{repositoryUrl}/releases/tag/{tag}",
+        "releaseAsset": "{repositoryUrl}/releases/download/{tag}/{asset}",
+        "latestAsset": "{repositoryUrl}/releases/latest/download/{asset}"
+      },
+      "apiBaseUrl": "https://api.github.com",
+      "uploadBaseUrl": "https://uploads.github.com"
+    },
+    "marketplace": {
+      "gitUrl": "https://github.com/YanChao001/tauri-desktop-starter-extensions.git",
+      "catalogUrlTemplate": "{repositoryUrl}/releases/latest/download/catalog.json",
+      "packageUrlTemplate": "{repositoryUrl}/releases/download/{tag}/{asset}",
+      "downloadUrlPrefixes": [
+        "{repositoryUrl}/releases/",
+        "https://release-assets.githubusercontent.com/",
+        "https://objects.githubusercontent.com/"
+      ]
+    }
+  }
+}

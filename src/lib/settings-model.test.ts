@@ -45,7 +45,7 @@ describe("versioned settings model", () => {
         accent: "blue",
         customAccent: DEFAULT_SETTINGS.customAccent,
       });
-    expect(settingsDocument(DEFAULT_SETTINGS).schemaVersion).toBe(6);
+    expect(settingsDocument(DEFAULT_SETTINGS).schemaVersion).toBe(7);
   });
 
   it("自定义颜色在存档与补丁边界规范化，切换预设保留已选颜色", () => {
@@ -252,7 +252,7 @@ describe("versioned settings model", () => {
     );
     expect(readInitialSettings().settings.theme).toBe("light");
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "invalid" }));
-    expect(readInitialSettings().settings.theme).toBe("system");
+    expect(readInitialSettings().settings.theme).toBe("dark");
   });
 
   it("reports read failures without throwing and retains the detected language", () => {
@@ -284,7 +284,7 @@ describe("versioned settings model", () => {
     expect(patch).toEqual({
       sidebarWidth: 360,
       language: "zh",
-      accent: "neutral",
+      accent: "lime",
     });
     expect({ ...current, ...patch }).toMatchObject({
       theme: "dark",
@@ -307,6 +307,30 @@ describe("loadSettings", () => {
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
+  it("首次使用默认内置首图，旧皮肤与用户图片的显式选择仍被保留", () => {
+    expect(loadSettings()).toMatchObject({
+      background: "bundled:001-秋日花饰少女.jpg",
+      customBackground: null,
+    });
+    const selected = migrateSettings({
+      schemaVersion: 7,
+      background: "bundled:001-秋日花饰少女.jpg",
+    });
+    expect(selected.background).toBe("bundled:001-秋日花饰少女.jpg");
+    expect(settingsDocument(selected).background).toBe(
+      "bundled:001-秋日花饰少女.jpg",
+    );
+    expect(
+      migrateSettings({ schemaVersion: 6, background: "plain" }).background,
+    ).toBe("plain");
+    expect(
+      migrateSettings({ schemaVersion: 6, background: "sakura" }).background,
+    ).toBe("sakura");
+    expect(
+      migrateSettings({ background: "bundled:missing.jpg" }).background,
+    ).toBe(DEFAULT_SETTINGS.background);
+  });
+
   it("坏掉的 JSON 不会让应用崩溃", () => {
     window.localStorage.setItem(STORAGE_KEY, "{ not json");
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
@@ -322,7 +346,7 @@ describe("loadSettings", () => {
       }),
     );
     const settings = loadSettings();
-    expect(settings.accent).toBe("neutral");
+    expect(settings.accent).toBe("lime");
     expect(settings.language).toBe("zh");
     expect(settings.menuBar).toBe(false);
   });
@@ -425,7 +449,7 @@ describe("applySettings", () => {
     );
     expect(root.style.getPropertyValue("--custom-accent-dark")).toBe(dark);
     applySettings(DEFAULT_SETTINGS, { includeTheme: false });
-    expect(root.dataset.accent).toBe("neutral");
+    expect(root.dataset.accent).toBe("lime");
     expect(root.style.getPropertyValue("--custom-accent-light")).not.toBe(
       "#000000",
     );

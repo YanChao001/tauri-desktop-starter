@@ -1,5 +1,9 @@
 import { APP_CONFIG } from "@/config/app";
 import {
+  BUNDLED_WALLPAPERS,
+  getBundledWallpaper,
+} from "@/lib/bundled-wallpapers";
+import {
   ACCENTS,
   DEFAULT_CUSTOM_ACCENT,
   customAccentPalette,
@@ -43,7 +47,7 @@ export const NETWORK_MODES = ["system", "direct"] as const;
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 360;
 export const SIDEBAR_DEFAULT_WIDTH = 224;
-export const SETTINGS_VERSION = 6;
+export const SETTINGS_VERSION = 7;
 export const STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:settings`;
 export const THEME_STORAGE_KEY = `${APP_CONFIG.browserStorageNamespace}:theme`;
 export type Radius = (typeof RADII)[number];
@@ -76,12 +80,12 @@ export type AppSettings = {
 };
 export const DEFAULT_SETTINGS: AppSettings = {
   language: DEFAULT_LANGUAGE,
-  accent: "neutral",
+  accent: "lime",
   customAccent: DEFAULT_CUSTOM_ACCENT,
   radius: "soft",
   font: "geist",
   fontSize: "md",
-  background: "plain",
+  background: BUNDLED_WALLPAPERS[0]?.id ?? "plain",
   backgroundIntensity: DEFAULT_BACKGROUND_INTENSITY,
   customBackground: null,
   motion: "full",
@@ -93,7 +97,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCheckUpdates: true,
   windowPosition: "remember",
   networkMode: "system",
-  theme: "system",
+  theme: "dark",
 };
 const LEGACY_BACKGROUNDS: Record<string, string> = {
   gradient: "cloudscape",
@@ -126,7 +130,7 @@ function settingsSource(document: Record<string, unknown>) {
     ? document.settings
     : document;
 }
-/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机图片；v4 使用百分比强度；v5 支持视频；v6 扩展预设与自定义主题色。 */
+/** v0 为扁平存档；v1 为包装格式；v2 加入布局与桌面行为；v3 支持本机图片；v4 使用百分比强度；v5 支持视频；v6 扩展预设与自定义主题色；v7 支持内置图片身份。 */
 export function migrateSettings(raw: unknown): AppSettings {
   const document = isRecord(raw) ? raw : {};
   if (
@@ -140,11 +144,13 @@ export function migrateSettings(raw: unknown): AppSettings {
       ? (LEGACY_BACKGROUNDS[source.background] ?? source.background)
       : source.background;
   const customBackground = normalizeBackgroundImage(source.customBackground);
-  const background = pick(
-    BACKGROUNDS,
-    rawBackground,
-    DEFAULT_SETTINGS.background,
-  );
+  const background =
+    getBundledWallpaper(rawBackground)?.id ??
+    pick(
+      [...BACKGROUNDS, DEFAULT_SETTINGS.background],
+      rawBackground,
+      DEFAULT_SETTINGS.background,
+    );
   const flag = (
     key:
       "menuBar" | "sidebarCollapsed" | "runInBackground" | "autoCheckUpdates",

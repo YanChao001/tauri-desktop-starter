@@ -107,6 +107,104 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it.each([
+  {
+    version: "1.0.0",
+    description: "the same version with different Wasm bytes",
+    message:
+      "Package version 1.0.0 must be higher than the installed version 1.0.0.",
+  },
+  {
+    version: "0.9.9",
+    description: "a lower version",
+    message:
+      "Package version 0.9.9 must be higher than the installed version 1.0.0.",
+  },
+])(
+  "rejects a local package with $description before review",
+  async ({ version, message }) => {
+    snapshot = {
+      revision: 4,
+      runs: [],
+      items: [
+        {
+          generation: 1,
+          origin: { kind: "local" },
+          package: { ...preview, sha256: "a".repeat(64) },
+          enabled: false,
+          grantedPermissions: [],
+        },
+      ],
+    };
+    vi.mocked(native.previewExtension).mockResolvedValue({
+      ...preview,
+      manifest: { ...preview.manifest, version },
+    });
+    marketPage("discover");
+    const input = await screen.findByLabelText("Choose package");
+    await waitFor(() => expect(input).toBeEnabled());
+    const file = new File(
+      ["replacement-package"],
+      "example.starter-extension.json",
+      {
+        type: "application/json",
+      },
+    );
+    file.arrayBuffer = async () =>
+      new TextEncoder().encode("replacement-package").buffer;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(message));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(native.installExtension).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  },
+);
+
+it("reviews a higher local package version before replacing the installed extension", async () => {
+  const user = userEvent.setup();
+  snapshot = {
+    revision: 4,
+    runs: [],
+    items: [
+      {
+        generation: 1,
+        origin: { kind: "local" },
+        package: preview,
+        enabled: false,
+        grantedPermissions: [],
+      },
+    ],
+  };
+  vi.mocked(native.previewExtension).mockResolvedValue({
+    ...preview,
+    manifest: { ...preview.manifest, version: "1.0.1" },
+  });
+  vi.mocked(native.installExtension).mockResolvedValue(snapshot);
+  marketPage("discover");
+  const input = await screen.findByLabelText("Choose package");
+  await waitFor(() => expect(input).toBeEnabled());
+  const file = new File(["upgrade-package"], "example.starter-extension.json", {
+    type: "application/json",
+  });
+  file.arrayBuffer = async () =>
+    new TextEncoder().encode("upgrade-package").buffer;
+  fireEvent.change(input, { target: { files: [file] } });
+
+  const review = await screen.findByRole("dialog");
+  expect(native.installExtension).not.toHaveBeenCalled();
+  await user.click(within(review).getByRole("button", { name: "Update" }));
+  await waitFor(() =>
+    expect(native.installExtension).toHaveBeenCalledWith(
+      "upgrade-package",
+      4,
+      true,
+      preview.sha256,
+      { trusted: true, grantedPermissions: ["text:read"] },
+    ),
+  );
+});
+
 it("shows initial loading, then a recoverable error instead of an empty installed list", async () => {
   let rejectSnapshot!: (reason: unknown) => void;
   vi.mocked(native.extensionSnapshot).mockReturnValueOnce(

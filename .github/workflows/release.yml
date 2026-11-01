@@ -31,7 +31,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: 验证发布代码属于主分支
-        run: git merge-base --is-ancestor HEAD origin/main
+        run: node scripts/hosting/github-actions.mjs verify-release-source
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
@@ -102,6 +102,8 @@ jobs:
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
         with:
           workspaces: src-tauri
+          # 两个 macOS target 运行在同一宿主架构，必须分别保存各自的编译缓存。
+          key: release-${{ matrix.target }}
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
@@ -351,27 +353,14 @@ jobs:
 
       - name: 计算 tag 与版本号
         shell: pwsh
-        run: |
-          $ref = $env:GITHUB_REF
-          if ($ref -like "refs/tags/*") {
-            $tag = $ref -replace "^refs/tags/", ""
-          } else {
-            $tag = "v" + (node -p "require('./package.json').version")
-          }
-          "TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "VERSION=$($tag.TrimStart('v'))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        run: node scripts/hosting/github-actions.mjs signing-version
 
       - name: 查找本次构建的未签名 artifact
         id: unsigned
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $response = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/artifacts?per_page=100"
-          if ($LASTEXITCODE -ne 0) { throw "读取 workflow artifacts 失败" }
-          $artifacts = @(($response | ConvertFrom-Json).artifacts | Where-Object { $_.name -eq "unsigned-nsis" -and -not $_.expired })
-          if ($artifacts.Count -ne 1) { throw "本次 run 必须恰好有一个 unsigned-nsis artifact" }
-          "artifact-id=$($artifacts[0].id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        run: node scripts/hosting/github-actions.mjs unsigned-artifact
 
       - name: 提交 SignPath 签名请求
         id: signpath
@@ -462,8 +451,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
       - name: 发布并按版本确定 Latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.validate.outputs.release-id }}
-        run: gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false -f make_latest=legacy
+        run: node scripts/hosting/github-actions.mjs publish-release

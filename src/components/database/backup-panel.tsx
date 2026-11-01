@@ -139,29 +139,22 @@ export function BackupPanel({
             {t("data.backupHint")}
           </TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={(event) => {
-                returnFocus.current = event.currentTarget;
-                void run(async () => {
-                  const value = await pickDataBackup();
-                  if (value && mounted.current) {
-                    setPreview(value);
-                    setBackups(await listDataBackups());
-                  }
-                });
-              }}
-            >
-              {t("data.importBackupAction")}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" collisionPadding={8}>
-            {t("data.importBackup")}
-          </TooltipContent>
-        </Tooltip>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={(event) => {
+            returnFocus.current = event.currentTarget;
+            void run(async () => {
+              const value = await pickDataBackup();
+              if (value && mounted.current) {
+                setPreview(value);
+                setBackups(await listDataBackups());
+              }
+            });
+          }}
+        >
+          {t("data.importBackupAction")}
+        </Button>
         <Dialog
           open={backupsOpen || preview !== null}
           onOpenChange={(open) => {

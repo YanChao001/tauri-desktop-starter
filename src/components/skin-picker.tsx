@@ -1,6 +1,8 @@
 import { CheckIcon } from "lucide-react";
 import { PatternArtwork } from "@/components/window-background";
 import { CustomBackgroundPicker } from "@/components/custom-background-picker";
+import { WallpaperThumbnail } from "@/components/wallpaper-thumbnail";
+import { BUNDLED_WALLPAPERS } from "@/lib/bundled-wallpapers";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -20,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/providers/i18n";
 import { useSettings } from "@/providers/settings";
 
-/** 缩略图与窗口复用同一份矢量插画，切换即生效。 */
+/** 随包图片和矢量皮肤共用选择入口，缩略图与窗口使用同一资源。 */
 export function SkinPicker() {
   const { t } = useI18n();
   const { settings, update } = useSettings();
@@ -33,6 +35,55 @@ export function SkinPicker() {
       <div className="space-y-3">
         <TooltipProvider delayDuration={650} skipDelayDuration={0}>
           <div className="skin-gallery">
+            {BUNDLED_WALLPAPERS.map((wallpaper) => {
+              const active = settings.background === wallpaper.id;
+              return (
+                <label
+                  key={wallpaper.id}
+                  data-surface="control"
+                  data-bundled-wallpaper-id={wallpaper.id}
+                  data-selected={active}
+                  className={cn(
+                    "skin-gallery-card group relative cursor-pointer rounded-xl border p-2 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
+                    active
+                      ? "border-primary bg-(--surface-state-selected)"
+                      : "border-border/70 hover:border-primary/50 hover:bg-(--surface-state-hover)",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="background-skin"
+                    className="sr-only"
+                    value={wallpaper.id}
+                    checked={active}
+                    aria-label={t("settings.chooseWallpaper", {
+                      name: wallpaper.name,
+                    })}
+                    onChange={() => update({ background: wallpaper.id })}
+                  />
+                  <span
+                    data-surface="artwork"
+                    className="relative block aspect-[1.6] overflow-hidden rounded-lg border border-foreground/8 bg-background"
+                  >
+                    <WallpaperThumbnail
+                      dataUrl={wallpaper.url}
+                      className="size-full object-cover"
+                    />
+                    {active ? (
+                      <span className="custom-skin-check">
+                        <CheckIcon className="size-3" aria-hidden="true" />
+                        <span className="sr-only">
+                          {t("settings.activeSkin")}
+                        </span>
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-2 block px-0.5 text-xs font-medium break-words">
+                    {wallpaper.name}
+                  </span>
+                </label>
+              );
+            })}
             {BUILTIN_BACKGROUNDS.map((kind) => {
               const metadata = BACKGROUND_METADATA[kind];
               const active = settings.background === kind;

@@ -38,8 +38,6 @@ export const enSystem: Record<keyof typeof zhSystem, string> = {
   "system.success": "Operation completed",
   "system.denied":
     "Notification permission not granted. Check your system notification settings.",
-  "system.permission":
-    "Notification behavior varies by operating system. Check it after installation.",
   "nav.system": "System integration",
   "nativeError.userCancelled": "Cancelled. Your unsaved work is preserved.",
   "nativeError.httpTimeout":

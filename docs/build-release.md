@@ -183,7 +183,7 @@ Rust updater 经 [`src/lib/tauri.ts`](../src/lib/tauri.ts) 的生成命令提供
    pnpm tauri signer generate -w ~/.tauri/my-app.key
    ```
 
-2. 在 `app.config.json` 设置公钥和本项目端点，CI 会核对 GitHub 仓库：
+2. 在 `app.config.json` 设置公钥和本项目端点，CI 按 `repository.config.json` 的链接模板核对仓库和清单地址；默认 GitHub 示例：
 
    ```json
    {
@@ -216,13 +216,15 @@ Windows 安装可能结束当前进程、启动安装器并重新打开应用，
 
 ### 更新服务端与签名顺序
 
-默认 GitHub Releases 静态清单；自建服务器须保持 [Tauri updater 格式](https://v2.tauri.app/plugin/updater/) 并调整发布端点校验。
+默认 GitHub Releases 静态清单；自建服务器须保持 [Tauri updater 格式](https://v2.tauri.app/plugin/updater/)。链接、端点校验与 GitHub 发布实现的集中入口见 [仓库托管配置](./repository-hosting.md)，其他平台的 API 和流水线仍须实际适配。
 
 代码签名处理系统发布者信任，更新签名验证包与版本，两者不能互代。**更新签名须覆盖最终交付字节**：当前 PFX 在打包阶段签名，可以配合更新流程；SignPath 后签组合尚未支持。任何代码签名、压缩或字节修改均须在生成最终更新签名与清单之前完成。
 
 ## CI 多平台构建
 
 正式包由 [release.yml](../.github/workflows/release.yml) 在推送 `v*` tag 或手动触发后构建；提交须已属于 `main`，tag 与项目版本一致。手动触发按所选 ref 的项目版本关联 Release，同样是正式发布决定。日常 CI 范围见 [测试规范](./testing.md#持续集成检查)。
+
+Rust 发布缓存按 `matrix.target` 区分，避免同一 macOS runner 上的 ARM64 与 x86_64 任务竞争同一个缓存键；正式包继续使用原有 release 编译策略。
 
 **打 tag / 手动触发前完成适用验收并确认发布说明；全部必要任务成功后会自动公开，不再等待人工点发布。** 草稿只暂存构建与签名资产；平台验收范围按下节记录。
 

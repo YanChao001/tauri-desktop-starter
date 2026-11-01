@@ -175,10 +175,6 @@ describe("设置页", () => {
       ).toMatchObject({ networkMode: "system" }),
     );
     expect(connection).toHaveTextContent("系统代理");
-    fireEvent.focus(screen.getByRole("button", { name: "了解网络连接" }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "保存后用于后续请求，插件使用系统代理仍需单独授权。",
-    );
   });
 
   it("应用更新直接可见并支持深链定位，浏览器不会调用原生更新", () => {
@@ -220,10 +216,29 @@ describe("设置页", () => {
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject(
       { language: "en" },
     );
-    expect(screen.getByRole("button", { name: "System" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+  });
+
+  it("内置图片默认选中，切换后只持久化文件身份且保留独立用户图库", () => {
+    render(<SettingsView />);
+    const wallpaper = screen.getByRole("radio", {
+      name: "使用壁纸：秋日花饰少女",
+    });
+    expect(wallpaper).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
+    expect(wallpaper).not.toBeChecked();
+    fireEvent.click(wallpaper);
+    expect(wallpaper).toBeChecked();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      background: "bundled:001-秋日花饰少女.jpg",
+      customBackground: null,
+    });
+    expect(
+      screen.queryByRole("button", { name: "删除壁纸：秋日花饰少女" }),
+    ).not.toBeInTheDocument();
   });
 
   it("重置外观时保留用户语言并恢复其余默认偏好", async () => {
@@ -273,6 +288,7 @@ describe("设置页", () => {
   it("皮肤与强度即时生效、持久化，并在纯色皮肤下禁用强度", () => {
     const view = () => <SettingsView />;
     const { unmount } = render(view());
+    fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
     expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveAttribute(
       "data-disabled",
     );
@@ -412,11 +428,9 @@ describe("设置页", () => {
     fireEvent.click(
       presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
     );
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("窗口大小已保存"),
-    );
+    expect(await screen.findByText("当前尺寸 1272 × 792")).toBeVisible();
+    expect(toast.success).not.toHaveBeenCalled();
     expect(desktop.setWindowSize).toHaveBeenCalledExactlyOnceWith(1280, 800);
-    expect(screen.getByText("当前尺寸 1272 × 792")).toBeVisible();
     for (const button of presets.getAllByRole("button"))
       expect(button).toHaveAttribute("aria-pressed", "false");
   });
@@ -697,7 +711,7 @@ describe("设置页", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(screen.getByRole("radio", { name: "记住上次位置" })).toBeChecked();
-    expect(toast.success).toHaveBeenCalledExactlyOnceWith("已恢复默认偏好");
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("原生重置失败时保留确认和实际尺寸，不写入偏好", async () => {

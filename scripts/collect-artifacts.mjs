@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { appendFileSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { publishArtifacts } from "./artifact-lib.mjs";
 import { checkVersions } from "./version.mjs";
+import { writeOutput } from "./hosting/github-env.mjs";
 
 const BUNDLES = new Set([
   "nsis",
@@ -66,8 +66,7 @@ function main() {
     ),
   });
   const artifactPath = relative(root, output).replaceAll("\\", "/");
-  if (process.env.GITHUB_OUTPUT)
-    appendFileSync(process.env.GITHUB_OUTPUT, `artifact-dir=${artifactPath}\n`);
+  writeOutput("artifact-dir", artifactPath);
   console.log(`本次分发产物：${artifactPath}`);
 }
 

@@ -12,20 +12,44 @@ use crate::{
     wallpapers::{Wallpaper, WallpaperInput, WallpaperStore, WallpaperVideo},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use specta::Type;
 use std::{
+    collections::VecDeque,
     fs::File,
     io::Read,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionWallpaperApplyResult {
+    pub applied: bool,
+    pub active_id: String,
+    pub revision: i32,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionWallpaperPreviewResult {
+    pub id: String,
+    pub preview_key: String,
+    pub data_url: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Request {
     List,
+    Preview {
+        id: String,
+        #[serde(rename = "previewKey")]
+        preview_key: String,
+    },
     Import,
     ImportResource {
         #[serde(rename = "resourceId")]
@@ -79,6 +103,10 @@ fn parse_request(value: Value) -> NativeResult<Request> {
     let request: Request =
         serde_json::from_value(value).map_err(|_| invalid("Invalid wallpaper service request"))?;
     match &request {
+        Request::Preview { id, preview_key } => {
+            validate_id(id)?;
+            validate_id(preview_key)?;
+        }
         Request::ImportResource { resource_id, name } => {
             if resource_id.is_empty()
                 || resource_id.len() > 128
@@ -167,6 +195,49 @@ struct GallerySnapshot {
     images: Vec<Wallpaper>,
     active_id: Option<String>,
 }
+
+const MAX_CACHED_PREVIEWS: usize = 48;
+const MAX_CACHED_PREVIEW_BYTES: usize = 24 * 1024;
+
+#[derive(Default)]
+struct GalleryPreviewCache {
+    entries: Mutex<VecDeque<([u8; 32], String)>>,
+}
+
+impl GalleryPreviewCache {
+    fn get_or_render(
+        &self,
+        data_url: &str,
+        render: impl FnOnce(&str) -> NativeResult<Option<String>>,
+    ) -> NativeResult<Option<String>> {
+        // 视频图库 ID 不包含封面内容，缓存必须跟随实际图片字节变化。
+        let key: [u8; 32] = Sha256::digest(data_url.as_bytes()).into();
+        if let Ok(entries) = self.entries.lock()
+            && let Some((_, preview)) = entries.iter().find(|(stored, _)| stored == &key)
+        {
+            return Ok(Some(preview.clone()));
+        }
+        // 解码和编码在锁外执行；临时繁忙、无效图片与超额结果均不占缓存。
+        let result = render(data_url)?;
+        if let Some(preview) = &result
+            && preview.len() <= MAX_CACHED_PREVIEW_BYTES
+            && let Ok(mut entries) = self.entries.lock()
+            && !entries.iter().any(|(stored, _)| stored == &key)
+        {
+            while entries.len() >= MAX_CACHED_PREVIEWS {
+                entries.pop_front();
+            }
+            entries.push_back((key, preview.clone()));
+        }
+        Ok(result)
+    }
+}
+
+fn gallery_previews() -> &'static GalleryPreviewCache {
+    static PREVIEWS: OnceLock<GalleryPreviewCache> = OnceLock::new();
+    PREVIEWS.get_or_init(GalleryPreviewCache::default)
+}
+
 fn capture_gallery(
     settings: &SettingsStore,
     library: &WallpaperStore,
@@ -194,23 +265,47 @@ fn read_gallery(app: &tauri::AppHandle) -> NativeResult<GallerySnapshot> {
         &app.state::<WallpaperStore>(),
     )
 }
-fn render_gallery(
-    snapshot: GallerySnapshot,
-    permit: &ServicePermit,
-    mut preview: impl FnMut(&str) -> NativeResult<Option<String>>,
-) -> NativeResult<Value> {
-    // 快照来自已结束的提交临界区，逐图解码和缩略图编码不能占用窗口生命周期锁。
+fn render_gallery(snapshot: GallerySnapshot, permit: &ServicePermit) -> NativeResult<Value> {
+    // 元数据独立于缩略图返回，首次打开不等待整库图片解码。
     permit.check()?;
     let mut items = Vec::with_capacity(snapshot.images.len());
     for entry in snapshot.images {
         permit.check()?;
-        let data_url = preview(&entry.data_url)?;
-        permit.check()?;
         let active = snapshot.active_id.as_deref() == Some(entry.id.as_str());
-        items.push(json!({"id":entry.id,"name":entry.name,"dataUrl":data_url,"active":active}));
+        let preview_key = gallery_preview_key(&entry.data_url);
+        items.push(json!({"id":entry.id,"name":entry.name,"dataUrl":null,"active":active,"previewKey":preview_key}));
     }
     permit.check()?;
     Ok(json!({"revision":snapshot.revision,"items":items,"limit":24}))
+}
+fn gallery_preview_key(data_url: &str) -> String {
+    format!("{:x}", Sha256::digest(data_url.as_bytes()))
+}
+fn select_gallery_preview(
+    snapshot: GallerySnapshot,
+    id: &str,
+    preview_key: &str,
+) -> NativeResult<Wallpaper> {
+    snapshot
+        .images
+        .into_iter()
+        .find(|entry| entry.id == id && gallery_preview_key(&entry.data_url) == preview_key)
+        .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Wallpaper preview no longer exists"))
+}
+fn render_gallery_preview(
+    entry: Wallpaper,
+    permit: &ServicePermit,
+    previews: &GalleryPreviewCache,
+    preview: impl FnOnce(&str) -> NativeResult<Option<String>>,
+) -> NativeResult<ExtensionWallpaperPreviewResult> {
+    permit.check()?;
+    let data_url = previews.get_or_render(&entry.data_url, preview)?;
+    permit.check()?;
+    Ok(ExtensionWallpaperPreviewResult {
+        id: entry.id,
+        preview_key: gallery_preview_key(&entry.data_url),
+        data_url,
+    })
 }
 fn gallery_preview(data_url: &str) -> NativeResult<Option<String>> {
     let Some((header, encoded)) = data_url.split_once(',') else {
@@ -253,6 +348,41 @@ fn next_settings(settings: &Value, image: Option<&Wallpaper>, fit: &str) -> Nati
     );
     Ok(value)
 }
+fn apply_gallery(
+    settings: &SettingsStore,
+    library: &WallpaperStore,
+    id: &str,
+    expected_revision: i32,
+    fit: &str,
+    save: impl FnOnce(
+        Option<&WallpaperVideo>,
+        Value,
+        i32,
+    ) -> NativeResult<crate::storage::SettingsSnapshot>,
+) -> NativeResult<(
+    crate::storage::SettingsSnapshot,
+    ExtensionWallpaperApplyResult,
+)> {
+    let snapshot = settings.snapshot()?;
+    let images = library.list(legacy(&snapshot.settings))?;
+    let entry = images
+        .iter()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Wallpaper no longer exists"))?;
+    let updated = save(
+        entry.video.as_ref(),
+        next_settings(&snapshot.settings, Some(entry), fit)?,
+        expected_revision,
+    )?;
+    let result = ExtensionWallpaperApplyResult {
+        applied: true,
+        revision: updated.revision,
+        active_id: entry.id.clone(),
+    };
+    Ok((updated, result))
+}
+
+#[cfg(test)]
 fn apply_settings(
     settings: &SettingsStore,
     library: &WallpaperStore,
@@ -260,16 +390,15 @@ fn apply_settings(
     expected_revision: i32,
     fit: &str,
 ) -> NativeResult<crate::storage::SettingsSnapshot> {
-    let snapshot = settings.snapshot()?;
-    let entry = library
-        .list(legacy(&snapshot.settings))?
-        .into_iter()
-        .find(|entry| entry.id == id)
-        .ok_or_else(|| NativeError::new(ErrorCode::NotFound, "Wallpaper no longer exists"))?;
-    settings.save(
-        next_settings(&snapshot.settings, Some(&entry), fit)?,
+    apply_gallery(
+        settings,
+        library,
+        id,
         expected_revision,
+        fit,
+        |_, next, revision| settings.save(next, revision),
     )
+    .map(|(updated, _)| updated)
 }
 fn remove_image(
     settings: &SettingsStore,
@@ -345,6 +474,31 @@ fn broadcast_settings(app: &tauri::AppHandle, snapshot: &crate::storage::Setting
         log::warn!("Cannot broadcast wallpaper settings: {error}");
     }
 }
+fn wallpaper_capacity(preview: bool) -> NativeResult<tokio::sync::OwnedSemaphorePermit> {
+    static ACTIVE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    static PREVIEWS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+    // 慢缩略图有独立的一项容量，不占用保存、删除和元数据读取的两个执行位。
+    let capacity = if preview {
+        PREVIEWS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1)))
+    } else {
+        ACTIVE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
+    };
+    capacity
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| NativeError::new(ErrorCode::ExtensionBusy, "Wallpaper service is busy"))
+}
+async fn wallpaper_task<T: Send + 'static>(
+    capacity: tokio::sync::OwnedSemaphorePermit,
+    task: impl FnOnce() -> NativeResult<T> + Send + 'static,
+) -> NativeResult<T> {
+    blocking::run(move || {
+        // 取消等待不会停止同步工作，执行位必须随实际工作结束后归还。
+        let _capacity = capacity;
+        task()
+    })
+    .await
+}
 
 pub(crate) async fn request(
     app: tauri::AppHandle,
@@ -358,16 +512,11 @@ pub(crate) async fn request(
     }
     let request = parse_request(request)?;
     permit.check()?;
-    static ACTIVE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
-    let _permit = ACTIVE
-        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| NativeError::new(ErrorCode::ExtensionBusy, "Wallpaper service is busy"))?;
+    let _permit = wallpaper_capacity(matches!(request, Request::Preview { .. }))?;
     match request {
         Request::ImportResource { resource_id, name } => {
             let owner = owner.to_owned();
-            blocking::run(move || {
+            wallpaper_task(_permit, move || {
                 permit.check()?;
                 let data_url = gallery_image(&owner, &identity, &resource_id)?;
                 let (entry, snapshot) = permit.commit(|| {
@@ -379,13 +528,13 @@ pub(crate) async fn request(
                     Ok((entry, read_gallery(&app)))
                 })?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
-                let library = render_gallery(snapshot?, &permit, gallery_preview)?;
+                let library = render_gallery(snapshot?, &permit)?;
                 Ok(json!({"item":entry,"library":library}))
             })
             .await
         }
         Request::Import => {
-            blocking::run(move || {
+            wallpaper_task(_permit, move || {
                 permit.check()?;
                 let Some(path) = app
                     .dialog()
@@ -426,15 +575,25 @@ pub(crate) async fn request(
                     Ok((entry, read_gallery(&app)))
                 })?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
-                let library = render_gallery(snapshot?, &permit, gallery_preview)?;
+                let library = render_gallery(snapshot?, &permit)?;
                 Ok(json!({"cancelled":false,"item":entry,"library":library}))
             })
             .await
         }
         Request::List => {
-            blocking::run(move || {
+            wallpaper_task(_permit, move || {
                 let snapshot = permit.commit(|| read_gallery(&app))?;
-                render_gallery(snapshot, &permit, gallery_preview)
+                render_gallery(snapshot, &permit)
+            })
+            .await
+        }
+        Request::Preview { id, preview_key } => {
+            wallpaper_task(_permit, move || {
+                let entry = permit
+                    .commit(|| select_gallery_preview(read_gallery(&app)?, &id, &preview_key))?;
+                let preview =
+                    render_gallery_preview(entry, &permit, gallery_previews(), gallery_preview)?;
+                Ok(json!(preview))
             })
             .await
         }
@@ -443,30 +602,30 @@ pub(crate) async fn request(
             expected_revision,
             fit,
         } => {
-            blocking::run(move || {
-                let (updated, snapshot) = permit.commit(|| {
+            wallpaper_task(_permit, move || {
+                let (updated, result) = permit.commit(|| {
                     let settings = app.state::<SettingsStore>();
                     let library = app.state::<WallpaperStore>();
-                    let current = settings.snapshot()?;
-                    let video = library
-                        .list(legacy(&current.settings))?
-                        .into_iter()
-                        .find(|entry| entry.id == id)
-                        .and_then(|entry| entry.video);
-                    let updated = app
-                        .state::<crate::wallpaper_video::WallpaperVideoStore>()
-                        .with_video(video.as_ref(), || {
-                            apply_settings(&settings, &library, &id, expected_revision, &fit)
-                        })?;
-                    Ok((updated, read_gallery(&app)))
+                    apply_gallery(
+                        &settings,
+                        &library,
+                        &id,
+                        expected_revision,
+                        &fit,
+                        |video, next, revision| {
+                            app.state::<crate::wallpaper_video::WallpaperVideoStore>()
+                                .with_video(video, || settings.save(next, revision))
+                        },
+                    )
                 })?;
                 broadcast_settings(&app, &updated);
-                render_gallery(snapshot?, &permit, gallery_preview)
+                permit.check()?;
+                Ok(json!(result))
             })
             .await
         }
         Request::Rename { id, name } => {
-            blocking::run(move || {
+            wallpaper_task(_permit, move || {
                 let ((updated, renamed), snapshot) = permit.commit(|| {
                     let updated = rename_image(
                         &app.state::<SettingsStore>(),
@@ -481,7 +640,7 @@ pub(crate) async fn request(
                 }
                 renamed?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
-                render_gallery(snapshot?, &permit, gallery_preview)
+                render_gallery(snapshot?, &permit)
             })
             .await
         }
@@ -489,7 +648,7 @@ pub(crate) async fn request(
             id,
             expected_revision,
         } => {
-            blocking::run(move || {
+            wallpaper_task(_permit, move || {
                 let ((updated, removed), snapshot) = permit.commit(|| {
                     let updated = remove_image(
                         &app.state::<SettingsStore>(),
@@ -503,7 +662,7 @@ pub(crate) async fn request(
                 broadcast_settings(&app, &updated);
                 removed?;
                 let _ = app.emit(WALLPAPERS_EVENT, ());
-                render_gallery(snapshot?, &permit, gallery_preview)
+                render_gallery(snapshot?, &permit)
             })
             .await
         }
@@ -536,6 +695,10 @@ mod tests {
             json!({"action":"import-resource", "resourceId":"a".repeat(64), "name":"x".repeat(121)}),
             json!({"action":"import-resource", "resourceId":"a".repeat(64), "name":"bad\0name"}),
             json!({"action":"apply", "id":"../x", "expectedRevision":0, "fit":"cover"}),
+            json!({"action":"preview", "id":"a".repeat(64), "previewKey":"../x"}),
+            json!({"action":"preview", "id":"../x", "previewKey":"a".repeat(64)}),
+            json!({"action":"preview", "id":"a".repeat(64)}),
+            json!({"action":"preview", "id":"a".repeat(64), "previewKey":"b".repeat(64), "url":"https://example.test/image.jpg"}),
             json!({"action":"remove", "id":"a".repeat(64), "expectedRevision":-1}),
             json!({"action":"rename", "id":"a".repeat(64), "name":""}),
         ] {
@@ -559,6 +722,12 @@ mod tests {
         }
         assert!(parse_request(json!({"action":"import"})).is_ok());
         assert!(parse_request(json!({"action":"list"})).is_ok());
+        assert!(
+            parse_request(
+                json!({"action":"preview", "id":"a".repeat(64), "previewKey":"b".repeat(64)})
+            )
+            .is_ok()
+        );
     }
     #[test]
     fn provider_actions_are_explicitly_unsupported() {
@@ -646,6 +815,465 @@ mod tests {
         );
     }
     #[test]
+    fn listing_metadata_does_not_generate_previews() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        for index in 0..3 {
+            let mut bytes = Vec::new();
+            image::DynamicImage::new_rgb8(32 + index, 24)
+                .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Jpeg)
+                .unwrap();
+            library
+                .add(WallpaperInput {
+                    video: None,
+                    name: format!("Image {index}"),
+                    data_url: format!("data:image/jpeg;base64,{}", STANDARD.encode(bytes)),
+                })
+                .unwrap();
+        }
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let result =
+            render_gallery(capture_gallery(&settings, &library).unwrap(), &permit).unwrap();
+        assert_eq!(result["items"].as_array().unwrap().len(), 3);
+        for item in result["items"].as_array().unwrap() {
+            assert!(item["dataUrl"].is_null());
+            assert_eq!(item["previewKey"].as_str().unwrap().len(), 64);
+        }
+    }
+    #[test]
+    fn previews_require_an_existing_matching_cover_and_keep_invalid_images_nullable() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let entry = library
+            .add(WallpaperInput {
+                video: None,
+                name: "Undecodable cover".into(),
+                data_url: "data:image/jpeg;base64,/9j/".into(),
+            })
+            .unwrap();
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let metadata =
+            render_gallery(capture_gallery(&settings, &library).unwrap(), &permit).unwrap();
+        let key = metadata["items"][0]["previewKey"].as_str().unwrap();
+        for (id, preview_key) in [(&"a".repeat(64), key), (&entry.id, "wrong cover")] {
+            assert_eq!(
+                select_gallery_preview(
+                    capture_gallery(&settings, &library).unwrap(),
+                    id,
+                    preview_key
+                )
+                .unwrap_err()
+                .code,
+                ErrorCode::NotFound
+            );
+        }
+        let selected = select_gallery_preview(
+            capture_gallery(&settings, &library).unwrap(),
+            &entry.id,
+            key,
+        )
+        .unwrap();
+        let result = render_gallery_preview(
+            selected,
+            &permit,
+            &GalleryPreviewCache::default(),
+            gallery_preview,
+        )
+        .unwrap();
+        assert_eq!(
+            json!(result),
+            json!({"id": entry.id, "previewKey": key, "dataUrl": null})
+        );
+        library.remove(&entry.id).unwrap();
+        assert_eq!(
+            select_gallery_preview(
+                capture_gallery(&settings, &library).unwrap(),
+                &entry.id,
+                key
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::NotFound
+        );
+    }
+    #[test]
+    fn preview_capacity_does_not_reserve_the_metadata_and_save_slots() {
+        let preview = wallpaper_capacity(true).unwrap();
+        assert_eq!(
+            wallpaper_capacity(true).unwrap_err().code,
+            ErrorCode::ExtensionBusy
+        );
+        let first_save = wallpaper_capacity(false).unwrap();
+        let second_save = wallpaper_capacity(false).unwrap();
+        assert_eq!(
+            wallpaper_capacity(false).unwrap_err().code,
+            ErrorCode::ExtensionBusy
+        );
+        drop(first_save);
+        let available = wallpaper_capacity(false).unwrap();
+        drop((preview, second_save, available));
+    }
+    #[test]
+    fn cancelled_wallpaper_waiters_keep_capacity_until_the_worker_finishes() {
+        let capacity = Arc::new(tokio::sync::Semaphore::new(1));
+        let slot = capacity.clone().try_acquire_owned().unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let waiter = tauri::async_runtime::spawn(async move {
+            wallpaper_task(slot, move || {
+                started_tx.send(()).unwrap();
+                finish_rx.recv().unwrap();
+                Ok(())
+            })
+            .await
+        });
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        waiter.abort();
+        assert!(tauri::async_runtime::block_on(waiter).is_err());
+        assert!(capacity.clone().try_acquire_owned().is_err());
+        finish_tx.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while capacity.available_permits() == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(capacity.try_acquire_owned().is_ok());
+    }
+    #[test]
+    fn closed_preview_requests_do_not_start_the_image_renderer() {
+        let directory = tempfile::tempdir().unwrap();
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        extensions.begin_window_close("main").unwrap();
+        let result = render_gallery_preview(
+            Wallpaper {
+                id: "a".repeat(64),
+                name: "Closed request".into(),
+                data_url: "data:image/jpeg;base64,/9j/".into(),
+                video: None,
+            },
+            &permit,
+            &GalleryPreviewCache::default(),
+            |_| panic!("A closed service must not start image rendering"),
+        );
+        assert_eq!(result.unwrap_err().code, ErrorCode::ExtensionUnavailable);
+    }
+    #[test]
+    #[ignore = "diagnostic timing baseline; run explicitly"]
+    fn cold_gallery_preview_timing_baseline() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let prepared = std::time::Instant::now();
+        let mut stored_bytes = 0;
+        for index in 0..24 {
+            let mut state = 7_u32 + index;
+            let source = image::RgbImage::from_fn(1600, 900, |x, y| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = ((state >> 24) % 16) as i16 - 8;
+                image::Rgb([
+                    (48 + x as i16 / 10 + noise).clamp(0, 255) as u8,
+                    (64 + y as i16 / 7 + noise).clamp(0, 255) as u8,
+                    (176 + x as i16 / 20 - y as i16 / 20 + noise).clamp(0, 255) as u8,
+                ])
+            });
+            let mut bytes = Vec::new();
+            // 与宿主优化副本的质量档位一致；准备工作不计入列表耗时。
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 46)
+                .encode_image(&source)
+                .unwrap();
+            let data_url = format!("data:image/jpeg;base64,{}", STANDARD.encode(bytes));
+            assert!(data_url.len() <= 96 * 1024);
+            stored_bytes += data_url.len();
+            library
+                .add(WallpaperInput {
+                    video: None,
+                    name: format!("Synthetic JPEG {index}"),
+                    data_url,
+                })
+                .unwrap();
+        }
+        eprintln!(
+            "Prepared 24 synthetic 1600x900 JPEGs in {:.3}s; fixture time excluded",
+            prepared.elapsed().as_secs_f64()
+        );
+        let previews = GalleryPreviewCache::default();
+        let started = std::time::Instant::now();
+        let snapshot = capture_gallery(&settings, &library).unwrap();
+        let capture_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let entries = snapshot.images.clone();
+        let rendering = std::time::Instant::now();
+        let metadata = render_gallery(snapshot, &permit).unwrap();
+        let metadata_ms = rendering.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(metadata["items"].as_array().unwrap().len(), 24);
+        let mut preview_ms = Vec::new();
+        let rendering = std::time::Instant::now();
+        let cold = entries
+            .iter()
+            .cloned()
+            .map(|entry| {
+                json!(
+                    render_gallery_preview(entry, &permit, &previews, |source| {
+                        let started = std::time::Instant::now();
+                        let result = gallery_preview(source);
+                        preview_ms.push(started.elapsed().as_secs_f64() * 1000.0);
+                        result
+                    })
+                    .unwrap()
+                )
+            })
+            .collect::<Vec<_>>();
+        let cold_render_ms = rendering.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(preview_ms.len(), 24);
+        let started = std::time::Instant::now();
+        let snapshot = capture_gallery(&settings, &library).unwrap();
+        let warm_capture_ms = started.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(render_gallery(snapshot, &permit).unwrap(), metadata);
+        let rendering = std::time::Instant::now();
+        let warm = entries
+            .into_iter()
+            .map(|entry| {
+                json!(
+                    render_gallery_preview(entry, &permit, &previews, |_| {
+                        panic!("A repeated unchanged gallery should use cached previews")
+                    })
+                    .unwrap()
+                )
+            })
+            .collect::<Vec<_>>();
+        let warm_render_ms = rendering.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(cold, warm);
+        eprintln!(
+            "Gallery timing baseline: {}",
+            json!({
+                "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+                "items": 24,
+                "sourceDimensions": [1600, 900],
+                "storedDataUrlBytes": stored_bytes,
+                "captureMs": capture_ms,
+                "metadataRenderMs": metadata_ms,
+                "metadataTotalMs": capture_ms + metadata_ms,
+                "coldRenderMs": cold_render_ms,
+                "coldTotalMs": capture_ms + cold_render_ms,
+                "coldPreviewMeanMs": preview_ms.iter().sum::<f64>() / 24.0,
+                "coldPreviewEachMs": preview_ms,
+                "warmCaptureMs": warm_capture_ms,
+                "warmRenderMs": warm_render_ms,
+                "warmTotalMs": warm_capture_ms + warm_render_ms,
+            })
+        );
+    }
+    #[test]
+    fn unchanged_gallery_thumbnails_are_reused_after_applying_another_image() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let entries = [61, 62].map(|width| {
+            let mut bytes = Vec::new();
+            image::DynamicImage::new_rgb8(width, 37)
+                .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+                .unwrap();
+            library
+                .add(WallpaperInput {
+                    video: None,
+                    name: format!("Image {width}"),
+                    data_url: render_image(&bytes, "image/png", false).unwrap(),
+                })
+                .unwrap()
+        });
+        let renders = std::cell::Cell::new(0);
+        let previews = GalleryPreviewCache::default();
+        let preview = |source: &str| {
+            renders.set(renders.get() + 1);
+            gallery_preview(source)
+        };
+        let first = render_gallery(capture_gallery(&settings, &library).unwrap(), &permit).unwrap();
+        let first_previews = entries
+            .iter()
+            .cloned()
+            .map(|entry| json!(render_gallery_preview(entry, &permit, &previews, preview).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(renders.get(), 2);
+        assert_eq!(first["revision"], 0);
+        assert_eq!(first["items"][0]["active"], false);
+        assert_eq!(first["items"][1]["active"], false);
+        apply_settings(&settings, &library, &entries[1].id, 0, "contain").unwrap();
+        let applied =
+            render_gallery(capture_gallery(&settings, &library).unwrap(), &permit).unwrap();
+        let repeated_previews = entries
+            .iter()
+            .cloned()
+            .map(|entry| json!(render_gallery_preview(entry, &permit, &previews, preview).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(applied["revision"], 1);
+        assert_eq!(applied["items"][0]["active"], false);
+        assert_eq!(applied["items"][1]["active"], true);
+        assert_eq!(repeated_previews, first_previews);
+        assert_eq!(renders.get(), 2, "Applying must reuse unchanged thumbnails");
+    }
+    #[test]
+    fn changed_video_cover_uses_a_new_preview_without_changing_wallpaper_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let video = WallpaperVideo {
+            id: "a".repeat(64),
+            mime: crate::wallpapers::WallpaperVideoMime::Mp4,
+        };
+        let previews = GalleryPreviewCache::default();
+        let renders = std::cell::Cell::new(0);
+        let render = |source: &str| {
+            renders.set(renders.get() + 1);
+            Ok(Some(format!("preview:{source}")))
+        };
+        let snapshot = |cover: &str| GallerySnapshot {
+            revision: 1,
+            active_id: Some("video-wallpaper".into()),
+            images: vec![Wallpaper {
+                id: "video-wallpaper".into(),
+                name: "Video".into(),
+                data_url: cover.into(),
+                video: Some(video.clone()),
+            }],
+        };
+        let old_key = gallery_preview_key("first cover");
+        let new_key = gallery_preview_key("new cover");
+        let first_entry =
+            select_gallery_preview(snapshot("first cover"), "video-wallpaper", &old_key).unwrap();
+        let first = json!(render_gallery_preview(first_entry, &permit, &previews, render).unwrap());
+        assert_eq!(
+            select_gallery_preview(snapshot("new cover"), "video-wallpaper", &old_key)
+                .unwrap_err()
+                .code,
+            ErrorCode::NotFound
+        );
+        let changed_entry =
+            select_gallery_preview(snapshot("new cover"), "video-wallpaper", &new_key).unwrap();
+        let changed =
+            json!(render_gallery_preview(changed_entry, &permit, &previews, render).unwrap());
+        let repeated_entry =
+            select_gallery_preview(snapshot("new cover"), "video-wallpaper", &new_key).unwrap();
+        let repeated =
+            json!(render_gallery_preview(repeated_entry, &permit, &previews, render).unwrap());
+        assert_eq!(first["dataUrl"], "preview:first cover");
+        assert_eq!(changed["dataUrl"], "preview:new cover");
+        assert_ne!(first["previewKey"], changed["previewKey"]);
+        assert_eq!(repeated, changed);
+        assert_eq!(renders.get(), 2);
+    }
+    #[test]
+    fn unavailable_gallery_previews_are_not_cached() {
+        for result in [
+            Ok(None),
+            Err(NativeError::new(ErrorCode::ExtensionBusy, "Busy")),
+            Err(NativeError::new(
+                ErrorCode::ExtensionImageInvalid,
+                "Invalid",
+            )),
+        ] {
+            let previews = GalleryPreviewCache::default();
+            let first = previews.get_or_render("source", |_| result);
+            assert!(first.is_err() || first.unwrap().is_none());
+            assert_eq!(
+                previews
+                    .get_or_render("source", |_| Ok(Some("recovered preview".into())))
+                    .unwrap(),
+                Some("recovered preview".into())
+            );
+            assert_eq!(
+                previews
+                    .get_or_render("source", |_| panic!("Successful previews should be reused"))
+                    .unwrap(),
+                Some("recovered preview".into())
+            );
+        }
+    }
+    #[test]
+    fn gallery_preview_cache_evicts_old_entries_and_skips_oversized_previews() {
+        let previews = GalleryPreviewCache::default();
+        for index in 0..49 {
+            previews
+                .get_or_render(&format!("source:{index}"), |_| {
+                    Ok(Some(format!("preview:{index}")))
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            previews
+                .get_or_render("source:48", |_| panic!(
+                    "The latest preview should remain cached"
+                ))
+                .unwrap(),
+            Some("preview:48".into())
+        );
+        assert_eq!(
+            previews
+                .get_or_render("source:0", |_| Ok(Some("regenerated preview".into())))
+                .unwrap(),
+            Some("regenerated preview".into())
+        );
+        let renders = std::cell::Cell::new(0);
+        for _ in 0..2 {
+            let result = previews
+                .get_or_render("large source", |_| {
+                    renders.set(renders.get() + 1);
+                    Ok(Some("x".repeat(24 * 1024 + 1)))
+                })
+                .unwrap();
+            assert_eq!(result.unwrap().len(), 24 * 1024 + 1);
+        }
+        assert_eq!(renders.get(), 2);
+    }
+    #[test]
+    fn gallery_preview_rendering_does_not_hold_the_cache_mutex() {
+        let previews = GalleryPreviewCache::default();
+        previews
+            .get_or_render("source", |_| {
+                assert!(previews.entries.try_lock().is_ok());
+                Ok(Some("preview".into()))
+            })
+            .unwrap();
+    }
+    #[test]
     fn busy_previews_do_not_replace_a_valid_gallery_with_missing_images() {
         let directory = tempfile::tempdir().unwrap();
         let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
@@ -668,25 +1296,74 @@ mod tests {
                 data_url: render_image(&bytes, "image/png", false).unwrap(),
             })
             .unwrap();
-        let failed = render_gallery(
-            capture_gallery(&settings, &library).unwrap(),
-            &permit,
-            |_| {
-                Err(NativeError::new(
-                    ErrorCode::ExtensionBusy,
-                    "Image processing is busy",
-                ))
-            },
-        );
+        let previews = GalleryPreviewCache::default();
+        let metadata =
+            render_gallery(capture_gallery(&settings, &library).unwrap(), &permit).unwrap();
+        let failed = render_gallery_preview(saved.clone(), &permit, &previews, |_| {
+            Err(NativeError::new(
+                ErrorCode::ExtensionBusy,
+                "Image processing is busy",
+            ))
+        });
         assert_eq!(failed.unwrap_err().code, ErrorCode::ExtensionBusy);
-        assert_eq!(library.list(None).unwrap(), vec![saved]);
-        let retried = render_gallery(
-            capture_gallery(&settings, &library).unwrap(),
-            &permit,
-            gallery_preview,
-        )
-        .unwrap();
-        assert!(retried["items"][0]["dataUrl"].as_str().is_some());
+        assert_eq!(library.list(None).unwrap(), vec![saved.clone()]);
+        assert_eq!(
+            render_gallery(capture_gallery(&settings, &library).unwrap(), &permit).unwrap(),
+            metadata
+        );
+        let retried = render_gallery_preview(saved, &permit, &previews, gallery_preview).unwrap();
+        assert!(retried.data_url.is_some());
+    }
+    #[test]
+    fn applying_returns_only_the_durable_selection_and_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let entry = library
+            .add(WallpaperInput {
+                video: None,
+                name: "Saved selection".into(),
+                data_url: format!(
+                    "data:image/jpeg;base64,{}",
+                    STANDARD.encode([0xff, 0xd8, 0xff])
+                ),
+            })
+            .unwrap();
+        let extensions =
+            crate::extensions::ExtensionStore::new(directory.path().join("extensions"), false);
+        let permit = ServicePermit::for_test(
+            extensions
+                .begin_service(extensions.window_run_token("main".into()).unwrap())
+                .unwrap(),
+        );
+        let (updated, result) = permit
+            .commit(|| {
+                apply_gallery(
+                    &settings,
+                    &library,
+                    &entry.id,
+                    0,
+                    "contain",
+                    |_, next, revision| settings.save(next, revision),
+                )
+            })
+            .unwrap();
+        permit.check().unwrap();
+        let response = json!(result);
+        assert_eq!(
+            response,
+            json!({"applied": true, "activeId": entry.id, "revision": 1})
+        );
+        let durable = SettingsStore::open(settings_path)
+            .unwrap()
+            .snapshot()
+            .unwrap();
+        assert_eq!(durable, updated);
+        assert_eq!(
+            durable.settings["customBackground"]["dataUrl"],
+            entry.data_url
+        );
     }
     #[test]
     fn applying_gallery_image_uses_real_settings_cas_without_overwriting_other_preferences() {
@@ -731,6 +1408,134 @@ mod tests {
                 .unwrap(),
             updated
         );
+    }
+    #[test]
+    fn applying_rejects_missing_selections_and_future_settings_before_save() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let original = settings.save(json!({"schemaVersion": 3}), 0).unwrap();
+        let persisted = std::fs::read(&settings_path).unwrap();
+        let missing = apply_gallery(
+            &settings,
+            &library,
+            &"a".repeat(64),
+            original.revision,
+            "cover",
+            |_, _, _| panic!("Missing selections must not reach the save guard"),
+        );
+        assert_eq!(missing.unwrap_err().code, ErrorCode::NotFound);
+        assert_eq!(std::fs::read(&settings_path).unwrap(), persisted);
+        let entry = library
+            .add(WallpaperInput {
+                video: None,
+                name: "Future selection".into(),
+                data_url: format!(
+                    "data:image/jpeg;base64,{}",
+                    STANDARD.encode([0xff, 0xd8, 0xff])
+                ),
+            })
+            .unwrap();
+        let future = settings
+            .save(
+                json!({"schemaVersion": 99, "future": true}),
+                original.revision,
+            )
+            .unwrap();
+        let persisted = std::fs::read(&settings_path).unwrap();
+        let rejected = apply_gallery(
+            &settings,
+            &library,
+            &entry.id,
+            future.revision,
+            "cover",
+            |_, _, _| panic!("Future settings must not reach the save guard"),
+        );
+        assert_eq!(rejected.unwrap_err().code, ErrorCode::InvalidArgument);
+        assert_eq!(std::fs::read(settings_path).unwrap(), persisted);
+        assert_eq!(settings.snapshot().unwrap(), future);
+    }
+    #[test]
+    fn applying_propagates_the_selected_video_guard_failure_without_saving() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let settings = SettingsStore::open(settings_path.clone()).unwrap();
+        let library = WallpaperStore::new(directory.path().join("wallpapers.json"));
+        let video = WallpaperVideo {
+            id: "a".repeat(64),
+            mime: crate::wallpapers::WallpaperVideoMime::Mp4,
+        };
+        let entry = library
+            .add(WallpaperInput {
+                video: Some(video.clone()),
+                name: "Guarded video".into(),
+                data_url: format!(
+                    "data:image/jpeg;base64,{}",
+                    STANDARD.encode([0xff, 0xd8, 0xff])
+                ),
+            })
+            .unwrap();
+        let original = settings.save(json!({"schemaVersion": 3}), 0).unwrap();
+        let persisted = std::fs::read(&settings_path).unwrap();
+        let rejected = apply_gallery(
+            &settings,
+            &library,
+            &entry.id,
+            original.revision,
+            "cover",
+            |selected_video, _, _| {
+                assert_eq!(selected_video, Some(&video));
+                Err(invalid("Video import is unavailable"))
+            },
+        );
+        assert_eq!(rejected.unwrap_err().code, ErrorCode::InvalidArgument);
+        assert_eq!(std::fs::read(settings_path).unwrap(), persisted);
+        assert_eq!(settings.snapshot().unwrap(), original);
+        assert_eq!(library.list(None).unwrap(), vec![entry]);
+    }
+    #[test]
+    fn applying_reuses_the_validated_selection_for_the_video_guard_and_receipt() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(directory.path().join("settings.json")).unwrap();
+        let library_path = directory.path().join("wallpapers.json");
+        let library = WallpaperStore::new(library_path.clone());
+        let video = WallpaperVideo {
+            id: "a".repeat(64),
+            mime: crate::wallpapers::WallpaperVideoMime::Mp4,
+        };
+        let entry = library
+            .add(WallpaperInput {
+                video: Some(video.clone()),
+                name: "Video cover".into(),
+                data_url: format!(
+                    "data:image/jpeg;base64,{}",
+                    STANDARD.encode([0xff, 0xd8, 0xff])
+                ),
+            })
+            .unwrap();
+        let (updated, result) = apply_gallery(
+            &settings,
+            &library,
+            &entry.id,
+            0,
+            "contain",
+            |selected_video, next, revision| {
+                assert_eq!(selected_video, Some(&video));
+                let saved = settings.save(next, revision)?;
+                // 保存后回执不再读取可能已由其他操作改变的图库，也不解码无效封面。
+                std::fs::write(&library_path, b"{changed after commit").unwrap();
+                Ok(saved)
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.revision, 1);
+        assert_eq!(
+            json!(result),
+            json!({"applied": true, "activeId": entry.id, "revision": 1})
+        );
+        assert_eq!(updated.settings["customBackground"]["fit"], "contain");
+        assert_eq!(settings.snapshot().unwrap(), updated);
     }
     #[test]
     fn renaming_the_current_image_syncs_only_its_name_and_other_images_leave_settings_unchanged() {
@@ -1196,13 +2001,17 @@ mod tests {
             closing.begin_window_close("main").unwrap();
             closed_tx.send(()).unwrap();
         });
-        let result = render_gallery(snapshot, &permit, |_| {
-            preview_started_tx.send(()).unwrap();
-            closed_rx
-                .recv_timeout(std::time::Duration::from_secs(2))
+        let entry =
+            select_gallery_preview(snapshot, &saved.id, &gallery_preview_key(&saved.data_url))
                 .unwrap();
-            Ok(Some("预览完成".into()))
-        });
+        let result =
+            render_gallery_preview(entry, &permit, &GalleryPreviewCache::default(), |_| {
+                preview_started_tx.send(()).unwrap();
+                closed_rx
+                    .recv_timeout(std::time::Duration::from_secs(2))
+                    .unwrap();
+                Ok(Some("预览完成".into()))
+            });
         closer.join().unwrap();
         assert_eq!(result.unwrap_err().code, ErrorCode::ExtensionUnavailable);
         assert_eq!(library.list(None).unwrap(), vec![saved]);

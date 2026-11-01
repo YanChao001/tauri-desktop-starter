@@ -215,8 +215,13 @@ fn create_window(app: &tauri::AppHandle, label: &str) -> NativeResult<()> {
     }
     app.state::<crate::extensions::ExtensionStore>()
         .reopen_window(label)?;
-    let window = WebviewWindowBuilder::from_config(app, &config)
-        .map_err(|e| NativeError::operation(ErrorCode::WindowError, "Cannot configure window", e))?
+    let builder = WebviewWindowBuilder::from_config(app, &config).map_err(|e| {
+        NativeError::operation(ErrorCode::WindowError, "Cannot configure window", e)
+    })?;
+    // Wry 在首次导航前把捏合输入绑定到此开关；Windows 的 ready 回调会单独关闭整页缩放。
+    #[cfg(windows)]
+    let builder = builder.zoom_hotkeys_enabled(true);
+    let window = builder
         .build()
         .map_err(|e| NativeError::operation(ErrorCode::WindowError, "Cannot create window", e))?;
     if label == "main" {
