@@ -9,6 +9,7 @@ function results(outputs = { docs_only: "false", rust_required: "true" }) {
     "browser-smoke": { result: "success" },
     rust: { result: "success" },
     bindings: { result: "success" },
+    "extension-sdk": { result: "success" },
     "desktop-e2e": { result: "success" },
   };
 }
@@ -16,13 +17,20 @@ function results(outputs = { docs_only: "false", rust_required: "true" }) {
 test("the gate accepts complete runs and only the skips allowed by the scope", () => {
   assert.deepEqual(qualityGateFailures(results()), []);
   const docs = results({ docs_only: "true", rust_required: "false" });
-  for (const job of ["browser-smoke", "rust", "bindings", "desktop-e2e"]) {
+  for (const job of [
+    "browser-smoke",
+    "rust",
+    "bindings",
+    "extension-sdk",
+    "desktop-e2e",
+  ]) {
     docs[job].result = "skipped";
   }
   assert.deepEqual(qualityGateFailures(docs), []);
   const frontend = results({ docs_only: "false", rust_required: "false" });
   frontend.rust.result = "skipped";
   frontend.bindings.result = "skipped";
+  frontend["extension-sdk"].result = "skipped";
   assert.deepEqual(qualityGateFailures(frontend), []);
   for (const job of ["browser-smoke", "desktop-e2e"]) {
     const skipped = structuredClone(frontend);
@@ -53,5 +61,16 @@ test("unexpected skips, missing jobs and missing scope outputs fail closed", () 
   const needs = results({});
   needs.rust.result = "skipped";
   needs.bindings.result = "skipped";
-  assert.equal(qualityGateFailures(needs).length, 2);
+  needs["extension-sdk"].result = "skipped";
+  assert.equal(qualityGateFailures(needs).length, 3);
+});
+
+test("SDK validation cannot be omitted or skipped when native inputs changed", () => {
+  const needs = results();
+  delete needs["extension-sdk"];
+  assert.equal(qualityGateFailures(needs).length, 1);
+  needs["extension-sdk"] = { result: "skipped" };
+  assert.equal(qualityGateFailures(needs).length, 1);
+  needs["extension-sdk"].result = "success";
+  assert.deepEqual(qualityGateFailures(needs), []);
 });

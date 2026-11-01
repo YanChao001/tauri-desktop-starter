@@ -554,6 +554,47 @@ pub(crate) fn execute_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Explicit trusted SDK cold-start phase timing diagnostic"]
+    fn sdk_cold_start_phase_timing() {
+        let path = std::env::var("STARTER_SDK_TIMING_WASM")
+            .expect("set STARTER_SDK_TIMING_WASM to the built JavaScript SDK fixture");
+        let module = std::fs::read(path).unwrap();
+        let hash = format!("{:x}", Sha256::digest(&module));
+        for sample in 1..=3 {
+            let started = Instant::now();
+            validate_in_process(&module, &["uppercase"]).unwrap();
+            let validate_ms = started.elapsed().as_millis();
+            let mut cache = CompilationCache::default();
+            let started = Instant::now();
+            let compiled = cache.compile(&module, TIMEOUT, FUEL).unwrap();
+            let compile_ms = started.elapsed().as_millis();
+            let started = Instant::now();
+            let mut plugin = extism::Plugin::new_from_compiled(&compiled).unwrap();
+            let initialize_ms = started.elapsed().as_millis();
+            let started = Instant::now();
+            let output = plugin
+                .call::<_, &[u8]>("uppercase", "Hello Extism! 中文".as_bytes())
+                .unwrap();
+            assert_eq!(std::str::from_utf8(output).unwrap(), "HELLO EXTISM! 中文");
+            let call_ms = started.elapsed().as_millis();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "sample": sample,
+                    "moduleSha256": hash,
+                    "moduleBytes": module.len(),
+                    "validateMs": validate_ms,
+                    "compileMs": compile_ms,
+                    "initializeMs": initialize_ms,
+                    "callMs": call_ms,
+                    "runMs": compile_ms + initialize_ms + call_ms,
+                })
+            );
+        }
+    }
+
     fn run(
         module: &[u8],
         function: &str,
