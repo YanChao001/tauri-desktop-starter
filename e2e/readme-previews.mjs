@@ -28,7 +28,7 @@ async function settledSettingsViewport(width) {
             width: innerWidth,
             containerWidth,
             rootFont,
-            expectedColumns: containerWidth >= 60 * rootFont ? 4 : 2,
+            expectedColumns: containerWidth >= 48 * rootFont ? 4 : 2,
             columns: grid
               ? getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length
               : 0,
