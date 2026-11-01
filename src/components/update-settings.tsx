@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { cn } from "cn";
 import {
   DownloadIcon,
   RotateCcwIcon,
@@ -9,7 +10,6 @@ import {
 import { ExternalLink } from "@/components/external-link";
 import { SettingRow } from "@/components/setting-row";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -82,6 +82,7 @@ export function UpdateSettings() {
     };
   }, []);
   const busy = ["checking", "downloading", "installing"].includes(phase);
+  const installActive = phase === "downloading" || phase === "installing";
   const percent = progress?.total
     ? Math.min(
         100,
@@ -232,20 +233,62 @@ export function UpdateSettings() {
                   <Button
                     onClick={() => setConfirmInstall(operationId)}
                     disabled={busy}
+                    aria-busy={installActive}
+                    className={cn(
+                      "relative overflow-hidden",
+                      installActive &&
+                        "bg-primary/10 text-foreground disabled:opacity-100",
+                    )}
                   >
-                    <DownloadIcon />
-                    {t("updates.install")}
+                    {installActive ? (
+                      <span
+                        data-slot="updates-download-progress"
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 left-0 bg-primary/20"
+                        style={{
+                          width: `${phase === "installing" ? 100 : (percent ?? 0)}%`,
+                        }}
+                      />
+                    ) : null}
+                    <DownloadIcon className="relative" />
+                    <span className="relative grid">
+                      <span
+                        aria-hidden="true"
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {t("updates.install")}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {t("updates.downloading", { progress: "100%" })}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {t("updates.installing")}
+                      </span>
+                      <span className="col-start-1 row-start-1">
+                        {installActive ? statusMessage : t("updates.install")}
+                      </span>
+                    </span>
                   </Button>
+                ) : null}
+                {native && phase === "downloading" ? (
+                  <span
+                    role="progressbar"
+                    aria-label={t("updates.install")}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={percent}
+                    aria-valuetext={statusMessage}
+                    className="sr-only"
+                  />
                 ) : null}
               </div>
             </div>
-            {native && phase === "downloading" ? (
-              <Progress
-                className="absolute inset-x-0 bottom-0 h-1"
-                value={percent}
-                aria-label={t("updates.install")}
-              />
-            ) : null}
           </div>
           <SettingRow
             id="settings-updates-auto"
@@ -255,8 +298,6 @@ export function UpdateSettings() {
                 {t("updates.autoCheck")}
               </label>
             }
-            hint={t("updates.autoCheckHint")}
-            helpLabel={`${t("updates.autoCheck")} · ${t("title.help")}`}
           >
             <Switch
               id="auto-check-updates"

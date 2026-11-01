@@ -342,17 +342,10 @@ export function FeedbackStudio() {
             />
           </div>
           <div className="feedback-notification-actions">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button onClick={notify}>
-                  <BellRingIcon />
-                  {t("playground.sendNotification")}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-64">
-                {t("playground.notificationTooltip")}
-              </TooltipContent>
-            </Tooltip>
+            <Button onClick={notify}>
+              <BellRingIcon />
+              {t("playground.sendNotification")}
+            </Button>
             <Popover>
               <PopoverTrigger asChild>
                 <Button

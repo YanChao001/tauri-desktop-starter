@@ -36,12 +36,7 @@ export function AccentPicker() {
       tabIndex={-1}
       className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <SettingLabel
-        icon={PaletteIcon}
-        label={t("settings.accent")}
-        hint={t("settings.customAccentHint")}
-        helpLabel={`${t("settings.accent")} · ${t("title.help")}`}
-      />
+      <SettingLabel icon={PaletteIcon} label={t("settings.accent")} />
       <div className="flex flex-wrap items-center gap-2">
         {PRESET_ACCENTS.map((accent) => {
           const active = settings.accent === accent;

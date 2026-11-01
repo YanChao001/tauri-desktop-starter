@@ -116,8 +116,6 @@ export const enExperience = {
   "experience.data.tabs": "Data studio sections",
   "experience.workspace": "Workspace",
   "experience.workspaceTitle": "A small workspace. Fully hands-on.",
-  "experience.workspaceHint":
-    "Browse this page’s sample files, resize panels, and try menus and drag-and-drop.",
   "experience.workspace.tree": "Sample file list",
   "experience.workspace.design": "Creative assets",
   "experience.workspace.code": "Code & data",

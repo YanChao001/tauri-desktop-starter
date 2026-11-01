@@ -175,10 +175,6 @@ describe("设置页", () => {
       ).toMatchObject({ networkMode: "system" }),
     );
     expect(connection).toHaveTextContent("系统代理");
-    fireEvent.focus(screen.getByRole("button", { name: "了解网络连接" }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "保存后用于后续请求，插件使用系统代理仍需单独授权。",
-    );
   });
 
   it("应用更新直接可见并支持深链定位，浏览器不会调用原生更新", () => {
@@ -412,11 +408,9 @@ describe("设置页", () => {
     fireEvent.click(
       presets.getByRole("button", { name: /^舒适 1280 × 800(?: |$)/ }),
     );
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("窗口大小已保存"),
-    );
+    expect(await screen.findByText("当前尺寸 1272 × 792")).toBeVisible();
+    expect(toast.success).not.toHaveBeenCalled();
     expect(desktop.setWindowSize).toHaveBeenCalledExactlyOnceWith(1280, 800);
-    expect(screen.getByText("当前尺寸 1272 × 792")).toBeVisible();
     for (const button of presets.getAllByRole("button"))
       expect(button).toHaveAttribute("aria-pressed", "false");
   });
@@ -697,7 +691,7 @@ describe("设置页", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(screen.getByRole("radio", { name: "记住上次位置" })).toBeChecked();
-    expect(toast.success).toHaveBeenCalledExactlyOnceWith("已恢复默认偏好");
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("原生重置失败时保留确认和实际尺寸，不写入偏好", async () => {

@@ -41,7 +41,6 @@ export const enData: DataMessages = {
     "Back up all notes, recycled items and window drafts for local restore or export. File imports allow up to 16 MiB; larger local backups can be restored from their original backup directory.",
   "data.createBackup": "Full backup",
   "data.backupAction": "Back up",
-  "data.importBackup": "Import backup file",
   "data.importBackupAction": "Import backup",
   "data.backupHistory": "Backup history",
   "data.previewBackup": "Preview backup",

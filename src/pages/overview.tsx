@@ -14,7 +14,6 @@ import {
   SparklesIcon,
   WandSparklesIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 import { JourneyLauncher } from "@/features/journeys/journey-launcher";
 import { JOURNEYS, journeyLink } from "@/features/journeys/model";
 import { Button } from "@/components/ui/button";
@@ -201,14 +200,12 @@ export default function Overview() {
       radius: vibe.radius,
     });
     setTheme(vibe.theme);
-    toast.success(t("showroom.appliedToast"));
   }
   function undoAppearance() {
     if (!previous) return;
     update(previous);
     setTheme(previous.theme);
     setPrevious(null);
-    toast.success(t("showroom.undoToast"));
   }
   if (settings.appMode === "minimal")
     return (

@@ -36,7 +36,6 @@ export const zhData = {
     "备份全部笔记、回收站和各窗口草稿，可在本机恢复或导出。外部导入限 16 MiB；更大的本机备份可从原备份目录恢复。",
   "data.createBackup": "完整备份",
   "data.backupAction": "创建备份",
-  "data.importBackup": "导入备份文件",
   "data.importBackupAction": "导入备份",
   "data.backupHistory": "备份记录",
   "data.previewBackup": "预览备份",
