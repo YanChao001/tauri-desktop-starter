@@ -1,6 +1,12 @@
 import { expect } from "@playwright/test";
 
-export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
+export async function checkWindowSkin(
+  page,
+  frame,
+  inheritsSkin,
+  screenshot,
+  transparentLayouts = [],
+) {
   const previous = await page.evaluate(() => {
     const { background, backgroundIntensity } =
       window.__extensionSettingsTest.read();
@@ -43,12 +49,50 @@ export async function checkWindowSkin(page, frame, inheritsSkin, screenshot) {
       )
       .toBe(muted);
     expect(await backgrounds()).toEqual(before);
-    if (inheritsSkin)
+    if (inheritsSkin || transparentLayouts.length)
       for (const selector of ["html", "body"])
         await expect(frame.locator(selector)).toHaveCSS(
           "background-color",
           "rgba(0, 0, 0, 0)",
         );
+    if (transparentLayouts.length) {
+      for (const intensity of [0, 50, 100]) {
+        await page.evaluate(
+          (backgroundIntensity) =>
+            window.__extensionSettingsTest.update({ backgroundIntensity }),
+          intensity,
+        );
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-background-intensity",
+          String(intensity),
+        );
+        const surface = await page
+          .locator("html")
+          .evaluate((node) =>
+            getComputedStyle(node).getPropertyValue("--surface-card").trim(),
+          );
+        await expect
+          .poll(() =>
+            frame
+              .locator("html")
+              .evaluate((node) =>
+                getComputedStyle(node)
+                  .getPropertyValue("--surface-card")
+                  .trim(),
+              ),
+          )
+          .toBe(surface);
+        for (const selector of transparentLayouts)
+          for (const node of await frame.locator(selector).all())
+            await expect(node).toHaveCSS(
+              "background-color",
+              "rgba(0, 0, 0, 0)",
+            );
+      }
+      await page.evaluate(() =>
+        window.__extensionSettingsTest.update({ backgroundIntensity: 50 }),
+      );
+    }
     // 阅读材质由工作台外框承担，内部侧栏/页脚继承它，避免重复叠加底色。
     const surfaceSelector = ".studio-console,button.result,.card";
     const inheritedPanels = frame.locator(
@@ -354,8 +398,7 @@ export async function checkNormalControls(page, frame, name, fontSize) {
     // 计算器采用 Windows 风格的自定按键布局，菜单项与折叠面板另验入口。
     "scientific-calculator":
       '#navigation,#angle-cycle,#keypad button[data-key="equals"]',
-    "lan-chat":
-      "#settings-toggle,#refresh,#emoji-toggle,#send-image,#send-file,#send",
+    "lan-chat": "#settings-toggle,#emoji-toggle,#send-image,#send-file,#send",
     "wallpaper-browser": "#refresh,#import,#settings",
     lab: "#canvas-add",
   };
@@ -393,13 +436,7 @@ export async function checkNormalControls(page, frame, name, fontSize) {
   expect(controls.length).toBeGreaterThan(0);
   const ordinary = {
     "scientific-calculator": [], // 数学键盘/导航是明确专用设计；转换器另验普通下拉。
-    "lan-chat": [
-      "#settings-toggle",
-      "#refresh",
-      "#send-image",
-      "#send-file",
-      "#send",
-    ],
+    "lan-chat": ["#settings-toggle", "#send-image", "#send-file", "#send"],
     "wallpaper-browser": ["#refresh", "#import", "#settings"],
     lab: ["#canvas-add", "#canvas-arrange", "#node-title", "#node-target"],
   };
@@ -782,6 +819,7 @@ export async function checkWallpaperDiscoveryLayout(frame) {
         "category",
         "query",
         "search",
+        "next-batch",
       ].map((id) => ({
         id,
         inForm: form.contains(document.getElementById(id)),
@@ -1065,6 +1103,604 @@ export async function checkWallpaperLocalSurfaces(page, frame, capturePrefix) {
   return { tabs, tabKeyboardNavigation: true, samples, nativeIpc: false };
 }
 
+export async function waitWallpaperVisibleThumbnails(frame) {
+  await expect
+    .poll(
+      () =>
+        frame.locator("#results .result").evaluateAll((cards) => {
+          const visible = cards.filter((card) => {
+            const box = card.getBoundingClientRect();
+            return (
+              box.width > 0 &&
+              box.height > 0 &&
+              box.bottom > 0 &&
+              box.top < innerHeight &&
+              box.right > 0 &&
+              box.left < innerWidth
+            );
+          });
+          return (
+            visible.length > 0 &&
+            visible.every((card) => {
+              const image = card.querySelector("img");
+              return image?.complete && image.naturalWidth > 0;
+            })
+          );
+        }),
+      { timeout: 60000 },
+    )
+    .toBe(true);
+}
+
+async function wallpaperCapacity(page, frame) {
+  const sdk = await frame.locator("html").evaluate(() => ({
+    peak: window.__sdkPendingPeak ?? 0,
+    rejections: window.__sdkCapacityRejections ?? 0,
+  }));
+  expect(sdk.peak).toBeLessThanOrEqual(4);
+  expect(sdk.rejections).toBe(0);
+  expect(
+    await page.evaluate(() =>
+      window.__protocolErrors.filter(
+        (receipt) => receipt.error?.code === "EXTENSION_BUSY",
+      ),
+    ),
+  ).toEqual([]);
+  return sdk;
+}
+
+export async function checkWallpaperStartupCapacity({ page, frame }) {
+  try {
+    await expect(frame.locator("#results .result")).toHaveCount(24, {
+      timeout: 60000,
+    });
+    await expect
+      .poll(
+        () => page.evaluate(() => window.__fixtureStartupReplies.held.length),
+        { timeout: 60000 },
+      )
+      .toBeGreaterThanOrEqual(3);
+    const methods = await frame
+      .locator("html")
+      .evaluate(() => window.__iframeProtocolRequests);
+    expect(methods.some((call) => call.method === "run")).toBe(true);
+    expect(methods.some((call) => call.method === "checkpoint")).toBe(true);
+    expect(
+      methods.some(
+        (call) => call.service === "wallpaper" && call.action === "list",
+      ),
+    ).toBe(true);
+    return {
+      startupListCheckpointRunRemainPending: true,
+      resultStateDoesNotOverflowSdk: true,
+      sdk: await wallpaperCapacity(page, frame),
+    };
+  } finally {
+    await page.evaluate(() => window.__fixtureStartupReplies.release());
+  }
+}
+
+export async function checkWallpaperMetadataLoading({
+  page,
+  frame,
+  services,
+  gates,
+  capturePath,
+}) {
+  const decoded = () =>
+    frame
+      .locator("#gallery img")
+      .evaluateAll(
+        (images) =>
+          images.filter((image) => image.complete && image.naturalWidth > 0)
+            .length,
+      );
+  try {
+    await frame.locator("#local-tab").click();
+    await expect(frame.locator("#gallery [data-wallpaper-id]")).toHaveCount(3);
+    await expect(frame.locator("#gallery h2")).toHaveText([
+      "Fixture local image",
+      "Fixture local image 2",
+      "Fixture local image 3",
+    ]);
+    await expect.poll(gates[0].started).toBe(true);
+    expect(await decoded()).toBe(0);
+    await expect(frame.locator("#import")).toBeEnabled();
+    await expect(
+      frame.locator('#gallery [data-action="apply"]').first(),
+    ).toBeEnabled();
+    await frame.locator('#gallery [data-action="apply"]').first().click();
+    await expect(
+      frame.locator("#gallery [data-wallpaper-id]").first(),
+    ).toHaveClass(/active/);
+    expect(gates[0].released()).toBe(false);
+    for (let index = 0; index < gates.length; index++) {
+      expect(gates[index].released()).toBe(false);
+      gates[index].release();
+      await expect.poll(decoded).toBe(index + 1);
+      if (index + 1 < gates.length) {
+        await expect.poll(gates[index + 1].started).toBe(true);
+        expect(gates[index + 1].released()).toBe(false);
+      }
+      if (index === 1 && capturePath)
+        await page.screenshot({ path: capturePath });
+    }
+    expect(services.imageConcurrency().localPreviewPeak).toBe(1);
+    return {
+      metadataCardsPrecedePreviews: true,
+      metadataCardCanApplyBeforePreviewCompletes: true,
+      previewsPaintIndependently: true,
+      nativeGalleryPreviewConcurrency: 1,
+      sdk: await wallpaperCapacity(page, frame),
+    };
+  } finally {
+    for (const gate of gates) gate.release();
+  }
+}
+
+export async function checkWallpaperRemoteLoading({
+  page,
+  frame,
+  services,
+  backgrounds,
+  large,
+  release,
+  idle,
+  capturePath,
+}) {
+  const decoded = () =>
+    frame
+      .locator("#results .result img")
+      .evaluateAll(
+        (images) =>
+          images.filter((image) => image.complete && image.naturalWidth > 0)
+            .length,
+      );
+  const runCalls = () =>
+    frame
+      .locator("html")
+      .evaluate(
+        () =>
+          window.__iframeProtocolRequests.filter(
+            (call) => call.method === "run",
+          ).length,
+      );
+  const frameBarrier = () =>
+    frame
+      .locator("html")
+      .evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+  try {
+    await expect(frame.locator("#results .result")).toHaveCount(24, {
+      timeout: 60000,
+    });
+    for (const gate of backgrounds)
+      await expect.poll(gate.started, { timeout: 60000 }).toBe(true);
+    expect(await decoded()).toBe(0);
+    const firstIds = await frame
+      .locator("#results .result")
+      .evaluateAll((cards) => cards.map((card) => card.dataset.resultId));
+    const initialRuns = await runCalls();
+    await frame.locator("#results .result").first().click();
+    await expect.poll(large.started, { timeout: 10000 }).toBe(true);
+    for (const gate of backgrounds) {
+      expect(gate.released()).toBe(false);
+      expect(gate.cancelled()).toBe(false);
+    }
+    large.release();
+    await expect
+      .poll(() =>
+        frame.locator("#preview-image").evaluate((image) => image.naturalWidth),
+      )
+      .toBe(1920);
+    expect(
+      await frame
+        .locator("html")
+        .evaluate(() =>
+          window.__iframeProtocolRequests.some(
+            (call) => call.service === "resources" && call.action === "preview",
+          ),
+        ),
+    ).toBe(false);
+    for (const gate of backgrounds) expect(gate.released()).toBe(false);
+    expect(release.released()).toBe(false);
+    for (const gate of backgrounds) gate.release();
+    await expect.poll(release.started).toBe(true);
+    await expect(frame.locator("#preview-image")).toBeVisible();
+    expect(
+      await frame
+        .locator("#preview-image")
+        .evaluate((image) => image.naturalWidth),
+    ).toBe(1920);
+    if (capturePath) await page.screenshot({ path: capturePath });
+    release.release();
+    await frame.locator("#preview-close").click();
+    await waitWallpaperVisibleThumbnails(frame);
+    await idle(page, frame);
+    expect(await runCalls()).toBe(initialRuns);
+    await frame.locator("#load-more-sentinel").scrollIntoViewIfNeeded();
+    await expect(frame.locator("#results .result")).toHaveCount(48, {
+      timeout: 60000,
+    });
+    await idle(page, frame);
+    const appended = await frame
+      .locator("#results .result")
+      .evaluateAll((cards) => cards.map((card) => card.dataset.resultId));
+    expect(appended.slice(0, 24)).toEqual(firstIds);
+    expect(new Set(appended).size).toBe(48);
+    await frameBarrier();
+    expect(await runCalls()).toBe(initialRuns + 1);
+    await frame.locator("#query").fill("landscape");
+    await frame.locator("#search").click();
+    await idle(page, frame);
+    await expect(frame.locator("#results .result")).toHaveCount(24);
+    const reset = await frame
+      .locator("#results .result")
+      .evaluateAll((cards) => cards.map((card) => card.dataset.resultId));
+    expect(reset.some((id) => firstIds.includes(id))).toBe(false);
+    await frameBarrier();
+    expect(await runCalls()).toBe(initialRuns + 2);
+    expect(services.imageConcurrency().downloadPeak).toBe(3);
+    expect(services.imageConcurrency().ownerResourcePeak).toBeLessThanOrEqual(
+      8,
+    );
+    return {
+      selectedPreviewStartsBesideTwoHeldBackgrounds: true,
+      inlineLargePreviewPaintsBeforeBackgroundsAndRelease: true,
+      noExtraPreviewRoundTrip: true,
+      downloadPeak: 3,
+      ownerResourcePeak: services.imageConcurrency().ownerResourcePeak,
+      scrollAppendsOnePageWithoutDuplicates: true,
+      queryResetsAppendedCollection: true,
+      noUnboundedAutomaticPagination: true,
+      sdk: await wallpaperCapacity(page, frame),
+    };
+  } finally {
+    for (const gate of backgrounds) gate.release();
+    large.release();
+    release.release();
+  }
+}
+
+export async function checkWallpaperLocalConcurrency({
+  page,
+  frame,
+  services,
+  remote,
+  initialList,
+  capturePath,
+}) {
+  let backgroundList;
+  const hostBusy = () =>
+    frame.locator("html").evaluate(() => window.__sdkSnapshot?.busy);
+  const listCalls = () =>
+    services.calls.filter(
+      (call) => call.service === "wallpaper" && call.request.action === "list",
+    ).length;
+  const serviceRequests = () =>
+    frame
+      .locator("html")
+      .evaluate(() =>
+        window.__iframeProtocolRequests
+          .filter((call) => call.method === "service")
+          .map((call) => ({ service: call.service, action: call.action })),
+      );
+  try {
+    await expect.poll(remote.started, { timeout: 60000 }).toBe(true);
+    await expect.poll(initialList.started, { timeout: 60000 }).toBe(true);
+    await expect.poll(hostBusy).toBe(true);
+    const listsBeforeSwitch = listCalls();
+    await expect(frame.locator("#local-tab")).toBeEnabled();
+    await frame.locator("#local-tab").click({ timeout: 1500 });
+    await expect(frame.locator("#local-panel")).toBeVisible();
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(frame.locator("#import")).toBeEnabled();
+    await expect(frame.locator("#settings")).toBeEnabled();
+    expect(listCalls()).toBe(listsBeforeSwitch);
+    expect(remote.released()).toBe(false);
+
+    initialList.release();
+    const card = frame.locator("#gallery [data-wallpaper-id]").first();
+    await expect(card.locator("h2")).toHaveText("Fixture local image");
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    for (const action of ["apply", "rename", "remove"])
+      await expect(card.locator(`[data-action="${action}"]`)).toBeEnabled();
+    const cachedThumbnail = await card.locator("img").getAttribute("src"),
+      beforeApply = (await serviceRequests()).length;
+    await card.locator('[data-action="apply"]').click({ timeout: 1500 });
+    await expect(card).toHaveClass(/active/);
+    await expect(card.locator('[data-action="apply"]')).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(card.locator('[data-action="apply"]')).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(card.locator("h2")).toHaveText("Fixture local image");
+    await expect(card.locator("img")).toHaveAttribute("src", cachedThumbnail);
+    await expect(frame.locator("#local-summary")).toContainText(
+      "1 / 24 images",
+    );
+    expect((await serviceRequests()).slice(beforeApply)).toEqual([
+      { service: "wallpaper", action: "apply" },
+    ]);
+    await expect.poll(hostBusy).toBe(true);
+    expect(remote.released()).toBe(false);
+
+    backgroundList = services.holdNextWallpaperList();
+    await frame.locator("#refresh").click();
+    await expect.poll(backgroundList.started).toBe(true);
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(card.locator("h2")).toHaveText("Fixture local image");
+    await expect(frame.locator("#refresh")).toBeDisabled();
+    await expect(frame.locator("#import")).toBeEnabled();
+    await expect(frame.locator("#settings")).toBeEnabled();
+    await expect(card.locator('[data-action="apply"]')).toBeEnabled();
+    await expect(card.locator('[data-action="remove"]')).toBeEnabled();
+    await card.locator('[data-action="rename"]').click({ timeout: 1500 });
+    await frame.locator("#rename-value").fill("Newer local gallery write");
+    await frame.locator("#dialog-confirm").click();
+    await expect(card.locator("h2")).toHaveText("Newer local gallery write");
+    expect(backgroundList.released()).toBe(false);
+    expect(remote.released()).toBe(false);
+    await expect.poll(hostBusy).toBe(true);
+    if (capturePath) await page.screenshot({ path: capturePath });
+
+    backgroundList.release();
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(card.locator("h2")).toHaveText("Newer local gallery write");
+    await expect(card).toHaveClass(/active/);
+    await expect(frame.locator("#refresh")).toBeEnabled();
+    await expect.poll(hostBusy).toBe(true);
+    expect(remote.released()).toBe(false);
+    return {
+      initialSourceAndGalleryReadsParallel: true,
+      pendingListReadsDeduplicated: true,
+      localSwitchWhileRemoteHostBusy: true,
+      localApplyBeforeRemoteCompletes: true,
+      compactApplyNeedsNoGalleryReadOrImageFetch: true,
+      cachedThumbnailNameAndLimitSurviveApply: true,
+      cachedGalleryUsableDuringBackgroundRead: true,
+      staleReadCannotReplaceNewerWrite: true,
+      nativeIpc: false,
+    };
+  } finally {
+    initialList.release();
+    backgroundList?.release();
+    remote.release();
+  }
+}
+
+export async function checkWallpaperApplyConcurrency({
+  page,
+  frame,
+  services,
+  idle,
+  capturePath,
+}) {
+  const galleryReadCount = () =>
+    frame
+      .locator("html")
+      .evaluate(
+        () =>
+          window.__iframeProtocolRequests.filter(
+            (call) =>
+              call.method === "service" &&
+              call.service === "wallpaper" &&
+              call.action === "list",
+          ).length,
+      );
+  const notificationCount = () =>
+    frame
+      .locator("html")
+      .evaluate(
+        () =>
+          window.__iframeProtocolRequests.filter(
+            (call) => call.method === "notify",
+          ).length,
+      );
+  await frame.locator("#local-tab").click();
+  const card = frame.locator("#gallery [data-wallpaper-id]").first(),
+    apply = card.locator('[data-action="apply"]'),
+    success = page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "App background updated." });
+  await expect(card.locator("h2")).toHaveText("Fixture local image");
+  await expect(frame.locator("#refresh")).toBeEnabled();
+  await expect(apply).toHaveAttribute("aria-pressed", "false");
+  const initialRevision = await page.evaluate(
+    () =>
+      window.__extensionUiTest.serviceCalls
+        .filter(
+          (call) =>
+            call.service === "wallpaper" &&
+            call.request.action === "list" &&
+            call.completed,
+        )
+        .at(-1).response.revision,
+  );
+  const cachedThumbnail = await card.locator("img").getAttribute("src"),
+    cachedId = await card.getAttribute("data-wallpaper-id");
+  let failingList;
+  const held = services.holdNextWallpaperApply(),
+    applyCallsBefore = services.calls.filter(
+      (call) => call.service === "wallpaper" && call.request.action === "apply",
+    ).length;
+  try {
+    await apply.click();
+    await expect.poll(held.started).toBe(true);
+    await expect(apply).toHaveAttribute("aria-busy", "true");
+    await expect(apply).toContainText("Applying…");
+    await expect(frame.locator("#local-summary")).toContainText(
+      "Applying background…",
+    );
+    for (const action of ["apply", "rename", "remove"])
+      await expect(card.locator(`[data-action="${action}"]`)).toBeDisabled();
+    await expect(frame.locator("#import")).toBeDisabled();
+    await apply.evaluate((node) => node.click());
+    expect(
+      services.calls.filter(
+        (call) =>
+          call.service === "wallpaper" && call.request.action === "apply",
+      ),
+    ).toHaveLength(applyCallsBefore + 1);
+    await expect(success).toHaveCount(0);
+    await expect
+      .poll(() =>
+        frame.locator("html").evaluate(() => window.__sdkSnapshot?.busy),
+      )
+      .toBe(false);
+    for (const id of ["remote-tab", "local-tab", "refresh", "settings", "fit"])
+      await expect(frame.locator(`#${id}`)).toBeEnabled();
+
+    const settingsBefore = services.calls.filter(
+      (call) =>
+        call.service === "wallpaper" && call.request.action === "open-settings",
+    ).length;
+    await frame.locator("#settings").click();
+    await expect
+      .poll(
+        () =>
+          services.calls.filter(
+            (call) =>
+              call.service === "wallpaper" &&
+              call.request.action === "open-settings",
+          ).length,
+      )
+      .toBe(settingsBefore + 1);
+    await frame.locator("#refresh").click();
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(apply).toHaveAttribute("aria-pressed", "true");
+    await expect(apply).toHaveAttribute("aria-busy", "true");
+    await expect(success).toHaveCount(0);
+
+    await frame.locator("#remote-tab").click({ timeout: 1500 });
+    await expect(frame.locator("#remote-panel")).toBeVisible();
+    for (const id of ["provider", "category", "query", "search"])
+      await expect(frame.locator(`#${id}`)).toBeEnabled();
+    const beforeHttp = services.httpCalls.length;
+    const load = async (action, expectedCount) => {
+      await action();
+      await expect
+        .poll(() => services.httpCalls.length, { timeout: 60000 })
+        .toBe(expectedCount);
+      await idle(page, frame);
+      await expect(frame.locator("#results .result")).toHaveCount(24);
+      expect(held.released()).toBe(false);
+      await expect(success).toHaveCount(0);
+    };
+    await load(
+      () => frame.locator("#provider").selectOption("wallcoo"),
+      beforeHttp + 1,
+    );
+    await load(
+      () => frame.locator("#category").selectOption("landscape"),
+      beforeHttp + 2,
+    );
+    await frame.locator("#query").fill("parallel wallpaper apply");
+    await load(() => frame.locator("#search").click(), beforeHttp + 3);
+    const query = new URL(services.httpCalls.at(-1).request.url);
+    expect(query.origin).toBe("https://www.wallcoo.com");
+    expect(query.searchParams.get("search")).toBe("parallel wallpaper apply");
+    await frame.locator("#local-tab").click();
+    await expect(frame.locator("#refresh")).toBeEnabled();
+    await expect(apply).toHaveAttribute("aria-busy", "true");
+    await expect(frame.locator("#import")).toBeDisabled();
+    expect(held.released()).toBe(false);
+    failingList = services.holdNextWallpaperList({ fail: true });
+    await frame.locator("#refresh").click();
+    await expect.poll(failingList.started).toBe(true);
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    const galleryReadsBeforeAck = await galleryReadCount();
+    if (capturePath) await page.screenshot({ path: capturePath });
+
+    held.release();
+    await expect(apply).toHaveAttribute("aria-busy", "false");
+    await expect(apply).toHaveAttribute("aria-pressed", "true");
+    await expect(card).toHaveClass(/active/);
+    for (const action of ["apply", "rename", "remove"])
+      await expect(card.locator(`[data-action="${action}"]`)).toBeEnabled();
+    await expect(frame.locator("#import")).toBeEnabled();
+    await expect(success).toBeVisible();
+    expect(failingList.released()).toBe(false);
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(card).toHaveAttribute("data-wallpaper-id", cachedId);
+    await expect(card.locator("h2")).toHaveText("Fixture local image");
+    await expect(card.locator("img")).toHaveAttribute("src", cachedThumbnail);
+    await expect(frame.locator("#local-summary")).toContainText(
+      "1 / 24 images",
+    );
+    expect(await galleryReadCount()).toBe(galleryReadsBeforeAck);
+    const reply = await page.evaluate(
+      () =>
+        window.__extensionUiTest.serviceCalls.find(
+          (call) =>
+            call.service === "wallpaper" && call.request.action === "apply",
+        ).response,
+    );
+    expect(reply).toEqual({
+      applied: true,
+      activeId: cachedId,
+      revision: initialRevision + 1,
+    });
+    const notificationsBeforeFailure = await notificationCount();
+    failingList.release();
+    await expect(frame.locator("#gallery")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(card).toHaveClass(/active/);
+    await expect(card.locator("img")).toHaveAttribute("src", cachedThumbnail);
+    expect(await notificationCount()).toBe(notificationsBeforeFailure);
+    await expect(
+      page.locator('[data-sonner-toast][data-type="error"]'),
+    ).toHaveCount(0);
+    return {
+      applyBoundaryCommitsBeforeReply: true,
+      applyingStatusVisibleUntilReply: true,
+      libraryWritesSerialized: true,
+      navigationRefreshSettingsRemainUsable: true,
+      sourceCategoryAndRealWasmSearchCompleteBeforeApplyReply: true,
+      noSuccessNotificationBeforeApplyReply: true,
+      activeRevisionAndControlsRecover: true,
+      applyAcknowledgementHasNoGalleryPayload: true,
+      applyCompletesBeforeFailingGalleryRead: true,
+      olderGalleryReadFailureCannotUndoApplySuccess: true,
+      cachedIdentityThumbnailNameAndLimitSurviveApply: true,
+      nativeIpc: false,
+    };
+  } finally {
+    held.release();
+    failingList?.release();
+  }
+}
+
 export async function checkWallpaperLocalGallery(page, frame, capturePath) {
   await frame.locator("#local-tab").click();
   const card = frame.locator("#gallery [data-wallpaper-id]").first();
@@ -1136,7 +1772,7 @@ export async function checkWallpaperCapabilityBoundaries(page, frame, mode) {
       try {
         await starter.services.request("resources", {
           action: "fetch-image",
-          url: "https://images.unsplash.com/fixture-upx8-1.jpg",
+          url: "https://www.bizhihui.com/fixture-1.jpg",
           networkMode: profile === "direct" ? "system" : "direct",
         });
         return null;
@@ -1150,7 +1786,7 @@ export async function checkWallpaperCapabilityBoundaries(page, frame, mode) {
     const missingLinks = await frame.locator("html").evaluate(async () => {
       try {
         await starter.services.request("links", {
-          url: "https://wp.upx8.com/",
+          url: "https://www.bizhihui.com/",
         });
         return null;
       } catch (error) {
@@ -1164,10 +1800,7 @@ export async function checkWallpaperCapabilityBoundaries(page, frame, mode) {
     await expect(frame.locator("#results .result")).toHaveCount(24, {
       timeout: 60000,
     });
-    if (mode === "direct")
-      await expect(frame.locator("#results .result img")).toHaveCount(24, {
-        timeout: 60000,
-      });
+    if (mode === "direct") await waitWallpaperVisibleThumbnails(frame);
     if (mode === "links-only") {
       const resourcesBeforeSelection = await page.evaluate(
         () =>
@@ -1223,19 +1856,7 @@ export async function checkWallpaperPreview(
   await expect(frame.locator("#results .result")).toHaveCount(24, {
     timeout: 60000,
   });
-  await expect
-    .poll(
-      () =>
-        frame
-          .locator("#results .result img")
-          .evaluateAll(
-            (images) =>
-              images.filter((image) => image.complete && image.naturalWidth > 0)
-                .length,
-          ),
-      { timeout: 60000 },
-    )
-    .toBe(24);
+  await waitWallpaperVisibleThumbnails(frame);
   const card = frame.locator("#results .result").nth(1);
   const dialog = frame.locator("#preview-dialog"),
     info = frame.locator("#image-info-dialog");
@@ -1259,10 +1880,79 @@ export async function checkWallpaperPreview(
         actions: bounds(document.getElementById("preview-actions")),
       };
     });
+  const thumbnailSize = await card.locator("img").evaluate((image) => ({
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  }));
+  const selectedImage = await frame
+    .locator("html")
+    .evaluate(() => JSON.parse(window.__sdkSnapshot.view.state).items[1]);
+  expect(selectedImage.displayUrl).not.toBe(selectedImage.previewUrl);
+  const servicesBeforePreview = await page.evaluate(
+    () => window.__extensionUiTest.serviceCalls.length,
+  );
+  const waitForFullPreview = async () => {
+    await expect
+      .poll(
+        () =>
+          frame
+            .locator("#preview-image")
+            .evaluate((image) => image.naturalWidth),
+        { timeout: 60000 },
+      )
+      .toBeGreaterThan(thumbnailSize.width);
+    const size = await frame.locator("#preview-image").evaluate((image) => ({
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    }));
+    expect(size.height).toBeGreaterThan(thumbnailSize.height);
+    return size;
+  };
   await card.focus();
   await card.press("Enter");
   await expect(dialog).toBeVisible();
   await expect(frame.locator("#preview-image")).toBeVisible();
+  const previewSize = await waitForFullPreview();
+  const { largePreviewRequested, displayImageRequested } = await page.evaluate(
+    ({ offset, displayUrl }) => {
+      const requests = window.__extensionUiTest.serviceCalls.slice(offset);
+      return {
+        largePreviewRequested: requests.some(
+          (call) =>
+            call.service === "resources" &&
+            call.request.action === "fetch-image" &&
+            call.request.preview === "large" &&
+            typeof call.response?.dataUrl === "string" &&
+            call.completed,
+        ),
+        displayImageRequested: requests.some(
+          (call) =>
+            call.service === "resources" &&
+            call.request.action === "fetch-image" &&
+            call.request.url === displayUrl &&
+            call.completed,
+        ),
+      };
+    },
+    { offset: servicesBeforePreview, displayUrl: selectedImage.displayUrl },
+  );
+  expect(largePreviewRequested).toBe(true);
+  expect(displayImageRequested).toBe(true);
+  const initialTitle = await frame.locator("#preview-title").textContent();
+  await expect(frame.locator("#preview-previous")).toBeEnabled();
+  await expect(frame.locator("#preview-next")).toBeEnabled();
+  await frame.locator("#preview-close").press("ArrowRight");
+  await expect(frame.locator("#preview-title")).not.toHaveText(initialTitle);
+  await waitForFullPreview();
+  expect(
+    await dialog.evaluate((node) => node.contains(document.activeElement)),
+  ).toBe(true);
+  await frame.locator("#preview-close").press("ArrowLeft");
+  await expect(frame.locator("#preview-title")).toHaveText(initialTitle);
+  await waitForFullPreview();
+  expect(
+    await dialog.evaluate((node) => node.contains(document.activeElement)),
+  ).toBe(true);
   await expect(frame.locator("#preview-subtitle")).toHaveCount(0);
   await expect(infoTrigger).toHaveAccessibleName(
     language === "en" ? "Image details" : "图片信息",
@@ -1295,8 +1985,8 @@ export async function checkWallpaperPreview(
   );
   const labels =
     language === "en"
-      ? ["Add to gallery", "Save original", "Source"]
-      : ["加入图库", "保存原图", "来源"];
+      ? ["Add to gallery", "Save HD image", "Source"]
+      : ["加入图库", "保存高清图", "来源"];
   const actionIds = ["add-to-gallery", "download-original", "open-source"];
   for (let index = 0; index < actionIds.length; index++)
     await expect(
@@ -1387,6 +2077,11 @@ export async function checkWallpaperPreview(
   await expect(dialog).not.toBeVisible();
   await expect(card).toBeFocused();
   return {
+    thumbnailSize,
+    previewSize,
+    largePreviewRequested,
+    displayImageRequested,
+    keyboardPreviewNavigation: true,
     header,
     actions,
     beforeInfo,
@@ -1425,7 +2120,7 @@ export async function checkWallpaperMotion(page, frame) {
       observer.observe(document.querySelector("#results"), { childList: true });
     });
   });
-  await frame.locator("#provider").selectOption("wallhaven");
+  await frame.locator("#provider").selectOption("wallcoo");
   const entrance = await frame
     .locator("html")
     .evaluate(() => window.__wallpaperEntranceProbe);
@@ -1446,10 +2141,7 @@ export async function checkWallpaperMotion(page, frame) {
       return { lift: card.m42, imageScale: image.m11 };
     });
   await first.hover();
-  await expect.poll(async () => (await transform()).lift).toBeLessThan(-2.9);
-  await expect
-    .poll(async () => (await transform()).imageScale)
-    .toBeGreaterThan(1.04);
+  await expect.poll(transform).toEqual({ lift: 0, imageScale: 1 });
   const hover = await transform();
   await page.evaluate(() =>
     window.__extensionSettingsTest.update({ motion: "reduced" }),
@@ -1464,6 +2156,7 @@ export async function checkWallpaperMotion(page, frame) {
   return {
     entrance,
     hover,
+    stableImageOnHover: true,
     hostReducedMotionStopsTransforms: true,
     systemReducedMotionStopsTransforms: true,
   };

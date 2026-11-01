@@ -71,6 +71,12 @@ import {
   checkWallpaperDiscoveryLayout,
   checkWallpaperCardActions,
   checkWallpaperLocalGallery,
+  checkWallpaperLocalConcurrency,
+  checkWallpaperApplyConcurrency,
+  checkWallpaperStartupCapacity,
+  checkWallpaperMetadataLoading,
+  checkWallpaperRemoteLoading,
+  waitWallpaperVisibleThumbnails,
   checkWallpaperLocalSurfaces,
   checkWallpaperPreview,
   checkWallpaperMotion,
@@ -83,6 +89,7 @@ const root = resolve(import.meta.dirname, ".."),
 const runId = process.env.STARTER_EXTENSION_UI_RUN_ID;
 const calculatorPackagePath =
   process.env.STARTER_EXTENSION_UI_CALCULATOR_PACKAGE;
+const wallpaperPackagePath = process.env.STARTER_EXTENSION_UI_WALLPAPER_PACKAGE;
 if (runId !== undefined && !/^[a-zA-Z0-9_-]{1,80}$/.test(runId))
   throw Error("STARTER_EXTENSION_UI_RUN_ID must be a bounded plain identifier");
 const output = join(root, "artifacts/extensions/custom-ui", runId ?? "");
@@ -99,6 +106,16 @@ const tool =
   );
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const sdk = await readFile(join(root, "sdk/extension-ui.js"), "utf8");
+const sdkGuard = "    if (pending.size >= 4)";
+if (!sdk.includes(sdkGuard))
+  throw Error("SDK pending-capacity probe needs updating");
+// Observe the real admission guard without changing its four-request limit.
+const observedSdk = sdk.replace(
+  sdkGuard,
+  "    window.__sdkPendingPeak=Math.max(window.__sdkPendingPeak||0,pending.size+1);\n" +
+    "    if(pending.size>=4)window.__sdkCapacityRejections=(window.__sdkCapacityRejections||0)+1;\n" +
+    sdkGuard,
+);
 // Mirror document-start all-frame initialization, including WebView2's core globals.
 const bootstrap = await readFile(
   join(root, "src-tauri/src/native-ipc.js"),
@@ -191,20 +208,29 @@ const init =
     .replaceAll("__INVOKE_KEY__", JSON.stringify("fixture-invoke-key"))
     .replaceAll("__STARTER_OS_NAME__", JSON.stringify("windows")) +
   `\n(${installStartupProbe.toString()})();\n` +
-  sdk.replace(
+  observedSdk.replace(
     'location.hostname !== "extension-ui.localhost"',
     '(location.hostname !== "127.0.0.1" || !location.pathname.startsWith("/fixture/ui/"))',
   ) +
   `
   if(window!==window.top)parent.postMessage({type:"fixture:startup-probe",detail:{type:"fixture:after-sdk",at:performance.timeOrigin+performance.now(),url:location.href.slice(0,512),documentState:document.readyState,sdkPresent:typeof window.starter==="object"}},"*");
   window.__iframeProtocolRequests=[];window.__protocolErrors=[];
+  if(window===window.top&&new URLSearchParams(location.search).has("wallpaperStartupGate"))window.__fixtureStartupReplies={active:true,held:[],release(){this.active=false;for(const forward of this.held.splice(0))forward();}};
   window.addEventListener("message",event=>{if(window===window.top&&event.data?.type==="fixture:protocol-probe")window.__iframeProtocolRequests.push(event.data.value);});
   const postPortMessage=MessagePort.prototype.postMessage;MessagePort.prototype.postMessage=function(message,...args){
-    if(window!==window.top&&message?.version===1&&Number.isInteger(message.id)&&typeof message.method==="string")parent.postMessage({type:"fixture:protocol-probe",value:{method:message.method,id:message.id,at:performance.timeOrigin+performance.now()}},"*");
+    if(window!==window.top&&message?.version===1&&Number.isInteger(message.id)&&typeof message.method==="string"){
+      const value={method:message.method,id:message.id,at:performance.timeOrigin+performance.now()};
+      if(message.method==="service"){value.service=message.params?.service;value.action=message.params?.request?.action;}
+      if(message.method==="run")value.action=message.params?.action;
+      window.__iframeProtocolRequests.push(value);
+      parent.postMessage({type:"fixture:protocol-probe",value},"*");
+    }
     if(window===window.top&&message?.type==="state"&&message.value&&Object.hasOwn(message.value,"busy"))window.__latestHostBusy=message.value.busy;
     let receipt;if(window===window.top&&message?.error){receipt={at:performance.timeOrigin+performance.now(),id:message.id,error:message.error};window.__protocolErrors.push(receipt);}
     const timing=window===window.top&&window.__extensionUiTest?.transportTiming;
     const forward=()=>{if(receipt){receipt.deliveredAt=performance.timeOrigin+performance.now();receipt.deliveredHostBusy=window.__latestHostBusy;}return postPortMessage.call(this,message,...args);};
+    const startup=window===window.top&&window.__fixtureStartupReplies;
+    if(startup?.active&&Number.isInteger(message?.id)&&Object.hasOwn(message,"result")){startup.held.push(forward);return;}
     if(receipt&&timing?.errorAfterIdle){const queued=performance.now();const deliver=()=>{if(window.__latestHostBusy===true&&performance.now()-queued<10000)setTimeout(deliver,16);else forward();};setTimeout(deliver,16);return;}
     const delay=message?.type==="state"&&message.value?.busy===true?timing?.busyMs:message?.error?timing?.errorMs:0;
     if(delay>0){setTimeout(forward,delay);return;}
@@ -237,6 +263,8 @@ const selectedNames = process.argv
   .filter((value) => !value.startsWith("--"));
 const wallpaperSelectedOnly =
   selectedNames.length === 1 && selectedNames[0] === "wallpaper-browser";
+const lanSelectedOnly =
+  selectedNames.length === 1 && selectedNames[0] === "lan-chat";
 const selectedProfiles = process.argv
   .find((value) => value.startsWith("--profiles="))
   ?.slice("--profiles=".length)
@@ -244,7 +272,15 @@ const selectedProfiles = process.argv
   .map(Number);
 const wallpaperLocalOnly = process.argv.includes("--wallpaper-local-only");
 const wallpaperPreviewOnly = process.argv.includes("--wallpaper-preview-only");
-const wallpaperUiOnly = wallpaperLocalOnly || wallpaperPreviewOnly;
+const wallpaperConcurrencyOnly = process.argv.includes(
+  "--wallpaper-concurrency-only",
+);
+const wallpaperLoadingOnly = process.argv.includes("--wallpaper-loading-only");
+const wallpaperUiOnly =
+  wallpaperLocalOnly ||
+  wallpaperPreviewOnly ||
+  wallpaperConcurrencyOnly ||
+  wallpaperLoadingOnly;
 const stylesOnly = process.argv.includes("--styles-only");
 const calculatorHistoryLayoutOnly = process.argv.includes(
   "--calculator-history-layout-only",
@@ -600,19 +636,26 @@ try {
   const fixtureNames =
     wallpaperUiOnly || wallpaperSelectedOnly
       ? ["wallpaper-browser"]
-      : selectedNames.length === 1 &&
-          selectedNames[0] === "scientific-calculator"
-        ? ["scientific-calculator", "lab", "wallpaper-browser"]
-        : names;
+      : lanSelectedOnly
+        ? ["lan-chat"]
+        : selectedNames.length === 1 &&
+            selectedNames[0] === "scientific-calculator"
+          ? ["scientific-calculator", "lab", "wallpaper-browser"]
+          : names;
   for (const name of fixtureNames) {
     const source =
       name === "lab"
         ? join(root, "examples/extensions/apps")
         : join(root, "marketplace/plugins", name);
-    const packageText =
-      name === "scientific-calculator" && calculatorPackagePath
-        ? await readFile(resolve(calculatorPackagePath), "utf8")
-        : undefined;
+    const packagePath =
+      name === "scientific-calculator"
+        ? calculatorPackagePath
+        : name === "wallpaper-browser"
+          ? wallpaperPackagePath
+          : undefined;
+    const packageText = packagePath
+      ? await readFile(resolve(packagePath), "utf8")
+      : undefined;
     const frozenPackage = packageText ? JSON.parse(packageText) : undefined;
     if (
       packageText &&
@@ -625,7 +668,7 @@ try {
         typeof frozenPackage.uiDocuments !== "object")
     )
       throw Error(
-        "Calculator fixture package must contain manifest, base64 wasm and uiDocuments",
+        "Extension fixture package must contain manifest, base64 wasm and uiDocuments",
       );
     const manifest =
       frozenPackage?.manifest ??
@@ -944,10 +987,12 @@ try {
                   ),
                   locale: input.request.locale,
                   host,
-                  results: view.effects.map((effect) =>
-                    plugin.name === "scientific-calculator"
-                      ? currencyHttpFixture(input, effect)
-                      : services.http(input, effect),
+                  results: await Promise.all(
+                    view.effects.map((effect) =>
+                      plugin.name === "scientific-calculator"
+                        ? currencyHttpFixture(input, effect)
+                        : services.http(input, effect),
+                    ),
                   ),
                 };
               }
@@ -1061,6 +1106,8 @@ try {
       "--wallpaper-surface-only",
       "--wallpaper-local-only",
       "--wallpaper-preview-only",
+      "--wallpaper-concurrency-only",
+      "--wallpaper-loading-only",
     ].includes(value),
   )
     ? []
@@ -1109,6 +1156,16 @@ try {
         frame,
         name === "lab" || name === "wallpaper-browser",
         join(output, `${name}-${profile.language}-${profile.width}-skin.png`),
+        name === "lan-chat"
+          ? [
+              "body",
+              ".contacts",
+              ".chat",
+              ".messages",
+              ".composer",
+              ".resize-handle",
+            ]
+          : [],
       );
       if (process.argv.includes("--chrome-only")) {
         expect(errors).toEqual([]);
@@ -1934,7 +1991,16 @@ try {
             continue;
           }
         }
-        studioChecks = await checkLanChat({ page, frame, services, profile });
+        studioChecks = await checkLanChat({
+          page,
+          frame,
+          services,
+          profile,
+          capturePrefix: join(
+            output,
+            `${name}-${profile.language}-${profile.width}`,
+          ),
+        });
       } else if (name === "wallpaper-browser") {
         await expect(frame.locator("#import")).toBeEnabled();
         await expect(frame.locator("#network-mode")).toHaveCount(0);
@@ -1944,15 +2010,15 @@ try {
           "role",
           "search",
         );
-        await expect(frame.locator("#provider")).toHaveValue("upx8");
+        await expect(frame.locator("#provider")).toHaveValue("bizhihui");
         const providers = await frame
           .locator("#provider option")
           .evaluateAll((nodes) => nodes.map((node) => node.value));
         expect(providers).toEqual([
-          "upx8",
-          "wallhaven",
-          "commons",
-          "nekosbest",
+          "bizhihui",
+          "wallcoo",
+          "wallpaperscraft",
+          "goodfon",
         ]);
         const loadWallpapers = async (action, expectedHttp) => {
           const beforeHttp = services.httpCalls.length;
@@ -1964,42 +2030,38 @@ try {
             .toBe(expectedHttp);
           await idle(page, frame);
         };
-        const thumbnails = async () => {
-          await expect(frame.locator("#results .result")).toHaveCount(24, {
+        const thumbnails = async (count = 24) => {
+          await expect(frame.locator("#results .result")).toHaveCount(count, {
             timeout: 60000,
           });
-          await expect
-            .poll(
-              () =>
-                frame
-                  .locator("#results .result img")
-                  .evaluateAll(
-                    (images) =>
-                      images.filter(
-                        (image) =>
-                          image.src.startsWith("data:image/") &&
-                          image.complete &&
-                          image.naturalWidth > 0,
-                      ).length,
-                  ),
-              { timeout: 60000 },
-            )
-            .toBe(24);
+          await waitWallpaperVisibleThumbnails(frame);
           const geometry = await frame
             .locator("#results .result")
             .evaluateAll((cards) =>
-              cards.map((card) => {
-                const box = card.getBoundingClientRect();
-                const image = card.querySelector("img").getBoundingClientRect();
-                return {
-                  x: box.x,
-                  y: box.y,
-                  width: box.width,
-                  imageWidth: image.width,
-                  imageHeight: image.height,
-                  overflow: card.scrollWidth - card.clientWidth,
-                };
-              }),
+              cards
+                .filter((card) => {
+                  const box = card.getBoundingClientRect();
+                  return (
+                    box.width > 0 &&
+                    box.height > 0 &&
+                    box.bottom > 0 &&
+                    box.top < innerHeight
+                  );
+                })
+                .map((card) => {
+                  const box = card.getBoundingClientRect();
+                  const image = card
+                    .querySelector("img")
+                    .getBoundingClientRect();
+                  return {
+                    x: box.x,
+                    y: box.y,
+                    width: box.width,
+                    imageWidth: image.width,
+                    imageHeight: image.height,
+                    overflow: card.scrollWidth - card.clientWidth,
+                  };
+                }),
             );
           for (const card of geometry) {
             expect(card.imageWidth).toBeGreaterThan(0);
@@ -2017,7 +2079,7 @@ try {
           await expect.poll(() => services.activeResources()).toBe(0);
           return geometry;
         };
-        await thumbnails();
+        const initialGeometry = await thumbnails();
         await expect(frame.locator("#preview-dialog")).not.toBeVisible();
         const discoveryLayout = await checkWallpaperDiscoveryLayout(frame);
         const help = await checkWallpaperHelp(frame, profile.font);
@@ -2027,17 +2089,30 @@ try {
           profile.language,
           join(output, `${name}-${profile.language}-${profile.width}`),
         );
-        const loadedProviders = ["upx8"];
+        const loadedProviders = ["bizhihui"];
         let filterChecks;
         if (profile.width === 1120) {
-          for (const provider of ["wallhaven", "commons"]) {
+          for (const provider of ["wallcoo", "wallpaperscraft"]) {
             await loadWallpapers(
               () => frame.locator("#provider").selectOption(provider),
               1,
             );
             await thumbnails();
             loadedProviders.push(provider);
-            if (provider === "wallhaven") {
+            if (provider === "wallcoo") {
+              const wallcooItems = await frame
+                .locator("html")
+                .evaluate(
+                  () => JSON.parse(window.__sdkSnapshot.view.state).items,
+                );
+              expect(
+                wallcooItems.every(
+                  (item) =>
+                    item.width === 0 &&
+                    item.height === 0 &&
+                    item.originalUrl === item.displayUrl,
+                ),
+              ).toBe(true);
               const query = frame.locator("#query");
               await query.fill("forest & blue");
               const composingRuns = await page.evaluate(
@@ -2087,18 +2162,56 @@ try {
                 1,
               );
               const searched = new URL(services.httpCalls.at(-1).request.url);
-              expect(searched.searchParams.get("q")).toBe("forest & blue");
-              expect(searched.searchParams.get("sorting")).toBe("relevance");
+              expect(searched.origin).toBe("https://www.wallcoo.com");
+              expect(searched.pathname).toBe("/wp-json/bc/v1/wallpapers");
+              expect(searched.searchParams.get("search")).toBe("forest & blue");
+              expect(searched.searchParams.get("page")).toBe("1");
+              await expect(frame.locator("#category")).toHaveValue("all");
+              await query.fill("");
               await loadWallpapers(
-                () => frame.locator("#category").selectOption("anime"),
+                () => frame.locator("#category").selectOption("landscape"),
                 1,
               );
               await thumbnails();
               const categorized = new URL(
                 services.httpCalls.at(-1).request.url,
               );
-              expect(categorized.searchParams.get("q")).toBe("forest & blue");
-              expect(categorized.searchParams.get("categories")).toBe("010");
+              expect(categorized.pathname).toBe("/wp-json/bc/v1/wallpapers");
+              expect(categorized.searchParams.get("category_id")).toBe("3");
+              expect(categorized.searchParams.has("search")).toBe(false);
+              await expect(query).toHaveValue("");
+              const firstPage = await frame
+                .locator("#results .result")
+                .evaluateAll((cards) =>
+                  cards.map((card) => card.dataset.resultId),
+                );
+              await loadWallpapers(
+                () => frame.locator("#next-batch").click(),
+                1,
+              );
+              await thumbnails(48);
+              const appendedIds = await frame
+                .locator("#results .result")
+                .evaluateAll((cards) =>
+                  cards.map((card) => card.dataset.resultId),
+                );
+              expect(appendedIds.slice(0, 24)).toEqual(firstPage);
+              expect(new Set(appendedIds).size).toBe(48);
+              const nextPage = new URL(services.httpCalls.at(-1).request.url);
+              expect(nextPage.pathname).toBe("/wp-json/bc/v1/wallpapers");
+              expect(nextPage.searchParams.get("page")).toBe("2");
+              expect(nextPage.searchParams.get("category_id")).toBe("3");
+              const secondPage = await frame
+                .locator("html")
+                .evaluate(() => JSON.parse(window.__sdkSnapshot.view.state));
+              expect(secondPage.page).toBe(2);
+              expect(secondPage.hasMore).toBe(true);
+              expect(secondPage.seen).toHaveLength(48);
+              expect(
+                secondPage.items.every(
+                  (item) => !firstPage.includes(item.resultId),
+                ),
+              ).toBe(true);
               const previousSummary = await frame
                 .locator("#result-summary")
                 .textContent();
@@ -2128,11 +2241,14 @@ try {
                 provider: retained.provider,
                 query: retained.query,
                 category: retained.category,
+                page: retained.page,
               }).toEqual({
-                provider: "wallhaven",
-                query: "forest & blue",
-                category: "anime",
+                provider: "wallcoo",
+                query: "",
+                category: "landscape",
+                page: 2,
               });
+              expect(retained.seen).toEqual(secondPage.seen);
               await query.fill("fixture-no-results");
               const beforeEmpty = services.httpCalls.length;
               await loadWallpapers(() => query.press("Enter"), 1);
@@ -2144,68 +2260,95 @@ try {
                 "fixture-no-results",
               );
               expect(services.httpCalls.slice(beforeEmpty)).toHaveLength(1);
+              const emptyState = await frame
+                .locator("html")
+                .evaluate(() => JSON.parse(window.__sdkSnapshot.view.state));
+              expect(emptyState.page).toBe(1);
+              expect(emptyState.category).toBe("all");
+              expect(emptyState.hasMore).toBe(false);
+              expect(emptyState.seen).toEqual([]);
+              await expect(frame.locator("#next-batch")).toBeDisabled();
+              await query.fill("fixture-final-page");
+              await loadWallpapers(() => query.press("Enter"), 1);
+              await thumbnails();
+              const finalPageState = await frame
+                .locator("html")
+                .evaluate(() => JSON.parse(window.__sdkSnapshot.view.state));
+              expect(finalPageState.items).toHaveLength(24);
+              expect(finalPageState.hasMore).toBe(false);
+              await expect(frame.locator("#next-batch")).toBeDisabled();
               filterChecks = {
                 enterSubmitsOnce: true,
                 composingDoesNotSearch: true,
                 encodedQuery: searched.toString(),
                 categoryRequest: categorized.toString(),
+                nextPageRequest: nextPage.toString(),
+                nextPageAdvancesWithoutDuplicates: true,
+                searchResetsPaginationAndSeenHistory: true,
+                finalNonEmptyPageDisablesNext: true,
+                adaptedImagesKeepUnknownOriginalDimensions: true,
                 failedFilterRetainsSummaryAndImages: true,
                 emptySearchDoesNotFillUnrelatedImages: true,
               };
             } else {
               await loadWallpapers(
-                () => frame.locator("#category").selectOption("forest"),
+                () => frame.locator("#category").selectOption("nature"),
                 1,
               );
               await thumbnails();
               expect(
-                new URL(services.httpCalls.at(-1).request.url).searchParams.get(
-                  "gsrsearch",
-                ),
-              ).toBe("forest filetype:bitmap");
+                new URL(services.httpCalls.at(-1).request.url).pathname,
+              ).toBe("/catalog/nature/1920x1080");
             }
           }
         }
         const beforeHttp = services.httpCalls.length;
-        services.failNextImage();
         await loadWallpapers(
-          () => frame.locator("#provider").selectOption("nekosbest"),
-          2,
+          () => frame.locator("#provider").selectOption("goodfon"),
+          1,
         );
-        await expect(frame.locator("#results .result")).toHaveCount(24);
+        await thumbnails();
         const firstResult = frame.locator("#results .result").first();
-        await expect(
-          firstResult.locator('.result-media[data-state="error"]'),
-        ).toHaveCount(1);
+        services.failNextLargePreview();
         await firstResult.focus();
         await firstResult.press("Enter");
         await expect(frame.locator("#preview-dialog")).toBeVisible();
+        await expect(frame.locator("#preview-image")).toBeVisible();
         await expect(frame.locator("#retry-preview")).toBeEnabled();
+        await expect(frame.locator("#preview-quality")).toContainText(
+          profile.language === "zh" ? "缩略图" : "thumbnail",
+        );
         const beforeRetryHttp = services.httpCalls.length;
         await frame.locator("#retry-preview").click();
-        await expect(frame.locator("#preview-image")).toBeVisible();
+        await expect
+          .poll(() =>
+            frame
+              .locator("#preview-image")
+              .evaluate((image) => image.naturalWidth),
+          )
+          .toBe(1920);
         await frame.locator("#preview-close").click();
         await expect(frame.locator("#preview-dialog")).not.toBeVisible();
         await expect(firstResult).toBeFocused();
         const imageGrid = await thumbnails();
-        loadedProviders.push("nekosbest");
+        loadedProviders.push("goodfon");
         expect(services.httpCalls.length).toBe(beforeRetryHttp);
         const providerCalls = calls
           .slice(before)
           .filter((call) => call.plugin === name);
-        expect(providerCalls.some((call) => call.action === "load")).toBe(true);
+        expect(providerCalls.some((call) => call.action === "search")).toBe(
+          true,
+        );
         expect(
           providerCalls.some((call) => call.action === "host-result"),
         ).toBe(true);
-        expect(services.httpCalls.slice(beforeHttp)).toHaveLength(2);
+        expect(services.httpCalls.slice(beforeHttp)).toHaveLength(1);
         expect(new URL(services.httpCalls.at(-1).request.url).origin).toBe(
-          "https://nekos.best",
+          "https://www.goodfon.com",
         );
-        expect(
-          Array.isArray(
-            JSON.parse(services.httpCalls.at(-1).receipt.value.body).results,
-          ),
-        ).toBe(true);
+        expect(services.httpCalls.at(-1).receipt.value.body).toContain(
+          'class="wallpapers"',
+        );
         expect(services.httpCalls.at(-1).request).not.toHaveProperty(
           "networkMode",
         );
@@ -2230,12 +2373,12 @@ try {
             height: node.offsetHeight,
           }));
         services.failNextHttp();
-        await loadWallpapers(() => frame.locator("#search").click(), 2);
+        await loadWallpapers(() => frame.locator("#search").click(), 1);
         const toast = page.locator("[data-sonner-toast]").last();
         await expect(toast).toHaveAttribute("data-type", "error", {
           timeout: 60000,
         });
-        await expect(frame.locator("#provider")).toHaveValue("nekosbest");
+        await expect(frame.locator("#provider")).toHaveValue("goodfon");
         expect(
           await frame.locator("#provider").evaluate((node) => ({
             top: node.offsetTop,
@@ -2260,6 +2403,10 @@ try {
               services.calls.filter((call) => call.service === "links").length,
           )
           .toBeGreaterThan(0);
+        const selectedImage = await frame
+          .locator("html")
+          .evaluate(() => JSON.parse(window.__sdkSnapshot.view.state).items[0]);
+        const beforeSave = services.calls.length;
         await frame.locator("#download-original").click();
         await expect(
           page.locator("[data-sonner-toast]").filter({
@@ -2268,9 +2415,37 @@ try {
           }),
         ).toBeVisible();
         await expect.poll(() => services.activeResources()).toBe(0);
+        expect(
+          services.calls
+            .slice(beforeSave)
+            .filter(
+              (call) =>
+                call.service === "resources" &&
+                call.request.action === "fetch-image",
+            )
+            .map((call) => call.request.url),
+        ).toEqual([selectedImage.originalUrl]);
+        await frame.locator("#preview-title").hover();
+        await expect(
+          page.locator("[data-sonner-toast]").filter({
+            hasText:
+              profile.language === "zh" ? "已取消保存。" : "Save cancelled.",
+          }),
+        ).not.toBeVisible({ timeout: 10000 });
+        const beforeImport = services.calls.length;
         await frame.locator("#add-to-gallery").click();
         await idle(page, frame);
         await expect.poll(() => services.activeResources()).toBe(0);
+        expect(
+          services.calls
+            .slice(beforeImport)
+            .filter(
+              (call) =>
+                call.service === "resources" &&
+                call.request.action === "fetch-image",
+            )
+            .map((call) => call.request.url),
+        ).toEqual([selectedImage.displayUrl]);
         const resourceCalls = await page.evaluate(() =>
           window.__extensionUiTest.serviceCalls.filter(
             (call) => call.service === "resources",
@@ -2280,7 +2455,7 @@ try {
           (call) =>
             call.request.action === "fetch-image" && call.response?.resourceId,
         );
-        // 24 张缩略图及预览已逐项验证；可见范围和缓存会改变实际请求次数。
+        // 可见缩略图与选中预览已逐项验证；可见范围和缓存会改变实际请求次数。
         expect(fetched.length).toBeGreaterThan(0);
         for (const call of fetched) {
           expect(call.completed).toBe(true);
@@ -2344,7 +2519,7 @@ try {
               providers,
               loadedProviders,
               filterChecks,
-              imagesBeforeSelection: 24,
+              imagesBeforeSelection: initialGeometry.length,
               help,
               imageGrid,
               discoveryLayout,
@@ -2695,7 +2870,7 @@ try {
         );
       } else if (name === "wallpaper-browser") {
         await frame.locator("#remote-tab").click();
-        await frame.locator("#provider").selectOption("upx8");
+        await frame.locator("#provider").selectOption("bizhihui");
         await idle(page, frame);
       }
       const importedFrame = await page.locator("iframe").elementHandle();
@@ -2834,9 +3009,9 @@ try {
           "reload",
         );
       } else if (name === "wallpaper-browser") {
-        await expect(frame.locator("#provider")).toHaveValue("nekosbest");
+        await expect(frame.locator("#provider")).toHaveValue("goodfon");
         await expect(frame.locator("#query")).toHaveValue("");
-        await expect(frame.locator("#category")).toHaveValue("neko");
+        await expect(frame.locator("#category")).toHaveValue("all");
         await expect(frame.locator("#local-tab")).toHaveAttribute(
           "aria-selected",
           "true",
@@ -3138,6 +3313,186 @@ try {
     );
     await context.close();
   }
+  if (wallpaperConcurrencyOnly) {
+    const profile = {
+      width: 900,
+      height: 760,
+      font: "16px",
+      theme: "dark",
+      language: "en",
+      window: "true",
+    };
+    const context = await browser.newContext({
+      viewport: { width: profile.width, height: profile.height },
+      reducedMotion: "reduce",
+    });
+    await context.addInitScript({ content: init });
+    const page = await newFixturePage(context),
+      errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    services.seedNextWallpaperGallery();
+    const remote = services.holdNextHttp(),
+      initialList = services.holdNextWallpaperList();
+    await page.goto(
+      `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: "wallpaper-browser" })}`,
+    );
+    const frame = page.frameLocator("iframe");
+    await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+    await observeSdk(frame);
+    const concurrency = await checkWallpaperLocalConcurrency({
+      page,
+      frame,
+      services,
+      remote,
+      initialList,
+      capturePath: join(output, "wallpaper-concurrency-pending.png"),
+    });
+    await idle(page, frame);
+    await expect(frame.locator("#results .result")).toHaveCount(24);
+    await expect(frame.locator("#local-tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(errors).toEqual([]);
+    report.push({
+      plugin: "wallpaper-browser",
+      regression: "local-gallery-independent-of-pending-reads",
+      profile,
+      ...concurrency,
+      errors,
+      nativeIpc: false,
+    });
+    console.log(
+      "PASS wallpaper-browser local switch/apply while real host busy; cached gallery survives pending/stale reads",
+    );
+    await context.close();
+    const applyContext = await browser.newContext({
+      viewport: { width: profile.width, height: profile.height },
+      reducedMotion: "reduce",
+    });
+    await applyContext.addInitScript({ content: init });
+    const applyPage = await newFixturePage(applyContext),
+      applyErrors = [];
+    applyPage.on("pageerror", (error) => applyErrors.push(error.message));
+    services.seedNextWallpaperGallery();
+    await applyPage.goto(
+      `http://127.0.0.1:${port}/?${new URLSearchParams({ ...profile, plugin: "wallpaper-browser" })}`,
+    );
+    const applyFrame = applyPage.frameLocator("iframe");
+    await expect(applyFrame.locator("h1")).toBeVisible({ timeout: 60000 });
+    await observeSdk(applyFrame);
+    await idle(applyPage, applyFrame);
+    const applying = await checkWallpaperApplyConcurrency({
+      page: applyPage,
+      frame: applyFrame,
+      services,
+      idle,
+      capturePath: join(output, "wallpaper-apply-pending.png"),
+    });
+    await idle(applyPage, applyFrame);
+    expect(applyErrors).toEqual([]);
+    report.push({
+      plugin: "wallpaper-browser",
+      regression: "local-gallery-independent-of-pending-apply",
+      profile,
+      ...applying,
+      errors: applyErrors,
+      nativeIpc: false,
+    });
+    console.log(
+      "PASS wallpaper-browser compact apply ACK preserves cached gallery before failed read; navigation/search stay usable and writes serialized",
+    );
+    await applyContext.close();
+  }
+  if (wallpaperLoadingOnly) {
+    const profile = {
+      width: 900,
+      height: 760,
+      font: "16px",
+      theme: "dark",
+      language: "en",
+      window: "true",
+    };
+    for (const scene of ["startup", "metadata", "remote"]) {
+      const context = await browser.newContext({
+        viewport: { width: profile.width, height: profile.height },
+        reducedMotion: "reduce",
+      });
+      await context.addInitScript({ content: init });
+      const page = await newFixturePage(context),
+        errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const local =
+          scene === "metadata"
+            ? Array.from({ length: 3 }, () =>
+                services.holdNextWallpaperPreview(),
+              )
+            : [],
+        backgrounds =
+          scene === "remote"
+            ? [
+                services.holdNextImageFetch("thumbnail"),
+                services.holdNextImageFetch("thumbnail"),
+              ]
+            : [],
+        large =
+          scene === "remote" ? services.holdNextImageFetch("large") : null,
+        release = scene === "remote" ? services.holdNextImageRelease() : null;
+      if (scene === "metadata") services.seedNextWallpaperGallery(3);
+      const parameters = {
+        ...profile,
+        plugin: "wallpaper-browser",
+        ...(scene === "startup" ? { wallpaperStartupGate: "true" } : {}),
+        ...(scene === "metadata" ? { wallpaperPermissions: "denied" } : {}),
+      };
+      await page.goto(
+        `http://127.0.0.1:${port}/?${new URLSearchParams(parameters)}`,
+      );
+      const frame = page.frameLocator("iframe");
+      await expect(frame.locator("h1")).toBeVisible({ timeout: 60000 });
+      await observeSdk(frame);
+      let checks;
+      if (scene === "startup") {
+        checks = await checkWallpaperStartupCapacity({ page, frame });
+        await idle(page, frame);
+        await waitWallpaperVisibleThumbnails(frame);
+        await expect.poll(() => services.activeResources()).toBe(0);
+      } else if (scene === "metadata") {
+        await idle(page, frame);
+        checks = await checkWallpaperMetadataLoading({
+          page,
+          frame,
+          services,
+          gates: local,
+          capturePath: join(output, "wallpaper-metadata-progress.png"),
+        });
+      } else {
+        checks = await checkWallpaperRemoteLoading({
+          page,
+          frame,
+          services,
+          backgrounds,
+          large,
+          release,
+          idle,
+          capturePath: join(output, "wallpaper-selected-before-cleanup.png"),
+        });
+      }
+      expect(errors).toEqual([]);
+      report.push({
+        plugin: "wallpaper-browser",
+        regression: `progressive-loading-${scene}`,
+        profile,
+        ...checks,
+        errors,
+        nativeIpc: false,
+      });
+      console.log(
+        `PASS wallpaper-browser progressive loading ${scene}; real SDK/host capacity retained`,
+      );
+      await context.close();
+    }
+  }
   if (wallpaperLocalOnly) {
     for (const profile of [
       { width: 900, height: 760, font: "16px", theme: "dark" },
@@ -3242,6 +3597,8 @@ try {
       "--consent-only",
       "--wallpaper-local-only",
       "--wallpaper-preview-only",
+      "--wallpaper-concurrency-only",
+      "--wallpaper-loading-only",
     ].some((flag) => process.argv.includes(flag)) &&
     (!selectedNames.length || selectedNames.includes("wallpaper-browser"))
   ) {
@@ -3262,9 +3619,7 @@ try {
       await observeSdk(frame);
       await idle(page, frame);
       const motion = await checkWallpaperMotion(page, frame);
-      await expect(frame.locator("#results .result img")).toHaveCount(24, {
-        timeout: 60000,
-      });
+      await waitWallpaperVisibleThumbnails(frame);
       await expect.poll(() => services.activeResources()).toBe(0);
       await writeFile(
         join(output, "wallpaper-browser-motion.json"),
@@ -3329,7 +3684,7 @@ try {
           ]),
         );
       } else {
-        expect(network).toHaveLength(3);
+        expect(network).toHaveLength(1);
         expect(network[0].request).not.toHaveProperty("networkMode");
         if (mode === "links-only")
           expect(
@@ -3337,7 +3692,11 @@ try {
               .slice(beforeServices)
               .filter((call) => call.service === "links")
               .map((call) => call.request.url),
-          ).toEqual(["https://wp.upx8.com/"]);
+          ).toEqual([
+            expect.stringMatching(
+              /^https:\/\/www\.bizhihui\.com\/p\/\d+\.html$/,
+            ),
+          ]);
       }
       expect(errors).toEqual([]);
       expect(warnings).toEqual([]);
@@ -3360,6 +3719,7 @@ try {
     !process.argv.includes("--chrome-only") &&
     !process.argv.includes("--capabilities-only") &&
     !wallpaperUiOnly &&
+    !lanSelectedOnly &&
     !process.argv.includes("--regressions-only")
   ) {
     for (const language of ["zh", "en"]) {
@@ -3537,6 +3897,8 @@ try {
       "--capabilities-only",
       "--wallpaper-local-only",
       "--wallpaper-preview-only",
+      "--wallpaper-concurrency-only",
+      "--wallpaper-loading-only",
       "--regressions-only",
       "--chrome-only",
       "--artifact-only",
@@ -3627,7 +3989,7 @@ try {
       return route.abort();
     });
     await securityPage.goto(
-      `http://127.0.0.1:${port}/?plugin=${wallpaperSelectedOnly ? "wallpaper-browser" : "scientific-calculator"}&window=true`,
+      `http://127.0.0.1:${port}/?plugin=${wallpaperSelectedOnly ? "wallpaper-browser" : lanSelectedOnly ? "lan-chat" : "scientific-calculator"}&window=true`,
     );
     const securityFrame = securityPage.frameLocator("iframe");
     await expect(securityFrame.locator("main")).toBeVisible({ timeout: 60000 });
@@ -3705,23 +4067,27 @@ try {
       output,
       stylesOnly
         ? "styles-run.json"
-        : wallpaperPreviewOnly
-          ? "wallpaper-preview-run.json"
-          : wallpaperLocalOnly
-            ? "wallpaper-local-run.json"
-            : process.argv.includes("--capabilities-only")
-              ? "capabilities-run.json"
-              : process.argv.includes("--wallpaper-surface-only")
-                ? "wallpaper-surface-run.json"
-                : process.argv.includes("--regressions-only")
-                  ? "regressions-run.json"
-                  : process.argv.includes("--chrome-only")
-                    ? "chrome-run.json"
-                    : process.argv.includes("--artifact-only")
-                      ? "artifact-run.json"
-                      : process.argv.includes("--security-only")
-                        ? "security-run.json"
-                        : "report.json",
+        : wallpaperLoadingOnly
+          ? "wallpaper-loading-run.json"
+          : wallpaperConcurrencyOnly
+            ? "wallpaper-concurrency-run.json"
+            : wallpaperPreviewOnly
+              ? "wallpaper-preview-run.json"
+              : wallpaperLocalOnly
+                ? "wallpaper-local-run.json"
+                : process.argv.includes("--capabilities-only")
+                  ? "capabilities-run.json"
+                  : process.argv.includes("--wallpaper-surface-only")
+                    ? "wallpaper-surface-run.json"
+                    : process.argv.includes("--regressions-only")
+                      ? "regressions-run.json"
+                      : process.argv.includes("--chrome-only")
+                        ? "chrome-run.json"
+                        : process.argv.includes("--artifact-only")
+                          ? "artifact-run.json"
+                          : process.argv.includes("--security-only")
+                            ? "security-run.json"
+                            : "report.json",
     ),
     JSON.stringify(
       {
