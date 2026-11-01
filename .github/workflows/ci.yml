@@ -220,8 +220,53 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: JavaScript / TypeScript SDK 与真实 Wasm 离线冒烟
+      - name: 构建优化的 SDK 验收工具并记录来源
         if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/extension-sdk-tool
+          git diff --exit-code HEAD
+          cargo build --locked --release --manifest-path src-tauri/Cargo.toml --bin extension-tool --message-format=json-render-diagnostics > .cache/extension-sdk-cargo.jsonl
+          git diff --exit-code HEAD
+          node scripts/ci-extension-sdk.mjs prepare .cache/extension-sdk-cargo.jsonl .cache/extension-sdk-tool
+
+      - name: 保留优化工具供独立 SDK 检查与定向重试
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: extension-sdk-tool
+          path: .cache/extension-sdk-tool
+          overwrite: true
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+  extension-sdk:
+    name: SDK 冷启动、真实 Wasm 与耗时余量
+    needs: [changes, rust]
+    if: needs.changes.outputs.rust_required != 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: 安装工具运行时与前端依赖
+        run: |
+          printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          apt=(sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          "${apt[@]}" update
+          "${apt[@]}" install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1
+          pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: extension-sdk-tool
+          path: .cache/extension-sdk-tool
+      - name: 构建固定版本 SDK 模块
         shell: bash
         run: |
           set -euo pipefail
@@ -238,11 +283,17 @@ jobs:
           pnpm --dir examples/extensions install --frozen-lockfile
           pnpm --dir examples/extensions typecheck
           pnpm --dir examples/extensions build
-          # worker 回归已经从本次源码构建 debug 工具；复用它执行同一组真实 Wasm fixture。
-          export STARTER_EXTENSION_TOOL="$PWD/src-tauri/target/debug/extension-tool"
-          pnpm extension:test --manifest examples/extensions/javascript/extension.json --wasm examples/extensions/dist/javascript.wasm --fixture examples/extensions/javascript/smoke.json
-          pnpm extension:test --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --fixture examples/extensions/typescript/smoke.json
-          pnpm extension:test --manifest examples/extensions/typescript/extension.json --wasm examples/extensions/dist/typescript.wasm --fixture examples/extensions/typescript/notebook-smoke.json
+      - name: 核对工具收据并重复冷启动验收
+        run: node scripts/ci-extension-sdk.mjs run .cache/extension-sdk-tool artifacts/extensions/sdk-cold-start.json
+      - name: 保留源码、模块与工具哈希及冷启动耗时
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: extension-sdk-cold-start
+          path: artifacts/extensions/sdk-cold-start.json
+          overwrite: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   bindings:
     name: IPC 绑定校验
@@ -392,7 +443,16 @@ jobs:
   quality-gate:
     name: 质量门禁
     if: always()
-    needs: [changes, frontend, browser-smoke, rust, bindings, desktop-e2e]
+    needs:
+      [
+        changes,
+        frontend,
+        browser-smoke,
+        rust,
+        bindings,
+        desktop-e2e,
+        extension-sdk,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

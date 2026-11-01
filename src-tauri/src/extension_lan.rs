@@ -2385,7 +2385,7 @@ mod tests {
         }
     }
     fn directory() -> tempfile::TempDir {
-        tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+        crate::extension_paths::temporary_directory()
     }
     fn node(root: &Path, name: &str) -> ActiveNode {
         let node = Node::open(root, ID).unwrap();

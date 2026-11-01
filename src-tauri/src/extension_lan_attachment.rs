@@ -1038,7 +1038,7 @@ mod tests {
     use base64::{Engine, engine::general_purpose::STANDARD};
 
     fn directory() -> tempfile::TempDir {
-        tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+        crate::extension_paths::temporary_directory()
     }
 
     fn source_file(root: &Path, byte: u8) -> tempfile::NamedTempFile {

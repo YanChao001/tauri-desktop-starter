@@ -322,9 +322,8 @@ mod tests {
 
     #[test]
     fn real_udp_discovery_reports_devices_and_stops_with_its_session() {
-        let temp_root = std::env::temp_dir().canonicalize().unwrap();
-        let first_root = tempfile::tempdir_in(&temp_root).unwrap();
-        let second_root = tempfile::tempdir_in(&temp_root).unwrap();
+        let first_root = crate::extension_paths::temporary_directory();
+        let second_root = crate::extension_paths::temporary_directory();
         let first = Node::open(first_root.path(), "market.lan-chat").unwrap();
         let second = Node::open(second_root.path(), "market.lan-chat").unwrap();
         first.start("甲", Ipv4Addr::LOCALHOST.into(), 0).unwrap();

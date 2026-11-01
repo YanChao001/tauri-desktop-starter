@@ -6,7 +6,7 @@ export function qualityGateFailures(needs) {
   const rustRequired = needs.changes?.outputs?.rust_required !== "false";
   const allowedSkips = new Set([
     ...(docsOnly ? ["browser-smoke", "desktop-e2e"] : []),
-    ...(!rustRequired ? ["rust", "bindings"] : []),
+    ...(!rustRequired ? ["rust", "bindings", "extension-sdk"] : []),
   ]);
   return [
     "changes",
@@ -14,6 +14,7 @@ export function qualityGateFailures(needs) {
     "browser-smoke",
     "rust",
     "bindings",
+    "extension-sdk",
     "desktop-e2e",
   ]
     .filter((job) => {
