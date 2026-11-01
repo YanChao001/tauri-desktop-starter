@@ -1,6 +1,8 @@
 import { useSettings } from "@/providers/settings";
 import { PatternArtwork } from "@/components/skin-artwork";
 import { VideoBackground } from "@/components/video-background";
+import { BUILTIN_BACKGROUNDS } from "@/lib/backgrounds";
+import { getBundledWallpaper } from "@/lib/bundled-wallpapers";
 
 export { PatternArtwork } from "@/components/skin-artwork";
 
@@ -9,13 +11,24 @@ export function WindowBackground({
   videoPlayback = true,
 }: { videoPlayback?: boolean } = {}) {
   const { settings } = useSettings();
+  const bundled = getBundledWallpaper(settings.background);
   return (
     <div
       className="window-background"
       data-window-background
       aria-hidden="true"
     >
-      {settings.background === "custom" ? (
+      {bundled ? (
+        <img
+          className="custom-background-image"
+          data-bundled-wallpaper
+          src={bundled.url}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          style={{ objectFit: "cover" }}
+        />
+      ) : settings.background === "custom" ? (
         settings.customBackground ? (
           settings.customBackground.video && videoPlayback ? (
             <VideoBackground
@@ -35,7 +48,12 @@ export function WindowBackground({
           )
         ) : null
       ) : (
-        <PatternArtwork kind={settings.background} />
+        <PatternArtwork
+          kind={
+            BUILTIN_BACKGROUNDS.find((kind) => kind === settings.background) ??
+            "plain"
+          }
+        />
       )}
       <div className="window-reading-surface" data-window-reading-surface />
     </div>

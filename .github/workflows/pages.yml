@@ -8,6 +8,7 @@ on:
       - public/**
       - resources/branding/app-icon.svg
       - resources/skins/**
+      - resources/wallpapers/**
       - app.config.json
       - index.html
       - package.json

@@ -50,7 +50,7 @@ describe("settings provider persistence", () => {
       first.result.current.update({ accent: "custom", customAccent: " #a3c " }),
     );
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: SETTINGS_VERSION,
       accent: "custom",
       customAccent: "#AA33CC",
     });
@@ -64,9 +64,9 @@ describe("settings provider persistence", () => {
     });
     await act(async () => next.result.current.reset());
     expect(next.result.current.settings).toEqual(DEFAULT_SETTINGS);
-    expect(document.documentElement.dataset.accent).toBe("neutral");
+    expect(document.documentElement.dataset.accent).toBe("lime");
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
-      accent: "neutral",
+      accent: "lime",
       customAccent: DEFAULT_SETTINGS.customAccent,
     });
   });

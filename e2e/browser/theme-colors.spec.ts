@@ -177,7 +177,7 @@ test("custom accent normalizes, survives reload and preset switching, and cancel
   await page.goto("./#/settings");
   await applyCustom(page, "#3ad");
   const expected = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     accent: "custom",
     customAccent: "#33AADD",
   };
@@ -367,7 +367,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect
         .poll(() => savedAccent(page))
         .toEqual({
-          schemaVersion: 6,
+          schemaVersion: 7,
           accent: "custom",
           customAccent: color,
         });

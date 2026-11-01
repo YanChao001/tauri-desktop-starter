@@ -20,6 +20,15 @@ vi.mock("@/providers/settings", () => ({
 afterEach(cleanup);
 
 describe("窗口插画", () => {
+  it("内置壁纸从构建资源加载，完整窗口与独立插件窗口共用图片", () => {
+    appearance.background = "bundled:001-秋日花饰少女.jpg";
+    const view = render(<WindowBackground videoPlayback={false} />);
+    const image = view.container.querySelector("[data-bundled-wallpaper]");
+    expect(image).toHaveAttribute("src", expect.stringContaining("001-"));
+    expect(image).toHaveAttribute("aria-hidden", "true");
+    expect(view.container.querySelector("[data-custom-background]")).toBeNull();
+    expect(view.container.querySelector("video")).toBeNull();
+  });
   it("独立插件窗口使用视频封面，不请求受主窗口限制的媒体协议", () => {
     appearance.background = "custom";
     appearance.customBackground = {

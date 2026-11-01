@@ -216,10 +216,29 @@ describe("设置页", () => {
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject(
       { language: "en" },
     );
-    expect(screen.getByRole("button", { name: "System" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+  });
+
+  it("内置图片默认选中，切换后只持久化文件身份且保留独立用户图库", () => {
+    render(<SettingsView />);
+    const wallpaper = screen.getByRole("radio", {
+      name: "使用壁纸：秋日花饰少女",
+    });
+    expect(wallpaper).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
+    expect(wallpaper).not.toBeChecked();
+    fireEvent.click(wallpaper);
+    expect(wallpaper).toBeChecked();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+      background: "bundled:001-秋日花饰少女.jpg",
+      customBackground: null,
+    });
+    expect(
+      screen.queryByRole("button", { name: "删除壁纸：秋日花饰少女" }),
+    ).not.toBeInTheDocument();
   });
 
   it("重置外观时保留用户语言并恢复其余默认偏好", async () => {
@@ -269,6 +288,7 @@ describe("设置页", () => {
   it("皮肤与强度即时生效、持久化，并在纯色皮肤下禁用强度", () => {
     const view = () => <SettingsView />;
     const { unmount } = render(view());
+    fireEvent.click(screen.getByRole("radio", { name: "纯色" }));
     expect(screen.getByRole("slider", { name: "背景透明度" })).toHaveAttribute(
       "data-disabled",
     );

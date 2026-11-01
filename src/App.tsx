@@ -24,7 +24,7 @@ import { ExtensionsProvider } from "@/features/extensions/extensions-provider";
 import { DemoMotion } from "@/components/demo-motion";
 import { UnsavedWorkProvider } from "@/providers/unsaved-work";
 import { RecoveryGate } from "@/components/recovery-gate";
-import { THEME_STORAGE_KEY } from "@/lib/settings-model";
+import { DEFAULT_SETTINGS, THEME_STORAGE_KEY } from "@/lib/settings-model";
 import { SettingsPersistence } from "@/components/settings-persistence";
 import { ThemeEffects } from "@/components/theme-effects";
 import { PageLoading } from "@/components/page-loading";
@@ -61,7 +61,7 @@ export default function App() {
           <ThemeProvider
             storageKey={THEME_STORAGE_KEY}
             attribute="class"
-            defaultTheme="system"
+            defaultTheme={DEFAULT_SETTINGS.theme}
             enableSystem
             disableTransitionOnChange
             // main.tsx 在挂载前应用主题；当前客户端渲染不需要服务端主题脚本
