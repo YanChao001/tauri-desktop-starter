@@ -1614,8 +1614,9 @@ mod tests {
     }
 
     #[test]
-    fn cached_image_transport_reuses_a_keep_alive_connection_for_two_image_paths() {
+    fn cached_image_transport_reuses_keep_alive_connections_across_image_paths() {
         use std::io::{Read, Write};
+        const REQUEST_COUNT: usize = 8;
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -1623,8 +1624,8 @@ mod tests {
             let deadline = Instant::now() + Duration::from_secs(4);
             let mut streams: Vec<(std::net::TcpStream, Vec<u8>)> = Vec::new();
             let mut requests = 0;
-            while requests < 2 {
-                assert!(Instant::now() < deadline, "expected both image GETs");
+            while requests < REQUEST_COUNT {
+                assert!(Instant::now() < deadline, "expected all image GETs");
                 match listener.accept() {
                     Ok((stream, _)) => {
                         stream.set_nonblocking(false).unwrap();
@@ -1667,8 +1668,9 @@ mod tests {
         });
         tauri::async_runtime::block_on(async {
             let cache = Mutex::new(ImageClientCache::default());
-            for path in ["image-one", "image-two"] {
-                let url = url::Url::parse(&format!("{origin}/{path}")).unwrap();
+            // HTTP/1 连接异步归还连接池；连续短请求可能先新建连接，整段请求仍应实际复用。
+            for index in 0..REQUEST_COUNT {
+                let url = url::Url::parse(&format!("{origin}/image-{index}")).unwrap();
                 // 测试只在独立缓存使用环回 HTTP；生产入口仍先校验公网 HTTPS。
                 let client =
                     cached_image_transport(&cache, &url, true, ExtensionNetworkMode::Direct)
@@ -1681,10 +1683,11 @@ mod tests {
                 assert_eq!(mime, "image/png");
             }
         });
-        assert_eq!(
-            server.join().unwrap(),
-            (1, 2),
-            "both image paths must share one TCP connection"
+        let (connections, requests) = server.join().unwrap();
+        assert_eq!(requests, REQUEST_COUNT);
+        assert!(
+            connections < requests,
+            "cached image requests must reuse a TCP connection"
         );
     }
 
