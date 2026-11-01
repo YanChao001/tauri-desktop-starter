@@ -134,10 +134,8 @@ export function prepareRepositorySync(root) {
   });
   edit(".github/workflows/ci.yml", (content) => {
     const pattern = /^(\s*branches: )\[[^\r\n]*\]$/gm;
-    if ([...content.matchAll(pattern)].length !== 2)
-      throw new Error(
-        "CI push and pull request branch filters must remain managed",
-      );
+    if ([...content.matchAll(pattern)].length !== 1)
+      throw new Error("CI pull request branch filter must remain managed");
     return content.replace(
       pattern,
       (_, prefix) =>

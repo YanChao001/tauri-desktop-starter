@@ -3,8 +3,6 @@ name: 持续集成
 on:
   pull_request:
     branches: [develop, main]
-  push:
-    branches: [develop, main]
   workflow_dispatch:
 
 permissions:
@@ -19,19 +17,32 @@ jobs:
     name: 判断验证范围
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       docs_only: ${{ steps.scope.outputs.docs_only }}
       rust_required: ${{ steps.scope.outputs.rust_required }}
+      sdk_required: ${{ steps.scope.outputs.sdk_required }}
+      tree: ${{ steps.verified.outputs.tree }}
+      reused_run: ${{ steps.verified.outputs.reused_run }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: 查找相同文件树已通过的 CI
+        id: verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci-verified-tree.mjs
       - name: 按文档、前端与原生输入选择检查
         id: scope
         run: node scripts/ci-scope.mjs
 
   frontend:
     name: 前端校验
+    needs: changes
+    if: needs.changes.outputs.reused_run == ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -64,7 +75,7 @@ jobs:
   browser-smoke:
     name: 浏览器生产构建冒烟与无障碍
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.reused_run == '' && needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -94,7 +105,7 @@ jobs:
   rust:
     name: Rust 校验（${{ matrix.platform }}）
     needs: changes
-    if: needs.changes.outputs.rust_required != 'false'
+    if: needs.changes.outputs.reused_run == '' && needs.changes.outputs.rust_required != 'false'
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 45
     env:
@@ -221,7 +232,7 @@ jobs:
           retention-days: 7
 
       - name: 构建优化的 SDK 验收工具并记录来源
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.sdk_required != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -232,7 +243,7 @@ jobs:
           node scripts/ci-extension-sdk.mjs prepare .cache/extension-sdk-cargo.jsonl .cache/extension-sdk-tool
 
       - name: 保留优化工具供独立 SDK 检查与定向重试
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.sdk_required != 'false'
         uses: actions/upload-artifact@v6
         with:
           name: extension-sdk-tool
@@ -245,7 +256,7 @@ jobs:
   extension-sdk:
     name: SDK 冷启动、真实 Wasm 与耗时余量
     needs: [changes, rust]
-    if: needs.changes.outputs.rust_required != 'false'
+    if: needs.changes.outputs.reused_run == '' && needs.changes.outputs.sdk_required != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -298,7 +309,7 @@ jobs:
   bindings:
     name: IPC 绑定校验
     needs: changes
-    if: needs.changes.outputs.rust_required != 'false'
+    if: needs.changes.outputs.reused_run == '' && needs.changes.outputs.rust_required != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -334,7 +345,7 @@ jobs:
   desktop-e2e:
     name: 真实桌面 E2E（${{ matrix.platform }}）
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.reused_run == '' && needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 45
     strategy:
@@ -461,3 +472,15 @@ jobs:
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
         run: node scripts/ci-quality-gate.mjs
+      - name: 记录本次通过检查的文件树
+        if: needs.changes.outputs.reused_run == ''
+        run: git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/ci-tree.txt"
+      - name: 保留通过记录供相同文件树复用
+        if: needs.changes.outputs.reused_run == ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-tree-v1-${{ needs.changes.outputs.tree }}
+          path: ${{ runner.temp }}/ci-tree.txt
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 30

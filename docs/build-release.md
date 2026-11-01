@@ -230,7 +230,7 @@ Rust 发布缓存按 `matrix.target` 区分，避免同一 macOS runner 上的 A
 
 流程如下：
 
-1. `validate` 冻结安装并运行 `pnpm verify`，创建 / 复用唯一同版本 draft，将 Release ID 传给后续任务。多草稿、已公开版本或草稿源码不匹配均在构建前失败。
+1. `validate` 冻结安装，优先复用[相同文件树已成功的 CI](./testing.md#持续集成检查)；无可用记录或手动运行时执行 `pnpm verify`。之后创建 / 复用唯一同版本 draft，将 Release ID 传给后续任务。发布来源、版本、草稿、产物和签名检查仍执行；多草稿、已公开版本或草稿源码不匹配均在构建前失败。
 2. `build` 构建 Windows x64（NSIS / MSI）、macOS arm64 与 x64（DMG / app）、Linux x64（DEB / RPM / AppImage），按 ID 上传；配置 PFX 时校验实际 NSIS / MSI 签名。Linux 系统依赖由 workflow 安装，本地环境见 [开发指南](./development.md#环境要求)。
 3. 已启用的 `publish-updater` 汇总清单；`sign-windows` 完成 SignPath 签名与验证。两者成功或因未启用而跳过后，才公开同一 Release。必要任务失败、取消或意外跳过时保留草稿。
 
