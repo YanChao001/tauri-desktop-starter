@@ -55,7 +55,7 @@ export const en = {
   "title.system": "System",
   "title.toggleMenu": "Show menu bar",
   "title.docs": "Tauri docs",
-  "title.repo": "GitHub repository",
+  "title.repo": "Source repository",
   "title.about": "About",
   "title.minimize": "Minimize",
   "title.maximize": "Maximize",

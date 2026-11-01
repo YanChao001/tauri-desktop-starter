@@ -1,4 +1,6 @@
 import type { DictKey } from "@/providers/i18n";
+import { REPOSITORY_CONFIG } from "@/config/repository";
+import { formatRepositoryLink } from "@/config/repository-links.mjs";
 
 export type CapabilityKind = "local" | "native" | "external" | "inspect";
 type CapabilityDetail = {
@@ -110,8 +112,18 @@ export function capabilityFor(path: string): CapabilityDetail {
   );
 }
 
-export function repositoryFileUrl(repository: string, file: string) {
-  return `${repository.replace(/\/$/, "").replace(/\.git$/, "")}/blob/develop/${file}`;
+export function repositoryFileUrl(
+  repository: string,
+  file: string,
+  config: {
+    defaultBranch: string;
+    links: { file: string };
+  } = REPOSITORY_CONFIG.hosting,
+) {
+  return formatRepositoryLink(config.links.file, repository, {
+    ref: config.defaultBranch,
+    path: file,
+  });
 }
 
 export function pageSource(path: string) {

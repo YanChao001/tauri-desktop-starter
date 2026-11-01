@@ -4,6 +4,8 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import appConfig from "../../app.config.json" with { type: "json" };
+import repositoryConfig from "../../repository.config.json" with { type: "json" };
+import { formatRepositoryLink } from "../../src/config/repository-links.mjs";
 import { PRESET_ACCENTS } from "../../src/lib/accent-colors";
 
 const KEY = `${appConfig.browserStorageNamespace}:settings`;
@@ -1851,7 +1853,14 @@ for (const language of ["en", "zh"] as const) {
       const link = page.getByRole("link", { name: label, exact: true });
       await expect(link).toHaveAttribute(
         "href",
-        new RegExp(`/blob/develop/docs/${file.replace(".", "\\.")}$`),
+        formatRepositoryLink(
+          repositoryConfig.hosting.links.file,
+          appConfig.repositoryUrl,
+          {
+            ref: repositoryConfig.hosting.defaultBranch,
+            path: `docs/${file}`,
+          },
+        ),
       );
       const href = await link.getAttribute("href");
       if (!href) throw new Error("Document link has no URL");

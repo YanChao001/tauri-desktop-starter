@@ -53,7 +53,7 @@ export const zhCN = {
   "title.system": "跟随系统",
   "title.toggleMenu": "显示菜单栏",
   "title.docs": "Tauri 文档",
-  "title.repo": "GitHub 仓库",
+  "title.repo": "源码仓库",
   "title.about": "关于",
   "title.minimize": "最小化",
   "title.maximize": "最大化",

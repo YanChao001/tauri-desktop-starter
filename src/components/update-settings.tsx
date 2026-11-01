@@ -27,6 +27,7 @@ import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { APP_CONFIG } from "@/config/app";
 import { useUpdates, checkUpdates, installUpdate } from "@/lib/updates-store";
 import { isTauri, relaunchApp, type UpdateStatus } from "@/lib/tauri";
+import { repositoryLink } from "@/config/repository";
 import { nativeErrorText } from "@/lib/native-error";
 import { version as buildVersion } from "../../package.json";
 
@@ -327,7 +328,7 @@ export function UpdateSettings() {
                     </p>
                   ) : null}
                   <ExternalLink
-                    href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
+                    href={repositoryLink("releases", APP_CONFIG.repositoryUrl)}
                     className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {t("updates.releases")}
