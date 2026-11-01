@@ -130,6 +130,14 @@ const result = await starter.services.request("wallpaper", {
 
 按 [服务能力矩阵](../docs/extensions.md#受控桌面服务) 声明并取得授权。`window` 只控制当前插件的独立窗口；`lan` 附件通过原生对话框选择 / 另存，传消息 ID 与元数据，不经 SDK 传文件字节。LAN 连接由原生窗口持有，切页或重建 iframe 不停止接收；多个窗口共享服务，明确停止会影响其他窗口。
 
+LAN `status` 的 `discoveredPeers` 返回临时附近设备 `{ id, nickname, address, port, lastSeen }`，`discoveryError` 为独立发现错误或 `null`。局域网 `start` 同时启动有界 UDP 公告，附近设备不会自动建立 TCP 连接或写入联系人；用户选择设备后仍调用 `connect`。仅有 `messaging:lan` 授权和 `status` 不启动监听，回环模式不公告；发现失败时保留手动 IP 连接。
+
+LAN 消息列表按可见范围请求 `{ action: "thumbnailAttachment", messageId }`，主动查看大图再使用 `previewAttachment`；两者返回 `{ dataUrl }`，缩略图缺失可为 `null`。校验和缩略图缓存由宿主管理，UI 不在状态轮询中请求完整大图。
+
+LAN 附件进度通过 `{ action: "transferStatus" }` 独立查询，返回 `{ transfers: [{ id, peerId, direction, kind, name, bytes, phase, completedBytes, totalBytes, startedAt }] }`。`direction` 为 `outgoing` / `incoming`，`id` 与后续消息 ID 相同；`phase` 为 `preparing`、`verifying`、`sending`、`receiving`、`awaitingReceipt`、`completed` 或 `failed`。字节进度来自当前复制、散列或 TCP 读写阶段，阶段切换后重新计数，`totalBytes` 为文件大小；写入 TCP 完成不代表已送达。轮询不等待历史、缓存和发送锁，可与待完成的 `sendAttachment` 并行，但仍占普通服务请求容量；使用独立在途标记并限制为一个进度查询。快照和终态保留、停止清理的精确规则见 [LAN 契约](../docs/extensions.md#局域网通信)。
+
+`{ action: "clearHistory", peerId }` 清空本机指定会话全部消息、未读和不再被其他消息引用的图片 / 文件缓存；省略 `peerId` 时清空所有会话。保留联系人、其他会话共享附件、在途引用、原始源文件、另存输出和对方记录；在途传输不会被取消，其进度在后续所有窗口快照中隐藏，完成或回执不会让已清空的附件气泡再次出现。后续实际写入历史的新接收消息仍正常显示。界面应在用户确认清理范围后调用。
+
 图片句柄应及时 `release`，到期、关闭、撤权或重启后重新获取；句柄不是持久下载资格。搜索文本走 Wasm 的精确 origin HTTP 效果，图片来源和许可由插件解释。HTTP 与图片请求通常省略 `networkMode`，继承宿主网络偏好，代理授权及模式规则见 [网络契约](../docs/extensions.md#来源与授权)。
 
 服务请求不自动改变整个插件的 `busy`。将后台查询与用户操作分别管理，忽略早于业务操作的过期查询结果，保留新草稿、焦点和选区。按[消息桥额度与背压](../docs/extensions.md#自定义界面)限制请求并发；桥或 SDK 因超额返回 `EXTENSION_BUSY` 时该请求未执行，恢复容量后可重新发起，SDK 不自动重试。
