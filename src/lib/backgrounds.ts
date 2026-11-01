@@ -1,3 +1,5 @@
+import type { BundledWallpaperId } from "@/lib/bundled-wallpapers";
+
 /** 背景设置与预览共用一份注册表，不依赖界面或语言 provider。 */
 export const BACKGROUNDS = [
   "plain",
@@ -12,8 +14,8 @@ export const BACKGROUNDS = [
   "custom",
 ] as const;
 
-export type Background = (typeof BACKGROUNDS)[number];
-export type BuiltinBackground = Exclude<Background, "custom">;
+export type Background = (typeof BACKGROUNDS)[number] | BundledWallpaperId;
+export type BuiltinBackground = Exclude<(typeof BACKGROUNDS)[number], "custom">;
 export const BUILTIN_BACKGROUNDS = BACKGROUNDS.filter(
   (background): background is BuiltinBackground => background !== "custom",
 );
@@ -94,6 +96,6 @@ export const BACKGROUND_METADATA = {
     descriptionKey: "settings.bgCloudscapeDescription",
   },
 } as const satisfies Record<
-  Background,
+  (typeof BACKGROUNDS)[number],
   { labelKey: string; descriptionKey: string }
 >;

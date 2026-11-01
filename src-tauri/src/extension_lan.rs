@@ -24,8 +24,15 @@ use std::{
 #[path = "extension_lan_attachment.rs"]
 mod attachment_io;
 use attachment_io::{AttachmentCache, CachedAttachment};
+#[path = "extension_lan_discovery.rs"]
+mod discovery;
+#[path = "extension_lan_interface.rs"]
+mod lan_interface;
+#[path = "extension_lan_progress.rs"]
+mod transfer_progress;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
+use transfer_progress::{TransferGuard, Transfers};
 
 const DEFAULT_PORT: u16 = 45873;
 const MAX_TEXT: usize = 8 * 1024;
@@ -125,18 +132,7 @@ fn local_ip(ip: IpAddr) -> bool {
     }
 }
 fn default_address() -> Ipv4Addr {
-    // UDP connect 仅查询本机路由，不发送数据、解析 DNS 或探测外部服务。
-    UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
-        .ok()
-        .and_then(|socket| {
-            socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
-            socket.local_addr().ok()
-        })
-        .and_then(|address| match address.ip() {
-            IpAddr::V4(ip) if local_ip(ip.into()) => Some(ip),
-            _ => None,
-        })
-        .unwrap_or(Ipv4Addr::LOCALHOST)
+    lan_interface::default_interface().address
 }
 fn linked(metadata: &Metadata) -> bool {
     #[cfg(windows)]
@@ -569,6 +565,8 @@ struct Runtime {
     port: u16,
     address: String,
     listener: Option<JoinHandle<()>>,
+    discovery: Option<discovery::Discovery>,
+    discovery_error: Option<String>,
     workers: Vec<JoinHandle<()>>,
     connections: BTreeMap<String, Connection>,
     pending: usize,
@@ -580,6 +578,8 @@ impl Default for Runtime {
             port: 0,
             address: String::new(),
             listener: None,
+            discovery: None,
+            discovery_error: None,
             workers: Vec::new(),
             connections: BTreeMap::new(),
             pending: 0,
@@ -600,6 +600,7 @@ struct Node {
     acks: Mutex<VecDeque<(String, String, String)>>,
     loopback: Mutex<Option<Arc<Node>>>,
     echo: AtomicBool,
+    transfers: Arc<Transfers>,
 }
 impl Node {
     fn open(root: &Path, id: &str) -> NativeResult<Arc<Self>> {
@@ -661,6 +662,7 @@ impl Node {
             acks: Mutex::new(VecDeque::new()),
             loopback: Mutex::new(None),
             echo: AtomicBool::new(false),
+            transfers: Arc::new(Transfers::default()),
         });
         node.cleanup_partial_attachments()?;
         Ok(node)
@@ -877,8 +879,12 @@ impl Node {
                     .map_err(|_| unavailable("Loopback helper is unavailable"))
             })
             .transpose()?;
+        let (discovered_peers, discovery_error) = match &runtime.discovery {
+            Some(discovery) => discovery.snapshot()?,
+            None => (Vec::new(), runtime.discovery_error.clone()),
+        };
         Ok(
-            json!({ "running": !runtime.stop.load(Ordering::Acquire), "nickname": data.nickname, "nodeId": data.node_id, "port": runtime.port, "addresses": if runtime.address.is_empty() { vec![default_address().to_string()] } else { vec![runtime.address.clone()] }, "peers": peers, "messages": data.messages, "historyLimit": MAX_HISTORY, "lastError": self.last_error.lock().ok().and_then(|v| v.clone()), "encrypted": false, "mode": if helper.is_some() { "loopback" } else { "lan" }, "loopbackPeerId": loopback_peer_id, "attachmentLimit": MAX_FILE_ATTACHMENT, "imageAttachmentLimit": MAX_IMAGE_ATTACHMENT, "fileAttachmentLimit": MAX_FILE_ATTACHMENT, "attachmentCacheLimit": MAX_ATTACHMENTS_DISK }),
+            json!({ "running": !runtime.stop.load(Ordering::Acquire), "nickname": data.nickname, "nodeId": data.node_id, "port": runtime.port, "addresses": if runtime.address.is_empty() { vec![default_address().to_string()] } else { vec![runtime.address.clone()] }, "peers": peers, "discoveredPeers": discovered_peers, "discoveryError": discovery_error, "messages": data.messages, "historyLimit": MAX_HISTORY, "lastError": self.last_error.lock().ok().and_then(|v| v.clone()), "encrypted": false, "mode": if helper.is_some() { "loopback" } else { "lan" }, "loopbackPeerId": loopback_peer_id, "attachmentLimit": MAX_FILE_ATTACHMENT, "imageAttachmentLimit": MAX_IMAGE_ATTACHMENT, "fileAttachmentLimit": MAX_FILE_ATTACHMENT, "attachmentCacheLimit": MAX_ATTACHMENTS_DISK }),
         )
     }
     #[cfg(test)]
@@ -1042,6 +1048,47 @@ impl Node {
     fn stop(&self) {
         let _ = self.stop_permitted(None);
     }
+    fn start_discovery_permitted(
+        self: &Arc<Self>,
+        broadcast: Option<Ipv4Addr>,
+        permit: Option<&ServicePermit>,
+    ) -> NativeResult<()> {
+        let mut runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| unavailable("LAN session is unavailable"))?;
+        if runtime.stop.load(Ordering::Acquire) {
+            return Err(unavailable(
+                "Start the LAN listener before discovering devices",
+            ));
+        }
+        if runtime.discovery.is_some() {
+            return Ok(());
+        }
+        let address = runtime.address.parse::<Ipv4Addr>().ok();
+        commit_permit(permit, || {
+            if let Some((address, broadcast)) = address
+                .filter(|ip| !ip.is_loopback() && local_ip((*ip).into()))
+                .zip(broadcast)
+            {
+                match discovery::Discovery::start(
+                    self.clone(),
+                    address,
+                    broadcast,
+                    runtime.port,
+                    runtime.stop.clone(),
+                ) {
+                    Ok(discovery) => runtime.discovery = Some(discovery),
+                    Err(error) => runtime.discovery_error = Some(error.into()),
+                }
+            } else {
+                runtime.discovery_error = Some(
+                    "Automatic discovery needs a private IPv4 interface with a subnet broadcast. Check your network or connect by IP instead".into(),
+                );
+            }
+            Ok(())
+        })
+    }
     fn interrupt_permitted(&self, permit: Option<&ServicePermit>) -> NativeResult<()> {
         let runtime = self
             .runtime
@@ -1125,9 +1172,13 @@ impl Node {
                 Ok((std::mem::take(&mut *runtime), helper))
             })?
         };
+        self.transfers.clear();
         // shutdown 使用独立句柄，不能等待可能由长附件发送持有的 writer 锁。
         for connection in previous.connections.values() {
             let _ = connection.control.shutdown(Shutdown::Both);
+        }
+        if let Some(mut discovery) = previous.discovery.take() {
+            discovery.join();
         }
         if let Some(helper) = helper {
             helper.stop();
@@ -1449,6 +1500,8 @@ impl Node {
                                     && message.delivery != "delivered"
                             });
                         if !known {
+                            // 清空历史不会取消已在途的发送；它的回执仍须结束进度条目。
+                            self.transfers.delivered(&peer_id, &id);
                             continue;
                         }
                         self.mutate(|data| {
@@ -1459,6 +1512,7 @@ impl Node {
                             }
                             Ok(())
                         })?;
+                        self.transfers.delivered(&peer_id, &id);
                     }
                     Frame::Profile { nickname: name } => {
                         self.update_peer_profile(&peer_id, &connection_id, &name)?;
@@ -1485,6 +1539,7 @@ impl Node {
                 .is_some_and(|connection| connection.id == connection_id)
             {
                 runtime.connections.remove(&peer_id);
+                self.transfers.disconnected(&peer_id);
             } else {
                 // 被确定性去重替换的旧通道断开是正常回收，不覆盖新通道状态。
                 return Ok(());
@@ -1617,6 +1672,7 @@ impl Node {
         expected_stop: Option<&Arc<AtomicBool>>,
         permit: Option<&ServicePermit>,
     ) -> NativeResult<()> {
+        let selected_progress = cached.progress.take();
         check_permit(permit)?;
         if !valid_token(peer_id) {
             return Err(invalid("Invalid LAN contact identity"));
@@ -1642,7 +1698,19 @@ impl Node {
                 connection.id.clone(),
             )
         };
-        let id = token()?;
+        let progress = match selected_progress {
+            Some(progress) => progress,
+            None => self.transfers.begin(
+                peer_id,
+                "outgoing",
+                &cached.kind,
+                &cached.attachment,
+                token()?,
+                Some(&stop),
+            )?,
+        };
+        progress.check()?;
+        let id = progress.id().to_owned();
         self.mutate_permitted(permit, |data| {
             let runtime = self
                 .runtime
@@ -1675,8 +1743,10 @@ impl Node {
             });
             Ok(())
         })?;
+        progress.phase("sending");
         let deadline = Instant::now() + Duration::from_secs(2);
         let result = lock_writer(&writer, permit, &stop, deadline).and_then(|mut stream| {
+            progress.check()?;
             write_frame_permitted(
                 &mut stream,
                 &Frame::Attachment {
@@ -1688,7 +1758,7 @@ impl Node {
                 deadline,
             )?;
             // 完整头已声明正文长度，正文失败须关闭通道，不能接着发送其他帧。
-            let result = attachment_io::write_cached(&mut stream, cached, permit, &stop);
+            let result = attachment_io::write_cached(&mut stream, cached, permit, &stop, &progress);
             if result.is_err() {
                 let _ = stream.shutdown(Shutdown::Both);
             }
@@ -1707,6 +1777,9 @@ impl Node {
                 }
                 Ok(())
             });
+        }
+        if result.is_ok() {
+            progress.awaiting_receipt();
         }
         result
     }
@@ -1820,6 +1893,7 @@ impl Node {
 #[serde(tag = "action", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
     Status {},
+    TransferStatus {},
     Start {
         nickname: String,
         port: Option<u16>,
@@ -1848,6 +1922,10 @@ enum Request {
         #[serde(rename = "messageId")]
         message_id: String,
     },
+    ThumbnailAttachment {
+        #[serde(rename = "messageId")]
+        message_id: String,
+    },
     SaveAttachment {
         #[serde(rename = "messageId")]
         message_id: String,
@@ -1859,7 +1937,10 @@ enum Request {
     Nickname {
         nickname: String,
     },
-    ClearHistory {},
+    ClearHistory {
+        #[serde(rename = "peerId")]
+        peer_id: Option<String>,
+    },
     Forget {
         #[serde(rename = "peerId")]
         peer_id: String,
@@ -2022,7 +2103,8 @@ impl ExtensionLan {
                 let path = path
                     .into_path()
                     .map_err(|_| invalid("Invalid selected attachment path"))?;
-                let mut cached = node.import_attachment(&path, &kind, permit, Some(&stop))?;
+                let mut cached =
+                    node.import_outgoing_attachment(&path, &kind, permit, &stop, &peer_id)?;
                 let runtime = node
                     .runtime
                     .lock()
@@ -2073,12 +2155,16 @@ impl ExtensionLan {
         permit: Option<&ServicePermit>,
     ) -> NativeResult<Value> {
         let node = self.owned_node(owner, id, permit)?;
-        if matches!(request, Request::Status {}) {
+        if matches!(request, Request::Status {} | Request::TransferStatus {}) {
             if node.retired.load(Ordering::Acquire) {
                 return Err(unavailable("The LAN service owner has closed"));
             }
             check_permit(permit)?;
-            return node.status();
+            return if matches!(request, Request::TransferStatus {}) {
+                node.transfers.snapshot()
+            } else {
+                node.status()
+            };
         }
         if matches!(request, Request::Stop {}) {
             node.interrupt_permitted(permit)?;
@@ -2092,7 +2178,7 @@ impl ExtensionLan {
         }
         check_permit(permit)?;
         match request {
-            Request::Status {} => {}
+            Request::Status {} | Request::TransferStatus {} => {}
             Request::Start {
                 nickname,
                 port,
@@ -2121,7 +2207,9 @@ impl ExtensionLan {
                 {
                     node.stop_permitted(permit)?;
                 }
-                node.start_permitted(&name, default_address().into(), port, permit)?;
+                let interface = lan_interface::default_interface();
+                node.start_permitted(&name, interface.address.into(), port, permit)?;
+                node.start_discovery_permitted(interface.broadcast, permit)?;
             }
             Request::Loopback { nickname } => node.start_loopback(&nickname, permit)?,
             Request::Stop {} => node.stop_permitted(permit)?,
@@ -2144,8 +2232,12 @@ impl ExtensionLan {
                 ));
             }
             Request::PreviewAttachment { message_id } => {
-                let mut cached = node.cached_attachment(&message_id, permit)?;
-                let data_url = attachment_io::preview(&mut cached)?;
+                let data_url = node.attachment_preview(&message_id, false, permit)?;
+                check_permit(permit)?;
+                return Ok(json!({"dataUrl":data_url}));
+            }
+            Request::ThumbnailAttachment { message_id } => {
+                let data_url = node.attachment_preview(&message_id, true, permit)?;
                 check_permit(permit)?;
                 return Ok(json!({"dataUrl":data_url}));
             }
@@ -2165,13 +2257,28 @@ impl ExtensionLan {
             Request::Nickname { nickname: name } => {
                 node.set_nickname_permitted(&name, permit)?;
             }
-            Request::ClearHistory {} => node.mutate_permitted(permit, |data| {
-                data.messages.clear();
-                for peer in data.contacts.values_mut() {
-                    peer.unread = 0;
-                }
-                Ok(())
-            })?,
+            Request::ClearHistory { peer_id } => {
+                node.mutate_permitted(permit, |data| {
+                    if let Some(peer_id) = peer_id.as_deref() {
+                        if !valid_token(peer_id) {
+                            return Err(invalid("Invalid LAN contact identity"));
+                        }
+                        let peer = data
+                            .contacts
+                            .get_mut(peer_id)
+                            .ok_or_else(|| invalid("Unknown LAN contact"))?;
+                        peer.unread = 0;
+                        data.messages.retain(|message| message.peer_id != peer_id);
+                    } else {
+                        data.messages.clear();
+                        for peer in data.contacts.values_mut() {
+                            peer.unread = 0;
+                        }
+                    }
+                    Ok(())
+                })?;
+                node.transfers.clear_history(peer_id.as_deref());
+            }
             Request::Forget { peer_id } => {
                 node.mutate_permitted(permit, |data| node.forget_contact(data, &peer_id))?;
             }
@@ -2291,6 +2398,56 @@ mod tests {
             assert!(Instant::now() < deadline, "LAN operation did not finish");
             thread::sleep(Duration::from_millis(10));
         }
+    }
+    #[test]
+    fn inactive_and_loopback_status_do_not_discover_or_create_contacts() {
+        let root = directory();
+        let node = Node::open(root.path(), ID).unwrap();
+        let status = node.status().unwrap();
+        assert_eq!(status["discoveredPeers"], json!([]));
+        assert_eq!(status["discoveryError"], Value::Null);
+        assert!(node.data.lock().unwrap().contacts.is_empty());
+        let _active = ActiveNode(node.clone());
+        node.start_loopback("本机", None).unwrap();
+        let status = node.status().unwrap();
+        assert_eq!(status["discoveredPeers"], json!([]));
+        assert_eq!(status["discoveryError"], Value::Null);
+    }
+    #[test]
+    fn discovery_unavailability_keeps_manual_tcp_connections_working() {
+        let first_root = directory();
+        let second_root = directory();
+        let first = node(first_root.path(), "甲");
+        let second = node(second_root.path(), "乙");
+        first.0.start_discovery_permitted(None, None).unwrap();
+        let status = first.0.status().unwrap();
+        assert_eq!(status["running"], true);
+        assert!(status["discoveryError"].is_string());
+        let second_port = second.0.runtime.lock().unwrap().port;
+        let second_id = second.0.data.lock().unwrap().node_id.clone();
+        first.0.connect("127.0.0.1", second_port).unwrap();
+        wait(|| {
+            first
+                .0
+                .data
+                .lock()
+                .unwrap()
+                .contacts
+                .contains_key(&second_id)
+        });
+        first.0.send(&second_id, "手动连接仍可发送").unwrap();
+        wait(|| {
+            first
+                .0
+                .data
+                .lock()
+                .unwrap()
+                .messages
+                .front()
+                .is_some_and(|message| message.delivery == "delivered")
+        });
+        first.0.stop();
+        assert_eq!(first.0.status().unwrap()["discoveryError"], Value::Null);
     }
     #[test]
     fn real_tcp_peers_exchange_acknowledged_text_profiles_and_persist_history() {
@@ -2724,7 +2881,7 @@ mod tests {
             Request::Nickname {
                 nickname: "不能修改".into(),
             },
-            Request::ClearHistory {},
+            Request::ClearHistory { peer_id: None },
         ] {
             assert_eq!(
                 service
@@ -3547,7 +3704,7 @@ mod tests {
         let reopened = Node::open(root.path(), ID).unwrap();
         assert_eq!(reopened.data.lock().unwrap().messages.len(), 8);
         service
-            .dispatch("main", ID, Request::ClearHistory {})
+            .dispatch("main", ID, Request::ClearHistory { peer_id: None })
             .unwrap();
         assert_eq!(fs::read_dir(node.attachment_root()).unwrap().count(), 0);
         service.dispatch("main", ID, Request::Stop {}).unwrap();
@@ -3735,6 +3892,481 @@ mod tests {
         }
         file.flush().unwrap();
         (file, format!("{:x}", hash.finalize()))
+    }
+    #[test]
+    fn attachment_progress_can_be_polled_while_history_cache_and_operations_are_busy() {
+        let root = directory();
+        let service = Arc::new(ExtensionLan::new(root.path().into(), false));
+        service.dispatch("main", ID, Request::Status {}).unwrap();
+        let node = service.inner.entries.lock().unwrap()[ID].node.clone();
+        let request = parse_request(json!({"action":"transferStatus"}));
+        assert!(
+            request.is_ok(),
+            "attachment preparation needs an independent progress action"
+        );
+        let data = node.data.lock().unwrap();
+        let runtime = node.runtime.lock().unwrap();
+        let cache = node.cache.lock().unwrap();
+        let operation = node.operation.lock().unwrap();
+        let polling = service.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let poll = thread::spawn(move || {
+            tx.send(polling.dispatch("main", ID, request.unwrap()))
+                .unwrap();
+        });
+        let result = rx.recv_timeout(Duration::from_secs(1));
+        drop(operation);
+        drop(cache);
+        drop(runtime);
+        drop(data);
+        poll.join().unwrap();
+        assert_eq!(result.unwrap().unwrap(), json!({"transfers":[]}));
+    }
+    #[test]
+    fn clear_history_for_one_contact_keeps_other_conversations_and_shared_files() {
+        let root = directory();
+        let service = ExtensionLan::new(root.path().into(), false);
+        service.dispatch("main", ID, Request::Status {}).unwrap();
+        let node = service.inner.entries.lock().unwrap()[ID].node.clone();
+        let first = token().unwrap();
+        let second = token().unwrap();
+        let (source, _) = stream_fixture(root.path(), 4 * 1024);
+        let mut shared = node
+            .import_attachment(source.path(), "file", None, None)
+            .unwrap();
+        shared.attachment.name = "shared.bin".into();
+        let (exclusive_source, _) = stream_fixture(root.path(), 5 * 1024);
+        let exclusive = node
+            .import_attachment(exclusive_source.path(), "file", None, None)
+            .unwrap();
+        let (pinned_source, _) = stream_fixture(root.path(), 6 * 1024);
+        let pinned = node
+            .import_attachment(pinned_source.path(), "file", None, None)
+            .unwrap();
+        let shared_path = node.attachment_root().join(&shared.attachment.sha256);
+        let exclusive_path = node.attachment_root().join(&exclusive.attachment.sha256);
+        let pinned_path = node.attachment_root().join(&pinned.attachment.sha256);
+        let saved_output = root.path().join("saved-output.bin");
+        fs::copy(source.path(), &saved_output).unwrap();
+        node.mutate(|data| {
+            for peer in [&first, &second] {
+                data.contacts.insert(
+                    peer.clone(),
+                    Contact {
+                        id: peer.clone(),
+                        nickname: "测试会话".into(),
+                        address: "127.0.0.1".into(),
+                        port: 45873,
+                        last_seen: now(),
+                        unread: 2,
+                    },
+                );
+            }
+            for (peer, attachment) in [
+                (&first, &shared.attachment),
+                (&first, &exclusive.attachment),
+                (&first, &pinned.attachment),
+                (&second, &shared.attachment),
+            ] {
+                data.messages.push_back(Message {
+                    id: token()?,
+                    peer_id: peer.clone(),
+                    sender: peer.clone(),
+                    nickname: "测试会话".into(),
+                    text: String::new(),
+                    at: now(),
+                    outgoing: false,
+                    delivery: "received".into(),
+                    kind: "file".into(),
+                    attachment: Some(attachment.clone()),
+                });
+            }
+            Ok(())
+        })
+        .unwrap();
+        drop(shared);
+        drop(exclusive);
+        let parsed = parse_request(json!({"action":"clearHistory","peerId":first}));
+        assert!(
+            parsed.is_ok(),
+            "clearHistory must support the selected conversation"
+        );
+        let status = service.dispatch("main", ID, parsed.unwrap()).unwrap();
+        assert_eq!(status["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(status["messages"][0]["peerId"], second);
+        let data = node.data.lock().unwrap();
+        assert_eq!(data.contacts[&first].unread, 0);
+        assert_eq!(data.contacts[&second].unread, 2);
+        drop(data);
+        assert!(shared_path.exists());
+        assert!(!exclusive_path.exists());
+        assert!(
+            pinned_path.exists(),
+            "an in-flight attachment must stay pinned after history clear"
+        );
+        drop(pinned);
+        node.mutate(|_| Ok(())).unwrap();
+        assert!(!pinned_path.exists());
+        assert!(source.path().exists());
+        assert!(exclusive_source.path().exists());
+        assert!(saved_output.exists());
+        assert!(parse_request(json!({"action":"clearHistory"})).is_ok());
+        let unknown =
+            parse_request(json!({"action":"clearHistory","peerId":token().unwrap()})).unwrap();
+        assert_eq!(
+            service.dispatch("main", ID, unknown).unwrap_err().code,
+            ErrorCode::InvalidArgument
+        );
+        let invalid = parse_request(json!({"action":"clearHistory","peerId":"../other"})).unwrap();
+        assert_eq!(
+            service.dispatch("main", ID, invalid).unwrap_err().code,
+            ErrorCode::InvalidArgument
+        );
+        // 历史提交失败不得先删除缓存或改动内存记录。
+        let before = fs::read(&node.path).unwrap();
+        let backup = root.path().join("history-before-clear.json");
+        fs::rename(&node.path, &backup).unwrap();
+        fs::create_dir(&node.path).unwrap();
+        let clear_second = parse_request(json!({"action":"clearHistory","peerId":second})).unwrap();
+        assert!(service.dispatch("main", ID, clear_second).is_err());
+        assert_eq!(fs::read(backup).unwrap(), before);
+        assert_eq!(node.data.lock().unwrap().messages.len(), 1);
+        assert!(shared_path.exists());
+    }
+    #[test]
+    fn clearing_history_dispatch_hides_pending_receipts_from_subsequent_window_snapshots() {
+        let root = directory();
+        let service = ExtensionLan::new(root.path().into(), false);
+        service
+            .dispatch("first-window", ID, Request::Status {})
+            .unwrap();
+        let node = service.inner.entries.lock().unwrap()[ID].node.clone();
+        let peer = token().unwrap();
+        let other_peer = token().unwrap();
+        let metadata = attachment("pending.bin", "file", b"pending content");
+        node.mutate(|data| {
+            for peer_id in [&peer, &other_peer] {
+                data.contacts.insert(
+                    peer_id.clone(),
+                    Contact {
+                        id: peer_id.clone(),
+                        nickname: "待回执会话".into(),
+                        address: "127.0.0.1".into(),
+                        port: 45873,
+                        last_seen: now(),
+                        unread: 0,
+                    },
+                );
+            }
+            Ok(())
+        })
+        .unwrap();
+        let outgoing_id = token().unwrap();
+        let waiting = node
+            .transfers
+            .begin(
+                &peer,
+                "outgoing",
+                "file",
+                &metadata,
+                outgoing_id.clone(),
+                None,
+            )
+            .unwrap();
+        waiting.awaiting_receipt();
+        let receiving = node
+            .transfers
+            .begin(&peer, "incoming", "file", &metadata, token().unwrap(), None)
+            .unwrap();
+        let other_id = token().unwrap();
+        let other = node
+            .transfers
+            .begin(
+                &other_peer,
+                "incoming",
+                "file",
+                &metadata,
+                other_id.clone(),
+                None,
+            )
+            .unwrap();
+        service
+            .dispatch(
+                "first-window",
+                ID,
+                Request::ClearHistory {
+                    peer_id: Some(peer.clone()),
+                },
+            )
+            .unwrap();
+        let snapshot = service
+            .dispatch("second-window", ID, Request::TransferStatus {})
+            .unwrap();
+        assert_eq!(snapshot["transfers"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["transfers"][0]["id"], other_id);
+        receiving.check().unwrap();
+        receiving.complete();
+        node.transfers.delivered(&peer, &outgoing_id);
+        let snapshot = service
+            .dispatch("reloaded-window", ID, Request::TransferStatus {})
+            .unwrap();
+        assert_eq!(snapshot["transfers"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["transfers"][0]["id"], other_id);
+        other.complete();
+    }
+    #[test]
+    fn streaming_300m_loopback_exposes_real_preparation_transfer_and_verification_progress() {
+        let _receivers = binary_receiver_test_guard();
+        let root = directory();
+        let service = ExtensionLan::new(root.path().into(), false);
+        let status = service
+            .dispatch(
+                "main",
+                ID,
+                Request::Loopback {
+                    nickname: "大文件进度".into(),
+                },
+            )
+            .unwrap();
+        let node = service.inner.entries.lock().unwrap()[ID].node.clone();
+        let peer = status["loopbackPeerId"].as_str().unwrap().to_owned();
+        wait(|| node.data.lock().unwrap().contacts.contains_key(&peer));
+        let bytes = 300 * 1024 * 1024;
+        let (source, expected_sha) = stream_fixture(root.path(), bytes);
+        let path = source.path().to_owned();
+        let sender = node.clone();
+        let stop = node.runtime.lock().unwrap().stop.clone();
+        let sending_peer = peer.clone();
+        let sending = thread::spawn(move || {
+            let mut cached =
+                sender.import_outgoing_attachment(&path, "file", None, &stop, &sending_peer)?;
+            assert_eq!(cached.attachment.sha256, expected_sha);
+            sender.send_cached_for_session(&sending_peer, &mut cached, Some(&stop), None)
+        });
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(180);
+        let mut observed = BTreeSet::new();
+        let mut last = BTreeMap::new();
+        loop {
+            let before_poll = Instant::now();
+            let snapshot = service
+                .dispatch("main", ID, Request::TransferStatus {})
+                .unwrap();
+            assert!(
+                before_poll.elapsed() < Duration::from_secs(1),
+                "progress waited for attachment I/O"
+            );
+            let entries = snapshot["transfers"].as_array().unwrap();
+            for entry in entries {
+                assert_eq!(entry["bytes"], bytes);
+                assert_eq!(entry["totalBytes"], bytes);
+                assert_eq!(entry["peerId"], peer);
+                let id = entry["id"].as_str().unwrap();
+                let phase = entry["phase"].as_str().unwrap();
+                let direction = entry["direction"].as_str().unwrap();
+                let completed = entry["completedBytes"].as_u64().unwrap();
+                assert!(completed <= bytes as u64);
+                let key = (id.to_owned(), direction.to_owned(), phase.to_owned());
+                assert!(
+                    last.insert(key, completed)
+                        .is_none_or(|previous| completed >= previous)
+                );
+                if completed > 0 && completed < bytes as u64 {
+                    observed.insert((direction.to_owned(), phase.to_owned()));
+                }
+                assert_ne!(phase, "failed", "300 MiB loopback failed: {snapshot}");
+            }
+            if entries
+                .iter()
+                .any(|entry| entry["direction"] == "outgoing" && entry["phase"] == "completed")
+                && entries
+                    .iter()
+                    .any(|entry| entry["direction"] == "incoming" && entry["phase"] == "completed")
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "300 MiB loopback did not complete: {snapshot}"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+        sending.join().unwrap().unwrap();
+        for (direction, phase) in [
+            ("outgoing", "preparing"),
+            ("outgoing", "verifying"),
+            ("outgoing", "sending"),
+            ("incoming", "receiving"),
+            ("incoming", "verifying"),
+        ] {
+            assert!(
+                observed.contains(&(direction.to_owned(), phase.to_owned())),
+                "missing streamed {direction} {phase}: {observed:?}"
+            );
+        }
+        let data = node.data.lock().unwrap();
+        assert_eq!(data.messages.len(), 2);
+        assert!(
+            data.messages
+                .iter()
+                .filter(|message| message.outgoing)
+                .all(|message| message.delivery == "delivered")
+        );
+        let snapshot = node.transfers.snapshot().unwrap();
+        for message in &data.messages {
+            assert!(
+                snapshot["transfers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry["id"] == message.id)
+            );
+        }
+        drop(data);
+        assert!(source.path().exists());
+        service.dispatch("main", ID, Request::Stop {}).unwrap();
+        assert_eq!(node.transfers.snapshot().unwrap(), json!({"transfers":[]}));
+        eprintln!(
+            "300 MiB real TCP loopback with copy/hash/verification/echo completed in {:?}",
+            started.elapsed()
+        );
+    }
+    #[test]
+    fn disconnected_peer_cancels_attachment_preparation_before_it_can_use_a_replacement_connection()
+    {
+        let root = directory();
+        let peer_root = directory();
+        let local = node(root.path(), "发送端");
+        let peer = node(peer_root.path(), "断开端");
+        local
+            .0
+            .connect("127.0.0.1", peer.0.runtime.lock().unwrap().port)
+            .unwrap();
+        let peer_id = peer.0.data.lock().unwrap().node_id.clone();
+        wait(|| local.0.data.lock().unwrap().contacts.contains_key(&peer_id));
+        let source = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+        source.as_file().set_len(64 * 1024 * 1024).unwrap();
+        let path = source.path().to_owned();
+        let sender = local.0.clone();
+        let stop = local.0.runtime.lock().unwrap().stop.clone();
+        let sending_peer = peer_id.clone();
+        let preparing = thread::spawn(move || {
+            sender.import_outgoing_attachment(&path, "file", None, &stop, &sending_peer)
+        });
+        wait(|| {
+            local.0.transfers.snapshot().unwrap()["transfers"][0]["completedBytes"]
+                .as_u64()
+                .is_some_and(|bytes| bytes > 0)
+        });
+        peer.0.stop();
+        wait(|| {
+            !local
+                .0
+                .runtime
+                .lock()
+                .unwrap()
+                .connections
+                .contains_key(&peer_id)
+        });
+        let imported = preparing.join().unwrap();
+        assert!(
+            imported.is_err(),
+            "disconnected preparation must not survive into another connection"
+        );
+        assert_eq!(
+            imported.err().unwrap().code,
+            ErrorCode::ExtensionTransferInterrupted
+        );
+        assert_eq!(
+            local.0.transfers.snapshot().unwrap()["transfers"][0]["phase"],
+            "failed"
+        );
+        assert!(local.0.data.lock().unwrap().messages.is_empty());
+        assert!(source.path().exists());
+        assert!(
+            fs::read_dir(local.0.attachment_root())
+                .unwrap()
+                .all(|entry| !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".part"))
+        );
+    }
+    #[test]
+    fn replayed_tcp_attachments_keep_one_history_message_and_one_progress_identity() {
+        let _receivers = binary_receiver_test_guard();
+        let left_root = directory();
+        let right_root = directory();
+        let left = node(left_root.path(), "接收端");
+        let right = node(right_root.path(), "补发端");
+        let local_id = left.0.data.lock().unwrap().node_id.clone();
+        right
+            .0
+            .connect("127.0.0.1", left.0.runtime.lock().unwrap().port)
+            .unwrap();
+        wait(|| {
+            right
+                .0
+                .data
+                .lock()
+                .unwrap()
+                .contacts
+                .contains_key(&local_id)
+        });
+        let bytes = b"replayed exact attachment";
+        let metadata = attachment("replayed.bin", "file", bytes);
+        right
+            .0
+            .send_attachment_permitted(&local_id, "file", metadata.clone(), bytes.to_vec(), None)
+            .unwrap();
+        wait(|| {
+            left.0.data.lock().unwrap().messages.len() == 1
+                && right.0.data.lock().unwrap().messages[0].delivery == "delivered"
+        });
+        let id = right.0.data.lock().unwrap().messages[0].id.clone();
+        let first_at = left.0.transfers.snapshot().unwrap()["transfers"][0]["startedAt"]
+            .as_u64()
+            .unwrap();
+        wait(|| now() > first_at);
+        let (writer, stop) = {
+            let runtime = right.0.runtime.lock().unwrap();
+            (
+                runtime.connections[&local_id].stream.clone(),
+                runtime.stop.clone(),
+            )
+        };
+        {
+            let mut writer = writer.lock().unwrap();
+            write_frame(
+                &mut writer,
+                &Frame::Attachment {
+                    id: id.clone(),
+                    media_kind: "file".into(),
+                    attachment: metadata,
+                },
+            )
+            .unwrap();
+            write_attachment_bytes(&mut writer, bytes, None, &stop).unwrap();
+        }
+        wait(|| {
+            left.0.transfers.snapshot().unwrap()["transfers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| {
+                    entry["id"] == id
+                        && entry["startedAt"].as_u64().unwrap() > first_at
+                        && entry["phase"] == "completed"
+                })
+        });
+        assert_eq!(left.0.data.lock().unwrap().messages.len(), 1);
+        let snapshot = left.0.transfers.snapshot().unwrap();
+        assert_eq!(
+            snapshot["transfers"].as_array().unwrap().len(),
+            1,
+            "replayed frames must not poison strict UI progress validation"
+        );
     }
     #[test]
     fn streaming_16m_loopback_import_receive_and_long_path_save_are_verified() {
@@ -4076,6 +4708,11 @@ mod tests {
                 .unwrap_err(),
             std::sync::mpsc::RecvTimeoutError::Timeout
         );
+        let progress = node.transfers.snapshot().unwrap();
+        let transfer = &progress["transfers"][0];
+        assert_eq!(transfer["phase"], "sending");
+        assert!(transfer["completedBytes"].as_u64().unwrap() > 0);
+        assert!(transfer["completedBytes"].as_u64().unwrap() < 67_108_864);
         let start = Instant::now();
         service.dispatch("main", ID, Request::Stop {}).unwrap();
         assert!(start.elapsed() < Duration::from_secs(2));
@@ -4083,6 +4720,7 @@ mod tests {
             sending.join().unwrap().unwrap_err().code,
             ErrorCode::ExtensionTransferInterrupted
         );
+        assert_eq!(node.transfers.snapshot().unwrap(), json!({"transfers":[]}));
         let restarted = service
             .dispatch(
                 "main",

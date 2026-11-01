@@ -3,10 +3,16 @@ import type {
   ExtensionPermission,
   ExtensionWindowRequest,
   ExtensionWindowState,
+  ExtensionResourcePreviewSize,
+  ExtensionWallpaperApplyResult,
+  ExtensionWallpaperPreviewResult,
 } from "./generated/protocol";
 export type {
   ExtensionWindowRequest,
   ExtensionWindowState,
+  ExtensionResourcePreviewSize,
+  ExtensionWallpaperApplyResult,
+  ExtensionWallpaperPreviewResult,
 } from "./generated/protocol";
 
 export interface ExtensionUiSnapshot {
@@ -32,10 +38,19 @@ export type ExtensionResourceFetchRequest = {
   action: "fetch-image";
   url: string;
   networkMode?: "direct" | "system";
+  preview?: ExtensionResourcePreviewSize;
+  /** Optional cancellation key: 1-80 ASCII letters, digits, "_" or "-". */
+  requestId?: string;
+};
+export type ExtensionResourceCancelFetchRequest = {
+  action: "cancel-fetch";
+  /** Cancellation key previously supplied to fetch-image. */
+  requestId: string;
 };
 export type ExtensionResourcePreviewRequest = {
   action: "preview";
   resourceId: string;
+  size?: ExtensionResourcePreviewSize;
 };
 export type ExtensionResourceSaveRequest = {
   action: "save";
@@ -48,6 +63,7 @@ export type ExtensionResourceReleaseRequest = {
 };
 export type ExtensionResourceRequest =
   | ExtensionResourceFetchRequest
+  | ExtensionResourceCancelFetchRequest
   | ExtensionResourcePreviewRequest
   | ExtensionResourceSaveRequest
   | ExtensionResourceReleaseRequest;
@@ -64,11 +80,36 @@ export interface ExtensionResourcePreview {
 }
 export type ExtensionResourceSaveResult =
   { cancelled: true } | { cancelled: false; name: string };
+export type ExtensionResourceCancelFetchResult = {
+  /** Whether a matching in-flight request was marked for cooperative cancellation. */
+  cancelled: boolean;
+};
+export type ExtensionWallpaperApplyRequest = {
+  action: "apply";
+  id: string;
+  expectedRevision: number;
+  fit: "cover" | "contain";
+};
+export type ExtensionWallpaperPreviewRequest = {
+  action: "preview";
+  id: string;
+  previewKey: string;
+};
 export interface ExtensionUiServices {
+  request(
+    service: "resources",
+    request: ExtensionResourceFetchRequest & {
+      preview: ExtensionResourcePreviewSize;
+    },
+  ): Promise<ExtensionImageResource & ExtensionResourcePreview>;
   request(
     service: "resources",
     request: ExtensionResourceFetchRequest,
   ): Promise<ExtensionImageResource>;
+  request(
+    service: "resources",
+    request: ExtensionResourceCancelFetchRequest,
+  ): Promise<ExtensionResourceCancelFetchResult>;
   request(
     service: "resources",
     request: ExtensionResourcePreviewRequest,
@@ -88,6 +129,7 @@ export interface ExtensionUiServices {
     | ExtensionImageResource
     | ExtensionResourcePreview
     | ExtensionResourceSaveResult
+    | ExtensionResourceCancelFetchResult
     | null
   >;
   request(service: "links", request: { url: string }): Promise<null>;
@@ -96,8 +138,25 @@ export interface ExtensionUiServices {
     request: ExtensionWindowRequest,
   ): Promise<ExtensionWindowState>;
   request(
-    service: "lan" | "wallpaper",
-    request: Record<string, unknown>,
+    service: "wallpaper",
+    request: ExtensionWallpaperApplyRequest,
+  ): Promise<ExtensionWallpaperApplyResult>;
+  request(
+    service: "wallpaper",
+    request: ExtensionWallpaperPreviewRequest,
+  ): Promise<ExtensionWallpaperPreviewResult>;
+  /** Exclude typed wallpaper actions so malformed requests cannot use this compatibility fallback. */
+  request<
+    const Service extends "lan" | "wallpaper",
+    const Request extends Record<string, unknown>,
+  >(
+    service: Service,
+    request: Request &
+      ("wallpaper" extends Service
+        ? Extract<Request["action"], "apply" | "preview"> extends never
+          ? unknown
+          : never
+        : unknown),
   ): Promise<unknown>;
 }
 export interface ExtensionUiApi {

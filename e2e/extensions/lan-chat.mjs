@@ -116,8 +116,10 @@ async function resizeViewport(page, frame, viewport) {
     .toBe(true);
   return latest;
 }
-async function checkSettingsModes(page, frame) {
+async function checkSettingsPanel(page, frame, capturePrefix) {
   const originalViewport = page.viewportSize();
+  const expandedGeometry = await settingsGeometry(frame, "expanded");
+  await page.screenshot({ path: capturePrefix + "-settings.png" });
   await resizeViewport(page, frame, { ...originalViewport, height: 450 });
   const initialGeometry = await settingsGeometry(frame, "after-short-resize");
   const before = initialGeometry.panel;
@@ -126,10 +128,29 @@ async function checkSettingsModes(page, frame) {
   expect(before.y).toBeGreaterThanOrEqual(0);
   expect(before.x + before.width).toBeLessThanOrEqual(viewport.width + 1);
   expect(before.y + before.height).toBeLessThanOrEqual(viewport.height + 1);
+  await page.screenshot({ path: capturePrefix + "-settings-short.png" });
   const details = frame.locator("#connection-details");
   await details.locator("summary").click();
   await expect(details).toHaveJSProperty("open", true);
+  const copy = await details.locator(".connection-copy").evaluate((node) => {
+    const bounds = node.getBoundingClientRect();
+    return [...node.querySelectorAll("p")].map((paragraph) => {
+      const rect = paragraph.getBoundingClientRect();
+      return {
+        left: rect.left - bounds.left,
+        right: bounds.right - rect.right,
+        width: rect.width,
+        scrollWidth: paragraph.scrollWidth,
+      };
+    });
+  });
+  for (const paragraph of copy) {
+    expect(paragraph.left).toBeGreaterThanOrEqual(12);
+    expect(paragraph.right).toBeGreaterThanOrEqual(12);
+    expect(paragraph.scrollWidth).toBeLessThanOrEqual(paragraph.width + 1);
+  }
   await settingsGeometry(frame, "details-open");
+  await frame.locator("#data-management > summary").click();
   await frame.locator("#clear").scrollIntoViewIfNeeded();
   const scroll = () =>
     frame.locator("#settings-scroll").evaluate((node) => ({
@@ -148,27 +169,89 @@ async function checkSettingsModes(page, frame) {
     before: initialGeometry,
     after: scrolledGeometry,
   });
-  for (const mode of ["loopback", "lan"]) {
-    await frame.locator("#mode-" + mode).click();
-    await expect(frame.locator("#" + mode + "-settings")).toBeVisible();
-    const modeGeometry = await settingsGeometry(frame, "mode-" + mode);
-    expectStableRect(before, modeGeometry.panel, {
-      before: initialGeometry,
-      after: modeGeometry,
-    });
-    const after = await scroll();
-    expect(Math.abs(after.top - scrolled.top)).toBeLessThanOrEqual(1);
-    expect(Math.abs(after.height - scrolled.height)).toBeLessThanOrEqual(1);
-  }
+  await expect(frame.locator("#lan-settings")).toBeVisible();
+  await expect(frame.locator("#loopback-settings")).toBeVisible();
+  await expect(frame.locator("#mode-lan,#mode-loopback")).toHaveCount(0);
+  const after = await scroll();
+  expect(Math.abs(after.top - scrolled.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.height - scrolled.height)).toBeLessThanOrEqual(1);
   await details.locator("summary").click();
   await expect(details).toHaveJSProperty("open", false);
+  await frame.locator("#data-management > summary").click();
   await resizeViewport(page, frame, originalViewport);
   return {
+    expandedRect: expandedGeometry.panel,
     rect: before,
     viewport,
     scroll: scrolled,
-    modeSwitchRetainsGeometry: true,
+    lanAndLoopbackSharePanel: true,
   };
+}
+async function checkActionStability(page, frame) {
+  await page.evaluate(() => {
+    window.__extensionUiTest.serviceTiming.lanNicknameMs = 600;
+  });
+  await frame.locator("#settings-toggle").click();
+  await frame.locator("#messages").evaluate((messages) => {
+    const images = [...messages.querySelectorAll("img")];
+    const controls = [
+      ...document.querySelectorAll(
+        ".composer-tools button,.preview-attachment,.contact",
+      ),
+    ];
+    const appearances = controls.map((node) => ({
+      disabled: node.disabled,
+      opacity: getComputedStyle(node).opacity,
+    }));
+    const probe = (window.__lanActionStability = {
+      samples: 0,
+      missingImages: 0,
+      missingControls: 0,
+      changedControls: 0,
+      raf: 0,
+    });
+    const sample = () => {
+      probe.samples++;
+      probe.missingImages += images.filter(
+        (node) => !node.isConnected || !node.complete,
+      ).length;
+      controls.forEach((node, index) => {
+        if (!node.isConnected) probe.missingControls++;
+        else if (
+          node.disabled !== appearances[index].disabled ||
+          getComputedStyle(node).opacity !== appearances[index].opacity
+        )
+          probe.changedControls++;
+      });
+      probe.raf = requestAnimationFrame(sample);
+    };
+    sample();
+  });
+  let probe;
+  try {
+    await frame.locator("#rename").click();
+    await expect(frame.locator("#rename")).toHaveAttribute("aria-busy", "true");
+    await expect(frame.locator("#layout")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  } finally {
+    probe = await frame.locator("html").evaluate(() => {
+      const probe = window.__lanActionStability;
+      cancelAnimationFrame(probe.raf);
+      delete window.__lanActionStability;
+      return probe;
+    });
+    await page.evaluate(() => {
+      window.__extensionUiTest.serviceTiming.lanNicknameMs = 0;
+    });
+    await frame.locator("#close-settings").click();
+  }
+  expect(probe.samples).toBeGreaterThan(2);
+  expect(probe.missingImages).toBe(0);
+  expect(probe.missingControls).toBe(0);
+  expect(probe.changedControls).toBe(0);
+  return probe;
 }
 async function separatorState(separator) {
   const attributes = await separator.evaluate((node) => ({
@@ -203,8 +286,42 @@ async function checkLayoutCustomization(page, frame, profile) {
   const originalViewport = page.viewportSize();
   const column = frame.locator("#conversation-resizer");
   const composer = frame.locator("#composer-resizer");
-  const rail = await frame.locator(".rail").evaluate((node) => ({
-    width: node.getBoundingClientRect().width,
+  await expect(frame.locator(".rail,#refresh,#my-avatar")).toHaveCount(0);
+  await expect(frame.locator("#peer-avatar")).not.toBeVisible();
+  const header = await frame.locator("#chat-header").evaluate((node) => {
+    const bounds = (element) => {
+      const { x, y, width, height, right, bottom } =
+        element.getBoundingClientRect();
+      return { x, y, width, height, right, bottom };
+    };
+    return {
+      viewport: innerWidth,
+      bar: bounds(node),
+      name: bounds(document.getElementById("peer-name")),
+      address: bounds(document.getElementById("peer-detail")),
+      actions: bounds(document.getElementById("conversation-more")),
+      minHeight: parseFloat(getComputedStyle(node).minHeight),
+      addressAlign: getComputedStyle(document.getElementById("peer-detail"))
+        .textAlign,
+    };
+  });
+  expect(header.minHeight).toBe(header.viewport <= 600 ? 38 : 42);
+  expect(header.addressAlign).toBe("center");
+  expect(
+    Math.abs(
+      header.address.x +
+        header.address.width / 2 -
+        header.bar.x -
+        header.bar.width / 2,
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(header.name.right).toBeLessThanOrEqual(header.address.x + 1);
+  expect(header.address.right).toBeLessThanOrEqual(header.actions.x + 1);
+  for (const item of [header.name, header.address, header.actions]) {
+    expect(item.y).toBeGreaterThanOrEqual(header.bar.y);
+    expect(item.bottom).toBeLessThanOrEqual(header.bar.bottom + 1);
+  }
+  const listActions = await frame.locator(".list-actions").evaluate((node) => ({
     controls: [...node.querySelectorAll("button")].map((button) => ({
       width: button.getBoundingClientRect().width,
       height: button.getBoundingClientRect().height,
@@ -216,12 +333,11 @@ async function checkLayoutCustomization(page, frame, profile) {
       text: button.textContent.trim(),
     })),
   }));
-  expect(rail.width).toBeCloseTo(48, 0);
-  for (const button of rail.controls) {
+  for (const button of listActions.controls) {
     expect(button.width).toBeGreaterThanOrEqual(28);
-    expect(button.width).toBeLessThanOrEqual(36);
+    expect(button.width).toBeLessThanOrEqual(parseFloat(profile.font) * 2);
     expect(button.height).toBeGreaterThanOrEqual(28);
-    expect(button.height).toBeLessThanOrEqual(36);
+    expect(button.height).toBeLessThanOrEqual(parseFloat(profile.font) * 2);
     expect(button.svg).toBe(1);
     expect(button.glyphWidth).toBeGreaterThanOrEqual(16);
     expect(button.glyphHeight).toBeGreaterThanOrEqual(16);
@@ -389,7 +505,8 @@ async function checkLayoutCustomization(page, frame, profile) {
     columnMinimum.minimum,
   );
   return {
-    rail,
+    header,
+    listActions,
     avatars,
     fontSizes,
     pointerDrag: {
@@ -461,7 +578,95 @@ export async function assertLanLayoutRestored(frame, customization, phase) {
 }
 
 /** Packaged chat HTML and SDK; TCP, pickers and saving use explicit boundaryMock services. */
-export async function checkLanChat({ page, frame, services, profile }) {
+export async function checkLanChat({
+  page,
+  frame,
+  services,
+  profile,
+  capturePrefix,
+}) {
+  const serviceCallsBefore = services.calls.length;
+  const editorLayout = await frame
+    .locator("#composer-editor")
+    .evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const send = document.getElementById("send").getBoundingClientRect();
+      const count = document
+        .getElementById("draft-count")
+        .getBoundingClientRect();
+      const tools = document
+        .querySelector(".composer-tools")
+        .getBoundingClientRect();
+      return {
+        bounds: {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        },
+        send: { right: send.right, bottom: send.bottom, top: send.top },
+        count: { left: count.left, bottom: count.bottom },
+        tools: tools.height,
+        border: getComputedStyle(document.querySelector(".contacts"))
+          .borderRightWidth,
+      };
+    });
+  expect(editorLayout.send.right).toBeLessThanOrEqual(
+    editorLayout.bounds.right,
+  );
+  expect(editorLayout.send.bottom).toBeLessThanOrEqual(
+    editorLayout.bounds.bottom,
+  );
+  expect(editorLayout.send.top).toBeGreaterThanOrEqual(editorLayout.bounds.top);
+  expect(editorLayout.count.left).toBeGreaterThanOrEqual(
+    editorLayout.bounds.left,
+  );
+  expect(editorLayout.count.bottom).toBeLessThanOrEqual(
+    editorLayout.bounds.bottom,
+  );
+  expect(editorLayout.tools).toBeLessThanOrEqual(
+    parseFloat(profile.font) * 1.75 + 1,
+  );
+  expect(editorLayout.border).toBe("0px");
+  const searchIcon = frame.locator(".search-wrap svg");
+  const visibleIcon = await searchIcon.screenshot({ animations: "disabled" });
+  await searchIcon.evaluate((node) => {
+    node.style.opacity = "0";
+  });
+  const hiddenIcon = await searchIcon.screenshot({ animations: "disabled" });
+  await searchIcon.evaluate((node) => {
+    node.style.removeProperty("opacity");
+  });
+  expect(
+    visibleIcon.equals(hiddenIcon),
+    "search glyph is actually painted above its input",
+  ).toBe(false);
+  await expect(frame.locator("#add-contact,#peer-count")).toHaveCount(0);
+  const headingAlignment = await frame
+    .locator(".list-heading")
+    .evaluate((node) => {
+      const title = node.querySelector("h1").getBoundingClientRect();
+      const button = node
+        .querySelector("#settings-toggle")
+        .getBoundingClientRect();
+      return Math.abs(
+        title.y + title.height / 2 - button.y - button.height / 2,
+      );
+    });
+  expect(headingAlignment).toBeLessThanOrEqual(1);
+  for (const selector of [
+    "body",
+    ".app",
+    ".contacts",
+    ".chat",
+    ".messages",
+    ".composer",
+    ".resize-handle",
+  ])
+    await expect(frame.locator(selector).first()).toHaveCSS(
+      "background-color",
+      "rgba(0, 0, 0, 0)",
+    );
   const settings = frame.locator("#settings-panel");
   const toggle = frame.locator("#settings-toggle");
   await expect(settings).not.toBeVisible();
@@ -475,41 +680,82 @@ export async function checkLanChat({ page, frame, services, profile }) {
   await expect(settings).not.toBeVisible();
   await expect(toggle).toBeFocused();
   await toggle.click();
-  const settingsModeGeometry = await checkSettingsModes(page, frame);
+  await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
+  await expect(frame.locator("#rename")).toBeEnabled();
+  const settingsPanelGeometry = await checkSettingsPanel(
+    page,
+    frame,
+    capturePrefix,
+  );
+  if (
+    !(await frame.locator("#manual-connection").evaluate((node) => node.open))
+  )
+    await frame.locator("#manual-connection > summary").click();
+  await frame.locator("#address").fill("192.168.1.21");
   const connectionControls = await settings
     .locator("#nickname,#port,#start,#stop,#address,#remote-port,#connect")
     .evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const bounds = node.getBoundingClientRect();
-        return {
-          id: node.id,
-          width: bounds.width,
-          height: bounds.height,
-          right: bounds.right,
-          viewport: innerWidth,
-        };
-      }),
+      nodes
+        .filter(
+          (node) =>
+            node.getBoundingClientRect().width > 0 &&
+            node.getBoundingClientRect().height > 0,
+        )
+        .map((node) => {
+          const bounds = node.getBoundingClientRect();
+          return {
+            id: node.id,
+            width: bounds.width,
+            height: bounds.height,
+            right: bounds.right,
+            viewport: innerWidth,
+          };
+        }),
     );
   for (const control of connectionControls) {
     expect(control.width, control.id).toBeGreaterThanOrEqual(24);
     expect(control.height, control.id).toBeGreaterThanOrEqual(24);
     expect(control.right, control.id).toBeLessThanOrEqual(control.viewport);
   }
-  const inheritedFont = await frame
-    .locator("body")
-    .evaluate((node) => getComputedStyle(node).fontFamily);
-  await expect(frame.locator("#addresses")).toHaveCSS(
-    "font-family",
-    inheritedFont,
-  );
+  await expect(frame.locator(".service-toggle button:visible")).toHaveCount(1);
   await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
+  if (await frame.locator("#stop").isEnabled()) {
+    await frame.locator("#stop").click();
+    await expect(frame.locator("#start")).toBeEnabled();
+  }
   await frame.locator("#nickname").fill("Fixture tester");
   await frame.locator("#start").click();
   await expect(frame.locator("#stop")).toBeEnabled();
-  await frame.locator("#address").fill("192.168.1.21");
-  await frame.locator("#connect").click();
-  await expect(frame.locator("#contacts [data-peer]")).toHaveCount(1);
+  await expect(frame.locator("#addresses")).toContainText("192.168.1.20:45873");
+  await expect(frame.locator("#addresses")).toHaveAttribute(
+    "aria-label",
+    /192\.168\.1\.20:45873/,
+  );
   await frame.locator("#close-settings").click();
+  const nearby = frame.locator(
+    '#nearby-devices [data-discovered="' + "b".repeat(32) + '"]',
+  );
+  await expect(nearby).toBeVisible();
+  await expect(nearby).toContainText("Fixture friend");
+  await nearby.click();
+  await expect(frame.locator("#contacts [data-peer]")).toHaveCount(1);
+  const contactMetrics = await frame
+    .locator("#contacts [data-peer]")
+    .first()
+    .evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      rootFont: getComputedStyle(document.documentElement).fontSize,
+      lineHeight: getComputedStyle(node).lineHeight,
+      padding: getComputedStyle(node).padding,
+      copyHeight: node.querySelector(".contact-copy").getBoundingClientRect()
+        .height,
+    }));
+  expect(
+    contactMetrics.height,
+    JSON.stringify(contactMetrics),
+  ).toBeLessThanOrEqual(parseFloat(profile.font) * 3.5);
+  await expect(nearby).toHaveCount(0);
+  await expect(frame.locator("#peer-detail")).toContainText("192.168.1.10");
 
   const draft = frame.locator("#draft");
   const messages = frame.locator("#messages");
@@ -518,9 +764,11 @@ export async function checkLanChat({ page, frame, services, profile }) {
   await expect(draft).toHaveValue("");
   await expect(messages).toContainText("Fixture message 你好");
   const sends = () =>
-    services.calls.filter(
-      (call) => call.service === "lan" && call.request.action === "send",
-    );
+    services.calls
+      .slice(serviceCallsBefore)
+      .filter(
+        (call) => call.service === "lan" && call.request.action === "send",
+      );
   const sendsBefore = sends().length;
   await draft.fill("Multiline draft");
   await draft.press("Shift+Enter");
@@ -556,7 +804,7 @@ export async function checkLanChat({ page, frame, services, profile }) {
   await toggle.click();
   await frame.locator("#stop").click();
   await expect(frame.locator("#start")).toBeEnabled();
-  await frame.locator("#mode-loopback").click();
+  await frame.locator("#loopback-settings > summary").click();
   await frame.locator("#loopback").click();
   await expect(frame.locator("#contacts [data-peer]")).toHaveCount(2);
   await expect(frame.locator("#contacts")).toContainText("Boundary echo peer");
@@ -587,9 +835,7 @@ export async function checkLanChat({ page, frame, services, profile }) {
     await frame.locator("#emoji-toggle").click();
 
   await frame.locator("#send-image").click();
-  const image = messages.locator(".attachment-card").filter({
-    hasText: "boundary-fixture.png",
-  });
+  const image = messages.locator(".image-attachment");
   await expect(image).toHaveCount(2);
   await expect(image.locator(".image-thumbnail")).toHaveCount(2);
   await expect
@@ -601,21 +847,143 @@ export async function checkLanChat({ page, frame, services, profile }) {
         ),
     )
     .toBe(true);
-  await image.first().locator(".preview-attachment").click();
+  await expect(
+    image.locator(".file-name,.attachment-actions,.save-attachment"),
+  ).toHaveCount(0);
+  expect(
+    services.calls
+      .slice(serviceCallsBefore)
+      .filter(
+        (call) =>
+          call.service === "lan" && call.request.action === "previewAttachment",
+      ),
+  ).toHaveLength(0);
+  const thumbnailCalls = services.calls
+    .slice(serviceCallsBefore)
+    .filter(
+      (call) =>
+        call.service === "lan" && call.request.action === "thumbnailAttachment",
+    );
+  expect(thumbnailCalls.length).toBeGreaterThanOrEqual(2);
+  const thumbnail = image.first().locator(".preview-attachment");
+  const thumbnailSize = await thumbnail.evaluate((node) => {
+    const image = node.querySelector("img");
+    const outer = node.getBoundingClientRect();
+    const inner = image.getBoundingClientRect();
+    return {
+      width: outer.width,
+      height: outer.height,
+      imageWidth: inner.width,
+      imageHeight: inner.height,
+      ratio: image.naturalWidth / image.naturalHeight,
+    };
+  });
+  expect(
+    Math.abs(thumbnailSize.width / thumbnailSize.height - thumbnailSize.ratio),
+  ).toBeLessThan(0.01);
+  expect(
+    Math.abs(thumbnailSize.height - thumbnailSize.imageHeight),
+  ).toBeLessThanOrEqual(1);
+  await thumbnail.click({ button: "right" });
+  const attachmentMenu = frame.locator("#attachment-menu");
+  await expect(attachmentMenu).toBeVisible();
+  await expect(frame.locator("#attachment-menu-view")).toBeFocused();
+  await page.screenshot({ path: capturePrefix + "-image-menu.png" });
+  await frame.locator("#attachment-menu-view").click();
   const preview = frame.locator("#attachment-preview");
   await expect(preview).toBeVisible();
   await expect(frame.locator("#preview-image")).toHaveAttribute(
     "src",
     /^data:image\/png;base64,/,
   );
+  await expect(frame.locator("#preview-viewport")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(frame.locator("#preview-image")).toHaveJSProperty(
+    "naturalWidth",
+    1600,
+  );
+  const previewSize = await frame
+    .locator("#preview-viewport")
+    .evaluate((node) => {
+      const image = node.querySelector("img");
+      const rect = node.getBoundingClientRect();
+      const content = image.getBoundingClientRect();
+      const toolbar = document
+        .querySelector(".preview-tools")
+        .getBoundingClientRect();
+      const scale = document
+        .getElementById("preview-scale")
+        .getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+        imageWidth: content.width,
+        imageHeight: content.height,
+        toolbar: toolbar.height,
+        scale: scale.height,
+      };
+    });
+  expect(
+    Math.abs(previewSize.width - previewSize.imageWidth),
+    JSON.stringify(previewSize),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(previewSize.height - previewSize.imageHeight),
+    JSON.stringify(previewSize),
+  ).toBeLessThanOrEqual(1);
+  expect(previewSize.toolbar).toBeLessThanOrEqual(
+    parseFloat(profile.font) * 2.25,
+  );
+  expect(previewSize.scale).toBeLessThanOrEqual(parseFloat(profile.font) * 2);
+  const pinch = await frame.locator("#preview-viewport").evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    const event = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -2,
+      deltaMode: 0,
+      clientX: rect.x + rect.width / 2,
+      clientY: rect.y + rect.height / 2,
+    });
+    const before = visualViewport.scale;
+    node.dispatchEvent(event);
+    return {
+      prevented: event.defaultPrevented,
+      before,
+      after: visualViewport.scale,
+    };
+  });
+  expect(pinch.prevented).toBe(true);
+  expect(pinch.after).toBe(pinch.before);
+  await expect(frame.locator("#preview-scale")).toHaveText("102%");
+  await frame.locator("#preview-reset").click();
+  await frame.locator("#preview-zoom-in").click();
+  await expect(frame.locator("#preview-scale")).toHaveText("125%");
+  await page.screenshot({ path: capturePrefix + "-image-preview.png" });
+  await frame.locator("#preview-reset").click();
+  await expect(frame.locator("#preview-scale")).toHaveText("100%");
+  await expect(frame.locator("#save-preview")).toHaveCount(0);
   services.cancelNextLanSave();
-  await frame.locator("#save-preview").click();
-  await expect(frame.locator("#save-preview")).toBeEnabled();
+  await frame.locator("#close-preview").focus();
+  await frame.locator("#close-preview").press("Tab");
+  await expect(frame.locator("#preview-viewport")).toBeFocused();
+  await frame.locator("#preview-viewport").press("Tab");
+  await expect(frame.locator("#preview-zoom-out")).toBeFocused();
+  await frame.locator("#preview-zoom-out").press("Shift+Tab");
+  await expect(frame.locator("#preview-viewport")).toBeFocused();
+  await frame.locator("#preview-viewport").press("Shift+F10");
+  await expect(attachmentMenu).toBeVisible();
+  await frame.locator("#attachment-menu-save").click();
+  await expect(attachmentMenu).not.toBeVisible();
   await expect(preview).toBeVisible();
   await preview.press("Escape");
   await expect(preview).not.toBeVisible();
 
   const imageCount = await image.count();
+  const actionStability = await checkActionStability(page, frame);
   services.cancelNextLanAttachment();
   await frame.locator("#send-image").click();
   await expect(frame.locator("#send-image")).toBeEnabled();
@@ -627,8 +995,12 @@ export async function checkLanChat({ page, frame, services, profile }) {
   });
   await expect(file).toHaveCount(2);
   await expect(file.first()).toContainText("64.0 MiB");
-  await file.first().locator(".save-attachment").click();
-  await expect(file.first().locator(".save-attachment")).toBeEnabled();
+  await expect(file.locator(".save-attachment")).toHaveCount(0);
+  await file.first().click({ button: "right" });
+  await expect(frame.locator("#attachment-menu-view")).toBeHidden();
+  await expect(frame.locator("#attachment-menu-save")).toBeFocused();
+  await frame.locator("#attachment-menu-save").click();
+  await expect(file.first()).toBeEnabled();
   await expect
     .poll(() =>
       page.evaluate(
@@ -652,6 +1024,55 @@ export async function checkLanChat({ page, frame, services, profile }) {
   );
   expect(saves.map((result) => result.cancelled)).toEqual([true, false]);
   expect(saves.at(-1).name).toBe("boundary-fixture.txt");
+  const incomingTransfer = {
+    id: "f".repeat(32),
+    peerId: "e".repeat(32),
+    direction: "incoming",
+    kind: "file",
+    name: "very-long-file-name-for-progress-layout-boundary-fixture.bin",
+    bytes: 300 * 1024 * 1024,
+    phase: "receiving",
+    completedBytes: 150 * 1024 * 1024,
+    totalBytes: 300 * 1024 * 1024,
+    startedAt: Date.now(),
+  };
+  services.setLanTransfers([incomingTransfer]);
+  const transferPanel = frame.locator(
+    '#messages .attachment-card[data-message="' + incomingTransfer.id + '"]',
+  );
+  await expect(frame.locator("#transfer-progress")).toHaveCount(0);
+  await expect(transferPanel).toBeVisible();
+  await expect(transferPanel).toContainText("50%");
+  await expect(transferPanel.locator("progress")).toHaveJSProperty(
+    "value",
+    incomingTransfer.completedBytes,
+  );
+  await transferPanel.scrollIntoViewIfNeeded();
+  const transferGeometry = await transferPanel.evaluate((node) => {
+    const panel = node.getBoundingClientRect();
+    const composer = document
+      .getElementById("composer")
+      .getBoundingClientRect();
+    return {
+      right: panel.right,
+      bottom: panel.bottom,
+      composerTop: composer.top,
+      viewport: innerWidth,
+      horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+      insideBubble: node.contains(node.querySelector(".attachment-progress")),
+      incoming: !node.closest("article").classList.contains("outgoing"),
+    };
+  });
+  expect(transferGeometry.right).toBeLessThanOrEqual(transferGeometry.viewport);
+  expect(transferGeometry.bottom).toBeLessThanOrEqual(
+    transferGeometry.composerTop,
+  );
+  expect(transferGeometry.horizontalOverflow).toBe(false);
+  expect(transferGeometry.insideBubble).toBe(true);
+  expect(transferGeometry.incoming).toBe(true);
+  await page.screenshot({ path: capturePrefix + "-transfer-progress.png" });
+  services.setLanTransfers([]);
+  await expect(transferPanel).not.toBeVisible();
 
   await draft.fill("Retained unsent draft");
   await frame.locator('#contacts [data-peer="' + "b".repeat(32) + '"]').click();
@@ -733,6 +1154,39 @@ export async function checkLanChat({ page, frame, services, profile }) {
       () => window.__extensionUiTest.artifacts.at(-1).content,
     ),
   ).toContain("Boundary loopback message");
+  await expect(frame.locator("#layout")).toHaveAttribute("aria-busy", "false");
+  if (!(await frame.locator("#conversation-menu").isVisible()))
+    await frame.locator("#conversation-more").click();
+  await frame.locator("#clear-conversation").click();
+  await expect(frame.locator("#confirmation-text")).toContainText(
+    "Boundary echo peer",
+  );
+  await expect(frame.locator("#confirmation-text")).toContainText(
+    /图片和文件|images and cached files/,
+  );
+  await frame.locator("#cancel-action").click();
+  await expect(frame.locator("#conversation-more")).toBeFocused();
+  await expect(file).toHaveCount(2);
+  await frame.locator("#conversation-more").click();
+  await frame.locator("#clear-conversation").click();
+  await frame.locator("#confirm-action").click();
+  await expect(messages.locator(".message")).toHaveCount(0);
+  await expect(messages.locator(".attachment-card")).toHaveCount(0);
+  await expect(draft).toHaveValue("Retained unsent draft");
+  await expect(frame.locator("#contacts [data-peer]")).toHaveCount(2);
+  await expect(frame.locator("#conversation-more")).toBeFocused();
+  const scopedClear = services.calls
+    .filter(
+      (call) =>
+        call.service === "lan" && call.request.action === "clearHistory",
+    )
+    .at(-1);
+  expect(scopedClear.request.peerId).toBe("e".repeat(32));
+  await frame.locator('#contacts [data-peer="' + "b".repeat(32) + '"]').click();
+  await expect(messages).toContainText("Fixture message 你好");
+  await expect(draft).toHaveValue("Other conversation draft");
+  await frame.locator('#contacts [data-peer="' + "e".repeat(32) + '"]').click();
+  await expect(draft).toHaveValue("Retained unsent draft");
   return {
     boundaryMock: true,
     nativeTcp: false,
@@ -740,7 +1194,11 @@ export async function checkLanChat({ page, frame, services, profile }) {
     profile,
     collapsedSettings: true,
     connectionControls,
-    settingsModeGeometry,
+    settingsPanelGeometry,
+    editorLayout,
+    transferGeometry,
+    actionStability,
+    nearbyDiscoveryConnects: true,
     escapeRestoresFocus: true,
     keyboardComposer: ["Enter", "Shift+Enter", "IME composition"],
     failedSendRetainsDraft: true,
@@ -748,7 +1206,16 @@ export async function checkLanChat({ page, frame, services, profile }) {
     loopbackEchoRendered: true,
     emojiAndSticker: true,
     conversationDraftsAndSearch: true,
-    attachments: ["image preview", "file save", "picker cancel", "save cancel"],
+    conversationClearKeepsOtherMessagesAndDrafts: true,
+    attachments: [
+      "thumbnail service",
+      "image-only card",
+      "context menu",
+      "image preview zoom",
+      "file save",
+      "picker cancel",
+      "save cancel",
+    ],
     layout,
     layoutCustomization,
     transcriptExport: {

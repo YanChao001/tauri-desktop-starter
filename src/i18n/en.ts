@@ -55,7 +55,7 @@ export const en = {
   "title.system": "System",
   "title.toggleMenu": "Show menu bar",
   "title.docs": "Tauri docs",
-  "title.repo": "GitHub repository",
+  "title.repo": "Source repository",
   "title.about": "About",
   "title.minimize": "Minimize",
   "title.maximize": "Maximize",
@@ -68,7 +68,6 @@ export const en = {
   "common.openFailed":
     "Cannot open the link. Copy the address into your browser.",
   "common.reset": "Reset preferences",
-  "common.resetDone": "Preferences reset",
   "common.cancel": "Cancel",
   "common.close": "Close",
   "common.helpFor": "Help for {name}",
@@ -113,7 +112,6 @@ export const en = {
   "settings.customAccentHex": "HEX color",
   "settings.customAccentApply": "Apply color",
   "settings.customAccentInvalid": "Enter #RGB or #RRGGBB, for example #7C3AED.",
-  "settings.customAccentHint": "Adjusts brightness for light and dark themes.",
   "settings.accentHint": "Affects buttons, selections and highlights",
   "settings.radius": "Corner radius",
   "settings.radiusSharp": "Sharp",
@@ -144,8 +142,6 @@ export const en = {
   "settings.environment": "Environment",
   "settings.links": "Links",
   "settings.linksHint": "Opens in your default browser",
-  "settings.resetHint":
-    "Reset appearance, layout, window sizes, network and background preferences; keep language, notes and system startup settings",
   "settings.resetConfirmTitle": "Restore default preferences?",
   "settings.resetConfirmDescription":
     "Reset appearance, layout, all window sizes and background preferences. Restore the system proxy and remember the last startup position; open windows stay in place. Keep language, notes and system startup settings. Newer-version preferences are also replaced.",
@@ -162,7 +158,6 @@ export const en = {
   "settings.windowSizeFitted": "Adapted to this screen",
   "settings.windowPresetUnavailable": "Outside this screen's supported range",
   "settings.windowCurrentSize": "Current size {width} × {height}",
-  "settings.windowSizeApplied": "Window size saved",
   "settings.windowPosition": "Startup position",
   "settings.windowPositionRemember": "Remember last position",
   "settings.windowPositionCenter": "Center",
@@ -197,8 +192,7 @@ export const en = {
   "settings.bgCustom": "My wallpapers",
   "settings.bgCustomDescription":
     "Decorate your workspace with favorite images",
-  "settings.customImageHint":
-    "Import multiple images, switch, rename or delete; images stay local.",
+  "settings.customImageHint": "Wallpapers are stored only on this device.",
   "settings.importBackground": "Add wallpapers",
   "settings.importVideoBackground": "Add video",
   "settings.videoWallpaper": "Video wallpaper",
@@ -215,8 +209,7 @@ export const en = {
   "settings.backgroundFit": "Image fit",
   "settings.backgroundCover": "Fill window",
   "settings.backgroundContain": "Show full image",
-  "settings.imageFormats":
-    "PNG, JPEG and WebP images; large images are optimized. MP4 and WebM videos.",
+  "settings.imageFormats": "Images: PNG, JPEG, WebP. Videos: MP4, WebM.",
   "settings.imageProcessing": "Saving wallpapers…",
   "settings.imageTypeError": "Choose a PNG, JPEG or WebP image.",
   "settings.imageSizeError":

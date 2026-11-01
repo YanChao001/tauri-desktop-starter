@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub const SETTINGS_EVENT: &str = "app://settings-changed";
-pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 6;
+pub(crate) const SETTINGS_SCHEMA_VERSION: u32 = 7;
 const MAX_SETTINGS_SIZE: usize = 128 * 1024;
 pub(crate) const MAX_SETTINGS_FILE_SIZE: usize = MAX_SETTINGS_SIZE + 1024;
 const MAX_BACKGROUND_DATA_LENGTH: usize = 96 * 1024;

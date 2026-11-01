@@ -120,6 +120,9 @@ pub fn builder() -> Builder<tauri::Wry> {
         .typ::<crate::workbench::WorkbenchDrop>()
         .typ::<crate::extension_windows::ExtensionWindowRequest>()
         .typ::<crate::extension_windows::ExtensionWindowState>()
+        .typ::<crate::extension_resources::ExtensionResourcePreviewSize>()
+        .typ::<crate::extension_wallpaper::ExtensionWallpaperApplyResult>()
+        .typ::<crate::extension_wallpaper::ExtensionWallpaperPreviewResult>()
 }
 
 pub fn export(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {

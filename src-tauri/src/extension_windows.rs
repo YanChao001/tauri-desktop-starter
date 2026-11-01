@@ -271,10 +271,11 @@ pub async fn open_extension_window(
             config
         };
         app.state::<ExtensionStore>().reopen_window(&window_label)?;
-        let window = WebviewWindowBuilder::from_config(&app, &config)
-            .map_err(failed)?
-            .build()
-            .map_err(failed)?;
+        let builder = WebviewWindowBuilder::from_config(&app, &config).map_err(failed)?;
+        // 与桌面窗口一致：导航前启用捏合输入，再由 ready 回调单独关闭整页缩放。
+        #[cfg(windows)]
+        let builder = builder.zoom_hotkeys_enabled(true);
+        let window = builder.build().map_err(failed)?;
         crate::desktop::reveal_after_timeout(window);
         Ok(())
     })

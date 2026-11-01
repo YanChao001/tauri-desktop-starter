@@ -1134,16 +1134,18 @@ export async function checkCalculatorGestures({
 }) {
   await openCalculatorMode(frame, "scientific");
   const previousExpression = await frame.locator("#expression").inputValue();
-  const original = await frame
-    .locator("html")
-    .evaluate(() =>
-      Object.fromEntries(
-        ["xmin", "xmax", "ymin", "ymax"].map((id) => [
-          id,
-          document.getElementById(id).value,
-        ]),
-      ),
-    );
+  const rangeInputs = () =>
+    frame
+      .locator("html")
+      .evaluate(() =>
+        Object.fromEntries(
+          ["xmin", "xmax", "ymin", "ymax"].map((id) => [
+            id,
+            document.getElementById(id).value,
+          ]),
+        ),
+      );
+  const original = await rangeInputs();
   await pasteCalculatorExpression(frame, "12345+6");
   await expect
     .poll(() =>
@@ -1156,6 +1158,15 @@ export async function checkCalculatorGestures({
   const graphExpression = await frame.locator("#expression").inputValue();
   await frame.locator("#graph").scrollIntoViewIfNeeded();
   const graph = await frame.locator("#graph").boundingBox();
+  expect(graph).not.toBeNull();
+  const plot = {
+    x: graph.x + 48,
+    y: graph.y + 18,
+    width: graph.width - 48 - 14,
+    height: graph.height - 18 - 30,
+  };
+  expect(plot.width).toBeGreaterThan(0);
+  expect(plot.height).toBeGreaterThan(0);
   const center = {
     x: graph.x + graph.width / 2,
     y: graph.y + graph.height / 2,
@@ -1198,6 +1209,113 @@ export async function checkCalculatorGestures({
   await page.mouse.up();
   await resampled(before, "130 pointer moves");
   expect(phases[0].inputs.xmin).not.toBe(original.xmin);
+
+  const beforeBox = await rangeInputs();
+  before = plotCount();
+  await page.mouse.move(plot.x + plot.width * 0.2, plot.y + plot.height * 0.25);
+  await page.keyboard.down("Shift");
+  try {
+    await page.mouse.down();
+    await page.mouse.move(
+      plot.x + plot.width * 0.8,
+      plot.y + plot.height * 0.75,
+      { steps: 20 },
+    );
+    expect(await rangeInputs()).toEqual(beforeBox);
+    expect(plotCount()).toBe(before);
+  } finally {
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+  }
+  await resampled(before, "Shift box zoom");
+  const afterBox = phases.at(-1).inputs;
+  expect(Number(afterBox.xmax) - Number(afterBox.xmin)).toBeLessThan(
+    Number(beforeBox.xmax) - Number(beforeBox.xmin),
+  );
+  expect(Number(afterBox.ymax) - Number(afterBox.ymin)).toBeLessThan(
+    Number(beforeBox.ymax) - Number(beforeBox.ymin),
+  );
+
+  const beforePinch = await rangeInputs();
+  before = plotCount();
+  const touch = await page.context().newCDPSession(page);
+  try {
+    await touch.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 2,
+    });
+    const points = (spread) => [
+      {
+        id: 1,
+        x: plot.x + plot.width * (0.5 - spread),
+        y: plot.y + plot.height * 0.55,
+      },
+      {
+        id: 2,
+        x: plot.x + plot.width * (0.5 + spread),
+        y: plot.y + plot.height * 0.55,
+      },
+    ];
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: points(0.15),
+    });
+    for (let step = 1; step <= 20; step++) {
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: points(0.15 + (0.15 * step) / 20),
+      });
+      await page.waitForTimeout(16);
+    }
+  } finally {
+    try {
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+    } finally {
+      try {
+        await touch.send("Emulation.setTouchEmulationEnabled", {
+          enabled: false,
+        });
+      } finally {
+        await touch.detach();
+      }
+    }
+  }
+  await resampled(before, "two-finger touch pinch");
+  const afterPinch = phases.at(-1).inputs;
+  expect(Number(afterPinch.xmax) - Number(afterPinch.xmin)).toBeLessThan(
+    Number(beforePinch.xmax) - Number(beforePinch.xmin),
+  );
+  expect(Number(afterPinch.ymax) - Number(afterPinch.ymin)).toBeLessThan(
+    Number(beforePinch.ymax) - Number(beforePinch.ymin),
+  );
+
+  await page.mouse.move(center.x, center.y);
+  await expect(frame.locator("#coordinates")).toContainText("x ≈");
+  await expect(frame.locator("#coordinates")).toContainText("y ≈");
+  const coordinates = await frame.locator("html").evaluate(() => ({
+    text: document.getElementById("coordinates").textContent,
+    canvas: document.getElementById("graph").getBoundingClientRect().toJSON(),
+    label: document
+      .getElementById("coordinates")
+      .getBoundingClientRect()
+      .toJSON(),
+    panel: document
+      .getElementById("graph-panel")
+      .getBoundingClientRect()
+      .toJSON(),
+  }));
+  expect(coordinates.label.width).toBeGreaterThan(0);
+  expect(coordinates.label.height).toBeGreaterThan(0);
+  expect(coordinates.label.top).toBeGreaterThanOrEqual(
+    coordinates.canvas.bottom - 0.5,
+  );
+  expect(coordinates.label.bottom).toBeLessThanOrEqual(
+    coordinates.panel.bottom + 0.5,
+  );
+
   before = plotCount();
   await page.mouse.move(center.x, center.y);
   for (let step = 0; step < 60; step++) {
@@ -1275,6 +1393,7 @@ export async function checkCalculatorGestures({
     requests,
     maximumPerSecond,
     phases,
+    coordinates,
     trustedInput: true,
     actualSdk: true,
     realWasmResampling: true,
@@ -1375,6 +1494,10 @@ export async function checkLanPolling(page, frame) {
   if (!(await frame.locator("#settings-panel").isVisible()))
     await frame.locator("#settings-toggle").click();
   await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
+  // 首次读取状态后自动监听；先显式停止，为旧 stopped 回执覆盖 start 的回归建立基线。
+  await expect(frame.locator("#stop")).toBeEnabled();
+  await frame.locator("#stop").click();
+  await expect(frame.locator("#start")).toBeEnabled();
   await page.evaluate(() => {
     window.__extensionUiTest.serviceTiming.lanStatusMs = 1000;
   });
@@ -1414,6 +1537,10 @@ export async function checkLanPolling(page, frame) {
 
   await frame.locator("#start").click();
   await expect(frame.locator("#stop")).toBeEnabled();
+  if (
+    !(await frame.locator("#manual-connection").evaluate((node) => node.open))
+  )
+    await frame.locator("#manual-connection > summary").click();
   await frame.locator("#address").fill("192.168.1.21");
   await frame.locator("#connect").click();
   await expect(frame.locator("#contacts [data-peer]")).toHaveCount(1);
@@ -1454,6 +1581,9 @@ export async function checkLanPolling(page, frame) {
   });
   await frame.locator("#nickname").fill("Fixture device");
   await frame.locator("#draft").fill("");
+  await frame.locator("#manual-connection").evaluate((node) => {
+    node.open = false;
+  });
   await frame.locator("#close-settings").click();
   return {
     boundaryMock: true,
@@ -1475,6 +1605,10 @@ export async function checkLanTransferCancellation(page, frame, services) {
   try {
     await frame.locator("#settings-toggle").click();
     await expect(frame.locator("#nickname")).toHaveValue("Fixture device");
+    if (
+      !(await frame.locator("#manual-connection").evaluate((node) => node.open))
+    )
+      await frame.locator("#manual-connection > summary").click();
     await frame.locator("#start").click();
     await expect(frame.locator("#stop")).toBeEnabled();
     await frame.locator("#address").fill("192.168.1.21");
@@ -1526,6 +1660,139 @@ export async function checkLanTransferCancellation(page, frame, services) {
       ),
     );
     expect(sendingIndex).toBeGreaterThanOrEqual(0);
+    const transfer = {
+      id: "f".repeat(32),
+      peerId: "b".repeat(32),
+      direction: "outgoing",
+      kind: "file",
+      name: "progress-boundary-fixture.bin",
+      bytes: 300 * 1024 * 1024,
+      phase: "preparing",
+      completedBytes: 75 * 1024 * 1024,
+      totalBytes: 300 * 1024 * 1024,
+      startedAt: 1761400001000,
+    };
+    const bubble = frame.locator(
+      '#messages .attachment-card[data-message="' + transfer.id + '"]',
+    );
+    const progress = bubble.locator(".attachment-progress");
+    services.setLanTransfers([transfer]);
+    await expect(frame.locator("#transfer-progress")).toHaveCount(0);
+    await expect(progress).toContainText("25%");
+    await expect(progress).toHaveAttribute("data-phase", "preparing");
+    await expect(progress.locator("progress")).toHaveJSProperty(
+      "value",
+      transfer.completedBytes,
+    );
+    const counterLayouts = [];
+    for (const direction of ["outgoing", "incoming"]) {
+      for (const kind of ["file", "image"]) {
+        const totalBytes = (kind === "file" ? 300 : 8) * 1024 * 1024;
+        services.setLanTransfers([
+          {
+            ...transfer,
+            direction,
+            kind,
+            name: kind === "file" ? "a.bin" : "a.png",
+            bytes: totalBytes,
+            totalBytes,
+            completedBytes: 0,
+            phase: direction === "outgoing" ? "sending" : "receiving",
+          },
+        ]);
+        await expect(progress).toHaveAttribute(
+          "data-phase",
+          direction === "outgoing" ? "sending" : "receiving",
+        );
+        if (kind === "image")
+          await expect(bubble).toHaveClass(/image-attachment/);
+        else await expect(bubble).not.toHaveClass(/image-attachment/);
+        await expect(progress.locator("progress")).toHaveJSProperty("value", 0);
+        // 同一轮浏览器布局中仅替换真实计数字段，避免异步轮询干扰位数变化的几何比较。
+        const samples = await bubble.evaluate(
+          (node, total) => {
+            const detail = node.querySelector(".attachment-progress > span");
+            const original = detail.textContent;
+            const labels = [
+              `1 B / ${total} · 0%`,
+              `1023 B / ${total} · 0%`,
+              `1.0 KiB / ${total} · 0%`,
+              `999.9 KiB / ${total} · 9%`,
+              `1.0 MiB / ${total} · 10%`,
+              `${total} / ${total} · 99%`,
+              `${total} / ${total} · 100%`,
+            ];
+            const samples = labels.map((label) => {
+              detail.textContent = label;
+              const rect = node.getBoundingClientRect();
+              return {
+                label,
+                width: rect.width,
+                height: rect.height,
+                left: rect.left,
+                right: rect.right,
+              };
+            });
+            detail.textContent = original;
+            return samples;
+          },
+          kind === "file" ? "300.0 MiB" : "8.0 MiB",
+        );
+        for (const key of ["width", "height", "left", "right"]) {
+          const values = samples.map((sample) => sample[key]);
+          expect(
+            Math.max(...values) - Math.min(...values),
+            `${direction} ${kind} ${key}: ${JSON.stringify(samples)}`,
+          ).toBeLessThanOrEqual(1);
+        }
+        counterLayouts.push({ direction, kind, samples });
+      }
+    }
+    services.setLanTransfers([transfer]);
+    await expect(progress).toHaveAttribute("data-phase", "preparing");
+    await expect(progress.locator("progress")).toHaveJSProperty(
+      "value",
+      transfer.completedBytes,
+    );
+    await progress.locator("progress").evaluate((node) => {
+      window.__lanProgressNode = node;
+    });
+    for (const [phase, completedBytes] of [
+      ["verifying", 150 * 1024 * 1024],
+      ["sending", 225 * 1024 * 1024],
+      ["awaitingReceipt", transfer.bytes],
+    ]) {
+      services.setLanTransfers([{ ...transfer, phase, completedBytes }]);
+      await expect(progress).toHaveAttribute("data-phase", phase);
+      if (phase !== "awaitingReceipt")
+        await expect(progress.locator("progress")).toHaveJSProperty(
+          "value",
+          completedBytes,
+        );
+      else await expect(progress.locator("progress")).toBeHidden();
+      expect(
+        await progress
+          .locator("progress")
+          .evaluate((node) => node === window.__lanProgressNode),
+      ).toBe(true);
+    }
+    const progressLayout = await progress.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const bubble = node.closest(".attachment-card").getBoundingClientRect();
+      return {
+        horizontalOverflow:
+          document.documentElement.scrollWidth > innerWidth + 1,
+        insideBubble:
+          rect.left >= bubble.left &&
+          rect.right <= bubble.right &&
+          rect.top >= bubble.top &&
+          rect.bottom <= bubble.bottom,
+        outgoing: node.closest("article").classList.contains("outgoing"),
+      };
+    });
+    expect(progressLayout.horizontalOverflow).toBe(false);
+    expect(progressLayout.insideBubble).toBe(true);
+    expect(progressLayout.outgoing).toBe(true);
     await draft.fill(retainedDraft);
     const stopsBefore = await page.evaluate(
       () =>
@@ -1555,6 +1822,7 @@ export async function checkLanTransferCancellation(page, frame, services) {
       /^(未连接|Disconnected)$/,
     );
     await expect(frame.locator("#cancel-transfer")).not.toBeVisible();
+    await expect(progress).not.toBeVisible();
     await expect(draft).toHaveValue(retainedDraft);
     gate.release();
     await expect
@@ -1628,6 +1896,9 @@ export async function checkLanTransferCancellation(page, frame, services) {
       lateSdkReceiptObserved: true,
       lateRunningResponseIgnored: true,
       newerDraftAndCheckpointRetained: true,
+      perPhaseByteProgressWhileSendPending: true,
+      counterLayouts,
+      progressLayout,
     };
   } finally {
     gate.release();

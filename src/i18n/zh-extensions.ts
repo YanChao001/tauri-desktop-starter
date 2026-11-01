@@ -181,6 +181,8 @@ export const zhExtensions = {
   "ext.error.busy": "扩展队列已满，或本会话仍有操作尚未结束；请等待后重试。",
   "ext.error.unavailable": "启动恢复、更新安装或退出期间不能使用扩展。",
   "ext.packageError": "无法读取扩展包，请检查 UTF-8 格式及 24 MiB 大小限制。",
+  "ext.packageVersionMustIncrease":
+    "包版本 {version} 必须高于已安装版本 {installedVersion}。",
   "experience.extensions": "使用扩展",
   "experience.extensionsHint": "审阅权限、安装运行，再按需停用或卸载。",
   "experience.extensions.1": "检查内置工作台",

@@ -1,7 +1,8 @@
-import { appendFileSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { applyFileChanges, projectFile } from "./fs-utils.mjs";
+import { tagFromEnvironment, writeOutput } from "./hosting/github-env.mjs";
 
 // SemVer 2.0 的数字标识不能有前导零，构建元数据不受此限制。
 const SEMVER =
@@ -190,15 +191,10 @@ async function runCli(args) {
 
   const root = resolve(import.meta.dirname, "..");
   if (mode === "check") {
-    const tag =
-      value ?? process.env.GITHUB_REF?.match(/^refs\/tags\/(.+)$/)?.[1];
+    const tag = value ?? tagFromEnvironment();
     const version = checkVersions(root, tag);
-    if (process.env.GITHUB_OUTPUT) {
-      appendFileSync(
-        process.env.GITHUB_OUTPUT,
-        `version=${version}\nprerelease=${version.split("+")[0].includes("-")}\n`,
-      );
-    }
+    writeOutput("version", version);
+    writeOutput("prerelease", version.split("+")[0].includes("-"));
     console.log(`Project versions match: ${version}${tag ? ` (${tag})` : ""}`);
     return;
   }

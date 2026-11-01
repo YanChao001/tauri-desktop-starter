@@ -68,13 +68,10 @@ export const zhFeatures = {
   "desktop.backgroundDescription":
     "托盘可用时，关窗后隐藏到托盘，可从托盘重新打开或退出。",
   "desktop.tray": "系统托盘",
-  "desktop.trayReady": "托盘可用",
   "desktop.trayUnavailable": "系统托盘不可用，关闭窗口将正常退出",
   "desktop.windows": "多窗口",
   "desktop.windowsDescription": "第二个窗口同步保存语言、主题、皮肤与布局。",
   "desktop.openWindow": "新窗口",
-  "desktop.windowOpen": "第二个窗口已打开",
-  "desktop.changed": "桌面设置已更新",
   "database.title": "本地笔记",
   "database.description":
     "在本机新建、搜索和编辑笔记，多窗口修改冲突时会提示。",

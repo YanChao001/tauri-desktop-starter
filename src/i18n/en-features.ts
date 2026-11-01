@@ -76,15 +76,12 @@ export const enFeatures = {
   "desktop.backgroundDescription":
     "With a tray available, closing hides the window. Reopen or quit from the tray.",
   "desktop.tray": "System tray",
-  "desktop.trayReady": "Tray available",
   "desktop.trayUnavailable":
     "Tray is unavailable. Closing the window exits normally.",
   "desktop.windows": "Multiple windows",
   "desktop.windowsDescription":
     "The second window syncs language, theme, skin and layout preferences.",
   "desktop.openWindow": "New window",
-  "desktop.windowOpen": "Second window open",
-  "desktop.changed": "Desktop settings updated",
   "database.title": "Local notes",
   "database.description":
     "Create, search and edit local notes, with conflict alerts for changes from other windows.",

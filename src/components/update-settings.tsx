@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { cn } from "cn";
 import {
   DownloadIcon,
   RotateCcwIcon,
@@ -9,7 +10,6 @@ import {
 import { ExternalLink } from "@/components/external-link";
 import { SettingRow } from "@/components/setting-row";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -27,6 +27,7 @@ import { useLatestTranslator } from "@/hooks/use-latest-translator";
 import { APP_CONFIG } from "@/config/app";
 import { useUpdates, checkUpdates, installUpdate } from "@/lib/updates-store";
 import { isTauri, relaunchApp, type UpdateStatus } from "@/lib/tauri";
+import { repositoryLink } from "@/config/repository";
 import { nativeErrorText } from "@/lib/native-error";
 import { version as buildVersion } from "../../package.json";
 
@@ -82,6 +83,7 @@ export function UpdateSettings() {
     };
   }, []);
   const busy = ["checking", "downloading", "installing"].includes(phase);
+  const installActive = phase === "downloading" || phase === "installing";
   const percent = progress?.total
     ? Math.min(
         100,
@@ -232,20 +234,62 @@ export function UpdateSettings() {
                   <Button
                     onClick={() => setConfirmInstall(operationId)}
                     disabled={busy}
+                    aria-busy={installActive}
+                    className={cn(
+                      "relative overflow-hidden",
+                      installActive &&
+                        "bg-primary/10 text-foreground disabled:opacity-100",
+                    )}
                   >
-                    <DownloadIcon />
-                    {t("updates.install")}
+                    {installActive ? (
+                      <span
+                        data-slot="updates-download-progress"
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 left-0 bg-primary/20"
+                        style={{
+                          width: `${phase === "installing" ? 100 : (percent ?? 0)}%`,
+                        }}
+                      />
+                    ) : null}
+                    <DownloadIcon className="relative" />
+                    <span className="relative grid">
+                      <span
+                        aria-hidden="true"
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {t("updates.install")}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {t("updates.downloading", { progress: "100%" })}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {t("updates.installing")}
+                      </span>
+                      <span className="col-start-1 row-start-1">
+                        {installActive ? statusMessage : t("updates.install")}
+                      </span>
+                    </span>
                   </Button>
+                ) : null}
+                {native && phase === "downloading" ? (
+                  <span
+                    role="progressbar"
+                    aria-label={t("updates.install")}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={percent}
+                    aria-valuetext={statusMessage}
+                    className="sr-only"
+                  />
                 ) : null}
               </div>
             </div>
-            {native && phase === "downloading" ? (
-              <Progress
-                className="absolute inset-x-0 bottom-0 h-1"
-                value={percent}
-                aria-label={t("updates.install")}
-              />
-            ) : null}
           </div>
           <SettingRow
             id="settings-updates-auto"
@@ -255,8 +299,6 @@ export function UpdateSettings() {
                 {t("updates.autoCheck")}
               </label>
             }
-            hint={t("updates.autoCheckHint")}
-            helpLabel={`${t("updates.autoCheck")} · ${t("title.help")}`}
           >
             <Switch
               id="auto-check-updates"
@@ -286,7 +328,7 @@ export function UpdateSettings() {
                     </p>
                   ) : null}
                   <ExternalLink
-                    href={`${APP_CONFIG.repositoryUrl.replace(/\/$/, "")}/releases`}
+                    href={repositoryLink("releases", APP_CONFIG.repositoryUrl)}
                     className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {t("updates.releases")}

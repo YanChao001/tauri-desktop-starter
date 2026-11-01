@@ -107,11 +107,6 @@ export default function System() {
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">
             <h2 className="flex items-center gap-2 text-sm font-medium">
               {t("system.notificationLabel")}
-              <HelpTooltip
-                label={`${t("system.notificationLabel")} · ${t("title.help")}`}
-              >
-                {t("system.permission")}
-              </HelpTooltip>
             </h2>
             <Button
               disabled={busy}

@@ -971,6 +971,8 @@ export type ExtensionPreview_Serialize = {
   uiDocuments?: ExtensionUiDocument[];
 };
 
+export type ExtensionResourcePreviewSize = "thumbnail" | "large";
+
 export type ExtensionResultFormat = "text" | "json" | "markdown" | "view";
 
 export type ExtensionRunInput = {
@@ -1153,6 +1155,18 @@ export type ExtensionView_Serialize = {
   errors: { [key in string]: string };
   effects: ExtensionEffect_Serialize[];
   artifacts: ExtensionArtifact[];
+};
+
+export type ExtensionWallpaperApplyResult = {
+  applied: boolean;
+  activeId: string;
+  revision: number;
+};
+
+export type ExtensionWallpaperPreviewResult = {
+  id: string;
+  previewKey: string;
+  dataUrl: string | null;
 };
 
 export type ExtensionWindowRequest =

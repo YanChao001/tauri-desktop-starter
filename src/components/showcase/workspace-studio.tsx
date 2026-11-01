@@ -251,7 +251,6 @@ export function WorkspaceStudio() {
             {t("experience.workspace.reorderHint")}
           </HelpTooltip>
         </h3>
-        <p>{t("experience.workspaceHint")}</p>
       </div>
       <div className="workspace-toolbar">
         <Popover>

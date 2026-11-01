@@ -96,6 +96,8 @@ export type ExtensionPermission =
   | "messaging:lan"
   | "wallpapers:manage";
 
+export type ExtensionResourcePreviewSize = "thumbnail" | "large";
+
 export type ExtensionView = ExtensionView_Serialize | ExtensionView_Deserialize;
 
 export type ExtensionViewAction = {
@@ -200,6 +202,18 @@ export type ExtensionView_Serialize = {
   };
   effects: ExtensionEffect_Serialize[];
   artifacts: ExtensionArtifact[];
+};
+
+export type ExtensionWallpaperApplyResult = {
+  applied: boolean;
+  activeId: string;
+  revision: number;
+};
+
+export type ExtensionWallpaperPreviewResult = {
+  id: string;
+  previewKey: string;
+  dataUrl: string | null;
 };
 
 export type ExtensionWindowRequest =

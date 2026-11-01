@@ -45,6 +45,12 @@
 
 依赖及精确版本直接查阅 [package.json](../package.json)、[Cargo.toml](../src-tauri/Cargo.toml) 和对应锁文件；新增或移除依赖按 [评审标准](./development.md#新增依赖的评审标准) 核对调用方、许可和平台影响。
 
+原生 HTTP 启用 `tauri-plugin-http` 的 `gzip` 功能，读取部分网站直接返回的 gzip 响应；异步解压后仍执行原有正文额度。新增的 `async-compression`、`compression-codecs`、`compression-core` 使用 MIT / Apache-2.0 双许可，本项目保留三者相同的 [MIT 版权与许可原文](../resources/third-party/async-compression.LICENSE)，随现有第三方声明分发。解码使用 Rust 实现，不引入平台专用压缩库，随原生宿主编译；前端分块不受影响，各目标平台仍按原有 Rust 构建与测试验证。
+
+内网通信使用 `if-addrs` 枚举已启用的私有 IPv4 接口，为 VPN 接管默认路由时提供局域网选址回退，并按接口前缀生成发现公告的子网广播地址。该 Rust 库以 MIT / BSD-3-Clause 双许可分发，本项目保留其 [MIT 版权与许可原文](../resources/third-party/if-addrs.LICENSE)。它复用 Windows / Unix 的接口枚举 API，无额外原生构建脚本，不进入前端 bundle；依赖锁定更新限于此库及必要平台依赖，各目标平台仍须分别编译验收。
+
+Windows 宿主直接引用 Tauri / Wry 已锁定的 `webview2-com` 与 `windows-core`，分别配置触控板捏合输入和浏览器页面缩放，不增加原生依赖版本或前端分块。前者使用 MIT 许可，后者从 MIT / Apache-2.0 双许可中选择 MIT；保留各自的 [WebView2 绑定许可原文](../resources/third-party/webview2-com.LICENSE) 与 [Windows 核心绑定许可原文](../resources/third-party/windows-core.LICENSE)，沿用安装器及便携包的第三方声明分发路径。
+
 页面懒加载和导航预载统一维护于 [routes.tsx](../src/routes.tsx)。表格 / 表单、Query、Markdown 和图表随页面加载，门面中的 JS 插件按调用动态导入；Rust 插件仍在启动时组装，前端懒加载不会减少原生编译或安装包体积。WSS 使用标准 WebSocket，边界由门面与 CSP 定义。
 
 需要区分三种插件优化：导航悬停只预载前端模块；[界面保留](./extensions.md#自定义界面) 复用最近使用的文档与草稿；[原生预编译](./extensions.md#执行存储与生命周期) 只准备 Wasm 代码，不执行初始化。工作台场景编辑留在界面，成果导出才运行 Wasm，数据格式见 [工作台说明](../examples/extensions/apps/README.md)。

@@ -31,7 +31,12 @@ function fixture(t, { config = {}, manifest, lock, dependencies = true } = {}) {
       join(root, "node_modules"),
       process.platform === "win32" ? "junction" : "dir",
     );
-  for (const script of ["version.mjs", "fs-utils.mjs"]) {
+  mkdirSync(join(root, "scripts/hosting"));
+  for (const script of [
+    "version.mjs",
+    "fs-utils.mjs",
+    "hosting/github-env.mjs",
+  ]) {
     copyFileSync(
       new URL(script, import.meta.url),
       join(root, "scripts", script),

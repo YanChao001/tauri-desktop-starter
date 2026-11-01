@@ -262,7 +262,7 @@ describe("updater controls", () => {
     expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
   });
-  it("checks, installs and locks controls while reporting bounded download progress", () => {
+  it("checks, installs and reports bounded download progress inside the locked button", () => {
     ui.phase = "ready";
     ui.status = available;
     const view = render(<UpdateSettings />);
@@ -288,6 +288,9 @@ describe("updater controls", () => {
       status: null,
     };
     view.rerender(<UpdateSettings />);
+    const download = screen.getByRole("button", { name: "Downloading 100%" });
+    expect(download).toBeDisabled();
+    expect(download).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
       "100",
@@ -295,17 +298,20 @@ describe("updater controls", () => {
     expect(
       screen.getByRole("button", { name: "Check for updates" }),
     ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Download and install" }),
-    ).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Downloading 100%");
+    ui.progress = { ...ui.progress, downloaded: 2048, total: null };
+    view.rerender(<UpdateSettings />);
+    expect(
+      screen.getByRole("button", { name: "Downloading 2 KB" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute(
+      "aria-valuenow",
+    );
     ui.phase = "installing";
     view.rerender(<UpdateSettings />);
     expect(screen.getByRole("status")).toHaveTextContent("Installing…");
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Download and install" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Installing…" })).toBeDisabled();
   });
   it("retries a failed operation through a fresh check", () => {
     ui.phase = "error";

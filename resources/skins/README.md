@@ -11,6 +11,7 @@
 - [backgrounds.ts](../../src/lib/backgrounds.ts) 的持久化 ID 保持稳定，展示名称和资源文件名独立维护。纯色选项不加载纹理。
 - 新增皮肤时同步注册表、绘制映射和中英名称；修改图形后检查窗口与缩略图，特别是最强档位下的明暗阅读表面、窄屏裁剪及高对比度降级。共同材质规则见 [界面规范](../../docs/conventions/ui-guidelines.md#主题插画与轻量资源)。
 - 用户照片由“我的壁纸”图库管理，保留照片颜色。当前存储边界见[架构说明](../../docs/architecture.md#数据存储)，分离图库与当前背景的决策见 [ADR 0004](../../docs/adr/0004-wallpaper-library.md)。
+- 随包发布的图片壁纸另放在 [wallpapers](../wallpapers/README.md)，构建自动收录，不需要按矢量皮肤逐项注册。
 
 ## 图形与资源
 

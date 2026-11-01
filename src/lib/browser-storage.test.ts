@@ -33,10 +33,10 @@ describe("derived applications sharing a browser origin", () => {
       "tauri-starter:settings",
       JSON.stringify({ accent: "rose", theme: "dark" }),
     );
-    localStorage.setItem("theme", "dark");
+    localStorage.setItem("theme", "light");
     expect(readInitialSettings().settings).toMatchObject({
-      accent: "neutral",
-      theme: "system",
+      accent: "lime",
+      theme: "dark",
     });
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ accent: "blue" }));
@@ -48,7 +48,7 @@ describe("derived applications sharing a browser origin", () => {
     expect(JSON.parse(localStorage.getItem("tauri-starter:settings")!)).toEqual(
       { accent: "rose", theme: "dark" },
     );
-    expect(localStorage.getItem("theme")).toBe("dark");
+    expect(localStorage.getItem("theme")).toBe("light");
   });
 
   it("keeps the settings document authoritative over the namespaced theme cache", () => {

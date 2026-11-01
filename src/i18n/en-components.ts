@@ -77,8 +77,6 @@ export const enComponents = {
   "playground.detailedNotification": "Include description",
   "playground.notificationDetail": "Local demo notification.",
   "playground.sendNotification": "Send notification",
-  "playground.notificationTooltip":
-    "Shows a notification in the bottom-right corner.",
   "playground.libraryTitle": "Good ideas are worth keeping.",
   "playground.libraryDescription":
     "Search, filter, and save six built-in sample resources.",

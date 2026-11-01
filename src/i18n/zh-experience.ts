@@ -106,8 +106,6 @@ export const zhExperience = {
   "experience.data.tabs": "数据工作室分类",
   "experience.workspace": "工作区交互",
   "experience.workspaceTitle": "小小工作区，也有完整手感",
-  "experience.workspaceHint":
-    "在本页示例中浏览文件、调宽分栏、使用菜单和拖动排序。",
   "experience.workspace.tree": "示例文件列表",
   "experience.workspace.design": "创意资料",
   "experience.workspace.code": "代码与数据",

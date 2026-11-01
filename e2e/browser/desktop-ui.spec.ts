@@ -4,6 +4,8 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import appConfig from "../../app.config.json" with { type: "json" };
+import repositoryConfig from "../../repository.config.json" with { type: "json" };
+import { formatRepositoryLink } from "../../src/config/repository-links.mjs";
 import { PRESET_ACCENTS } from "../../src/lib/accent-colors";
 
 const KEY = `${appConfig.browserStorageNamespace}:settings`;
@@ -1851,7 +1853,14 @@ for (const language of ["en", "zh"] as const) {
       const link = page.getByRole("link", { name: label, exact: true });
       await expect(link).toHaveAttribute(
         "href",
-        new RegExp(`/blob/develop/docs/${file.replace(".", "\\.")}$`),
+        formatRepositoryLink(
+          repositoryConfig.hosting.links.file,
+          appConfig.repositoryUrl,
+          {
+            ref: repositoryConfig.hosting.defaultBranch,
+            path: `docs/${file}`,
+          },
+        ),
       );
       const href = await link.getAttribute("href");
       if (!href) throw new Error("Document link has no URL");
@@ -2179,14 +2188,23 @@ test("menus and language selection preserve content geometry and scroll position
             Math.abs(button.getBoundingClientRect().y - first.y) < 0.5,
         ).length;
       });
-  // 原生截图采集会缩窄后恢复窗口；按实际卡片行数确认响应式布局。
+  // 标准窗口应容纳四个预设，窄窗口再退为两列。
   for (const [width, columns] of [
-    [1120, 2],
+    [880, 2],
+    [960, 2],
+    [1120, 4],
     [1280, 4],
   ] as const) {
     await page.setViewportSize({ width, height: 820 });
     await expect.poll(presetColumns).toBe(columns);
   }
+  await page.setViewportSize({ width: 1120, height: 820 });
+  const fontSize = page.locator("#settings-fontSize");
+  await fontSize.getByText("Large", { exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-font-size", "lg");
+  await expect.poll(presetColumns).toBe(4);
+  await fontSize.getByText("Medium", { exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-font-size", "md");
   // 窗口宽度不变时，拉宽侧栏同样应减少列数，避免预设被挤压。
   const separator = page.locator(
     '[role="separator"][aria-controls="app-sidebar"]',

@@ -115,58 +115,10 @@ function fixture({
   };
 }
 
-test("resource, link and window SDK types expose typed receipts and reject unknown services, actions, paths and identities", () => {
+function assertSdkTypesCompile(fixtureSource) {
   const filename = fileURLToPath(
     new URL("../sdk/service-types.fixture.ts", import.meta.url),
   ).replaceAll("\\", "/");
-  const fixtureSource = `
-    import type { ExtensionUiApi, ExtensionResourceRequest, ExtensionWindowRequest, ExtensionWindowState } from "./extension-ui";
-    declare const sdk: ExtensionUiApi;
-    async function contract() {
-      const image = await sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/image.jpg", networkMode: "system" });
-      const bytes: number = image.bytes;
-      const preview = await sdk.services.request("resources", { action: "preview", resourceId: image.resourceId });
-      const dataUrl: string = preview.dataUrl;
-      const saved = await sdk.services.request("resources", { action: "save", resourceId: image.resourceId, name: "photo.jpg" });
-      if (!saved.cancelled) { const name: string = saved.name; void name; }
-      const released: null = await sdk.services.request("resources", { action: "release", resourceId: image.resourceId });
-      const opened: null = await sdk.services.request("links", { url: "https://example.com" });
-      const legacy: unknown = await sdk.services.request("lan", { action: "status" });
-      const wallpaper: unknown = await sdk.services.request("wallpaper", { action: "list" });
-      const windowState: ExtensionWindowState = await sdk.services.request("window", { action: "get-state" });
-      const pinned: boolean = windowState.alwaysOnTop;
-      const windowRequest: ExtensionWindowRequest = { action: "set-always-on-top", enabled: true };
-      const updated: ExtensionWindowState = await sdk.services.request("window", windowRequest);
-      declareRequest({ action: "save", resourceId: "resource" });
-      // @ts-expect-error 资源回执不暴露系统路径。
-      image.path;
-      // @ts-expect-error 只允许注册的服务。
-      sdk.services.request("shell", { command: "run" });
-      // @ts-expect-error 资源服务不提供任意动作。
-      sdk.services.request("resources", { action: "execute", resourceId: "resource" });
-      // @ts-expect-error 保存目标由用户通过系统对话框选择。
-      sdk.services.request("resources", { action: "save", resourceId: "resource", path: "C:/file.jpg" });
-      // @ts-expect-error 界面不能自述原生身份。
-      sdk.services.request("links", { url: "https://example.com", expectedGeneration: 2 });
-      // @ts-expect-error 插件不能传入任意代理。
-      sdk.services.request("resources", { action: "fetch-image", url: "https://example.com", networkMode: "http://proxy" });
-      // @ts-expect-error 窗口服务只允许读取状态和切换置顶。
-      sdk.services.request("window", { action: "close" });
-      // @ts-expect-error 置顶值必须是布尔值。
-      sdk.services.request("window", { action: "set-always-on-top", enabled: "true" });
-      // @ts-expect-error 窗口由已认证的原生调用者确定。
-      sdk.services.request("window", { action: "get-state", label: "main" });
-      // @ts-expect-error 窗口服务不接受系统路径。
-      sdk.services.request("window", { action: "get-state", path: "C:/file" });
-      // @ts-expect-error 插件不能自述原生身份。
-      sdk.services.request("window", { action: "set-always-on-top", enabled: true, id: "forged" });
-      // @ts-expect-error 原生调用代次由宿主提供。
-      sdk.services.request("window", { action: "get-state", expectedGeneration: 3 });
-      return { bytes, dataUrl, released, opened, legacy, wallpaper, pinned, updated };
-    }
-    function declareRequest(value: ExtensionResourceRequest) { return value; }
-    void contract;
-  `;
   const options = {
     noEmit: true,
     strict: true,
@@ -190,9 +142,189 @@ test("resource, link and window SDK types expose typed receipts and reject unkno
     ),
     [],
   );
+}
+
+test("resource, wallpaper, link and window SDK types expose typed receipts and reject malformed requests, paths and identities", () => {
+  const fixtureSource = `
+    import type { ExtensionUiApi, ExtensionResourceRequest, ExtensionWallpaperApplyRequest, ExtensionWallpaperApplyResult, ExtensionWindowRequest, ExtensionWindowState } from "./extension-ui";
+    declare const sdk: ExtensionUiApi;
+    declare const dynamicWallpaperRequest: Record<string, unknown>;
+    declare const legacyService: "lan" | "wallpaper";
+    declare const wallpaperAction: "apply" | "list";
+    async function contract() {
+      const image = await sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/image.jpg", networkMode: "system" });
+      const bytes: number = image.bytes;
+      const preview = await sdk.services.request("resources", { action: "preview", resourceId: image.resourceId });
+      const dataUrl: string = preview.dataUrl;
+      const largePreview = await sdk.services.request("resources", { action: "preview", resourceId: image.resourceId, size: "large" });
+      const largeDataUrl: string = largePreview.dataUrl;
+      declareRequest({ action: "preview", resourceId: image.resourceId, size: "thumbnail" });
+      const saved = await sdk.services.request("resources", { action: "save", resourceId: image.resourceId, name: "photo.jpg" });
+      if (!saved.cancelled) { const name: string = saved.name; void name; }
+      const released: null = await sdk.services.request("resources", { action: "release", resourceId: image.resourceId });
+      const opened: null = await sdk.services.request("links", { url: "https://example.com" });
+      const legacy: unknown = await sdk.services.request("lan", { action: "status" });
+      const wallpaper: unknown = await sdk.services.request("wallpaper", { action: "list" });
+      const dynamicWallpaper: unknown = await sdk.services.request("wallpaper", dynamicWallpaperRequest);
+      const legacyServiceResult: unknown = await sdk.services.request(legacyService, { action: "list" });
+      const legacyLanApply: unknown = await sdk.services.request("lan", { action: "apply" });
+      const appliedWallpaper = await sdk.services.request("wallpaper", { action: "apply", id: "a".repeat(64), expectedRevision: 2, fit: "cover" });
+      const applied: boolean = appliedWallpaper.applied;
+      const activeId: string = appliedWallpaper.activeId;
+      const revision: number = appliedWallpaper.revision;
+      const applyResult: ExtensionWallpaperApplyResult = appliedWallpaper;
+      const applyRequest: ExtensionWallpaperApplyRequest = { action: "apply", id: "b".repeat(64), expectedRevision: 3, fit: "contain" };
+      const containedWallpaper: ExtensionWallpaperApplyResult = await sdk.services.request("wallpaper", applyRequest);
+      const windowState: ExtensionWindowState = await sdk.services.request("window", { action: "get-state" });
+      const pinned: boolean = windowState.alwaysOnTop;
+      const windowRequest: ExtensionWindowRequest = { action: "set-always-on-top", enabled: true };
+      const updated: ExtensionWindowState = await sdk.services.request("window", windowRequest);
+      declareRequest({ action: "save", resourceId: "resource" });
+      // @ts-expect-error 资源回执不暴露系统路径。
+      image.path;
+      // @ts-expect-error 只允许注册的服务。
+      sdk.services.request("shell", { command: "run" });
+      // @ts-expect-error 资源服务不提供任意动作。
+      sdk.services.request("resources", { action: "execute", resourceId: "resource" });
+      // @ts-expect-error 保存目标由用户通过系统对话框选择。
+      sdk.services.request("resources", { action: "save", resourceId: "resource", path: "C:/file.jpg" });
+      // @ts-expect-error 界面不能自述原生身份。
+      sdk.services.request("links", { url: "https://example.com", expectedGeneration: 2 });
+      // @ts-expect-error 插件不能传入任意代理。
+      sdk.services.request("resources", { action: "fetch-image", url: "https://example.com", networkMode: "http://proxy" });
+      // @ts-expect-error 预览仅提供有界的缩略图或大图模式。
+      sdk.services.request("resources", { action: "preview", resourceId: image.resourceId, size: "original" });
+      // @ts-expect-error 窗口服务只允许读取状态和切换置顶。
+      sdk.services.request("window", { action: "close" });
+      // @ts-expect-error 置顶值必须是布尔值。
+      sdk.services.request("window", { action: "set-always-on-top", enabled: "true" });
+      // @ts-expect-error 窗口由已认证的原生调用者确定。
+      sdk.services.request("window", { action: "get-state", label: "main" });
+      // @ts-expect-error 窗口服务不接受系统路径。
+      sdk.services.request("window", { action: "get-state", path: "C:/file" });
+      // @ts-expect-error 插件不能自述原生身份。
+      sdk.services.request("window", { action: "set-always-on-top", enabled: true, id: "forged" });
+      // @ts-expect-error 原生调用代次由宿主提供。
+      sdk.services.request("window", { action: "get-state", expectedGeneration: 3 });
+      // @ts-expect-error 应用壁纸的写入回执不返回图库或缩略图。
+      appliedWallpaper.items;
+      // @ts-expect-error 应用壁纸的写入回执不返回图片字节。
+      appliedWallpaper.dataUrl;
+      // @ts-expect-error 应用壁纸必须提供预期 revision。
+      sdk.services.request("wallpaper", { action: "apply", id: "a".repeat(64), fit: "cover" });
+      // @ts-expect-error 应用壁纸必须提供已有图库 ID。
+      sdk.services.request("wallpaper", { action: "apply", expectedRevision: 2, fit: "cover" });
+      // @ts-expect-error 应用壁纸只允许 cover 或 contain。
+      sdk.services.request("wallpaper", { action: "apply", id: "a".repeat(64), expectedRevision: 2, fit: "stretch" });
+      // @ts-expect-error 应用壁纸必须传数值 revision。
+      sdk.services.request("wallpaper", { action: "apply", id: "a".repeat(64), expectedRevision: "2", fit: "cover" });
+      // @ts-expect-error 应用壁纸必须传字符串 ID。
+      sdk.services.request("wallpaper", { action: "apply", id: 2, expectedRevision: 2, fit: "cover" });
+      // @ts-expect-error 应用壁纸不能传入本机路径。
+      sdk.services.request("wallpaper", { action: "apply", id: "a".repeat(64), expectedRevision: 2, fit: "cover", path: "C:/file.jpg" });
+      // @ts-expect-error 应用壁纸不能自述原生身份。
+      sdk.services.request("wallpaper", { action: "apply", id: "a".repeat(64), expectedRevision: 2, fit: "cover", expectedGeneration: 3 });
+      const malformedApply = { action: "apply", id: "a".repeat(64), fit: "cover" } as const;
+      // @ts-expect-error 已知 apply 动作不能退回未知请求重载。
+      sdk.services.request("wallpaper", malformedApply);
+      // @ts-expect-error 动作联合类型包含 apply 时不能绕过请求校验。
+      sdk.services.request("wallpaper", { action: wallpaperAction });
+      // @ts-expect-error 服务联合类型包含 wallpaper 时不能绕过 apply 校验。
+      sdk.services.request(legacyService, { action: "apply" });
+      return { bytes, dataUrl, largeDataUrl, released, opened, legacy, wallpaper, dynamicWallpaper, legacyServiceResult, legacyLanApply, applied, activeId, revision, applyResult, containedWallpaper, pinned, updated };
+    }
+    function declareRequest(value: ExtensionResourceRequest) { return value; }
+    void contract;
+  `;
+  assertSdkTypesCompile(fixtureSource);
 });
 
-test("resources, links and window share the existing service channel without supplying native identity", async () => {
+test("wallpaper previews, combined image fetches and fetch cancellation expose precise SDK types without untyped escapes", () => {
+  assertSdkTypesCompile(`
+    import type { ExtensionUiApi, ExtensionImageResource, ExtensionResourceFetchRequest, ExtensionResourceRequest, ExtensionResourceCancelFetchRequest, ExtensionResourceCancelFetchResult, ExtensionWallpaperPreviewRequest, ExtensionWallpaperPreviewResult } from "./extension-ui";
+    declare const sdk: ExtensionUiApi;
+    declare const optionalPreviewRequest: ExtensionResourceFetchRequest;
+    declare const dynamicWallpaperRequest: Record<string, unknown>;
+    declare const wallpaperService: "wallpaper" | "lan";
+    declare const wallpaperAction: "preview" | "list";
+    async function contract() {
+      const thumbnail = await sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/a.jpg", preview: "thumbnail", requestId: "thumb-one" });
+      const thumbnailDataUrl: string = thumbnail.dataUrl;
+      const thumbnailResource: ExtensionImageResource = thumbnail;
+      const large = await sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/a.jpg", preview: "large", networkMode: "system", requestId: "large-one" });
+      const largeDataUrl: string = large.dataUrl;
+      const fetchRequest: ExtensionResourceFetchRequest & { preview: "large" } = { action: "fetch-image", url: "https://example.com/b.jpg", preview: "large" };
+      const typedFetch = await sdk.services.request("resources", fetchRequest);
+      const typedDataUrl: string = typedFetch.dataUrl;
+      const image = await sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/b.jpg", requestId: "metadata-one" });
+      const metadata: ExtensionImageResource = image;
+      // @ts-expect-error 未请求合并预览时只保证资源元数据。
+      image.dataUrl;
+      const optionalPreview = await sdk.services.request("resources", optionalPreviewRequest);
+      // @ts-expect-error 可选 preview 尚未收窄，不能保证返回预览。
+      const optionalDataUrl: string = optionalPreview.dataUrl;
+      const cancelRequest: ExtensionResourceCancelFetchRequest = { action: "cancel-fetch", requestId: "large-one" };
+      const cancelled = await sdk.services.request("resources", cancelRequest);
+      const didCancel: boolean = cancelled.cancelled;
+      const cancelResult: ExtensionResourceCancelFetchResult = cancelled;
+      declareRequest(cancelRequest);
+      declareRequest({ action: "fetch-image", url: "https://example.com/c.jpg", preview: "thumbnail", requestId: "thumb-two" });
+      const previewRequest: ExtensionWallpaperPreviewRequest = { action: "preview", id: "a".repeat(64), previewKey: "b".repeat(64) };
+      const wallpaperPreview = await sdk.services.request("wallpaper", previewRequest);
+      const previewResult: ExtensionWallpaperPreviewResult = wallpaperPreview;
+      const previewId: string = wallpaperPreview.id;
+      const previewKey: string = wallpaperPreview.previewKey;
+      const wallpaperDataUrl: string | null = wallpaperPreview.dataUrl;
+      const wallpaperNullPreview: ExtensionWallpaperPreviewResult = { id: "a".repeat(64), previewKey: "b".repeat(64), dataUrl: null };
+      const legacyWallpaper: unknown = await sdk.services.request("wallpaper", { action: "list" });
+      const legacyDynamic: unknown = await sdk.services.request("wallpaper", dynamicWallpaperRequest);
+      const legacyLan: unknown = await sdk.services.request("lan", { action: "preview" });
+      const legacyService: unknown = await sdk.services.request(wallpaperService, { action: "list" });
+      // @ts-expect-error 下载的合并预览只允许有界档位。
+      sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/a.jpg", preview: "original" });
+      // @ts-expect-error 下载请求标识必须是字符串。
+      sdk.services.request("resources", { action: "fetch-image", url: "https://example.com/a.jpg", requestId: 3 });
+      // @ts-expect-error 取消下载需要请求标识。
+      sdk.services.request("resources", { action: "cancel-fetch" });
+      // @ts-expect-error 取消下载需要字符串请求标识。
+      sdk.services.request("resources", { action: "cancel-fetch", requestId: 3 });
+      // @ts-expect-error 取消下载不接受资源 ID 替代下载标识。
+      sdk.services.request("resources", { action: "cancel-fetch", resourceId: "resource" });
+      // @ts-expect-error 取消下载不能自述原生身份。
+      sdk.services.request("resources", { action: "cancel-fetch", requestId: "large-one", expectedGeneration: 2 });
+      // @ts-expect-error 图库预览必须携带封面摘要。
+      sdk.services.request("wallpaper", { action: "preview", id: "a".repeat(64) });
+      // @ts-expect-error 图库预览必须携带图库 ID。
+      sdk.services.request("wallpaper", { action: "preview", previewKey: "b".repeat(64) });
+      // @ts-expect-error 图库预览不接受图片资源句柄。
+      sdk.services.request("wallpaper", { action: "preview", resourceId: "resource", size: "large" });
+      // @ts-expect-error 图库 ID 必须是字符串。
+      sdk.services.request("wallpaper", { action: "preview", id: 3, previewKey: "b".repeat(64) });
+      // @ts-expect-error 封面摘要必须是字符串。
+      sdk.services.request("wallpaper", { action: "preview", id: "a".repeat(64), previewKey: 3 });
+      // @ts-expect-error 图库预览不能直接读取本机路径。
+      sdk.services.request("wallpaper", { action: "preview", id: "a".repeat(64), previewKey: "b".repeat(64), path: "C:/file.jpg" });
+      // @ts-expect-error 图库预览不能自述原生身份。
+      sdk.services.request("wallpaper", { action: "preview", id: "a".repeat(64), previewKey: "b".repeat(64), expectedGeneration: 2 });
+      const malformedPreview = { action: "preview", id: "a".repeat(64) } as const;
+      // @ts-expect-error 已知 preview 动作不能退回未知请求重载。
+      sdk.services.request("wallpaper", malformedPreview);
+      // @ts-expect-error 动作联合类型包含 preview 时不能绕过请求校验。
+      sdk.services.request("wallpaper", { action: wallpaperAction });
+      // @ts-expect-error 服务联合类型包含 wallpaper 时不能绕过 preview 校验。
+      sdk.services.request(wallpaperService, { action: "preview" });
+      // @ts-expect-error 图库预览只返回所请求的一项。
+      wallpaperPreview.items;
+      // @ts-expect-error 图库预览可能暂时不可用。
+      const requiredWallpaperDataUrl: string = wallpaperPreview.dataUrl;
+      return { thumbnailDataUrl, thumbnailResource, largeDataUrl, typedDataUrl, metadata, didCancel, cancelResult, previewResult, previewId, previewKey, wallpaperDataUrl, wallpaperNullPreview, legacyWallpaper, legacyDynamic, legacyLan, legacyService };
+    }
+    function declareRequest(value: ExtensionResourceRequest) { return value; }
+    void contract;
+  `);
+});
+
+test("resources, wallpaper, links and window share the existing service channel without supplying native identity", async () => {
   const { sdk, send, messages, close } = fixture();
   send({ type: "state", value: snapshot() });
   await sdk.ready;
@@ -220,6 +352,29 @@ test("resources, links and window share the existing service channel without sup
     },
     {
       service: "resources",
+      value: {
+        action: "fetch-image",
+        url: "https://images.example.com/a.jpg",
+        preview: "large",
+        requestId: "large-one",
+      },
+      result: {
+        resourceId: "three",
+        mime: "image/jpeg",
+        bytes: 8,
+        width: 1,
+        height: 1,
+        sha256: "a".repeat(64),
+        dataUrl: "data:image/jpeg;base64,YQ==",
+      },
+    },
+    {
+      service: "resources",
+      value: { action: "cancel-fetch", requestId: "large-one" },
+      result: { cancelled: true },
+    },
+    {
+      service: "resources",
       value: { action: "preview", resourceId: "one" },
       result: { dataUrl: "data:image/jpeg;base64,YQ==" },
     },
@@ -237,6 +392,19 @@ test("resources, links and window share the existing service channel without sup
       service: "links",
       value: { url: "https://source.example.com/article" },
       result: null,
+    },
+    {
+      service: "wallpaper",
+      value: {
+        action: "preview",
+        id: "a".repeat(64),
+        previewKey: "b".repeat(64),
+      },
+      result: {
+        id: "a".repeat(64),
+        previewKey: "b".repeat(64),
+        dataUrl: null,
+      },
     },
     {
       service: "window",
@@ -1113,6 +1281,143 @@ function selectFixture({
     send: (value) => port.onmessage?.({ data: value }),
   };
 }
+
+test("native document zoom gestures reach author handlers without scaling the page, including after bridge closure", () => {
+  const { window, disconnect, close } = selectFixture({
+    nativeInitializer: true,
+  });
+  try {
+    const target = window.document.querySelector("#outside");
+    const received = [];
+    for (const type of ["wheel", "gesturestart", "gesturechange", "gestureend"])
+      target.addEventListener(type, (event) => {
+        received.push({ type: event.type, prevented: event.defaultPrevented });
+        // An author's local gesture must not let page zoom escape the policy.
+        event.stopPropagation();
+      });
+    const zoom = () => {
+      target.dispatchEvent(
+        new window.WheelEvent("wheel", {
+          ctrlKey: true,
+          deltaY: -24,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      for (const type of ["gesturestart", "gesturechange", "gestureend"])
+        target.dispatchEvent(
+          new window.Event(type, { bubbles: true, cancelable: true }),
+        );
+    };
+    zoom();
+    disconnect();
+    zoom();
+    assert.deepEqual(received, [
+      { type: "wheel", prevented: true },
+      { type: "gesturestart", prevented: true },
+      { type: "gesturechange", prevented: true },
+      { type: "gestureend", prevented: true },
+      { type: "wheel", prevented: true },
+      { type: "gesturestart", prevented: true },
+      { type: "gesturechange", prevented: true },
+      { type: "gestureend", prevented: true },
+    ]);
+    const scroll = new window.WheelEvent("wheel", {
+      deltaY: 30,
+      bubbles: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(scroll);
+    assert.equal(scroll.defaultPrevented, false);
+  } finally {
+    close();
+  }
+});
+
+test("native document zoom policy covers host and descendant frames and preserves author keyboard handling", () => {
+  for (const url of ["http://localhost:1420/", "about:blank", "about:srcdoc"]) {
+    for (const topLevel of [false, true]) {
+      const { window, close } = selectFixture({
+        url,
+        topLevel,
+        nativeInitializer: true,
+      });
+      try {
+        const shadowHost = window.document.createElement("section");
+        window.document.body.append(shadowHost);
+        const root = shadowHost.attachShadow({ mode: "closed" });
+        const target = window.document.createElement("button");
+        root.append(target);
+        const received = [];
+        target.addEventListener("keydown", (event) => received.push(event.key));
+        for (const [key, ctrlKey, prevented] of [
+          ["+", true, true],
+          ["=", true, true],
+          ["-", true, true],
+          ["0", true, true],
+          ["+", false, false],
+          ["a", true, false],
+        ]) {
+          const event = new window.KeyboardEvent("keydown", {
+            key,
+            ctrlKey,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          });
+          target.dispatchEvent(event);
+          assert.equal(event.defaultPrevented, prevented, `${url}: ${key}`);
+        }
+        assert.deepEqual(received, ["+", "=", "-", "0", "+", "a"]);
+        const pinch = new window.WheelEvent("wheel", {
+          ctrlKey: true,
+          deltaY: -16,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        });
+        target.dispatchEvent(pinch);
+        assert.equal(pinch.defaultPrevented, true, url);
+        assert.equal(window.starter, undefined);
+      } finally {
+        close();
+      }
+    }
+  }
+});
+
+test("browser fixtures keep browser zoom gestures and keyboard defaults", () => {
+  const { window, close } = selectFixture({
+    url: "http://127.0.0.1/fixture/ui/main",
+    browserFixture: true,
+  });
+  try {
+    assert.ok(window.starter);
+    const target = window.document.querySelector("#outside");
+    const wheel = new window.WheelEvent("wheel", {
+      ctrlKey: true,
+      deltaY: -24,
+      bubbles: true,
+      cancelable: true,
+    });
+    const key = new window.KeyboardEvent("keydown", {
+      key: "+",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    for (const event of [
+      wheel,
+      key,
+      new window.Event("gesturechange", { bubbles: true, cancelable: true }),
+    ]) {
+      target.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, false);
+    }
+  } finally {
+    close();
+  }
+});
 
 test("native extension document menus stay suppressed after business disconnection while author menus keep working", () => {
   for (const url of [

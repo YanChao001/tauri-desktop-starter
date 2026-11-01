@@ -11,6 +11,7 @@
 | 编写隔离的插件 HTML / CSS / JavaScript 界面 | [界面 SDK](../sdk/README.md)                                                                   |
 | 市场仓库的插件收录、构建、测试与签名发布    | [市场文档索引](../marketplace/docs/README.md)（需初始化子模块）                                |
 | 环境、初始化、命令、调试与浏览器部署        | [开发指南](./development.md)                                                                   |
+| 仓库链接、市场来源、平台接线与统一同步      | [仓库托管配置](./repository-hosting.md)                                                        |
 | 测试选择、无头界面、原生及安装验收          | [测试规范](./testing.md)                                                                       |
 | 版本、产物、签名、更新与发布恢复            | [构建与发布](./build-release.md)、[代码签名策略](./code-signing-policy.md)                     |
 | IPC、权限、CSP、凭据与依赖审计              | [安全规范](./security.md)、[漏洞报告](../SECURITY.md)                                          |

@@ -30,6 +30,8 @@ pnpm app:dev
 
 第一次 `app:dev` 会编译 Rust 依赖，耗时取决于机器、缓存和网络；后续复用编译缓存，前端修改由 Vite 热更新。
 
+图库和图片预览依赖逐像素计算。`src-tauri/Cargo.toml` 只为 `image`、`image-webp` 和 `zune-jpeg` 开启 dev 包级优化，业务代码仍保留默认调试配置；首次修改这些配置会重新编译对应依赖。比较预览耗时时记录构建配置，不能将开发构建的测量当作正式安装版结果。
+
 源码入口与两种运行环境见 [README · 从源码运行](../README.md#从源码运行)。`pnpm dev` 与在线演示共用桌面应用的 React 页面；`pnpm app:dev` 同时启动 Rust 和原生窗口。只开发或构建浏览器界面时，安装前端依赖即可，无需编译 Rust。
 
 ## 开发流程
@@ -81,6 +83,8 @@ pnpm config:check
 - `browserStorageNamespace` 隔离同域下的浏览器偏好、图库与广播，更换标识符时默认随之更换。只有承接同一产品数据时才复用旧值；原生存档路径由 Tauri 标识符决定。
 
 初始化不迁移或删除用户数据。发布后更换标识符、协议、扩展名或存储命名空间，应另行处理数据迁移与安装关联。`pnpm config:check` 只读核对配置与派生值，已纳入 `verify` 和 CI。
+
+仓库平台的链接布局、分支与市场下载规则集中在 `repository.config.json`。初始化或修改托管配置后运行 `pnpm repository:sync`，统一同步项目链接、子模块与工作流分支；市场已初始化时同时同步其配置。`config:check` 包含只读漂移检查，具体字段与平台适配入口见 [仓库托管配置](./repository-hosting.md)。
 
 随后处理 LICENSE 归属、安全报告渠道、仓库 About、Pages 和 Secrets；签名身份按 [代码签名策略](./code-signing-policy.md) 配置，初始化不修改私钥或签名门户。品牌资源按 [安装器外观](./build-release.md#安装器外观) 生成，版本使用 `pnpm version:set x.y.z` 同步。首次发布用自己的安装包验证身份、深链 / 文件关联及卸载登记。
 

@@ -31,7 +31,6 @@ export const zhSystem = {
   "system.restore": "重新打开上次工作区",
   "system.success": "操作完成",
   "system.denied": "未获通知权限，请检查系统通知设置。",
-  "system.permission": "系统通知效果因操作系统而异，请在安装后确认。",
   "nav.system": "系统集成",
   "nativeError.userCancelled": "已取消，未保存的工作仍保留。",
   "nativeError.httpTimeout": "请求超时，检查网络或代理后重试。",

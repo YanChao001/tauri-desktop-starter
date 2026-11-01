@@ -25,9 +25,7 @@ export const enShowroom = {
   "showroom.daylight": "Daydream",
   "showroom.apply": "Apply to window",
   "showroom.applied": "Applied",
-  "showroom.appliedToast": "Window style applied",
   "showroom.undo": "Undo the change",
-  "showroom.undoToast": "Previous appearance restored",
   "showroom.nativeLive": "Desktop tools are ready",
   "showroom.browserLive":
     "Try interactions here; files and system tools require the desktop app.",

@@ -12,6 +12,8 @@ import { en } from "@/i18n/en";
 import { zhCN } from "@/i18n/zh-CN";
 import { rustIpcExample, typescriptIpcExample } from "@/features/catalog/model";
 import { APP_CONFIG } from "@/config/app";
+import { REPOSITORY_CONFIG } from "@/config/repository";
+import { formatRepositoryLink } from "@/config/repository-links.mjs";
 import Catalog from "./catalog";
 
 const locale = vi.hoisted(() => ({ current: "en" as "en" | "zh" }));
@@ -62,7 +64,14 @@ it.each(["en", "zh"] as const)(
     ] as const) {
       fireEvent.click(screen.getByRole("link", { name: t(label) }));
       expect(bridge.open).toHaveBeenLastCalledWith(
-        `${APP_CONFIG.repositoryUrl}/blob/develop/${path}`,
+        formatRepositoryLink(
+          REPOSITORY_CONFIG.hosting.links.file,
+          APP_CONFIG.repositoryUrl,
+          {
+            ref: REPOSITORY_CONFIG.hosting.defaultBranch,
+            path,
+          },
+        ),
       );
     }
     for (const label of ["catalog.source", "catalog.docs"] as const) {

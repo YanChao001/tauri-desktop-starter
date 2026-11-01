@@ -1,17 +1,42 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
-  collectUpdaterMetadata,
-  ensureDraftRelease,
-  mergeUpdaterMetadata,
+  collectUpdaterMetadata as collectMetadata,
+  ensureDraftRelease as ensureDraft,
+  mergeUpdaterMetadata as mergeMetadata,
   releaseAssetName,
-  resolveReleaseAssets,
-  updaterReleasePlan,
-  uploadReleaseAsset,
+  resolveReleaseAssets as resolveAssets,
+  updaterReleasePlan as updaterPlan,
+  uploadReleaseAsset as uploadAsset,
 } from "./release-lib.mjs";
+
+const githubConfig = JSON.parse(
+  readFileSync(
+    new URL("./test-fixtures/repository-github.json", import.meta.url),
+    "utf8",
+  ),
+);
+const withHosting = (options) => ({ config: githubConfig, ...options });
+const collectUpdaterMetadata = (options) =>
+  collectMetadata(withHosting(options));
+const ensureDraftRelease = (options, request) =>
+  ensureDraft(withHosting(options), request);
+const mergeUpdaterMetadata = (records, options) =>
+  mergeMetadata(records, withHosting(options));
+const resolveReleaseAssets = (manifest, release, options) =>
+  resolveAssets(manifest, release, withHosting(options));
+const updaterReleasePlan = (options) => updaterPlan(withHosting(options));
+const uploadReleaseAsset = (file, release, repository, request) =>
+  uploadAsset(file, release, repository, request, githubConfig);
 
 const repository = "owner/starter";
 const version = "1.2.3";
@@ -21,6 +46,33 @@ const brand = {
     publicKey: "public-key",
   },
 };
+
+test("updater publication uses the configured repository and latest asset layout", () => {
+  const plan = updaterReleasePlan({
+    brand: {
+      updates: {
+        endpoint:
+          "https://code.example/owner/starter/downloads/latest/latest.json",
+        publicKey: "public-key",
+      },
+    },
+    privateKey: "private",
+    repository,
+    config: {
+      hosting: {
+        provider: "github",
+        repositoryUrlTemplate: "https://code.example/{repository}",
+        links: {
+          latestAsset: "{repositoryUrl}/downloads/latest/{asset}",
+        },
+      },
+    },
+  });
+  assert.equal(
+    plan.overlay.plugins.updater.endpoints[0],
+    "https://code.example/owner/starter/downloads/latest/latest.json",
+  );
+});
 
 test("one draft is created before builds and its ID is reused on reruns", () => {
   const options = {

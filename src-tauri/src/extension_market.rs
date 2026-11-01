@@ -8,6 +8,7 @@ use crate::{
         valid_id, version,
     },
     network::{self, NetworkMode},
+    repository_config::RepositoryConfig,
     storage::atomic_write,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -83,18 +84,16 @@ impl MarketConfig {
     }
     pub fn catalog_url(&self) -> NativeResult<Url> {
         self.validate()?;
-        Url::parse(&format!(
-            "https://github.com/{}/releases/latest/download/catalog.json",
-            self.repository
-        ))
-        .map_err(|_| failure(ErrorCode::MarketNotConfigured))
+        RepositoryConfig::configured()
+            .and_then(|config| config.catalog_url(&self.repository))
+            .map_err(|_| failure(ErrorCode::MarketNotConfigured))
     }
     fn package_url(&self, entry: &MarketEntry) -> NativeResult<Url> {
-        Url::parse(&format!(
-            "https://github.com/{}/releases/download/{}/{}",
-            self.repository, entry.release_tag, entry.asset
-        ))
-        .map_err(|_| failure(ErrorCode::MarketInvalid))
+        RepositoryConfig::configured()
+            .and_then(|config| {
+                config.package_url(&self.repository, &entry.release_tag, &entry.asset)
+            })
+            .map_err(|_| failure(ErrorCode::MarketInvalid))
     }
     fn identity(&self) -> NativeResult<MarketIdentity> {
         self.validate()?;
@@ -888,19 +887,7 @@ fn persist_catalog_trust(root: &Path, next: &VerifiedCatalog) -> NativeResult<()
         .map_err(|_| failure(ErrorCode::MarketUnavailable))
 }
 fn allowed_url(url: &Url, repository: &str) -> bool {
-    if url.scheme() != "https"
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.port().is_some_and(|port| port != 443)
-        || url.fragment().is_some()
-    {
-        return false;
-    }
-    match url.host_str() {
-        Some("github.com") => url.path().starts_with(&format!("/{repository}/releases/")),
-        Some("release-assets.githubusercontent.com" | "objects.githubusercontent.com") => true,
-        _ => false,
-    }
+    RepositoryConfig::configured().is_ok_and(|config| config.allows_download(url, repository))
 }
 async fn fetch(
     url: Url,
@@ -1910,10 +1897,7 @@ mod tests {
             repository: "owner-name/repo.name_with-dashes".into(),
             ..config()
         };
-        assert_eq!(
-            valid.catalog_url().unwrap().path(),
-            "/owner-name/repo.name_with-dashes/releases/latest/download/catalog.json"
-        );
+        assert_eq!(valid.catalog_url().unwrap().scheme(), "https");
     }
     #[test]
     fn cache_rejects_rollback_and_same_revision_replacement() {
@@ -1959,6 +1943,10 @@ mod tests {
     #[test]
     fn urls_restrict_repository_https_credentials_and_redirect_hosts() {
         let repo = "owner/repo";
+        let transport: crate::repository_config::RepositoryConfig = serde_json::from_str(
+            include_str!("../../scripts/test-fixtures/repository-github.json"),
+        )
+        .unwrap();
         for value in [
             "http://github.com/owner/repo/releases/latest/download/catalog.json",
             "https://github.com/other/repo/releases/download/tag/a",
@@ -1968,13 +1956,16 @@ mod tests {
             "https://github.com:444/owner/repo/releases/a",
             "https://release-assets.githubusercontent.com.evil.example/a",
         ] {
-            assert!(!allowed_url(&Url::parse(value).unwrap(), repo), "{value}");
+            assert!(
+                !transport.allows_download(&Url::parse(value).unwrap(), repo),
+                "{value}"
+            );
         }
         for value in [
             "https://github.com/owner/repo/releases/latest/download/catalog.json",
             "https://release-assets.githubusercontent.com/assets/a?token=opaque",
         ] {
-            assert!(allowed_url(&Url::parse(value).unwrap(), repo));
+            assert!(transport.allows_download(&Url::parse(value).unwrap(), repo));
         }
     }
     #[test]

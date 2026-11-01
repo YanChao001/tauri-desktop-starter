@@ -321,12 +321,13 @@ pnpm docs:previews --check  # 只比较文档图片与本轮采集结果
 
 [`ci.yml`](../.github/workflows/ci.yml) 定义当前检查范围：
 
-- `changes`：明确的纯文档路径跳过原生矩阵；未知范围、比较失败或手动触发采用完整检查。
-- `frontend` / `browser-smoke`：分别运行 `verify` 与生产浏览器检查，失败上传日志 / trace。
-- `rust`：三平台原生检查、内置 Wasm 真编译、ABI / fixture、worker 和缓存补丁回归；参考平台另查生成绑定和提交模块一致性。
+- `changes`：由 [`ci-scope.mjs`](../scripts/ci-scope.mjs) 比较改动。纯文档跳过浏览器与原生矩阵；已知前端路径跳过 Rust 矩阵，保留浏览器与三平台桌面 E2E。生成绑定、依赖、SDK、构建脚本和未知路径采用完整检查；比较失败、空差异、首次推送或手动触发同样完整检查。
+- `frontend` / `browser-smoke`：分别运行 `verify` 与生产浏览器检查，失败上传日志 / trace；纯文档仍执行 `verify`。
+- `rust`：三平台原生检查、内置 Wasm 真编译、ABI / fixture、worker 和缓存补丁回归；Windows 参考平台另查提交模块一致性。无 GUI 检查关闭 dev / test 调试符号，减少链接与缓存体积；Linux JS / TS fixture 复用本次 worker 检查构建的 debug 工具，避免额外编译 release 工具。
+- `bindings`：在独立 Ubuntu 24.04 runner 上检查生成的 IPC 类型，与 Rust 矩阵并行；使用自己的 Cargo target 和缓存，不与原生检查争用锁。
 - `desktop-e2e`：三平台隔离构建和三阶段 E2E，Windows 成功时保留 README 截图。
-- `quality-gate`：汇总结果，仅接受分类允许的跳过；失败、取消和非预期跳过继续阻止合入。
+- `quality-gate`：通过 [`ci-quality-gate.mjs`](../scripts/ci-quality-gate.mjs) 汇总全部结果，仅接受分类允许的跳过；失败、取消和非预期跳过继续阻止合入。
 
 Rust / SDK 的 Linux 检查使用 Ubuntu 24.04，以满足固定 `extism-js` 编译器的 glibc 2.39 要求；真实桌面 E2E 与 Linux 分发构建仍保留 Ubuntu 22.04 基线。
 
-纯文档 CI 当前仍运行前端和浏览器任务，这不增加本地文档修改的验证要求。Pages 和桌面发布各自保留本次来源与验收链；CI 平台配置不等于本机实测，测试构建也不代替正式安装、签名和升级验收。
+范围判断与质量门禁的回归包含未知输入、比较失败、源码移入文档目录和非预期跳过，避免漏检。桌面 E2E 保留调试信息与崩溃取证。以上 CI 范围不增加本地文档修改的验证要求。Pages 和桌面发布各自保留本次来源与验收链；CI 平台配置不等于本机实测，测试构建也不代替正式安装、签名和升级验收。
