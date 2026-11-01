@@ -12,7 +12,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { classifyChanges, detectChanges } from "./ci-scope.mjs";
 
-const full = { docsOnly: false, rustRequired: true };
+const full = { docsOnly: false, rustRequired: true, sdkRequired: true };
+const native = { docsOnly: false, rustRequired: true, sdkRequired: false };
 
 test("documentation changes skip browser and native checks", () => {
   assert.deepEqual(
@@ -21,7 +22,7 @@ test("documentation changes skip browser and native checks", () => {
       "docs/testing.md",
       "docs/assets/preview.png",
     ]),
-    { docsOnly: true, rustRequired: false },
+    { docsOnly: true, rustRequired: false, sdkRequired: false },
   );
 });
 
@@ -39,29 +40,63 @@ test("frontend changes keep desktop coverage without repeating Rust checks", () 
     assert.deepEqual(classifyChanges([path, "docs/testing.md"]), {
       docsOnly: false,
       rustRequired: false,
+      sdkRequired: false,
     });
   }
 });
 
-test("native contracts, shared dependencies, scripts and unknown inputs require all checks", () => {
+test("unrelated native and unknown inputs retain native checks without an SDK build", () => {
   for (const path of [
     "src-tauri/src/commands.rs",
     "src/lib/generated/bindings.ts",
     "src/lib/generated/new-contract.ts",
-    "package.json",
-    "pnpm-lock.yaml",
-    "rust-toolchain.toml",
+    "src-tauri/src/database.rs",
+    "src-tauri/src/storage.rs",
     "sdk/extension-ui.js",
     "scripts/build-extension-apps.mjs",
     "resources/extensions/demo-apps.wasm",
     "resources/wallpapers/background.jpg",
-    ".github/workflows/ci.yml",
     "marketplace",
     "new-build-input.json",
   ]) {
-    assert.deepEqual(classifyChanges(["src/App.tsx", path]), full, path);
+    assert.deepEqual(classifyChanges(["src/App.tsx", path]), native, path);
   }
   assert.deepEqual(classifyChanges([]), full);
+});
+
+test("SDK runtime, examples, compiler inputs and acceptance tooling require SDK checks", () => {
+  for (const path of [
+    "src-tauri/src/bin/extension-tool.rs",
+    "src-tauri/src/extension_runtime.rs",
+    "src-tauri/src/extension_worker.rs",
+    "src-tauri/src/extensions.rs",
+    "src-tauri/src/extension_view.rs",
+    "src-tauri/src/extension_runtime/compiler.rs",
+    "src-tauri/src/lib.rs",
+    "src-tauri/src/error.rs",
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/build.rs",
+    "src-tauri/vendor/wasmtime/src/lib.rs",
+    ".cargo/config.toml",
+    "src-tauri/.cargo/config.toml",
+    "rust-toolchain.toml",
+    "package.json",
+    "pnpm-lock.yaml",
+    "examples/extensions/javascript/plugin.js",
+    "examples/extensions/typescript/notebook-smoke.json",
+    "examples/extensions/sdk.ts",
+    "examples/extensions/build.mjs",
+    "examples/extensions/package.json",
+    "examples/extensions/pnpm-lock.yaml",
+    "scripts/ci-extension-sdk.mjs",
+    "scripts/extension-package.mjs",
+    "scripts/extension-ui-resources.mjs",
+    "scripts/build-lib.mjs",
+    ".github/workflows/ci.yml",
+  ]) {
+    assert.deepEqual(classifyChanges([path, "docs/testing.md"]), full, path);
+  }
 });
 
 test("manual runs, initial pushes and missing revisions cannot skip native checks", () => {
@@ -130,7 +165,7 @@ test("a source moved into docs still requires native checks; PRs compare from th
         },
         { cwd: directory },
       ),
-      { docsOnly: true, rustRequired: false },
+      { docsOnly: true, rustRequired: false, sdkRequired: false },
     );
     git("switch", "topic");
     renameSync(
@@ -140,7 +175,7 @@ test("a source moved into docs still requires native checks; PRs compare from th
     const moved = commit("move source into docs");
     assert.deepEqual(
       detectChanges("push", { before: base, after: moved }, { cwd: directory }),
-      full,
+      native,
     );
   } finally {
     // Only the directory created by this test is removed.
